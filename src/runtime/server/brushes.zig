@@ -21,6 +21,13 @@ pub fn binds(object: data.MapObject) bool {
         !std.mem.eql(u8, object.classname, "func_areaportalass");
 }
 
+/// Gold never sends these brushes: triggers, clips and func_event_generator
+/// (SVF_NOCLIENT at spawn) are invisible volumes, often textured "trigger".
+pub fn hiddenClass(classname: []const u8) bool {
+    return std.mem.startsWith(u8, classname, "trigger_") or std.mem.eql(u8, classname, "func_clip") or
+        std.mem.eql(u8, classname, "func_monsterclip") or std.mem.eql(u8, classname, "func_event_generator");
+}
+
 pub fn spawn(world: *data.World, slots: *Slots, projections: []abi.EntityProjection) !void {
     // Collect handles before adding components: no structural edits in a query epoch.
     var entities: [@import("../ecs/world.zig").max_entities]@import("../ecs/world.zig").Entity = undefined;
@@ -51,7 +58,7 @@ pub fn spawn(world: *data.World, slots: *Slots, projections: []abi.EntityProject
         const projection = &projections[index];
         _ = engine.gateway.call(c.G_SET_BRUSH_MODEL, .{ projection, path.ptr });
         const trigger = std.mem.startsWith(u8, object.classname, "trigger_");
-        const hidden = trigger or std.mem.eql(u8, object.classname, "func_clip") or std.mem.eql(u8, object.classname, "func_monsterclip");
+        const hidden = hiddenClass(object.classname);
         const contents: u32 = if (trigger) c.CONTENTS_TRIGGER else if (std.mem.eql(u8, object.classname, "func_illusionary")) 0 else c.CONTENTS_SOLID;
         try world.put(entity, data.Binding{ .slot = index, .model = model });
         try world.put(entity, data.Body{ .mins = projection.shared.mins, .maxs = projection.shared.maxs, .contents = contents, .collision_mask = c.MASK_SOLID });
@@ -81,4 +88,10 @@ test "retained e1m2b portal metadata cannot become a wall while authored doors s
     try std.testing.expect(binds(.{ .classname = "func_door", .model = "*40", .targetname = "eledoor" }));
     try std.testing.expect(binds(.{ .classname = "func_wall", .model = "*40" }));
     try std.testing.expect(!binds(.{ .classname = "func_group" }));
+}
+
+test "invisible authored volumes stay hidden after spawn and restoration" {
+    try std.testing.expect(hiddenClass("trigger_once") and hiddenClass("func_clip") and hiddenClass("func_monsterclip"));
+    try std.testing.expect(hiddenClass("func_event_generator"));
+    try std.testing.expect(!hiddenClass("func_wall") and !hiddenClass("func_door"));
 }

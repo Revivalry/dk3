@@ -313,7 +313,7 @@ pub fn projectEntity(world: *data.World, slots: *Slots, projections: []abi.Entit
     projection.shared.currentOrigin = transform.position;
     projection.shared.currentAngles = @import("brushes.zig").collisionAngles(object.classname, transform.angles);
     projection.shared.contents = @bitCast(body.contents);
-    var hidden = std.mem.startsWith(u8, object.classname, "trigger_") or std.mem.eql(u8, object.classname, "func_clip") or std.mem.eql(u8, object.classname, "func_monsterclip");
+    var hidden = @import("brushes.zig").hiddenClass(object.classname);
     if (world.get(entity, data.Destructible) catch null) |destructible| hidden = hidden or destructible.hidden or destructible.broken;
     if (world.get(entity, data.Wall) catch null) |wall| hidden = hidden or !wall.visible;
     if (hidden) projection.shared.svFlags |= c.SVF_NOCLIENT;

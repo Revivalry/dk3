@@ -8757,3 +8757,38 @@ ammunition. Profiles now carry `idle_loop`/`idle_needs_ammo`, and their lists ma
 frame tables: kineticore, slugger, cordite and stavros have only `amba`; novabeam has none.
 The bolter, discus, ripgun, silverclaw and venomous ambient sounds were added. A disruptor held
 still for 45 s on e1m1a played 6 ambients mixing `amba` and `ambb`.
+
+| 384 | `native-restore-hidden-event-generators` | implemented; unit test added; owner save2 (e1m4b) GPU check passed `s4/` |
+
+The owner's save2 (e1m4b garage) still showed the floating "trigger" box after 382. Logging
+each inline model the client drew and each server brush slot after restoration showed slot 97,
+`func_event_generator` *34, a 32×32×24 brush made only of "trigger" faces. Gold
+`func_event_generator` always sets `SVF_NOCLIENT`, and the native spawn (`world_actions`)
+publishes it hidden. Restoration (`persistence.projectEntity`) rebuilt visibility from a
+classname list without it, so every brush event generator reappeared after a load (also *4 in
+e1m4b). Spawn and restoration now share `brushes.hiddenClass`. After the fix, save2 loads
+without the box. Entry 382's recycled-slot hardening stands, but it was not the cause of this
+box. The e1m4a crematorium bridge strips remain open: e1m4a has no brush event generators.
+
+| 385 | `native-restore-projection-audit` | probe added; 62 of 63 single-player maps compared; owner saves dumped |
+
+To find more problems of entry 384's kind, a probe command `dk3_runtime_projections` (probe
+mode 2) prints what each transported entity sends, keyed by persistent ID. For every
+single-player map the runs compared a dump 5 s after `devmap` with one right after `save` and
+`load`. A scan of all 85 converted BSPs listed every inline model whose faces are all
+invisible-volume textures (trigger, clip, nodraw, hint, skip, origin, areaportal).
+
+- With 384 applied, no brush with only invisible-volume faces is sent after a load (63 maps,
+  owner saves 1–4 and autosave). Before 384: 96 `func_event_generator` brushes.
+- Remaining load differences are benign. Weather volumes lose the `SetBrushModel` brush flag,
+  but their bounds travel in `origin2`/`angles2` and the client consumes them before the
+  inline path. Spawn-only companion triggers carry their spawn point as origin (no contents,
+  never sent). The rest are movers or actors in motion, and transient effects with new IDs.
+- Sent with only "trigger" faces before and after load: `func_monitor` e1m3a *31, e4m4c *46,
+  e4m6a *30 and `func_button` e2m5e *2. Gold sends these too (SOLID_BSP, no
+  `SVF_NOCLIENT`, texinfo flags 0), so they are left as authored. Visual check inconclusive.
+- e1m6b: the 5 s idle `devmap` player is killed by nearby death spheres, so its save is
+  refused (`CannotSaveDeadPlayer`) and the map was not compared.
+- Unrelated lead: e4m2a `monster_shark` at (-2966, 2654, -1696) (spawnflags 1) dies within
+  about 3 s of a fresh start without a recorded weapon hit. Cause open.
+- All projection reuse sites zero the slot before publishing.

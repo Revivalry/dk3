@@ -25,3 +25,18 @@ pub fn diagnostics(world: *data.World, slots: *Slots, projections: []const abi.E
     }
     engine.print("dk3 zig world states complete\n");
 }
+/// One line per transported entity, keyed by persistent ID, so a probe can
+/// compare what clients receive after a fresh spawn and after restoration.
+pub fn projectionReport(world: *data.World, slots: *Slots, values: []const abi.EntityProjection) !void {
+    const c = abi.c;
+    var text: [400]u8 = undefined;
+    for (slots.occupants, 0..) |occupant, slot| {
+        const entity = occupant orelse continue;
+        const projection = values[slot];
+        const class = if (world.get(entity, data.MapObject)) |object| object.classname else |_| "-";
+        const model = if (world.get(entity, data.MapObject)) |object| object.model else |_| "";
+        const sent = projection.shared.linked != 0 and projection.shared.svFlags & c.SVF_NOCLIENT == 0;
+        engine.print(try std.fmt.bufPrintZ(&text, "dk3 projection: id={d} slot={d} class={s} model={s} sent={d} eType={d} index={d} index2={d} bmodel={d} solid={d} contents={d} svFlags={d} generic1={d} mins={d:.0},{d:.0},{d:.0} maxs={d:.0},{d:.0},{d:.0} origin={d:.0},{d:.0},{d:.0}\n", .{ try world.persistentId(entity), slot, class, model, @intFromBool(sent), projection.state.eType, projection.state.modelindex, projection.state.modelindex2, projection.shared.bmodel, projection.state.solid, projection.shared.contents, projection.shared.svFlags, projection.state.generic1, projection.shared.mins[0], projection.shared.mins[1], projection.shared.mins[2], projection.shared.maxs[0], projection.shared.maxs[1], projection.shared.maxs[2], projection.state.pos.trBase[0], projection.state.pos.trBase[1], projection.state.pos.trBase[2] }));
+    }
+    engine.print("dk3 projection: complete\n");
+}

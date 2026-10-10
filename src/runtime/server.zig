@@ -447,6 +447,10 @@ fn consoleCommand() isize {
             @import("server/world_probe.zig").diagnostics(&active.world.?, &active.slots, &active.projection) catch |err| runtimeFailure(err);
             return 1;
         }
+        if (std.mem.eql(u8, command, "dk3_runtime_projections")) {
+            @import("server/world_probe.zig").projectionReport(&active.world.?, &active.slots, &active.projection) catch |err| runtimeFailure(err);
+            return 1;
+        }
         if (std.mem.eql(u8, command, "dk3_runtime_actors")) {
             @import("server/actors.zig").diagnostics(&active.systems.actors, &active.world.?, &active.slots, clock.now_ms) catch |err| runtimeFailure(err);
             return 1;
