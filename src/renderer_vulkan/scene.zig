@@ -9,12 +9,14 @@ const common = @import("common.zig");
 const cvars = @import("cvars.zig");
 const vk = @import("vk.zig");
 const window = @import("window.zig");
+const profile = @import("profile.zig");
 const shader_mod = @import("shader.zig");
 const image = @import("image.zig");
 const world = @import("world.zig");
 const model = @import("model.zig");
 const volume = @import("volume.zig");
 const taa = @import("taa.zig");
+const motion = @import("motion.zig");
 const weather = @import("weather.zig");
 const clusters = @import("clusters.zig");
 const shadows = @import("shadows.zig");
@@ -97,9 +99,16 @@ const Record = extern struct {
     view_pos: [4]f32,
     lights: u64,
     view: u64,
+    prev_clip: [16]f32,
+    prev_vertices: u64,
+    prev_frame_b: u64,
+    prev_extra: u64,
+    pad: u64,
+    motion: [4]f32,
+    motion2: [4]f32,
 };
 comptime {
-    if (@sizeOf(Record) != 768) @compileError("draw record layout drifted from common.glsl");
+    if (@sizeOf(Record) != 896) @compileError("draw record layout drifted from common.glsl");
     if (@sizeOf(Vertex) != 48) @compileError("vertex layout drifted from stage.vert");
 }
 
@@ -115,6 +124,17 @@ const flag_overlay_opaque: u32 = 32;
 const flag_pbr_world: u32 = 64;
 const flag_pbr_model: u32 = 128;
 const flag_liquid: u32 = 256;
+const flag_motion: u32 = 4096;
+
+/// stage.frag STAGE_VARIANT: the narrowest shader that has this stage's path; debug views use
+/// the full shader (its pipelines take seconds to compile).
+fn stageVariant(flags: u32) u8 {
+    if (cvars.vkDebugView.integer != 0) return 0;
+    if (flags & flag_liquid != 0) return 4;
+    if (flags & flag_pbr_world != 0) return 1;
+    if (flags & flag_pbr_model != 0) return 2;
+    return 3;
+}
 
 pub const Mesh = struct {
     kind: u32 = 0,
@@ -124,6 +144,12 @@ pub const Mesh = struct {
     frame_b: u64 = 0,
     extra: u64 = 0,
     backlerp: f32 = 0,
+    /// The previous frame's pose (MD3 frames and blend, IQM bones) for motion vectors; zero
+    /// addresses mean the current pose.
+    prev_vertices: u64 = 0,
+    prev_frame_b: u64 = 0,
+    prev_extra: u64 = 0,
+    prev_backlerp: f32 = 0,
 };
 
 pub const Geometry = union(enum) {
@@ -162,6 +188,10 @@ pub const Entity = struct {
     light_world: Vec3 = .{ 0, 0, 1 },
     /// Bone matrices for IQM skinning, uploaded once per entity per view.
     bones: u64 = 0,
+    /// The same entity in the previous frame (motion.zig), for motion vectors.
+    prev: ?*const motion.History = null,
+    /// Previous-frame bone matrices, uploaded with `bones`.
+    prev_bones: u64 = 0,
 };
 
 const Poly = struct { shader: c.qhandle_t, first: u32, count: u32, world_registration: u32 };
@@ -182,6 +212,7 @@ var fog_sky_end: f32 = 0;
 
 /// Per-frame lists reset at BeginFrame (`R_InitNextFrame`); scenes within a frame append.
 pub fn beginFrame() void {
+    motion.endFrame();
     entities.clearRetainingCapacity();
     dlights.clearRetainingCapacity();
     polys.clearRetainingCapacity();
@@ -299,6 +330,8 @@ pub const View = struct {
     rt_table: u64 = 0,
     /// Shadow-atlas tile camera: no culling, includes third-person models.
     shadow: bool = false,
+    /// drawView recorded the depth pre-pass for this view.
+    prepassed: bool = false,
     fog: bool,
     vis_mins: Vec3 = .{ 1e30, 1e30, 1e30 },
     vis_maxs: Vec3 = .{ -1e30, -1e30, -1e30 },
@@ -433,11 +466,18 @@ fn setFarClip(view: *View) void {
 
 /// `RE_RenderScene`.
 pub fn renderScene(fd: *const c.refdef_t) void {
+    const cpu_start = profile.cpuBegin();
+    defer profile.cpuEnd("render scene (build, record)", cpu_start);
     if (window.beginFrame()) resetBindings();
     if (fd.rdflags & c.RDF_NOWORLDMODEL == 0 and world.current() == null) common.fail(c.ERR_DROP, "R_RenderScene: NULL worldmodel", .{});
     world.updateLightstyles(fd);
     if (fd.rdflags & c.RDF_NOWORLDMODEL == 0) if (world.current()) |w| rt.updateStyles(w, fd);
     const scene_entities = entities.items[first_entity..];
+    // Each world-scene entity finds its previous self once, then is kept for the next frame.
+    if (fd.rdflags & c.RDF_NOWORLDMODEL == 0) for (scene_entities) |*entity| {
+        entity.prev = motion.match(&entity.e);
+        motion.record(&entity.e);
+    };
     const scene_dlights = if (cvars.dynamiclight.integer != 0) dlights.items[first_dlight..] else dlights.items[0..0];
     var view: View = .{
         .origin = fd.vieworg,
@@ -526,7 +566,9 @@ pub fn renderView(view: *View) void {
         }
     }
     stats.surfaces += @intCast(draw_surfs.items.len - first);
+    const draw_scope = profile.begin(window.cmd, if (view.is_portal) "draw portal view" else if (view.world == null) "draw view (no world)" else "draw view");
     drawView(view, draw_surfs.items[first..]);
+    profile.end(window.cmd, draw_scope);
     draw_surfs.shrinkRetainingCapacity(first);
 }
 
@@ -739,8 +781,10 @@ fn buildViewData(view: *View) void {
     // Weather volumes and the rain occlusion map first: the froxel pass turns distant rain
     // into fog where it is open to the sky.
     var boxes: [weather.max_view_boxes * 2][4]f32 = std.mem.zeroes([weather.max_view_boxes * 2][4]f32);
-    const box_count = weather.viewBoxes(world.registration(), &boxes);
+    const box_count = weather.viewBoxes(world.registration(), view.origin, &boxes);
+    const rain_scope = profile.begin(window.cmd, "rain map");
     const rain_map = renderRainMap(view, owner, &boxes, box_count);
+    profile.end(window.cmd, rain_scope);
     const rain_input: @FieldType(volume.Input, "rain") = if (rain_map) |map| .{
         .boxes = boxes,
         .count = box_count,
@@ -753,7 +797,9 @@ fn buildViewData(view: *View) void {
     // The ray tracing tier first: the froxel pass traces light visibility against it.
     var character_meshes: [max_character_meshes]rt.CharacterMesh = undefined;
     const character_count = if (rt.enabled() and cvars.vkRtCharacters.integer != 0) characterMeshes(view, &character_meshes) else 0;
+    const rt_scope = profile.begin(window.cmd, "rt prepare (tlas, skin, light visibility)");
     const rt_table_opt = rt.prepare(window.cmd, owner, view.entities, character_meshes[0..character_count]);
+    profile.end(window.cmd, rt_scope);
     const map_light_data = if (rt_table_opt != null and cvars.vkLighting.integer != 0) rt.mapLightData(owner) else null;
     const light_scale: [3]f32 = .{ @max(cvars.vkPtLightScale.value, 0), std.math.pow(f32, 2, @floatFromInt(std.math.clamp(cvars.mapOverBrightBits.integer, 0, 8))), if (map_light_data) |m| m.ambient else 0 };
     // Ray traced lighting takes the sky's light from the original emitting sky faces (none
@@ -768,6 +814,7 @@ fn buildViewData(view: *View) void {
         .light_scale = light_scale,
         .sky = rt_sky,
     } else null;
+    // Records nothing yet: drawView dispatches it after the view's depth pre-pass.
     const built = volume.run(window.cmd, .{
         .origin = view.origin,
         .axis = view.axis,
@@ -788,7 +835,7 @@ fn buildViewData(view: *View) void {
     data.weather[0] = box_count;
     data.weather_params = .{ @max(cvars.vkWetness.value, 0), @max(cvars.vkSnowCover.value, 0), view.time, @floatFromInt(cvars.vkDebugView.integer) };
     // y: liquid the eye is in (world.liquidOf), for liquid surfaces seen from underneath.
-    data.fog_params = .{ skyFogDepth(view), @floatFromInt(@intFromEnum(world.liquidOf(world.contentsAt(owner, view.origin)))), @floatFromInt(taa.frameCounter() % 4096), 0 };
+    data.fog_params = .{ skyFogDepth(view), @floatFromInt(@intFromEnum(world.liquidOf(world.contentsAt(owner, view.origin)))), @floatFromInt(taa.frameCounter() % 4096), @floatFromInt(@max(cvars.vkRtCost.integer, 0)) };
     data.shadows[1] = window.shadow_slot;
     if (rain_map) |map| {
         data.rain_to_tile = map.world_to_tile;
@@ -812,7 +859,11 @@ fn buildViewData(view: *View) void {
             data.rt_sky = if (rt.skyRaw(owner)) |raw| .{ raw[0], raw[1], raw[2], 2 } else .{ rt_sky[0], rt_sky[1], rt_sky[2], 1 };
         }
         // The directional lightmap bake only serves the baked lighting.
-        if (data.rt_cell_dims[3] == 0) bake.step(window.cmd, owner);
+        if (data.rt_cell_dims[3] == 0) {
+            const bake_scope = profile.begin(window.cmd, "directional bake");
+            bake.step(window.cmd, owner);
+            profile.end(window.cmd, bake_scope);
+        }
         resetBindings();
         // Rays that leave the world see the sky box, not the fog colour.
         const sky: Vec3 = rt.skyFor(owner);
@@ -826,18 +877,27 @@ fn buildViewData(view: *View) void {
             .overbright = data.rt_light_scale[1],
             .ambient = data.rt_light_scale[2],
         };
-        if (ddgi.update(window.cmd, rt_table, view.origin, view.dlight_address, @intCast(view.dlights.len), sky, map_lights)) |field| {
+        const ddgi_scope = profile.begin(window.cmd, "ddgi probes");
+        const ddgi_field = ddgi.update(window.cmd, rt_table, view.origin, view.dlight_address, @intCast(view.dlights.len), sky, map_lights);
+        profile.end(window.cmd, ddgi_scope);
+        if (ddgi_field) |field| {
             data.ddgi_slots = field.slots;
             data.ddgi_slots2 = field.slots2;
             data.ddgi_origin = field.origin;
             data.ddgi_dims = field.dims;
         }
     }
-    if (renderShadows(view, owner)) |casters| {
+    const shadow_scope = profile.begin(window.cmd, "shadow maps");
+    const shadow_casters = renderShadows(view, owner);
+    profile.end(window.cmd, shadow_scope);
+    if (shadow_casters) |casters| {
         data.shadows[0] = casters.count;
         data.shadow_list = .{ @truncate(casters.address), @truncate(casters.address >> 32), 0, 0 };
     }
-    if (clusters.run(window.cmd, view.origin, view.axis, view.fov_x, view.fov_y, view.zfar, view.dlight_address, @intCast(view.dlights.len))) |binned| {
+    const cluster_scope = profile.begin(window.cmd, "light clusters");
+    const cluster_result = clusters.run(window.cmd, view.origin, view.axis, view.fov_x, view.fov_y, view.zfar, view.dlight_address, @intCast(view.dlights.len));
+    profile.end(window.cmd, cluster_scope);
+    if (cluster_result) |binned| {
         data.clusters = .{ 1, clusters.grid[0], clusters.grid[1], clusters.grid[2] };
         data.cluster_params = .{ binned.near, binned.inverse_log, clusters.max_per_cluster, 0 };
         data.cluster_list = .{ @truncate(binned.address), @truncate(binned.address >> 32), 0, 0 };
@@ -915,7 +975,7 @@ fn addWeatherSurfaces(view: *View) void {
     };
     for (weather.sceneVolumes()) |volume_entry| {
         if (volume_entry.registration != registration) continue;
-        var parts: [2]?weather.Draw = undefined;
+        var parts: [3]?weather.Draw = undefined;
         weather.draws(volume_entry, lighting, &parts);
         for (parts) |maybe| {
             const part = maybe orelse continue;
@@ -1175,7 +1235,27 @@ const Batch = struct {
     sky: bool = false,
     two_d: bool = false,
     liquid: image.Liquid = .none,
+    /// The depth pre-pass drew this batch: its first stage shades with an equal depth test and
+    /// early fragment tests.
+    prepassed: bool = false,
 };
+
+/// Set while drawView records the depth pre-pass.
+var prepass_mode = false;
+
+/// Whether a batch takes part in the depth pre-pass: opaque, depth-writing, not alpha tested
+/// (its depth needs the texture), not a liquid, sky, decal or the view weapon.
+fn prepassable(view: *const View, shader: *const Shader, entity: ?*const Entity, liquid: image.Liquid) bool {
+    if (cvars.vkDepthPrepass.integer == 0 or view.is_portal or view.shadow) return false;
+    if (window.currentTarget() != .hdr or view.rdflags & c.RDF_NOWORLDMODEL != 0) return false;
+    if (shader.sort > shader_mod.Sort.@"opaque" or shader.is_sky or shader.polygon_offset or liquid != .none) return false;
+    const stages = shader.stagesSlice();
+    if (stages.len == 0) return false;
+    const first = &stages[0];
+    if (first.blended or first.alpha_func != .none or !first.depth_write or !first.depth_test or first.depth_equal) return false;
+    if (entity) |ent| if (ent.e.renderfx & (c.RF_DEPTHHACK | c.RF_FIRST_PERSON) != 0) return false;
+    return true;
+}
 
 /// View rectangle (output pixels) in the current target's pixels (remaster render scale).
 fn targetRect(x: i32, y: i32, w: i32, h: i32) [4]i32 {
@@ -1225,12 +1305,48 @@ fn clearDepth(view: *const View) void {
     vk.d.CmdClearAttachments.?(window.cmd, 1, &attachment, 1, &rect);
 }
 
+/// The view's froxel volume (volume.run deferred it): after the depth pre-pass, froxels behind
+/// the farthest surface of their screen tile skip their rays (froxel_tiles.comp).
+fn flushVolume(view: *View) void {
+    if (!volume.hasPending()) return;
+    window.suspendRendering();
+    const scope = profile.begin(window.cmd, "volumetrics");
+    var tiles: u64 = 0;
+    if (view.prepassed) if (vk.frame().stream.alloc(volume.grid[0] * volume.grid[1] * 4, 16)) |space| {
+        const area = targetRect(view.x, view.y, view.width, view.height);
+        window.depthForCompute(true);
+        vk.dispatch(window.cmd, "froxel_tiles.comp", @import("post.zig").Push{
+            .slots = .{ window.depth_slot, 0, 0, 0 },
+            .size = .{ volume.grid[0], volume.grid[1], 0, 0 },
+            .buffer0 = space.address,
+            .params = .{ @floatFromInt(area[0]), @floatFromInt(area[1]), @floatFromInt(@max(area[2], 1)), @floatFromInt(@max(area[3], 1)) },
+            .params2 = .{ view.znear, view.zfar, 0, 0 },
+        }, volume.grid[0], volume.grid[1], 1, .{ 8, 8, 1 });
+        vk.computeBarrier(window.cmd);
+        tiles = space.address;
+    };
+    volume.flush(window.cmd, tiles);
+    if (tiles != 0) window.depthForCompute(false);
+    profile.end(window.cmd, scope);
+    window.resumeRendering();
+}
+
 fn drawView(view: *View, surfaces: []DrawSurf) void {
     // Remaster world views render into the HDR target; menu and HUD model views stay in the
     // UI overlay with the classic look.
     window.useTarget(if (window.remaster and view.rdflags & c.RDF_NOWORLDMODEL == 0) .hdr else .classic);
     clearDepth(view);
     setScissor(view.x, view.y, view.width, view.height);
+    view.prepassed = false;
+    if (cvars.vkDepthPrepass.integer != 0 and !view.is_portal and !view.shadow and window.currentTarget() == .hdr and view.rdflags & c.RDF_NOWORLDMODEL == 0) {
+        const prepass_scope = profile.begin(window.cmd, "depth prepass");
+        prepass_mode = true;
+        depthPrepass(view, surfaces);
+        prepass_mode = false;
+        profile.end(window.cmd, prepass_scope);
+        view.prepassed = true;
+    }
+    flushVolume(view);
     var traced = false;
     var index: usize = 0;
     while (index < surfaces.len) {
@@ -1278,6 +1394,38 @@ fn drawView(view: *View, surfaces: []DrawSurf) void {
     }
     if (!traced) pathTrace(view);
     window.endLiquids();
+}
+
+/// Depth of every pre-pass batch (drawBatch in prepass_mode), batched as drawView batches.
+fn depthPrepass(view: *View, surfaces: []DrawSurf) void {
+    var index: usize = 0;
+    while (index < surfaces.len) {
+        const surface = surfaces[index];
+        if (surface.shader.sort > shader_mod.Sort.@"opaque") break;
+        const entity: ?*Entity = if (surface.entity == world_entity) null else &view.entities[surface.entity];
+        switch (surface.geometry) {
+            .world => |w| {
+                var end = index + 1;
+                while (end < surfaces.len) : (end += 1) {
+                    const next = surfaces[end];
+                    if (next.shader != surface.shader or next.entity != surface.entity) break;
+                    switch (next.geometry) {
+                        .world => |nw| if (nw.owner != w.owner or nw.owner.surfaces[nw.surface].liquid != w.owner.surfaces[w.surface].liquid) break,
+                        else => break,
+                    }
+                }
+                if (w.owner.surfaces[w.surface].liquid == .none and prepassable(view, surface.shader, entity, .none)) {
+                    if (world.mergeIndices(w.owner, surfaces[index..end])) |mesh| drawBatch(view, surface.shader, entity, mesh, false, false);
+                }
+                index = end;
+            },
+            .mesh => |mesh| {
+                if (prepassable(view, surface.shader, entity, .none)) drawBatch(view, surface.shader, entity, mesh, false, false);
+                index += 1;
+            },
+            .sky => index += 1,
+        }
+    }
 }
 
 fn pathTrace(view: *const View) void {
@@ -1340,6 +1488,12 @@ fn drawBatch(view: *const View, shader: *Shader, entity: ?*Entity, mesh: Mesh, l
         .dlights = lit and view.dlights.len > 0 and shader.surface_flags & c.SURF_NODLIGHT == 0,
         .sky = sky,
     };
+    if (prepass_mode) {
+        var depth_batch = batch;
+        depth_batch.prepassed = true;
+        if (prepassable(view, shader, entity, .none)) drawStage(view, &depth_batch, &shader.stagesSlice()[0]);
+        return;
+    }
     if (view.shadow) {
         // Shadow tiles: depth of the first depth-writing stage only.
         for (shader.stagesSlice()) |*stage| if (stage.depth_write) {
@@ -1348,7 +1502,13 @@ fn drawBatch(view: *const View, shader: *Shader, entity: ?*Entity, mesh: Mesh, l
         };
         return;
     }
-    for (shader.stagesSlice()) |*stage| drawStage(view, &batch, stage);
+    var shaded = batch;
+    shaded.prepassed = view.prepassed and prepassable(view, shader, entity, .none);
+    for (shader.stagesSlice(), 0..) |*stage, k| {
+        var stage_batch = shaded;
+        stage_batch.prepassed = shaded.prepassed and k == 0;
+        drawStage(view, &stage_batch, stage);
+    }
 }
 
 fn constantColor(stage: *const Stage, batch: *const Batch) [4]f32 {
@@ -1636,7 +1796,9 @@ fn drawStage(view: *const View, batch: *const Batch, stage: *const Stage) void {
         }
         if (model_lit) {
             flags |= flag_pbr_model;
-            if (!stage.blended and on_hdr) flags |= flag_dynamic;
+            // Without a previous frame the motion vector is the camera's only: the temporal
+            // passes take this pixel from the current frame.
+            if (!stage.blended and on_hdr and batch.entity.?.prev == null) flags |= flag_dynamic;
             const ent = batch.entity.?;
             record.world_light = .{ ent.light_world[0], ent.light_world[1], ent.light_world[2], 0 };
         }
@@ -1680,11 +1842,43 @@ fn drawStage(view: *const View, batch: *const Batch, stage: *const Stage) void {
     record.frame_b = batch.mesh.frame_b;
     record.extra = if (batch.mesh.kind == 0) 0 else batch.mesh.extra;
     record.misc = .{ batch.mesh.backlerp, 0, 0, 0 };
+    // Motion vectors (motion.zig): the main camera's depth-writing surfaces record where they
+    // were in the previous frame: the previous camera, entity transform and pose.
+    const motion_write = on_hdr and !prepass_mode and !view.is_portal and stage.depth_write;
+    if (motion_write) if (taa.motionMatrices()) |matrices| {
+        var prev_model = batch.orientation.model;
+        var prev_backlerp = batch.mesh.backlerp;
+        if (batch.entity) |ent| if (ent.prev) |p| {
+            prev_model = .{
+                .{ p.axis[0][0], p.axis[1][0], p.axis[2][0], p.origin[0] },
+                .{ p.axis[0][1], p.axis[1][1], p.axis[2][1], p.origin[1] },
+                .{ p.axis[0][2], p.axis[1][2], p.axis[2][2], p.origin[2] },
+            };
+            if (batch.mesh.prev_vertices != 0) prev_backlerp = batch.mesh.prev_backlerp;
+        };
+        const prev_clip = mat4Mul(matrices.previous, .{ prev_model[0], prev_model[1], prev_model[2], .{ 0, 0, 0, 1 } });
+        for (0..4) |row| for (0..4) |column| {
+            record.prev_clip[column * 4 + row] = prev_clip[row][column];
+        };
+        record.prev_vertices = if (batch.mesh.prev_vertices != 0) batch.mesh.prev_vertices else batch.mesh.vertices;
+        record.prev_frame_b = if (batch.mesh.prev_frame_b != 0) batch.mesh.prev_frame_b else batch.mesh.frame_b;
+        record.prev_extra = if (batch.mesh.kind == 0) 0 else if (batch.mesh.prev_extra != 0) batch.mesh.prev_extra else batch.mesh.extra;
+        const jitter = taa.currentJitter();
+        const rect = targetRect(view.x, view.y, view.width, view.height);
+        record.motion = .{ jitter[0], jitter[1], @floatFromInt(rect[2]), @floatFromInt(rect[3]) };
+        record.motion2 = .{ prev_backlerp, 0, 0, 0 };
+        record.mode2[2] |= flag_motion;
+    };
 
     const cmd = window.cmd;
     // Weather particles also lower the HDR alpha so the temporal resolve treats them as moving.
     const mark_motion = batch.mesh.kind == 3 and window.currentTarget() == .hdr;
-    const pipeline = vk.pipeline(.{ .src = stage.src, .dst = stage.dst, .format = window.targetFormat(), .program = vk.program_stage, .overlay = overlay, .mark_motion = mark_motion });
+    const program: u8 = if (prepass_mode) vk.program_depth else if (batch.prepassed) vk.program_stage_early else vk.program_stage;
+    const motion_target = window.currentTarget() == .hdr;
+    const pipeline = if (prepass_mode)
+        vk.pipeline(.{ .src = 1, .dst = 0, .format = window.targetFormat(), .program = program, .color_write = false, .motion_target = motion_target })
+    else
+        vk.pipeline(.{ .src = stage.src, .dst = stage.dst, .format = window.targetFormat(), .program = program, .overlay = overlay, .mark_motion = mark_motion, .variant = stageVariant(flags), .motion_target = motion_target, .motion_write = record.mode2[2] & flag_motion != 0 });
     if (pipeline != current_pipeline) {
         vk.d.CmdBindPipeline.?(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         current_pipeline = pipeline;
@@ -1698,8 +1892,9 @@ fn drawStage(view: *const View, batch: *const Batch, stage: *const Stage) void {
     vk.d.CmdSetCullMode.?(cmd, cull);
     vk.d.CmdSetFrontFace.?(cmd, c.VK_FRONT_FACE_COUNTER_CLOCKWISE);
     vk.d.CmdSetDepthTestEnable.?(cmd, @intFromBool(stage.depth_test));
-    vk.d.CmdSetDepthWriteEnable.?(cmd, @intFromBool(stage.depth_write and !batch.two_d));
-    vk.d.CmdSetDepthCompareOp.?(cmd, if (stage.depth_equal) c.VK_COMPARE_OP_EQUAL else c.VK_COMPARE_OP_LESS_OR_EQUAL);
+    // Pre-pass: write depth. Pre-passed first stage: equal test, depth already written.
+    vk.d.CmdSetDepthWriteEnable.?(cmd, @intFromBool(if (prepass_mode) true else if (batch.prepassed) false else stage.depth_write and !batch.two_d));
+    vk.d.CmdSetDepthCompareOp.?(cmd, if (stage.depth_equal or (batch.prepassed and !prepass_mode)) c.VK_COMPARE_OP_EQUAL else c.VK_COMPARE_OP_LESS_OR_EQUAL);
     vk.d.CmdSetDepthBiasEnable.?(cmd, @intFromBool(batch.shader.polygon_offset));
     vk.d.CmdSetDepthBias.?(cmd, if (batch.shader.polygon_offset) -2 else 0, 0, if (batch.shader.polygon_offset) -1 else 0);
     const push = [2]u32{ @truncate(space.address), @truncate(space.address >> 32) };

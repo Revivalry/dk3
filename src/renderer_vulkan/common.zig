@@ -40,6 +40,13 @@ pub fn milliseconds() i32 {
     return ri.Milliseconds.?();
 }
 
+/// Monotonic clock in nanoseconds (profiling).
+pub fn nanoseconds() i128 {
+    var ts: std.c.timespec = undefined;
+    _ = std.c.clock_gettime(std.c.CLOCK.MONOTONIC, &ts);
+    return @as(i128, ts.sec) * 1_000_000_000 + ts.nsec;
+}
+
 pub fn cvar(name: [*:0]const u8, value: [*:0]const u8, flags: c_int) *c.cvar_t {
     return ri.Cvar_Get.?(name, value, flags);
 }

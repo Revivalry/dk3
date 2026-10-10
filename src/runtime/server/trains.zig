@@ -26,6 +26,7 @@ pub fn spawn(world: *data.World, slots: *Slots, projections: []abi.EntityProject
         if (slots.find(entity) == null) {
             if (object.model.len != 0) return error.InvalidTrainModel;
             const slot = try slots.acquire(entity, null);
+            projections[slot] = std.mem.zeroes(abi.EntityProjection);
             try world.put(entity, data.Binding{ .slot = slot });
             try world.put(entity, data.Body{});
             projections[slot].shared.svFlags = c.SVF_NOCLIENT;

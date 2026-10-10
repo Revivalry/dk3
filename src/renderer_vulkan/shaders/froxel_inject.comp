@@ -55,7 +55,22 @@ void main() {
     vec3 gridUv = (pos - p.grid0.xyz) * p.grid1.xyz;
     bool traced = false;
 #ifdef RAY_QUERY
-    if (p.rtSky.w > 0.5) {
+    // Froxels at least two slices behind the farthest surface of their own and neighbouring
+    // screen tiles (froxel_tiles.comp) are never sampled, even through filtering: no rays.
+    bool hidden = false;
+    if (p.depthTiles != uvec2(0u)) {
+        Values tiles = Values(p.depthTiles);
+        float deepest = 0.0;
+        for (int dy = -1; dy <= 1; ++dy)
+            for (int dx = -1; dx <= 1; ++dx) {
+                ivec2 t = clamp(ivec2(id.xy) + ivec2(dx, dy), ivec2(0), ivec2(pc.size.xy) - 1);
+                deepest = max(deepest, tiles.v[t.y * int(pc.size.x) + t.x]);
+            }
+        hidden = sliceDistance(p, float(id.z) - 1.0) > deepest;
+    }
+    if (hidden) {
+        traced = true;
+    } else if (p.rtSky.w > 0.5) {
         // Light shafts: the air is lit only by light that reaches it. Map lights with traced
         // visibility (the medium faces every light: a normal toward the strongest is not
         // needed, cosine 1 via a receiver normal along the view) and the open sky straight up;

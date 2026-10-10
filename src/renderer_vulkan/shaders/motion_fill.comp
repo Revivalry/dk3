@@ -1,0 +1,33 @@
+#version 460
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Motion vectors the shading pass left unwritten (window.motion_unwritten): the sky and every
+// surface that writes no depth move with the camera only. Reprojects the pixel's depth through
+// the previous camera (taa.zig resolve). slots: x depth sampler, y motion storage image.
+// size: render target w, h. params.xy: this frame's jitter in NDC. buffer1: Matrices.
+#include "post_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Matrices {
+    mat4 inverseCurrent;
+    mat4 previous;
+};
+
+void main() {
+    ivec2 id = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(uvec2(id), pc.size.xy))) return;
+    vec2 written = imageLoad(images[pc.slots.y], id).xy;
+    if (written.x < 0.5 * pc.params.z) return;
+    vec2 size = vec2(pc.size.xy);
+    vec2 uv = (vec2(id) + 0.5) / size;
+    // The pixel centre lies on the jittered grid; its unjittered position is what moved.
+    vec2 ndc = vec2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0) - pc.params.xy;
+    float depth = texelFetch(textures[nonuniformEXT(pc.slots.x)], id, 0).r;
+    Matrices m = Matrices(pc.buffer1);
+    vec4 world = m.inverseCurrent * vec4(ndc, depth, 1.0);
+    world /= world.w;
+    vec4 previousClip = m.previous * world;
+    vec2 motion = vec2(0.0);
+    if (previousClip.w > 1e-4) motion = (previousClip.xy / previousClip.w - ndc) * vec2(0.5, -0.5) * size;
+    imageStore(images[pc.slots.y], id, vec4(motion, 0.0, 0.0));
+}

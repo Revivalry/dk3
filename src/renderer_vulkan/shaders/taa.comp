@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Temporal resolve and upscale (taa.zig). slots: x current HDR sampler, y output history image,
 // z previous history sampler, w depth sampler. size: output w, h, input w, h.
-// params: jitter as UV offset (xy), blend weight, reset.
+// params: jitter as UV offset (xy), blend weight, reset. params2.x: motion vector sampler
+// (motion.zig, render-target pixels to the previous position).
 #include "post_common.glsl"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
@@ -90,15 +91,11 @@ void main() {
         return;
     }
 
-    // Camera reprojection through the closest depth of the neighbourhood (sharper edges).
-    Matrices m = Matrices(pc.buffer1);
-    vec2 ndc = vec2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
-    vec4 world = m.inverseCurrent * vec4(ndc, nearestDepth, 1.0);
-    world /= world.w;
-    vec4 previousClip = m.previous * world;
-    vec2 previousNdc = previousClip.xy / max(previousClip.w, 1e-5);
-    vec2 previousUv = vec2(previousNdc.x * 0.5 + 0.5, 0.5 - previousNdc.y * 0.5);
-    if (previousClip.w <= 0.0 || any(lessThan(previousUv, vec2(0.0))) || any(greaterThan(previousUv, vec2(1.0)))) {
+    // Reprojection by the motion vector of the closest depth in the neighbourhood (sharper
+    // edges): the surface's own motion, the camera's for the sky.
+    vec2 motionPx = texelFetch(textures[nonuniformEXT(uint(pc.params2.x))], nearestTexel, 0).xy;
+    vec2 previousUv = uv + motionPx / inSize;
+    if (any(lessThan(previousUv, vec2(0.0))) || any(greaterThan(previousUv, vec2(1.0)))) {
         imageStore(images[pc.slots.y], ivec2(id), vec4(currentColor, 1.0));
         return;
     }

@@ -1,0 +1,27 @@
+#version 460
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Froxel depth tiles (scene.zig drawView, after the depth pre-pass): the farthest eye depth of
+// the pre-pass in each froxel column's screen tile. Every surface drawn later is at or in front
+// of it (sky and pixels the pre-pass leaves out stay at the far plane), so froxels beyond it
+// are never seen and froxel_inject skips their rays.
+#include "post_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// pc.slots.x: depth sampler; pc.size.xy: tiles; pc.params: view rect in target pixels;
+// pc.params2.xy: near and far plane; pc.buffer0: output (one float per tile).
+void main() {
+    uvec2 t = gl_GlobalInvocationID.xy;
+    if (any(greaterThanEqual(t, pc.size.xy))) return;
+    vec2 lo = pc.params.xy + pc.params.zw * vec2(t) / vec2(pc.size.xy);
+    vec2 hi = pc.params.xy + pc.params.zw * vec2(t + 1u) / vec2(pc.size.xy);
+    ivec2 extent = textureSize(textures[nonuniformEXT(pc.slots.x)], 0);
+    ivec2 a = clamp(ivec2(floor(lo)), ivec2(0), extent - 1);
+    ivec2 b = clamp(ivec2(ceil(hi)), a + 1, extent);
+    float deepest = 0.0;
+    for (int y = a.y; y < b.y; ++y)
+        for (int x = a.x; x < b.x; ++x)
+            deepest = max(deepest, texelFetch(textures[nonuniformEXT(pc.slots.x)], ivec2(x, y), 0).r);
+    float n = pc.params2.x, f = pc.params2.y;
+    Values(pc.buffer0).v[t.y * pc.size.x + t.x] = n * f / max(f - deepest * (f - n), 1e-3);
+}

@@ -8622,3 +8622,138 @@ Game and runtime fixes found by the runs:
 | Shockwave not auto-chosen | Implemented; Unverified | — |
 | e1m6c → credits | Open | generic chains only |
 | Full New Game → credits chain | Open | |
+
+| 377 | `vulkan-renderer-performance` | implemented; GPU benchmarks `final-*`, `perf46-*`; owner acceptance open |
+
+The remaster renderer at the same image went from 25–34 fps to over 100 fps at 2560×1600 on
+four of five episode openers (RTX 5090 Laptop, AC power, `performance` profile, monsters
+pacified, uncapped, no vsync). Changes:
+- **Stage variants:** `stage.frag` is specialised per material kind (`STAGE_VARIANT`: world PBR,
+  model PBR, plain/weather, liquid; the full shader only for debug views). Register pressure
+  falls, and a new liquid no longer compiles the 13-second full shader mid-game.
+- **Depth pre-pass:** opaque surfaces shade once per pixel with an equal depth test.
+- **Rays:** helper invocations and discarded pixels skip their rays. Sampled shadow rays draw
+  only from lights outside the exact four (a regression that sampled every light made colour
+  speckle).
+- **Characters:** their acceleration structures are refitted, with a rebuild every 30 refits.
+- **Probes:** the DDGI budget is per time, not per frame.
+- **Fog:** froxels behind the farthest depth of their screen tile skip their rays
+  (`froxel_tiles.comp`).
+- **Frames:** three frames in flight and a presenter thread.
+- **Profiling:** GPU timestamp scopes and CPU sections (`r_vkStats`, `profile.zig`), frame pacing
+  in the report, pipeline statistics with `DK3_VK_PIPELINE_STATS`.
+
+| Map (2560×1600) | fps | GPU frame |
+|---|---|---|
+| e1m1a | 106 | 8.5 ms |
+| e1m4a | 94 | 9.8 ms |
+| e2m1a | 214 | 4.0 ms |
+| e3m1a | 199 | 4.1 ms |
+| e4m1a | 113 | 7.6 ms |
+
+| 378 | `vulkan-renderer-frame-pacing` | implemented; verified by screen capture `order-*`, pacing `pace5-*`; owner acceptance open |
+
+The owner saw whole frames jump back and forth. A frame counter stamped into each presented
+image and read back from the compositor (grim, while turning) showed older frames reaching the
+screen after newer ones:
+- 5 backward steps in 3 runs presenting from a second queue of the family, 0 in 6 runs with one
+  queue. Presenting from a second queue reorders frames on NVIDIA's Wayland PRIME path, so
+  presents use the main queue again (the presenter thread stays).
+- Lightstyles recomposited every changed block on the CPU at each 10 Hz style step, a 10–15 ms
+  stall ten times a second at 90 fps. `lightstyle.comp` recomposites on the GPU from samples
+  uploaded at load (`world.zig recompositeStyles`). Turning on e1m4a, frame-time deviation fell
+  from 6.1 to 3.5 ms and lightstyle stalls from 50 to 0; screenshots match the CPU path
+  (MAE 0.7 %, the run-to-run noise).
+- Mailbox swapchains take four images.
+- Remaining, not changed: the 85 fps cap on a 120 Hz panel without VRR holds frames for one or two
+  refreshes; the game module's 4 ms frame runs before the client render every 50 ms; a new enemy
+  type decodes its 4096² skin on the main thread (0.6–0.8 s).
+
+| 379 | `native-client-resident-sound-race` | implemented; unverified (the race was not reproduced) |
+
+A resident world's newly used sound reaches the client through its acknowledged config patch,
+which can trail the snapshot carrying the event; the client read an empty name and ended the
+game (`InvalidSoundPath`, cambot alarm in e1m1b). `events.zig` now leaves such an event
+unmarked and retries it on later snapshots while it lives; loop sounds skip the frame.
+
+| 380 | `vulkan-renderer-upscalers` | implemented; GPU smokes `mv4/`, `q-*`, `dlss1/`, benchmarks `up-*`, `preset-*`, `dlssE-*`; owner acceptance open |
+
+Motion vectors, AMD FSR 3.1 (bundled) and NVIDIA DLSS (user-installed), see
+docs/vulkan-remaster.md "Temporal upscaling".
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Motion vectors: still camera zero, yaw rotation pattern, view weapon moves with the camera | Passed | `mv4/` visualisation (since removed) |
+| Own resolve reprojects with motion vectors | Implemented; visually checked | `q-native` |
+| FSR 3.1 at half scale keeps detail near native | Passed (stills) | `q-fsr50` against `q-native`, `q-taa50` |
+| DLSS loads the driver NGX, finds the user module, evaluates and shuts down cleanly | Passed | `dlss1/` (Shutdown1 crashed at exit; Shutdown is used), `dlss2/` |
+| DLSS image at half scale | Passed (stills) | `presets.png`, `q-dlss50` |
+| Fallback without the DLSS module or NGX extensions | Implemented; unverified | — |
+| Vulkan validation of the FSR and DLSS passes | Blocked | VK_LAYER_KHRONOS_validation not installed |
+| Upscalers in motion: ghosting on moving monsters, rain | Unverified | stills only |
+
+Benchmarks at 3840×2400 fullscreen, half render scale: own resolve 105/98, FSR 113/85, DLSS
+preset E 114/108 fps on e1m1a/e1m4a (e4m1a DLSS 136). DLSS's transformer presets cost
+5.3 ms (K) and 9.0 ms (M, the runtime default for performance mode) at that output, so
+`r_vkDlssPreset` defaults to E (1.7 ms).
+
+Menu and defaults: Video → Performance (a new page 2 of 8) holds upscaling quality
+(`r_vkUpscaleQuality`, Auto by default: half scale at 4K-class, two thirds at 1440p/1600p,
+native below), upscaler, DLSS model (`values` map menu choices to cvar values), custom render
+scale and the frame rate limit. The DLSS module is looked up in `dlss/` under the game's home
+directory when no path is set. `runtime_ui_probe.py --scenario video` passes through all eight
+pages (`menu-video2/`). Defaults alone at 3840×2400 fullscreen chose DLSS at half scale:
+e1m4a 111, e1m1a 99 fps (`defaults-*`).
+
+Known gaps:
+- Vertex deforms use the current time for the previous position.
+- Portal and mirror surfaces take the camera's motion.
+- Two identical models standing together can swap their matches.
+- The FSR reactive mask covers weather and unmatched models only.
+
+| 381 | `vulkan-renderer-near-rain` | implemented; GPU smokes `rainbox*/`; owner acceptance open |
+
+The owner saw rain missing around the player and appearing on looking up. Rain volumes spread
+their drops (the original 0.035 per square unit) over their whole height, 500–700 units in
+e1m1a's 30 boxes, about 3 drops per cubic metre. Looking down you see only the slab to the
+ground, nearly empty; looking up, the column above stacks into rain. A camera layer
+(`weather.zig nearRain`) adds drops at 1.5e-4 per cubic unit in a window from 192 below to
+320 above the eye, within 384 units, inside the same volume and rain occlusion map, scaled by
+"Rain intensity". `rainbox4/` (inside an e1m1a box at pitch 40, 0, -40) shows rain at all
+three; whole GPU frame 3.2 ms at 1600×1000. Not the upscalers: native built-in, DLSS and FSR
+rendered the same sparse rain (`rain-*`).
+
+Found while testing: `@min` with a comptime-known operand narrows its result type (the drop
+count became 17 bits and `count * 6` overflowed); the count is typed `u32`.
+
+The rain occlusion map and froxel rain took the first 8 weather boxes in registration order
+(`weather.max_view_boxes`); e1m1a has 30. They now take the 8 nearest the eye.
+
+| 382 | `native-server-recycled-brush-slots` | implemented; unit test extended; owner retest open |
+
+The owner saw floating boxes with mirrored "trigger trigger" text (e1m4b garage), flat orange
+strips on the crematorium bridge fences and a translucent double of a C4 pack. The "trigger"
+texture belongs only to `trigger_*` brush entities (e1m4a/e1m4b BSP: every plain `trigger`
+face lies in a trigger model), which the server never sends. The engine's link sets
+`solid = SOLID_BMODEL` whenever the slot's `r.bmodel` is set (sv_world.c), and that flag
+survives the slot's release. Item spawns, including death drops (`items.spawnOne`), reset the
+entity state but not the shared part, so an item that reused a fired trigger's slot went out as
+a brush. The client then read its model index as inline model `*N` and drew that brush (often
+a trigger volume) instead. Item, cinematic performer, looping sound, multiplayer flag and
+model-less train spawns now zero the recycled projection. Item projections clear the brush
+flag on every update; the reuse test covers it. Not reproduced in a fresh session: it needs
+the slot history of real play.
+
+| 383 | `native-weapon-ambient-idles` | implemented; unit test added; e1m1a GPU smoke `idlerun/`; owner acceptance open |
+
+The owner saw first-person weapons repeat one animation endlessly. The view looped the first
+idle (`idle[0]`) from the end of every animation. Gold (`weapon_funcs.cpp` "ambient",
+`client.cpp` ambient block, `frameUpdate`) holds the last frame of a finished animation. While
+the player stands still it draws one ambient uniformly from the populated slots, plays it once
+with its `SND_AMBIENT` sound and rests 2–8 s after it ends; selection starts the first rest.
+Only `WFL_LOOPAMBIENT_ANIM` weapons (venomous, trident) loop `amba`, even in motion; venomous
+hisses one of its three ambient sounds on 45% of still cycles. Discus skips ambients without
+ammunition. Profiles now carry `idle_loop`/`idle_needs_ammo`, and their lists match the Gold
+frame tables: kineticore, slugger, cordite and stavros have only `amba`; novabeam has none.
+The bolter, discus, ripgun, silverclaw and venomous ambient sounds were added. A disruptor held
+still for 45 s on e1m1a played 6 ambients mixing `amba` and `ambb`.

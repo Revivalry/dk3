@@ -6,6 +6,8 @@ const c = @import("c.zig").c;
 const common = @import("common.zig");
 const cvars = @import("cvars.zig");
 const vk = @import("vk.zig");
+const profile = @import("profile.zig");
+var frame_scope: ?u32 = null;
 
 pub var config: c.glconfig_t = std.mem.zeroes(c.glconfig_t);
 pub var window: ?*c.SDL_Window = null;
@@ -41,7 +43,13 @@ var readback: vk.Buffer = .{};
 pub var remaster = false;
 /// Remaster water: a copy of the HDR scene behind liquids and a sampled view of depth.
 pub var refraction: vk.Texture = .{};
-var depth_view: c.VkImageView = null;
+/// Motion vectors at render resolution (motion.zig): the HDR target's second attachment,
+/// cleared to `motion_unwritten` each frame; compute passes read it in the general layout.
+pub var motion: vk.Texture = .{};
+pub var motion_slot: u32 = 0;
+pub var motion_storage: u32 = 0;
+pub const motion_unwritten: f32 = 30000;
+pub var depth_view: c.VkImageView = null;
 pub var depth_slot: u32 = 0;
 var depth_read_only = false;
 /// The main world view's projection range and the liquid the camera is in (composite).
@@ -206,6 +214,7 @@ pub fn init() void {
         common.fail(c.ERR_FATAL, "VKimp_Init() - no Vulkan 1.3 device can present to this window", .{});
     vk.createDevice(candidate, cvars.vkRayTracing.integer != 0) catch common.fail(c.ERR_FATAL, "VKimp_Init() - cannot create the Vulkan device", .{});
     vk.createFrames();
+    profile.create();
     vk.createSamplers(@min(vk.s.properties.limits.maxSamplerAnisotropy, 8));
     vk.createBindless();
     vk.createModules();
@@ -295,7 +304,9 @@ fn createSwapchain() void {
     }
     extent.width = std.math.clamp(extent.width, capabilities.minImageExtent.width, @max(capabilities.maxImageExtent.width, capabilities.minImageExtent.width));
     extent.height = std.math.clamp(extent.height, capabilities.minImageExtent.height, @max(capabilities.maxImageExtent.height, capabilities.minImageExtent.height));
-    var image_count = capabilities.minImageCount + 1;
+    // Mailbox holds one image on screen and one queued: with only three, acquiring the next
+    // blocks until a refresh frees one, and frame pacing snaps to whole refresh intervals.
+    var image_count = @max(capabilities.minImageCount + 1, if (present_mode == c.VK_PRESENT_MODE_MAILBOX_KHR) @as(u32, 4) else 0);
     if (capabilities.maxImageCount > 0) image_count = @min(image_count, capabilities.maxImageCount);
     image_count = @min(image_count, 8);
     const old = swapchain.handle;
@@ -318,12 +329,14 @@ fn createSwapchain() void {
         .oldSwapchain = old,
     });
     var handle: c.VkSwapchainKHR = null;
+    _ = presenterIdle();
     vk.must(vk.d.CreateSwapchainKHR.?(device, &info, null, &handle), "vkCreateSwapchainKHR");
     if (old != null) destroySwapchainViews(old);
     swapchain.handle = handle;
     swapchain.format = chosen.format;
     swapchain.extent = extent;
     swapchain.vsync = vsync;
+    common.developer("vk swapchain: present mode {d} (vsync {}) of {any}, images {d}\n", .{ present_mode, vsync, modes[0..mode_count], image_count });
     var count: u32 = 0;
     _ = vk.d.GetSwapchainImagesKHR.?(device, handle, &count, null);
     count = @min(count, 8);
@@ -343,7 +356,91 @@ fn createSwapchain() void {
     }
 }
 
+/// Presentation on its own thread: with some drivers and compositors vkQueuePresentKHR blocks
+/// until the GPU has finished the frame, which serialised the next frame's game and recording
+/// work behind it. The main thread hands the image over and only waits for the present when it
+/// next needs the queue or the swapchain (`presenterIdle`).
+const Presenter = struct {
+    mutex: std.c.pthread_mutex_t = .{},
+    cond: std.c.pthread_cond_t = .{},
+    thread: ?std.c.pthread_t = null,
+    pending: bool = false,
+    stop: bool = false,
+    image_index: u32 = 0,
+    semaphore: c.VkSemaphore = null,
+    result: c.VkResult = c.VK_SUCCESS,
+};
+var presenter: Presenter = .{};
+
+fn presenterLoop(_: ?*anyopaque) callconv(.c) ?*anyopaque {
+    while (true) {
+        pthreadCheck(std.c.pthread_mutex_lock(&presenter.mutex), "pthread_mutex_lock");
+        while (!presenter.pending and !presenter.stop) pthreadCheck(std.c.pthread_cond_wait(&presenter.cond, &presenter.mutex), "pthread_cond_wait");
+        if (presenter.stop) {
+            pthreadCheck(std.c.pthread_mutex_unlock(&presenter.mutex), "pthread_mutex_unlock");
+            return null;
+        }
+        const image_index = presenter.image_index;
+        const semaphore = presenter.semaphore;
+        pthreadCheck(std.c.pthread_mutex_unlock(&presenter.mutex), "pthread_mutex_unlock");
+        const info = std.mem.zeroInit(c.VkPresentInfoKHR, .{
+            .sType = c.VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &semaphore,
+            .swapchainCount = 1,
+            .pSwapchains = &swapchain.handle,
+            .pImageIndices = &image_index,
+        });
+        vk.lockQueue();
+        const result = vk.d.QueuePresentKHR.?(vk.s.queue, &info);
+        vk.unlockQueue();
+        pthreadCheck(std.c.pthread_mutex_lock(&presenter.mutex), "pthread_mutex_lock");
+        presenter.result = result;
+        presenter.pending = false;
+        pthreadCheck(std.c.pthread_cond_broadcast(&presenter.cond), "pthread_cond_broadcast");
+        pthreadCheck(std.c.pthread_mutex_unlock(&presenter.mutex), "pthread_mutex_unlock");
+    }
+}
+
+/// Waits for the handed-over present; returns its result.
+fn presenterIdle() c.VkResult {
+    pthreadCheck(std.c.pthread_mutex_lock(&presenter.mutex), "pthread_mutex_lock");
+    defer pthreadCheck(std.c.pthread_mutex_unlock(&presenter.mutex), "pthread_mutex_unlock");
+    while (presenter.pending) pthreadCheck(std.c.pthread_cond_wait(&presenter.cond, &presenter.mutex), "pthread_cond_wait");
+    const result = presenter.result;
+    presenter.result = c.VK_SUCCESS;
+    return result;
+}
+
+fn presenterStart(image_index: u32, semaphore: c.VkSemaphore) bool {
+    if (presenter.thread == null) {
+        presenter.stop = false;
+        var thread: std.c.pthread_t = undefined;
+        if (std.c.pthread_create(&thread, null, presenterLoop, null) != .SUCCESS) return false;
+        presenter.thread = thread;
+    }
+    pthreadCheck(std.c.pthread_mutex_lock(&presenter.mutex), "pthread_mutex_lock");
+    presenter.image_index = image_index;
+    presenter.semaphore = semaphore;
+    presenter.pending = true;
+    pthreadCheck(std.c.pthread_cond_broadcast(&presenter.cond), "pthread_cond_broadcast");
+    pthreadCheck(std.c.pthread_mutex_unlock(&presenter.mutex), "pthread_mutex_unlock");
+    return true;
+}
+
+fn presenterStop() void {
+    const thread = presenter.thread orelse return;
+    _ = presenterIdle();
+    pthreadCheck(std.c.pthread_mutex_lock(&presenter.mutex), "pthread_mutex_lock");
+    presenter.stop = true;
+    pthreadCheck(std.c.pthread_cond_broadcast(&presenter.cond), "pthread_cond_broadcast");
+    pthreadCheck(std.c.pthread_mutex_unlock(&presenter.mutex), "pthread_mutex_unlock");
+    _ = std.c.pthread_join(thread, null);
+    presenter.thread = null;
+}
+
 fn destroySwapchainViews(handle: c.VkSwapchainKHR) void {
+    _ = presenterIdle();
     vk.waitIdle();
     for (0..swapchain.count) |index| {
         vk.d.DestroyImageView.?(vk.s.device, swapchain.views[index], null);
@@ -362,6 +459,25 @@ fn recreateSwapchain() void {
     createSwapchain();
 }
 
+/// The remaster's render resolution against the window (r_vkUpscaleQuality). Auto renders about
+/// two to four million pixels, where the ray traced lighting holds 100 fps on current high-end
+/// GPUs, and lets the temporal upscalers (taa.zig) restore the display's detail.
+fn renderScale(width: u32, height: u32) f32 {
+    const scale: f32 = switch (cvars.vkUpscaleQuality.integer) {
+        1 => 1,
+        2 => 0.667,
+        3 => 0.58,
+        4 => 0.5,
+        5 => 0.333,
+        6 => cvars.vkRenderScale.value,
+        else => blk: {
+            const pixels = @as(u64, width) * height;
+            break :blk if (pixels >= 7_000_000) 0.5 else if (pixels >= 3_500_000) 0.667 else 1;
+        },
+    };
+    return std.math.clamp(scale, 0.33, 1);
+}
+
 fn createTargets() void {
     const width: u32 = @intCast(config.vidWidth);
     const height: u32 = @intCast(config.vidHeight);
@@ -370,7 +486,7 @@ fn createTargets() void {
     vk.bindTexture(&scene, .nearest_clamp);
     final = vk.createImage(width, height, 1, vk.scene_format, c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT, c.VK_IMAGE_ASPECT_COLOR_BIT);
     vk.bindTexture(&final, .clamp);
-    render_scale = if (remaster) std.math.clamp(cvars.vkRenderScale.value, 0.33, 1) else 1;
+    render_scale = if (remaster) renderScale(width, height) else 1;
     const hdr_width: u32 = @max(@as(u32, @intFromFloat(@round(@as(f32, @floatFromInt(width)) * render_scale))), 1);
     const hdr_height: u32 = @max(@as(u32, @intFromFloat(@round(@as(f32, @floatFromInt(height)) * render_scale))), 1);
     if (remaster) {
@@ -387,6 +503,9 @@ fn createTargets() void {
         shadow_slot = vk.bindView(shadow_atlas.view, .nearest_clamp, c.VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL);
         refraction = vk.createImage(hdr_width, hdr_height, 1, hdr_format, c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT, c.VK_IMAGE_ASPECT_COLOR_BIT);
         vk.bindTexture(&refraction, .clamp);
+        motion = vk.createImage(hdr_width, hdr_height, 1, vk.motion_format, c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_STORAGE_BIT, c.VK_IMAGE_ASPECT_COLOR_BIT);
+        motion_slot = vk.bindView(motion.view, .nearest_clamp, c.VK_IMAGE_LAYOUT_GENERAL);
+        motion_storage = vk.bindStorage(motion.view);
     }
     depth = vk.createImage(width, height, 1, vk.s.depth_format, c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT, c.VK_IMAGE_ASPECT_DEPTH_BIT);
     if (remaster) {
@@ -406,6 +525,7 @@ fn createTargets() void {
 
 /// Releases everything this module created. `destroy_window` also closes SDL video.
 pub fn shutdown(destroy_window: bool) void {
+    presenterStop();
     if (vk.s.device != null) {
         vk.waitIdle();
         vk.content_arena = false;
@@ -414,11 +534,14 @@ pub fn shutdown(destroy_window: bool) void {
         if (remaster) {
             vk.destroyImage(&hdr);
             vk.destroyImage(&refraction);
+            vk.destroyImage(&motion);
             if (depth_view != null) vk.d.DestroyImageView.?(vk.s.device, depth_view, null);
             depth_view = null;
             @import("post.zig").destroy();
             @import("volume.zig").destroy();
             @import("taa.zig").destroy();
+            @import("fsr.zig").shutdown();
+            @import("dlss.zig").shutdown();
             @import("clusters.zig").destroy();
             @import("ddgi.zig").destroy();
             @import("pathtrace.zig").destroy();
@@ -432,6 +555,7 @@ pub fn shutdown(destroy_window: bool) void {
         vk.destroyPipelines();
         @import("rt.zig").shutdown();
         vk.destroyBindless();
+        profile.destroy();
         vk.destroyFrames();
         vk.freeMemory();
         vk.destroyDevice();
@@ -463,10 +587,13 @@ pub fn beginFrame() bool {
     if (recording) return false;
     cmd = vk.beginDraw();
     recording = true;
+    profile.frameStart(cmd, vk.last_wait_ms);
+    frame_scope = profile.begin(cmd, "frame");
     const color_access = c.VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | c.VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
     vk.barrier(cmd, scene.image, c.VK_IMAGE_ASPECT_COLOR_BIT, c.VK_IMAGE_LAYOUT_UNDEFINED, c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, vk.stage_all, 0, c.VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, color_access);
     if (remaster) {
         vk.barrier(cmd, hdr.image, c.VK_IMAGE_ASPECT_COLOR_BIT, c.VK_IMAGE_LAYOUT_UNDEFINED, c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, vk.stage_all, 0, c.VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, color_access);
+        vk.barrier(cmd, motion.image, c.VK_IMAGE_ASPECT_COLOR_BIT, c.VK_IMAGE_LAYOUT_UNDEFINED, c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, vk.stage_all, 0, c.VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, color_access);
         vk.barrier(cmd, hdr_depth.image, c.VK_IMAGE_ASPECT_DEPTH_BIT, c.VK_IMAGE_LAYOUT_UNDEFINED, c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, vk.stage_all, 0, c.VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | c.VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
         @import("taa.zig").beginFrame();
     }
@@ -571,12 +698,25 @@ fn beginRenderingColor(clear: bool, clear_depth: bool) void {
         .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
         .clearValue = c.VkClearValue{ .depthStencil = .{ .depth = 1, .stencil = 0 } },
     });
+    // The HDR target's motion vectors start as "unwritten" (window.motion_unwritten).
+    const colors = [2]c.VkRenderingAttachmentInfo{ color, std.mem.zeroInit(c.VkRenderingAttachmentInfo, .{
+        .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = motion.view,
+        .imageLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .loadOp = if (clear) @as(c.VkAttachmentLoadOp, c.VK_ATTACHMENT_LOAD_OP_CLEAR) else c.VK_ATTACHMENT_LOAD_OP_LOAD,
+        .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = c.VkClearValue{ .color = .{ .float32 = .{ motion_unwritten, motion_unwritten, 0, 0 } } },
+    }) };
     const info = std.mem.zeroInit(c.VkRenderingInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
         .renderArea = .{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = extent[0], .height = extent[1] } },
         .layerCount = 1,
-        .colorAttachmentCount = @as(u32, if (current_target == .shadow) 0 else 1),
-        .pColorAttachments = &color,
+        .colorAttachmentCount = @as(u32, switch (current_target) {
+            .shadow => 0,
+            .hdr => 2,
+            .classic => 1,
+        }),
+        .pColorAttachments = &colors,
         .pDepthAttachment = &depth_attachment,
     });
     vk.d.CmdBeginRendering.?(cmd, &info);
@@ -588,6 +728,17 @@ fn beginRenderingColor(clear: bool, clear_depth: bool) void {
 pub fn bindCommon() void {
     const sets = [_]c.VkDescriptorSet{ vk.descriptor_set, vk.storage_set };
     vk.d.CmdBindDescriptorSets.?(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, vk.pipeline_layout, 0, 2, &sets, 0, null);
+}
+
+/// The HDR depth buffer for compute reads between passes (scene.zig froxel depth tiles):
+/// `true` makes it shader-readable at `depth_slot`, `false` returns it to depth testing.
+pub fn depthForCompute(read: bool) void {
+    const depth_access = c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+    if (read) {
+        vk.barrier(cmd, hdr_depth.image, c.VK_IMAGE_ASPECT_DEPTH_BIT, c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, c.VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, depth_stages, depth_access, c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, vk.access_shader_read);
+    } else {
+        vk.barrier(cmd, hdr_depth.image, c.VK_IMAGE_ASPECT_DEPTH_BIT, c.VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, vk.access_shader_read, depth_stages, depth_access);
+    }
 }
 
 /// Ends scene rendering for work that cannot run inside it (readback). Resume with `resume`.
@@ -690,39 +841,69 @@ pub fn endFrame() u64 {
     vk.barrier(cmd, scene.image, c.VK_IMAGE_ASPECT_COLOR_BIT, c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, c.VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, c.VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, read_stages, vk.access_shader_read);
     if (remaster) {
         vk.barrier(cmd, hdr.image, c.VK_IMAGE_ASPECT_COLOR_BIT, c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, c.VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, c.VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, read_stages, vk.access_shader_read);
+        vk.barrier(cmd, motion.image, c.VK_IMAGE_ASPECT_COLOR_BIT, c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, c.VK_IMAGE_LAYOUT_GENERAL, c.VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, c.VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, vk.access_shader_read | c.VK_ACCESS_2_SHADER_WRITE_BIT);
         // Temporal resolve (and upscale) to the output resolution, then exposure and bloom.
+        const taa_scope = profile.begin(cmd, "taa");
         resolved_slot = @import("taa.zig").resolve(cmd, hdr_used);
+        profile.end(cmd, taa_scope);
+        const post_scope = profile.begin(cmd, "post");
         @import("post.zig").run(cmd, resolved_slot, final.width, final.height);
+        profile.end(cmd, post_scope);
     }
+    const composite_scope = profile.begin(cmd, "composite");
     compositeFinal();
+    profile.end(cmd, composite_scope);
+    profile.end(cmd, frame_scope);
     last_capture = if (capture_requested) copyFinal() else null;
     capture_requested = false;
+    // The scene goes to the GPU now; only the swapchain composite waits for the previous present.
+    if (swapchain.handle != null) cmd = vk.submitScene();
 
     var present: vk.Present = .{};
     var image_index: u32 = 0;
     var acquired = false;
     if (swapchain.handle != null and (c.SDL_GetWindowFlags(window) & c.SDL_WINDOW_MINIMIZED) == 0) {
         const semaphore = vk.frame().acquired;
+        // The previous present must be done with the swapchain; it ran while this frame was
+        // simulated and recorded.
+        const present_wait = profile.cpuBegin();
+        const previous = presenterIdle();
+        profile.cpuEnd("present wait", present_wait);
+        if (previous == c.VK_ERROR_OUT_OF_DATE_KHR or previous == c.VK_SUBOPTIMAL_KHR) recreateSwapchain() else if (previous != c.VK_SUCCESS) vk.must(previous, "vkQueuePresentKHR");
+        const acquire_start = profile.cpuBegin();
+        vk.lockQueue();
         const result = vk.d.AcquireNextImageKHR.?(vk.s.device, swapchain.handle, std.math.maxInt(u64), semaphore, null, &image_index);
+        vk.unlockQueue();
+        profile.cpuEnd("acquire", acquire_start);
         if (result == c.VK_SUCCESS or result == c.VK_SUBOPTIMAL_KHR) {
             acquired = true;
             present = .{ .wait = semaphore, .signal = swapchain.finished[image_index] };
         } else if (result != c.VK_ERROR_OUT_OF_DATE_KHR) vk.must(result, "vkAcquireNextImageKHR");
     }
-    if (acquired) composite(image_index);
-    recording = false;
-    const value = vk.submitFrame(present);
     if (acquired) {
-        const info = std.mem.zeroInit(c.VkPresentInfoKHR, .{
-            .sType = c.VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-            .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &present.signal,
-            .swapchainCount = 1,
-            .pSwapchains = &swapchain.handle,
-            .pImageIndices = &image_index,
-        });
-        const result = vk.d.QueuePresentKHR.?(vk.s.queue, &info);
-        if (result == c.VK_ERROR_OUT_OF_DATE_KHR or result == c.VK_SUBOPTIMAL_KHR) recreateSwapchain() else vk.must(result, "vkQueuePresentKHR");
+        const swapchain_scope = profile.begin(cmd, "swapchain composite");
+        composite(image_index);
+        profile.end(cmd, swapchain_scope);
+    }
+    recording = false;
+    const submit_start = profile.cpuBegin();
+    const value = vk.submitFrame(present);
+    profile.cpuEnd("submit (+ next slot wait)", submit_start);
+    if (acquired) {
+        if (!presenterStart(image_index, present.signal)) {
+            const info = std.mem.zeroInit(c.VkPresentInfoKHR, .{
+                .sType = c.VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+                .waitSemaphoreCount = 1,
+                .pWaitSemaphores = &present.signal,
+                .swapchainCount = 1,
+                .pSwapchains = &swapchain.handle,
+                .pImageIndices = &image_index,
+            });
+            vk.lockQueue();
+            const result = vk.d.QueuePresentKHR.?(vk.s.queue, &info);
+            vk.unlockQueue();
+            if (result == c.VK_ERROR_OUT_OF_DATE_KHR or result == c.VK_SUBOPTIMAL_KHR) recreateSwapchain() else vk.must(result, "vkQueuePresentKHR");
+        }
     } else if (swapchain.handle != null) {
         var w: c_int = 0;
         var h: c_int = 0;
@@ -860,4 +1041,8 @@ fn followDrawable() void {
 
 pub fn minimize() void {
     if (window) |w| c.SDL_MinimizeWindow(w);
+}
+
+fn pthreadCheck(rc: std.c.E, what: []const u8) void {
+    if (rc != .SUCCESS) common.fail(c.ERR_FATAL, "renderer_vulkan: {s} failed ({s})", .{ what, @tagName(rc) });
 }

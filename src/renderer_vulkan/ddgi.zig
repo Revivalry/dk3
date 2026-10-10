@@ -23,6 +23,10 @@ var sampled: [6]u32 = .{ 0, 0, 0, 0, 0, 0 };
 var created = false;
 var next_probe: u32 = 0;
 var frame: u32 = 0;
+/// Smoothed frame time (ns) and the fractional probe budget carried between frames.
+var frame_ns: f64 = 1e9 / 60.0;
+var last_ns: i128 = 0;
+var budget_carry: f64 = 0;
 
 /// Mirrors ddgi.comp `Params`.
 const Params = extern struct {
@@ -76,7 +80,16 @@ pub fn update(cmd: c.VkCommandBuffer, table: u64, eye: [3]f32, lights: u64, ligh
     if (!created or cvars.vkDdgi.integer == 0 or table == 0) return null;
     var origin: [4]i32 = .{ 0, 0, 0, 1 };
     for (0..3) |axis| origin[axis] = @as(i32, @intFromFloat(@floor(eye[axis] / spacing))) - @divTrunc(dims[axis], 2);
-    const per_frame: u32 = @intCast(std.math.clamp(cvars.vkDdgiProbes.integer, 64, @as(c_int, @intCast(total))));
+    // r_vkDdgiProbes is the budget of a 60 fps frame: faster frames update proportionally fewer
+    // probes, so every probe is refreshed as often per second (and the field responds to light
+    // changes as quickly) at any frame rate, without retracing it more often than at 60 fps.
+    const now = @import("common.zig").nanoseconds();
+    if (last_ns != 0) frame_ns += (std.math.clamp(@as(f64, @floatFromInt(now - last_ns)), 1e6, 1e8) - frame_ns) * 0.1;
+    last_ns = now;
+    const at_60: f64 = @floatFromInt(std.math.clamp(cvars.vkDdgiProbes.integer, 64, @as(c_int, @intCast(total))));
+    budget_carry += at_60 * @min(frame_ns / (1e9 / 60.0), 1.0);
+    const per_frame: u32 = @intFromFloat(std.math.clamp(@floor(budget_carry), 64, @as(f64, @floatFromInt(total))));
+    budget_carry = @max(budget_carry - @as(f64, @floatFromInt(per_frame)), 0);
     frame +%= 1;
     var params: Params = .{
         .origin = origin,

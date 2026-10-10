@@ -63,6 +63,7 @@ pub fn startLoop(world: *data.World, slots: *Slots, projections: []abi.EntityPro
     errdefer world.destroy(entity) catch unreachable;
     const slot = try slots.acquire(entity, null);
     errdefer slots.release(slot, entity) catch unreachable;
+    projections[slot] = std.mem.zeroes(abi.EntityProjection);
     try world.put(entity, data.Binding{ .slot = slot });
     try linkLoop(world, entity, index, path, point, parameters, projections);
     return try world.persistentId(entity);

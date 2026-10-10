@@ -11,12 +11,13 @@ const shader_dir = "src/renderer_vulkan/shaders";
 
 /// Every shader stage compiled into the module, embedded as `<file>.spv`.
 pub const shaders = [_][]const u8{
-    "stage.vert",            "stage.frag",            "composite.vert",  "composite.frag",
-    "post_histogram.comp",   "post_exposure.comp",    "bloom_down.comp", "bloom_up.comp",
-    "froxel_inject.comp",    "froxel_integrate.comp", "taa.comp",        "light_cull.comp",
-    "ddgi.comp",             "rt_skin.comp",          "bake.vert",       "bake.frag",
-    "pt_trace.comp",         "pt_temporal.comp",      "pt_atrous.comp",  "pt_composite.comp",
-    "light_visibility.comp",
+    "stage.vert",          "stage.frag",            "composite.vert",    "composite.frag",
+    "post_histogram.comp", "post_exposure.comp",    "bloom_down.comp",   "bloom_up.comp",
+    "froxel_inject.comp",  "froxel_integrate.comp", "froxel_tiles.comp", "taa.comp",
+    "light_cull.comp",     "ddgi.comp",             "rt_skin.comp",      "bake.vert",
+    "bake.frag",           "pt_trace.comp",         "pt_temporal.comp",  "pt_atrous.comp",
+    "pt_composite.comp",   "light_visibility.comp", "depth.frag",        "lightstyle.comp",
+    "motion_fill.comp",    "fsr_reactive.comp",
 };
 
 /// renderercommon sources used unchanged: decoders, the resident PNG batches, noise and inflate.
@@ -97,7 +98,31 @@ fn vulkanHeaders(b: *std.Build) std.Build.LazyPath {
 pub const Variant = struct { name: []const u8, source: []const u8, define: []const u8 };
 pub const variants = [_]Variant{
     .{ .name = "stage_rt.frag", .source = "stage.frag", .define = "-DRAY_QUERY=1" },
+    .{ .name = "stage_early.frag", .source = "stage.frag", .define = "-DEARLY_Z=1" },
+    .{ .name = "stage_rt_early.frag", .source = "stage.frag", .define = "-DEARLY_Z_RT=1" },
     .{ .name = "froxel_inject_rt.comp", .source = "froxel_inject.comp", .define = "-DRAY_QUERY=1" },
+};
+
+/// FidelityFX FSR 3.1 upscaler passes (engine/fidelityfx, MIT) used by fsr.zig, compiled from
+/// their GLSL entry points with the renderer's permutation: HDR colour, render-resolution
+/// unjittered motion vectors, standard depth, no sharpening (the composite sharpens).
+const fsr_dir = "engine/fidelityfx";
+pub const fsr_passes = [_][]const u8{ "prepare_inputs", "luma_pyramid", "shading_change_pyramid", "shading_change", "prepare_reactivity", "luma_instability", "accumulate" };
+const fsr_defines = [_][]const u8{
+    "-DFFX_GPU=1",
+    "-DFFX_GLSL=1",
+    "-DFFX_HALF=0",
+    "-DFFX_FSR3UPSCALER_OPTION_UPSAMPLE_SAMPLERS_USE_DATA_HALF=0",
+    "-DFFX_FSR3UPSCALER_OPTION_ACCUMULATE_SAMPLERS_USE_DATA_HALF=0",
+    "-DFFX_FSR3UPSCALER_OPTION_REPROJECT_SAMPLERS_USE_DATA_HALF=0",
+    "-DFFX_FSR3UPSCALER_OPTION_POSTPROCESSLOCKSTATUS_SAMPLERS_USE_DATA_HALF=0",
+    "-DFFX_FSR3UPSCALER_OPTION_UPSAMPLE_USE_LANCZOS_TYPE=2",
+    "-DFFX_FSR3UPSCALER_OPTION_REPROJECT_USE_LANCZOS_TYPE=1",
+    "-DFFX_FSR3UPSCALER_OPTION_HDR_COLOR_INPUT=1",
+    "-DFFX_FSR3UPSCALER_OPTION_LOW_RESOLUTION_MOTION_VECTORS=1",
+    "-DFFX_FSR3UPSCALER_OPTION_JITTERED_MOTION_VECTORS=0",
+    "-DFFX_FSR3UPSCALER_OPTION_INVERTED_DEPTH=0",
+    "-DFFX_FSR3UPSCALER_OPTION_APPLY_SHARPENING=0",
 };
 
 fn addShaders(b: *std.Build, module: *std.Build.Module) void {
@@ -114,6 +139,20 @@ fn addShaders(b: *std.Build, module: *std.Build.Module) void {
         const output = compile.addOutputFileArg(b.fmt("{s}.spv", .{name}));
         compile.addFileArg(b.path(b.pathJoin(&.{ shader_dir, name })));
         module.addAnonymousImport(b.fmt("{s}.spv", .{name}), .{ .root_source_file = output });
+    }
+    for (fsr_passes) |pass| {
+        const compile = b.addSystemCommand(&.{ glslc, "-fshader-stage=compute", "--target-env=vulkan1.3", "-O" });
+        compile.addArgs(&fsr_defines);
+        compile.addArg("-I");
+        compile.addDirectoryArg(b.path(fsr_dir ++ "/gpu"));
+        compile.addArg("-I");
+        compile.addDirectoryArg(b.path(fsr_dir ++ "/gpu/fsr3upscaler"));
+        compile.addArgs(&.{ "-MD", "-MF" });
+        _ = compile.addDepFileOutputArg(b.fmt("fsr3_{s}.d", .{pass}));
+        compile.addArg("-o");
+        const output = compile.addOutputFileArg(b.fmt("fsr3_{s}.spv", .{pass}));
+        compile.addFileArg(b.path(b.fmt(fsr_dir ++ "/shaders/fsr3upscaler/ffx_fsr3upscaler_{s}_pass.glsl", .{pass})));
+        module.addAnonymousImport(b.fmt("fsr3_{s}.spv", .{pass}), .{ .root_source_file = output });
     }
     for (variants) |variant| {
         const compile = b.addSystemCommand(&.{ glslc, "--target-env=vulkan1.3", "-O", "-Werror", variant.define, "-I" });

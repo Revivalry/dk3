@@ -22,6 +22,7 @@ pub const spec: profiles.Spec = .{
         .fire = "e3/we_bolterfire.wav",
         .ready = "e3/we_bolterready.wav",
         .away = "e3/we_bolteraway.wav",
+        .idle = .{ "e3/we_bolteramba.wav", null, null },
     },
     .projectile_muzzle = true,
 };

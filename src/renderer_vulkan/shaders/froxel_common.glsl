@@ -23,7 +23,7 @@ layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Pa
     uvec2 rtTable;  // ray traced shafts: hit table (froxel_inject_rt.comp)
     uvec2 rtLights; // map lights
     uvec2 rtCellLists; // map light cells
-    uvec2 rtPad;
+    uvec2 depthTiles; // farthest visible depth per froxel column (froxel_tiles.comp), or 0
     vec4 rtCells;   // cell grid origin, cell size
     uvec4 rtCellDims;
     vec4 rtLightScale; // radiosity scale, overbright, ambient

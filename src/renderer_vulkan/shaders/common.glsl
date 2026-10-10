@@ -36,6 +36,16 @@ layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Re
     vec4 viewPos;      // eye position in world space
     uvec2 lights;
     uvec2 view;        // ViewData of the camera (0 = none)
+    // Motion vectors (FLAG_MOTION, scene.zig drawStage): the previous frame's model -> clip
+    // (unjittered) and pose; motion = (jitter x, y in NDC, view width, height in pixels),
+    // motion2.x = previous MD3 blend.
+    mat4 prevClip;
+    uvec2 prevVertices;
+    uvec2 prevFrameB;
+    uvec2 prevExtra;
+    uvec2 pad;
+    vec4 motion;
+    vec4 motion2;
 };
 
 // Per-camera data shared by every record of a view (volume.zig `ViewData`).
@@ -61,7 +71,7 @@ layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Vi
     mat4 rainToTile;   // world -> rain occlusion map clip (shadows.zig rainCamera)
     vec4 rain;         // atlas uv origin, uv size, enabled
     vec4 rainParams;   // depth per world unit, z top, texel uv, half extent
-    vec4 fogParams;    // depth the sky column samples the froxel volume at, eye liquid
+    vec4 fogParams;    // depth the sky column samples the froxel volume at, eye liquid, frame, w = r_vkRtCost
     uvec4 rtLights;    // ray traced lighting: lights address, cell lists address
     vec4 rtCells;      // cell grid origin, cell size
     uvec4 rtCellDims;  // cells per axis, w = ray traced lighting enabled
@@ -139,7 +149,8 @@ const uint FLAG_PBR_MODEL = 128u;      // light-grid lit model shaded per pixel
 const uint FLAG_LIQUID = 256u;         // water, slime or lava surface (material2.y = kind)
 const uint FLAG_VOLUME = 512u;         // froxel volumetric fog (fogColor.w = blend mode)
 const uint FLAG_RT = 1024u;            // the view's world is ray traced (ViewData.rt)
-const uint FLAG_DYNAMIC = 2048u;       // opaque model stage: HDR alpha 0 marks moving pixels for TAA
+const uint FLAG_MOTION = 4096u;         // write the previous-frame motion vector (location 1)
+const uint FLAG_DYNAMIC = 2048u;       // opaque model stage without a previous frame: HDR alpha 0 (reactive)
 
 // Height of the highest world surface over `xy` in the rain occlusion map (the shadow atlas
 // slot `slot`), or far below everything off the map or without a map.

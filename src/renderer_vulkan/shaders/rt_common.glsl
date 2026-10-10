@@ -13,6 +13,7 @@ layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Rt
 layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer RtWords { uint v[]; };
 layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer RtFloats { float v[]; };
 layout(buffer_reference, std430, buffer_reference_align = 4) buffer RtWordsRw { uint v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer RtVec4 { vec4 v[]; };
 
 struct RtHit {
     bool hit;
@@ -62,38 +63,43 @@ vec3 rtLightPoint(RtFloats lights, uint index, vec2 jitter, vec3 from) {
 // visibility. `n` is the receiver normal; vec3(0) for a point in the air (no receiver cosine).
 // The light style's current value scales it (switched-off lights give 0).
 vec3 rtLightRaw(RtFloats lights, uint index, vec3 pos, vec3 n) {
-    uint o = rtLightOffset(index);
-    vec3 origin = vec3(lights.v[o], lights.v[o + 1u], lights.v[o + 2u]);
-    float intensity = lights.v[o + 3u];
-    vec3 color = vec3(lights.v[o + 4u], lights.v[o + 5u], lights.v[o + 6u]) * lights.v[uint(lights.v[o + 7u])];
-    uint kind = uint(lights.v[o + 11u]);
-    float limit = lights.v[o + 15u];
-    vec3 axis = vec3(lights.v[o + 16u], lights.v[o + 17u], lights.v[o + 18u]);
+    // vec4 loads (RT_LIGHT_STRIDE = 5 vec4 after the 64-vec4 style header): range first, the
+    // rest only for lights that can reach the receiver.
+    RtVec4 L = RtVec4(lights);
+    uint q = RT_LIGHT_HEADER / 4u + index * (RT_LIGHT_STRIDE / 4u);
+    vec4 v0 = L.v[q];                  // origin, intensity
+    vec4 v2 = L.v[q + 2u];             // axis_u, kind
+    uint kind = uint(v2.w);
     bool surface = n != vec3(0.0);
     if (kind == RT_LIGHT_SUN) {
+        vec4 v1 = L.v[q + 1u];
+        vec3 axis = L.v[q + 4u].xyz;
         float cosine = surface ? dot(n, axis) : 1.0;
-        return cosine > 0.0 ? color * intensity * cosine : vec3(0.0);
+        return cosine > 0.0 ? v1.rgb * (v1.w > 0.5 ? lights.v[uint(v1.w)] : lights.v[0]) * v0.w * cosine : vec3(0.0);
     }
-    vec3 d = origin - pos;
-    float dist = length(d);
+    vec3 d = v0.xyz - pos;
+    float dist2 = dot(d, d);
+    vec4 v3 = L.v[q + 3u];             // axis_v, limit
+    float reach = kind == RT_LIGHT_SURFACE ? v3.w : v0.w;
+    if (dist2 >= reach * reach) return vec3(0.0);
+    float dist = sqrt(dist2);
     vec3 l = d / max(dist, 1e-3);
     float cosine = surface ? dot(n, l) : 1.0;
     if (cosine <= 0.0) return vec3(0.0);
+    vec4 v1 = L.v[q + 1u];             // colour, style
+    // Style 0 (most lights) reads the same header word for every light: uniform, cached.
+    vec3 color = v1.rgb * lights.v[uint(v1.w)];
     if (kind == RT_LIGHT_SURFACE) {
-        if (dist >= limit) return vec3(0.0);
         // Emits from its front only; the area term keeps it finite right at the face.
-        float emit = dot(axis, -l);
+        float emit = dot(L.v[q + 4u].xyz, -l);
         if (emit <= 0.0) return vec3(0.0);
-        vec3 u = vec3(lights.v[o + 8u], lights.v[o + 9u], lights.v[o + 10u]);
-        vec3 v = vec3(lights.v[o + 12u], lights.v[o + 13u], lights.v[o + 14u]);
-        float area = 4.0 * length(u) * length(v);
-        float fade = 1.0 - smoothstep(0.75, 1.0, dist / limit);
-        return color * intensity * cosine * emit / (dist * dist + area * 0.3183) * fade;
+        float area = 4.0 * length(v2.xyz) * length(v3.xyz);
+        float fade = 1.0 - smoothstep(0.75, 1.0, dist / reach);
+        return color * v0.w * cosine * emit / (dist2 + area * 0.3183) * fade;
     }
-    if (dist >= intensity) return vec3(0.0);
-    float amount = (intensity - dist) * cosine;
+    float amount = (v0.w - dist) * cosine;
     // "cap": the most this light adds (measured on the shipped lightmaps).
-    if (limit > 0.0) amount = min(amount, limit);
+    if (v3.w > 0.0) amount = min(amount, v3.w);
     return color * amount;
 }
 

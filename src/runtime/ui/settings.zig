@@ -16,10 +16,28 @@ pub const Setting = struct {
     page: u8 = 0,
     /// Shown value = cvar value x `display_scale` (tiny densities read as 0.0-2.0).
     display_scale: f32 = 1,
+    /// Choice settings whose cvar values are not 0, 1, 2...: `values[i]` belongs to `choices[i]`.
+    values: []const f32 = &.{},
     pub fn value(self: Setting) f32 {
+        if (self.values.len > 0) return @floatFromInt(self.valueIndex());
         return std.math.clamp(engine.number(self.name), self.minimum, self.maximum);
     }
+    /// The listed value nearest the cvar's.
+    fn valueIndex(self: Setting) usize {
+        const current = engine.number(self.name);
+        var best: usize = 0;
+        for (self.values, 0..) |candidate, index| {
+            if (@abs(candidate - current) < @abs(self.values[best] - current)) best = index;
+        }
+        return best;
+    }
     pub fn change(self: Setting, direction: i32) void {
+        if (self.values.len > 0) {
+            const count: i32 = @intCast(self.values.len);
+            const next = @mod(@as(i32, @intCast(self.valueIndex())) + direction, count);
+            engine.setNumber(self.name, self.values[@intCast(next)]);
+            return;
+        }
         var next = self.value() + self.step * @as(f32, @floatFromInt(direction));
         if (self.choices.len > 0) {
             if (next > self.maximum + 0.001) next = self.minimum;
@@ -34,7 +52,7 @@ pub const Setting = struct {
 };
 const on_off: []const []const u8 = &.{ "Off", "On" };
 /// Titles of the Video pages; settings marked `restart` need "Apply video changes".
-pub const video_pages = [_][]const u8{ "Display", "Remaster", "Image", "Lighting", "Atmosphere", "Weather", "Surfaces" };
+pub const video_pages = [_][]const u8{ "Display", "Performance", "Remaster", "Image", "Lighting", "Atmosphere", "Weather", "Surfaces" };
 pub const entries = [_]Setting{
     .{ .group = .sound, .label = "Sound volume", .name = "s_volume", .initial = "0.8", .step = 0.05 },
     .{ .group = .sound, .label = "Music volume", .name = "s_musicvolume", .initial = "0.5", .step = 0.05 },
@@ -44,33 +62,38 @@ pub const entries = [_]Setting{
     .{ .group = .video, .label = "Texture detail", .name = "r_picmip", .initial = "0", .maximum = 3, .choices = &.{ "Highest", "High", "Medium", "Low" } },
     .{ .group = .video, .label = "Model shadows", .name = "cg_shadows", .initial = "1", .choices = on_off },
     // Vulkan remaster (renderer_vulkan cvars; defaults match src/renderer_vulkan/cvars.zig).
-    .{ .group = .video, .page = 1, .label = "Remaster (restart)", .name = "r_vkRemaster", .initial = "1", .choices = on_off },
-    .{ .group = .video, .page = 1, .label = "Ray tracing (restart)", .name = "r_vkRayTracing", .initial = "1", .choices = on_off },
-    .{ .group = .video, .page = 1, .label = "Path tracing", .name = "r_vkPathTracing", .initial = "0", .choices = on_off },
-    .{ .group = .video, .page = 1, .label = "Ray traced light level", .name = "r_vkPtLightScale", .initial = "0.5", .minimum = 0.1, .maximum = 2, .step = 0.05 },
-    .{ .group = .video, .page = 1, .label = "Render scale (restart)", .name = "r_vkRenderScale", .initial = "1", .minimum = 0.5, .maximum = 1, .step = 0.05 },
-    .{ .group = .video, .page = 2, .label = "Anti-aliasing (TAA)", .name = "r_vkTAA", .initial = "1", .choices = on_off },
-    .{ .group = .video, .page = 2, .label = "Sharpening", .name = "r_vkSharpen", .initial = "0.3", .maximum = 1, .step = 0.05 },
-    .{ .group = .video, .page = 2, .label = "Bloom", .name = "r_vkBloom", .initial = "0.05", .maximum = 0.2, .step = 0.01 },
-    .{ .group = .video, .page = 2, .label = "Exposure (EV)", .name = "r_vkExposure", .initial = "0", .minimum = -2, .maximum = 2, .step = 0.25 },
-    .{ .group = .video, .page = 2, .label = "Filmic tone mapping", .name = "r_vkTonemap", .initial = "0", .choices = on_off },
-    .{ .group = .video, .page = 3, .label = "Ray traced shadows", .name = "r_vkRtShadows", .initial = "1", .choices = on_off },
-    .{ .group = .video, .page = 3, .label = "Ray traced reflections", .name = "r_vkRtReflections", .initial = "1", .choices = on_off },
-    .{ .group = .video, .page = 3, .label = "Probe lighting (GI)", .name = "r_vkDdgi", .initial = "1", .choices = on_off },
-    .{ .group = .video, .page = 3, .label = "Ray traced lighting", .name = "r_vkLighting", .initial = "1", .choices = on_off },
-    .{ .group = .video, .page = 3, .label = "Ray traced characters", .name = "r_vkRtCharacters", .initial = "1", .choices = on_off },
-    .{ .group = .video, .page = 4, .label = "Volumetric fog", .name = "r_vkVolumetric", .initial = "1", .choices = on_off },
-    .{ .group = .video, .page = 4, .label = "Light shafts (ray traced)", .name = "r_vkVolumetricShadows", .initial = "1", .choices = on_off },
-    .{ .group = .video, .page = 4, .label = "Map fog", .name = "r_vkMapFog", .initial = "0.3", .maximum = 1, .step = 0.05 },
-    .{ .group = .video, .page = 4, .label = "Air density", .name = "r_vkFogDensity", .initial = "0.00005", .maximum = 0.0002, .step = 0.00001, .display_scale = 10000 },
-    .{ .group = .video, .page = 4, .label = "Light scattering", .name = "r_vkFogScatter", .initial = "1", .maximum = 2, .step = 0.1 },
-    .{ .group = .video, .page = 5, .label = "Rain and snow", .name = "r_vkWeather", .initial = "1", .choices = on_off },
-    .{ .group = .video, .page = 5, .label = "Rain intensity", .name = "r_vkWeatherDensity", .initial = "1", .maximum = 2, .step = 0.1 },
-    .{ .group = .video, .page = 5, .label = "Wet surfaces", .name = "r_vkWetness", .initial = "1", .maximum = 1, .step = 0.1 },
-    .{ .group = .video, .page = 5, .label = "Rain splashes", .name = "r_vkWeatherSplashes", .initial = "1", .choices = on_off },
-    .{ .group = .video, .page = 6, .label = "Surface relief", .name = "r_vkBump", .initial = "1", .maximum = 2, .step = 0.1 },
-    .{ .group = .video, .page = 6, .label = "Shininess", .name = "r_vkSpecular", .initial = "1", .maximum = 2, .step = 0.1 },
-    .{ .group = .video, .page = 6, .label = "Saturation", .name = "r_vkSaturation", .initial = "1", .minimum = 0.5, .maximum = 1.5, .step = 0.05 },
+    // Performance: Auto picks the render scale for the display and the best installed upscaler.
+    .{ .group = .video, .page = 1, .label = "Upscaling (restart)", .name = "r_vkUpscaleQuality", .initial = "0", .maximum = 6, .choices = &.{ "Auto", "Native", "Quality", "Balanced", "Performance", "Ultra perf.", "Custom" } },
+    .{ .group = .video, .page = 1, .label = "Upscaler", .name = "r_vkUpscaler", .initial = "-1", .maximum = 3, .choices = &.{ "Auto", "Built-in", "AMD FSR 3.1", "NVIDIA DLSS" }, .values = &.{ -1, 0, 1, 2 } },
+    .{ .group = .video, .page = 1, .label = "DLSS model", .name = "r_vkDlssPreset", .initial = "5", .maximum = 2, .choices = &.{ "Fast (CNN)", "Transformer K", "Transformer M" }, .values = &.{ 5, 11, 13 } },
+    .{ .group = .video, .page = 1, .label = "Custom scale (restart)", .name = "r_vkRenderScale", .initial = "1", .minimum = 0.33, .maximum = 1, .step = 0.05 },
+    .{ .group = .video, .page = 1, .label = "Frame rate limit", .name = "com_maxfps", .initial = "0", .maximum = 6, .choices = &.{ "Off", "60", "85", "120", "144", "165", "240" }, .values = &.{ 0, 60, 85, 120, 144, 165, 240 } },
+    .{ .group = .video, .page = 2, .label = "Remaster (restart)", .name = "r_vkRemaster", .initial = "1", .choices = on_off },
+    .{ .group = .video, .page = 2, .label = "Ray tracing (restart)", .name = "r_vkRayTracing", .initial = "1", .choices = on_off },
+    .{ .group = .video, .page = 2, .label = "Path tracing", .name = "r_vkPathTracing", .initial = "0", .choices = on_off },
+    .{ .group = .video, .page = 2, .label = "Ray traced light level", .name = "r_vkPtLightScale", .initial = "0.5", .minimum = 0.1, .maximum = 2, .step = 0.05 },
+    .{ .group = .video, .page = 3, .label = "Anti-aliasing (TAA)", .name = "r_vkTAA", .initial = "1", .choices = on_off },
+    .{ .group = .video, .page = 3, .label = "Sharpening", .name = "r_vkSharpen", .initial = "0.3", .maximum = 1, .step = 0.05 },
+    .{ .group = .video, .page = 3, .label = "Bloom", .name = "r_vkBloom", .initial = "0.05", .maximum = 0.2, .step = 0.01 },
+    .{ .group = .video, .page = 3, .label = "Exposure (EV)", .name = "r_vkExposure", .initial = "0", .minimum = -2, .maximum = 2, .step = 0.25 },
+    .{ .group = .video, .page = 3, .label = "Filmic tone mapping", .name = "r_vkTonemap", .initial = "0", .choices = on_off },
+    .{ .group = .video, .page = 4, .label = "Ray traced shadows", .name = "r_vkRtShadows", .initial = "1", .choices = on_off },
+    .{ .group = .video, .page = 4, .label = "Ray traced reflections", .name = "r_vkRtReflections", .initial = "1", .choices = on_off },
+    .{ .group = .video, .page = 4, .label = "Probe lighting (GI)", .name = "r_vkDdgi", .initial = "1", .choices = on_off },
+    .{ .group = .video, .page = 4, .label = "Ray traced lighting", .name = "r_vkLighting", .initial = "1", .choices = on_off },
+    .{ .group = .video, .page = 4, .label = "Ray traced characters", .name = "r_vkRtCharacters", .initial = "1", .choices = on_off },
+    .{ .group = .video, .page = 5, .label = "Volumetric fog", .name = "r_vkVolumetric", .initial = "1", .choices = on_off },
+    .{ .group = .video, .page = 5, .label = "Light shafts (ray traced)", .name = "r_vkVolumetricShadows", .initial = "1", .choices = on_off },
+    .{ .group = .video, .page = 5, .label = "Map fog", .name = "r_vkMapFog", .initial = "0.3", .maximum = 1, .step = 0.05 },
+    .{ .group = .video, .page = 5, .label = "Air density", .name = "r_vkFogDensity", .initial = "0.00005", .maximum = 0.0002, .step = 0.00001, .display_scale = 10000 },
+    .{ .group = .video, .page = 5, .label = "Light scattering", .name = "r_vkFogScatter", .initial = "1", .maximum = 2, .step = 0.1 },
+    .{ .group = .video, .page = 6, .label = "Rain and snow", .name = "r_vkWeather", .initial = "1", .choices = on_off },
+    .{ .group = .video, .page = 6, .label = "Rain intensity", .name = "r_vkWeatherDensity", .initial = "1", .maximum = 2, .step = 0.1 },
+    .{ .group = .video, .page = 6, .label = "Wet surfaces", .name = "r_vkWetness", .initial = "1", .maximum = 1, .step = 0.1 },
+    .{ .group = .video, .page = 6, .label = "Rain splashes", .name = "r_vkWeatherSplashes", .initial = "1", .choices = on_off },
+    .{ .group = .video, .page = 7, .label = "Surface relief", .name = "r_vkBump", .initial = "1", .maximum = 2, .step = 0.1 },
+    .{ .group = .video, .page = 7, .label = "Shininess", .name = "r_vkSpecular", .initial = "1", .maximum = 2, .step = 0.1 },
+    .{ .group = .video, .page = 7, .label = "Saturation", .name = "r_vkSaturation", .initial = "1", .minimum = 0.5, .maximum = 1.5, .step = 0.05 },
     .{ .group = .mouse, .label = "Sensitivity", .name = "sensitivity", .initial = "5", .minimum = 0.5, .maximum = 10, .step = 0.25 },
     .{ .group = .mouse, .label = "Mouse smoothing", .name = "m_filter", .initial = "0", .choices = on_off },
     .{ .group = .options, .label = "HUD size", .name = "cg_hudScale", .initial = "1", .minimum = 0.75, .maximum = 1.5, .step = 0.05 },

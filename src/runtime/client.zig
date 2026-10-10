@@ -629,7 +629,7 @@ fn draw(now: i32) !void {
     if (snapshot.ps.dk3CameraActive != 0) @import("client/cinematics.zig").audio(ref.vieworg);
     @import("client/impacts.zig").draw(now, &ref);
     @import("client/fx_particles.zig").draw(now, &ref);
-    if (player.mode == .normal and snapshot.ps.stats[c.STAT_HEALTH] > 0) try weapon_view.draw(loadout.*, character.*, &ref, client_number, now, weapon_end_ms);
+    if (player.mode == .normal and snapshot.ps.stats[c.STAT_HEALTH] > 0) try weapon_view.draw(loadout.*, character.*, &ref, client_number, now, weapon_end_ms, @import("domain/vector.zig").length(snapshot.ps.velocity) < 1);
     try resident_worlds.apertures(&ref);
     if (!try resident_worlds.renderPreview(&ref)) _ = engine.gateway.call(c.CG_R_RENDERSCENE, .{&ref});
     if (snapshot.ps.dk3CameraActive != 0) {

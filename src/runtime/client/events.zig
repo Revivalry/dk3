@@ -15,11 +15,15 @@ pub fn reset() void {
     @memset(&sounds, 0);
     @memset(std.mem.asBytes(&names), 0);
 }
-fn sound(game: *const c.gameState_t, index: i32) !c.sfxHandle_t {
+/// Null while the name is still in flight: a resident world publishes a newly used
+/// sound through its acknowledged config patch, which can trail the snapshot that
+/// already carries the event.
+fn sound(game: *const c.gameState_t, index: i32) !?c.sfxHandle_t {
     if (index <= 0 or index >= c.MAX_SOUNDS) return error.InvalidSoundIndex;
     const i: usize = @intCast(index);
     const name = try engine.config(game, c.CS_SOUNDS + i);
-    if (name.len == 0 or name.len >= c.MAX_QPATH) return error.InvalidSoundPath;
+    if (name.len == 0) return null;
+    if (name.len >= c.MAX_QPATH) return error.InvalidSoundPath;
     if (!std.mem.eql(u8, name, std.mem.sliceTo(&names[i], 0))) {
         sounds[i] = try engine.registerSound(name);
         @memcpy(names[i][0..name.len], name);
@@ -30,7 +34,7 @@ fn sound(game: *const c.gameState_t, index: i32) !c.sfxHandle_t {
 pub fn loop(game: *const c.gameState_t, entity: c.entityState_t, origin: [3]f32) !void {
     if (entity.loopSound == 0) return;
     try configure(entity.number, if (entity.generic1 == @import("../domain/audio.zig").parameter_tag) try parameters(entity) else null);
-    const handle = try sound(game, entity.loopSound);
+    const handle = try sound(game, entity.loopSound) orelse return;
     if (handle != 0) _ = engine.gateway.call(c.CG_S_ADDLOOPINGSOUND, .{ @as(isize, entity.number), &origin, &entity.pos.trDelta, @as(isize, handle) });
 }
 pub fn consume(game: *const c.gameState_t, entities: []const c.entityState_t) !void {
@@ -45,8 +49,9 @@ pub fn consume(game: *const c.gameState_t, entities: []const c.entityState_t) !v
         const serial: u32 = @bitCast(entity.time2);
         const key = @as(u128, @as(u32, @bitCast(entity.dk3World))) << 64 | @as(u128, @as(u32, @bitCast(entity.dk3Identity))) << 32 | serial;
         if (serial == 0 or seen[slot] == key) continue;
+        // Unmarked, the event is retried by later snapshots while it is still live.
+        const handle = try sound(game, entity.eventParm) orelse continue;
         seen[slot] = key;
-        const handle = try sound(game, entity.eventParm);
         if (handle == 0) {
             engine.print("dk3 zig: snapshot sound unavailable\n");
             continue;

@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Recomposites one DKLS lightstyle block (world.zig updateLightstyles) after a style stepped:
+// the weighted sum of the block's per-style radiosity samples, turned into linear radiance as
+// world.zig linearLight does, written as RGBA16F texels for the copy into the page.
+#version 460
+#include "post_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// pc.size: block width, height, style count. pc.buffer0: the block's samples (RGB8 in a word,
+// style-major), pc.buffer1: its texels (two words of packed halves each). pc.params: each
+// style's current value times the block scale; pc.params2.x: the overbright scale.
+void main() {
+    uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= pc.size.x || p.y >= pc.size.y) return;
+    uint pixels = pc.size.x * pc.size.y;
+    uint pixel = p.y * pc.size.x + p.x;
+    Words samples = Words(pc.buffer0);
+    vec3 sum = vec3(0.0);
+    for (uint j = 0u; j < pc.size.z; j++) sum += unpackUnorm4x8(samples.v[j * pixels + pixel]).rgb * pc.params[j];
+    vec3 light = sum * pc.params2.x;
+    float peak = max(light.r, max(light.g, light.b));
+    if (peak > 1.0) light *= (1.0 + 0.25 * (1.0 - exp(-(peak - 1.0)))) / peak;
+    light = pow(max(light, vec3(0.0)), vec3(2.2));
+    Words texels = Words(pc.buffer1);
+    texels.v[pixel * 2u] = packHalf2x16(light.rg);
+    texels.v[pixel * 2u + 1u] = packHalf2x16(vec2(light.b, 1.0));
+}

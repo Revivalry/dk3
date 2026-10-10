@@ -13,7 +13,7 @@ pub const spec: profiles.Spec = .{
         .ready = "ready",
         .away = "away",
         .fire = "shoota",
-        .idle = .{ "amba", "ambb", "ambc" },
+        .idle = .{ "amba", null, null },
         .raise_ms = 350,
         .drop_ms = 350,
     },

@@ -10,6 +10,10 @@
 const uint RT_LIGHT_SHADOWS = 4u;
 const uint RT_LIGHT_SAMPLES = 2u;
 
+// Profiling (r_vkRtCost 16): skip the importance-sampled shadow rays.
+bool rtCostSkipSampled = false;
+// r_vkDebugView 17-19 fill the shadow probe values below; off, they cost nothing.
+bool rtDebugShadows = false;
 // Per-sample randomness for area light shadow rays; callers set it (frame-varying).
 vec2 rtLightJitter = vec2(0.5);
 // r_vkDebugView 17: the strongest light's shadow ray: green clear; blocked red near the
@@ -22,6 +26,48 @@ uint rtProbeIndex[4] = uint[](0u, 0u, 0u, 0u);
 vec4 rtProbeLight[4] = vec4[](vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
 
 // Summed light in the radiosity tool's units (255 = a fully lit lightmap texel).
+// The four strongest lights live in plain variables (fixed-position compare and swap): array
+// slots picked at run time would spill to local memory on the GPU. They keep only weight and
+// index; the few lights that get a ray recompute their light afterwards (registers are what
+// limit how many fragments the GPU keeps in flight).
+struct RtTop { float w; uint index; };
+
+void rtTopSwap(inout RtTop a, inout RtTop b) {
+    if (b.w > a.w) { RtTop t = a; a = b; b = t; }
+}
+
+// Streams one light into the two weighted reservoirs (one uniform number each, rescaled).
+void rtReservoirFeed(RtTop x, inout float weightSum, inout float u0, inout float u1, inout RtTop s0, inout RtTop s1) {
+    weightSum += x.w;
+    float keep = x.w / weightSum;
+    if (u0 < keep) { s0 = x; u0 = u0 / keep; } else u0 = (u0 - keep) / (1.0 - keep);
+    if (u1 < keep) { s1 = x; u1 = u1 / keep; } else u1 = (u1 - keep) / (1.0 - keep);
+}
+
+// Shadow ray to one light; true when it reaches it.
+bool rtLightVisible(uvec2 tableAddress, RtFloats lights, uint index, vec2 jitter, vec3 rayOrigin, out float dist) {
+    vec3 origin = rtLightPoint(lights, index, jitter, rayOrigin);
+    vec3 d = origin - rayOrigin;
+    dist = length(d);
+    // Stop short of the light: map lights often sit just inside their fixture.
+    return !rtOccluded(tableAddress, rayOrigin, d / max(dist, 1e-3), dist - 12.0);
+}
+
+void rtShadowProbe(uvec2 tableAddress, RtFloats lights, uint slot, RtTop top, vec3 raw, vec2 jitter, vec3 rayOrigin, bool reached, float dist) {
+    if (!rtDebugShadows) return;
+    vec3 origin = rtLightPoint(lights, top.index, jitter, rayOrigin);
+    vec3 dir = (origin - rayOrigin) / max(dist, 1e-3);
+    rtProbeIndex[slot] = top.index;
+    rtProbeLight[slot] = vec4(dot(raw, vec3(0.2126, 0.7152, 0.0722)), dist, reached ? 0.0 : 1.0,
+                              rtHitDistance(tableAddress, rayOrigin, dir, max(dist - 12.0, 0.0)) / max(dist - 12.0, 1e-3));
+    if (slot == 0u) {
+        float f = rtProbeLight[0].w;
+        rtShadowDebug = reached ? vec3(0.0, 1.0, 0.0) : f < 0.1 ? vec3(1.0, 0.0, 0.0) : f > 0.9 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 1.0, 0.0);
+        RtHit h = rtTrace(tableAddress, rayOrigin, dir, dist - 12.0, 0.0);
+        rtShadowBlocker = h.hit ? h.albedo + vec3(0.05) : vec3(0.0);
+    }
+}
+
 vec3 rtMapLightRaw(uvec2 tableAddress, uvec2 lightsAddress, uvec2 cellsAddress, vec4 cellOrigin, uvec3 cellDims,
                    vec3 pos, vec3 n, vec3 rayOrigin, uint shadowRays) {
     if (cellsAddress == uvec2(0u) || cellDims.x == 0u) return vec3(0.0);
@@ -30,107 +76,72 @@ vec3 rtMapLightRaw(uvec2 tableAddress, uvec2 lightsAddress, uvec2 cellsAddress, 
     RtWords list = RtWords(cellsAddress);
     RtFloats lights = RtFloats(lightsAddress);
     uint count = min(list.v[base], RT_LIGHTS_PER_CELL);
+    uint visBase = cellDims.x * cellDims.y * cellDims.z * RT_CELL_STRIDE + base + 1u;
     vec3 total = vec3(0.0);
-    float topWeight[RT_LIGHT_SHADOWS];
-    uint topIndex[RT_LIGHT_SHADOWS];
-    vec3 topRaw[RT_LIGHT_SHADOWS];
-    for (uint j = 0u; j < RT_LIGHT_SHADOWS; ++j) {
-        topWeight[j] = 0.0;
-        topIndex[j] = 0u;
-        topRaw[j] = vec3(0.0);
-    }
+    RtTop t0 = RtTop(0.0, 0xffffffffu), t1 = t0, t2 = t0, t3 = t0;
+    // One pass: the sum, the four strongest (exact shadow rays) and two weighted reservoirs over
+    // the other lights only: a light enters the reservoirs when it misses the top four or is
+    // pushed out of them, so each sample estimates the rest without bias and with the variance
+    // of sampling the rest alone (sampling every light and discarding the top ones speckled).
+    float seed = fract(dot(pos, vec3(0.1031, 0.1030, 0.0973)) * 43.7585 + rtLightJitter.x * 7.31 + rtLightJitter.y * 3.17);
+    float u0 = seed, u1 = fract(seed + 0.618034);
+    RtTop s0 = RtTop(0.0, 0xffffffffu), s1 = s0;
+    float weightSum = 0.0;
     for (uint k = 0u; k < count; ++k) {
-        uint index = list.v[base + 1u + k];
         // No ray from this cell reached the light: it cannot light the receiver.
-        uint seen = rtVisibility(list, cellDims, base + 1u + k);
+        uint seen = list.v[visBase + k];
         if (seen == 0u) continue;
+        uint index = list.v[base + 1u + k];
         vec3 raw = rtLightRaw(lights, index, pos, n);
-        if (raw == vec3(0.0)) continue;
+        float weight = dot(raw, vec3(0.2126, 0.7152, 0.0722)) * float(seen) * (1.0 / float(RT_VISIBILITY_RAYS));
+        if (weight <= 0.0) continue;
         total += raw;
-        // Shadow rays go to the lights that bring most light and are most often seen.
-        float weight = dot(raw, vec3(0.2126, 0.7152, 0.0722)) * float(seen) / float(RT_VISIBILITY_RAYS);
-        // Keep the strongest lights, sorted, for the shadow rays.
-        for (uint j = 0u; j < RT_LIGHT_SHADOWS; ++j) {
-            if (weight > topWeight[j]) {
-                for (uint m = RT_LIGHT_SHADOWS - 1u; m > j; --m) {
-                    topWeight[m] = topWeight[m - 1u];
-                    topIndex[m] = topIndex[m - 1u];
-                    topRaw[m] = topRaw[m - 1u];
-                }
-                topWeight[j] = weight;
-                topIndex[j] = index;
-                topRaw[j] = raw;
-                break;
-            }
+        RtTop light = RtTop(weight, index);
+        if (weight > t3.w) {
+            RtTop evicted = t3;
+            t3 = light;
+            rtTopSwap(t2, t3);
+            rtTopSwap(t1, t2);
+            rtTopSwap(t0, t1);
+            light = evicted;
         }
-    }
-    vec3 tested = vec3(0.0), visible = vec3(0.0);
-    for (uint j = 0u; j < min(shadowRays, RT_LIGHT_SHADOWS); ++j) {
-        if (topWeight[j] <= 0.0) break;
-        uint index = topIndex[j];
-        vec3 origin = rtLightPoint(lights, index, fract(rtLightJitter + vec2(0.618, 0.382) * float(j)), rayOrigin);
-        vec3 d = origin - rayOrigin;
-        float dist = length(d);
-        tested += topRaw[j];
-        // Stop short of the light: map lights often sit just inside their fixture.
-        bool blocked = rtOccluded(tableAddress, rayOrigin, d / max(dist, 1e-3), dist - 12.0);
-        if (!blocked) visible += topRaw[j];
-        rtProbeIndex[j] = index;
-        rtProbeLight[j] = vec4(dot(topRaw[j], vec3(0.2126, 0.7152, 0.0722)), dist, blocked ? 1.0 : 0.0,
-                               rtHitDistance(tableAddress, rayOrigin, d / max(dist, 1e-3), max(dist - 12.0, 0.0)) / max(dist - 12.0, 1e-3));
-        if (j == 0u) {
-            float f = rtHitDistance(tableAddress, rayOrigin, d / max(dist, 1e-3), dist - 12.0) / max(dist - 12.0, 1e-3);
-            rtShadowDebug = !blocked ? vec3(0.0, 1.0, 0.0) : f < 0.1 ? vec3(1.0, 0.0, 0.0) : f > 0.9 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 1.0, 0.0);
-            RtHit h = rtTrace(tableAddress, rayOrigin, d / max(dist, 1e-3), dist - 12.0, 0.0);
-            rtShadowBlocker = h.hit ? h.albedo + vec3(0.05) : vec3(0.0);
-        }
+        if (light.w > 0.0) rtReservoirFeed(light, weightSum, u0, u1, s0, s1);
     }
     uint exact = min(shadowRays, RT_LIGHT_SHADOWS);
     if (exact == 0u) return total;
-    // The other lights: RT_LIGHT_SAMPLES shadow rays at lights picked in proportion to their
-    // light here (weighted reservoir sampling), each standing for its share of the rest. Unbiased,
-    // so a strong light behind a wall cannot darken the others; the frame-varying choice is
-    // averaged by temporal anti-aliasing.
-    vec3 rest = total - tested;
-    if (dot(rest, vec3(0.2126, 0.7152, 0.0722)) <= 1e-3) return visible;
-    float seed = fract(dot(pos, vec3(0.1031, 0.1030, 0.0973)) * 43.7585 + rtLightJitter.x * 7.31 + rtLightJitter.y * 3.17);
-    vec3 estimate = vec3(0.0);
-    for (uint sampleIndex = 0u; sampleIndex < RT_LIGHT_SAMPLES; ++sampleIndex) {
-        float weightSum = 0.0;
-        uint chosen = 0u;
-        vec3 chosenRaw = vec3(0.0);
-        float chosenSeen = 1.0;
-        float u = fract(seed + 0.618034 * float(sampleIndex));
-        for (uint k = 0u; k < count; ++k) {
-            uint index = list.v[base + 1u + k];
-            bool top = false;
-            for (uint j = 0u; j < exact; ++j) top = top || (topWeight[j] > 0.0 && topIndex[j] == index);
-            if (top) continue;
-            uint seen = rtVisibility(list, cellDims, base + 1u + k);
-            if (seen == 0u) continue;
-            vec3 raw = rtLightRaw(lights, index, pos, n);
-            float w = dot(raw, vec3(0.2126, 0.7152, 0.0722)) * float(seen) / float(RT_VISIBILITY_RAYS);
-            if (w <= 0.0) continue;
-            weightSum += w;
-            // Keep this light with probability w / weightSum (one uniform number, rescaled).
-            if (u * weightSum < w) {
-                chosen = index;
-                chosenRaw = raw;
-                chosenSeen = float(seen) / float(RT_VISIBILITY_RAYS);
-                u = u * weightSum / w;
-            } else {
-                u = (u * weightSum - w) / (weightSum - w);
-            }
+    // Top lights without an exact ray of their own (fewer shadow rays) join the sampled rest.
+    if (exact < 4u && t3.w > 0.0) rtReservoirFeed(t3, weightSum, u0, u1, s0, s1);
+    if (exact < 3u && t2.w > 0.0) rtReservoirFeed(t2, weightSum, u0, u1, s0, s1);
+    if (exact < 2u && t1.w > 0.0) rtReservoirFeed(t1, weightSum, u0, u1, s0, s1);
+    // Up to six shadow rays in one loop (the exact top lights, then the two reservoir picks):
+    // one copy of the ray query code instead of six keeps the shader small enough to run more
+    // fragments at once. The light is picked by conditional selects, not an indexed array.
+    vec3 tested = vec3(0.0), visible = vec3(0.0), estimate = vec3(0.0);
+    bool sampleRest = true;
+    for (uint j = 0u; j < RT_LIGHT_SHADOWS + RT_LIGHT_SAMPLES; ++j) {
+        bool sampled = j >= RT_LIGHT_SHADOWS;
+        if (j == RT_LIGHT_SHADOWS) {
+            if (rtCostSkipSampled) return visible + (total - tested);
+            // The other lights: the reservoirs' picks, each standing for weightSum / its weight.
+            sampleRest = dot(total - tested, vec3(0.2126, 0.7152, 0.0722)) > 1e-3;
         }
-        if (weightSum <= 0.0) break;
-        vec3 origin = rtLightPoint(lights, chosen, fract(rtLightJitter.yx + vec2(0.382, 0.618) * float(sampleIndex + 1u)), rayOrigin);
-        vec3 d = origin - rayOrigin;
-        float dist = length(d);
-        float chosenWeight = dot(chosenRaw, vec3(0.2126, 0.7152, 0.0722)) * chosenSeen;
-        if (!rtOccluded(tableAddress, rayOrigin, d / max(dist, 1e-3), dist - 12.0))
-            estimate += chosenRaw * (weightSum / chosenWeight);
+        if (sampled ? !sampleRest : j >= exact) continue;
+        RtTop t = j == 0u ? t0 : j == 1u ? t1 : j == 2u ? t2 : j == 3u ? t3 : j == 4u ? s0 : s1;
+        if (t.w <= 0.0) continue;
+        vec2 jitter = sampled ? fract(rtLightJitter.yx + vec2(0.382, 0.618) * float(j - RT_LIGHT_SHADOWS + 1u))
+                              : fract(rtLightJitter + vec2(0.618, 0.382) * float(j));
+        float dist;
+        bool reached = rtLightVisible(tableAddress, lights, t.index, jitter, rayOrigin, dist);
+        vec3 raw = rtLightRaw(lights, t.index, pos, n);
+        if (sampled) {
+            if (reached) estimate += raw * (weightSum / t.w);
+        } else {
+            tested += raw;
+            if (reached) visible += raw;
+            rtShadowProbe(tableAddress, lights, j, t, raw, jitter, rayOrigin, reached, dist);
+        }
     }
-    return visible + estimate / float(RT_LIGHT_SAMPLES);
+    return visible + estimate * (1.0 / float(RT_LIGHT_SAMPLES));
 }
 
 // The same for a point in the air (light shafts): no surface, so no cosine; lights are only

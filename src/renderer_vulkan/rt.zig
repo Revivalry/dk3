@@ -11,6 +11,7 @@ const c = @import("c.zig").c;
 const common = @import("common.zig");
 const cvars = @import("cvars.zig");
 const vk = @import("vk.zig");
+const profile = @import("profile.zig");
 const world = @import("world.zig");
 const shader_mod = @import("shader.zig");
 
@@ -302,8 +303,26 @@ fn surfaceTexture(surface: *const world.Surface) ?*@import("image.zig").Image {
 /// qrad3 CreateDirectLights gives each patch value x reflectivity x area x 0.4 (direct_scale) and
 /// GatherSampleLight lights a point with intensity x cos x cos' / distance^2. Measured against
 /// the shipped lightmaps, this matches the original levels.
+/// Emitting pieces that share a plane, value and colour merge into one area light per
+/// `merge_tile` square of that plane: the original tools subdivided liquids and big panels into
+/// 64-unit faces, and every piece as its own light multiplied the per-pixel light loop. Intensity
+/// adds up, the centre is area-weighted and the rectangle bounds the pieces, so a receiver near
+/// the tile still sees the right amount; farther off the merged light is the same.
+const merge_tile: f32 = 256;
+
+const MergeKey = struct { plane: [4]i32, tile: [2]i32, value: u32, color: [3]u16 };
+const MergeGroup = struct { intensity: f32 = 0, area: f32 = 0, centre: [3]f32 = .{ 0, 0, 0 }, color: [3]f32, normal: [3]f32, lo: [2]f32 = .{ 1e30, 1e30 }, hi: [2]f32 = .{ -1e30, -1e30 } };
+
+fn planeBasis(n: [3]f32) [2][3]f32 {
+    const S = @import("scene.zig");
+    const u = S.normalize(S.cross(n, if (@abs(n[2]) < 0.9) [3]f32{ 0, 0, 1 } else [3]f32{ 1, 0, 0 }));
+    return .{ u, S.cross(n, u) };
+}
+
 fn originalSurfaceLights(w: *const world.World, data: *const SurfaceLightData, out: *std.ArrayList(MapLight)) void {
     const S = @import("scene.zig");
+    var groups: std.AutoArrayHashMapUnmanaged(MergeKey, MergeGroup) = .empty;
+    defer groups.deinit(common.gpa);
     for (data.entries.items) |entry| {
         const surface = &w.surfaces[entry.surface];
         const shape = faceShape(w, surface) orelse continue;
@@ -328,17 +347,48 @@ fn originalSurfaceLights(w: *const world.World, data: *const SurfaceLightData, o
         // the radiosity's 196 maximum) tinted by the colour twice (emitted, then reflected).
         const own = @min(entry.value * strength, 196);
         for (0..3) |k| surface.shader.rt_self_light[k] = @max(surface.shader.rt_self_light[k], own * color[k] * color[k]);
+        const n = shape.normal;
+        const basis = planeBasis(n);
+        const pu = S.dot(shape.centre, basis[0]);
+        const pv = S.dot(shape.centre, basis[1]);
+        const key: MergeKey = .{
+            .plane = .{ @intFromFloat(@round(n[0] * 1000)), @intFromFloat(@round(n[1] * 1000)), @intFromFloat(@round(n[2] * 1000)), @intFromFloat(@round(S.dot(shape.centre, n))) },
+            .tile = .{ @intFromFloat(@floor(pu / merge_tile)), @intFromFloat(@floor(pv / merge_tile)) },
+            .value = @intFromFloat(@round(entry.value * strength)),
+            .color = .{ @intFromFloat(@round(color[0] * 1000)), @intFromFloat(@round(color[1] * 1000)), @intFromFloat(@round(color[2] * 1000)) },
+        };
+        const slot = groups.getOrPut(common.gpa, key) catch return;
+        if (!slot.found_existing) slot.value_ptr.* = .{ .color = color, .normal = n };
+        const g = slot.value_ptr;
+        g.intensity += intensity;
+        g.area += shape.area;
+        for (0..3) |k| g.centre[k] += shape.centre[k] * shape.area;
+        // The piece's rectangle corners in the plane basis.
+        const du = [2]f32{ S.dot(shape.axis_u, basis[0]), S.dot(shape.axis_u, basis[1]) };
+        const dv = [2]f32{ S.dot(shape.axis_v, basis[0]), S.dot(shape.axis_v, basis[1]) };
+        const half = [2]f32{ @abs(du[0]) + @abs(dv[0]), @abs(du[1]) + @abs(dv[1]) };
+        g.lo = .{ @min(g.lo[0], pu - half[0]), @min(g.lo[1], pv - half[1]) };
+        g.hi = .{ @max(g.hi[0], pu + half[0]), @max(g.hi[1], pv + half[1]) };
+    }
+    for (groups.values()) |g| {
+        var centre = g.centre;
+        for (&centre) |*value| value.* /= g.area;
+        const basis = planeBasis(g.normal);
+        // The rectangle's middle on the plane (the area-weighted centre keeps its offset along n).
+        const mid_u = (g.lo[0] + g.hi[0]) * 0.5 - S.dot(centre, basis[0]);
+        const mid_v = (g.lo[1] + g.hi[1]) * 0.5 - S.dot(centre, basis[1]);
+        const rect_centre = S.add(centre, S.add(S.scale(basis[0], mid_u), S.scale(basis[1], mid_v)));
         // Where it falls below one radiosity unit (a 255th of full brightness).
-        const reach = std.math.clamp(@sqrt(intensity), 64, 4096);
+        const reach = std.math.clamp(@sqrt(g.intensity), 64, 4096);
         out.append(common.gpa, .{
-            .origin = S.add(shape.centre, S.scale(shape.normal, 1.0)),
-            .intensity = intensity,
-            .color = color,
+            .origin = S.add(rect_centre, S.scale(g.normal, 1.0)),
+            .intensity = g.intensity,
+            .color = g.color,
             .kind = kindValue(.surface),
-            .axis_u = shape.axis_u,
-            .axis_v = shape.axis_v,
+            .axis_u = S.scale(basis[0], @max((g.hi[0] - g.lo[0]) * 0.5, 0.5)),
+            .axis_v = S.scale(basis[1], @max((g.hi[1] - g.lo[1]) * 0.5, 0.5)),
             .limit = reach,
-            .direction = shape.normal,
+            .direction = g.normal,
         }) catch return;
     }
 }
@@ -666,7 +716,7 @@ pub fn rawToLinear(raw: [3]f32, scale: f32, overbright: f32) [3]f32 {
 var tlas: c.VkAccelerationStructureKHR = null;
 var tlas_buffer: vk.Buffer = .{};
 var tlas_scratch: vk.Buffer = .{};
-var instance_buffers: [vk.frames_in_flight]vk.Buffer = .{ .{}, .{} };
+var instance_buffers: [vk.frames_in_flight]vk.Buffer = [_]vk.Buffer{.{}} ** vk.frames_in_flight;
 var scratch: vk.Buffer = .{};
 var scratch_size: u64 = 0;
 var ready = false;
@@ -974,11 +1024,18 @@ const mask_characters: u32 = 0x02;
 pub const CharacterMesh = struct { mesh: @import("scene.zig").Mesh, model: [3][4]f32 };
 
 const max_character_corners: u32 = 3 * 300_000;
-var character_vertices: [vk.frames_in_flight]vk.Buffer = .{ .{}, .{} };
-var character_blas: [vk.frames_in_flight]c.VkAccelerationStructureKHR = .{ null, null };
-var character_blas_buffer: [vk.frames_in_flight]vk.Buffer = .{ .{}, .{} };
+var character_vertices: [vk.frames_in_flight]vk.Buffer = [_]vk.Buffer{.{}} ** vk.frames_in_flight;
+var character_blas: [vk.frames_in_flight]c.VkAccelerationStructureKHR = [_]c.VkAccelerationStructureKHR{null} ** vk.frames_in_flight;
+var character_blas_buffer: [vk.frames_in_flight]vk.Buffer = [_]vk.Buffer{.{}} ** vk.frames_in_flight;
 var character_scratch: vk.Buffer = .{};
 var character_ready = false;
+/// Refit instead of rebuild: a slot's structure is updated in place while it holds the same
+/// meshes in the same order (only the skinned positions moved), and rebuilt when the list
+/// changes or after `character_refits` updates, before refitted boxes grow loose.
+var character_signature: [vk.frames_in_flight]u64 = [_]u64{0} ** vk.frames_in_flight;
+var character_age: [vk.frames_in_flight]u32 = [_]u32{0} ** vk.frames_in_flight;
+const character_refits = 30;
+const character_build_flags: c.VkBuildAccelerationStructureFlagsKHR = c.VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | c.VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
 
 fn createCharacterResources() bool {
     if (character_ready) return true;
@@ -1001,7 +1058,7 @@ fn createCharacterResources() bool {
     const build = std.mem.zeroInit(c.VkAccelerationStructureBuildGeometryInfoKHR, .{
         .sType = c.VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
         .type = c.VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
-        .flags = c.VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR,
+        .flags = character_build_flags,
         .mode = c.VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
         .geometryCount = 1,
         .pGeometries = &geometry,
@@ -1013,7 +1070,8 @@ fn createCharacterResources() bool {
         character_vertices[slot] = vk.createBuffer(@as(u64, max_character_corners) * 12, @as(c.VkBufferUsageFlags, c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) | vk.rtInputUsage(), vk.device_flags);
         character_blas[slot] = createStructure(c.VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, sizes.accelerationStructureSize, &character_blas_buffer[slot]);
     }
-    character_scratch = vk.createBuffer(sizes.buildScratchSize + vk.as_scratch_alignment, c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, vk.device_flags);
+    character_signature = [_]u64{0} ** vk.frames_in_flight;
+    character_scratch = vk.createBuffer(@max(sizes.buildScratchSize, sizes.updateScratchSize) + vk.as_scratch_alignment, c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, vk.device_flags);
     character_ready = true;
     return true;
 }
@@ -1025,6 +1083,7 @@ fn prepareCharacters(cmd: c.VkCommandBuffer, meshes: []const CharacterMesh) ?Ins
     const slot = vk.frame_index;
     const out = &character_vertices[slot];
     var corners: u32 = 0;
+    var signature: u64 = 0xcbf29ce484222325;
     const SkinParams = extern struct {
         vertices: u64,
         indices: u64,
@@ -1034,6 +1093,7 @@ fn prepareCharacters(cmd: c.VkCommandBuffer, meshes: []const CharacterMesh) ?Ins
         misc: [4]f32,
         model: [3][4]f32,
     };
+    const skin_scope = profile.begin(cmd, "rt skin");
     // Earlier ray queries may still read last use of this slot's buffer and structure.
     vk.memoryBarrier(cmd, c.VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | c.VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, c.VK_ACCESS_2_SHADER_READ_BIT | c.VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR, c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, c.VK_ACCESS_2_SHADER_WRITE_BIT);
     for (meshes) |entry| {
@@ -1056,9 +1116,16 @@ fn prepareCharacters(cmd: c.VkCommandBuffer, meshes: []const CharacterMesh) ?Ins
             .size = .{ mesh.count, 0, 0, 0 },
         }, mesh.count, 1, 1, .{ 64, 1, 1 });
         corners += mesh.count;
+        // The triangle layout, not the pose: animated models change their frame's vertex
+        // address every few frames, and a refit handles the new positions.
+        for ([_]u64{ mesh.indices, mesh.count, mesh.kind }) |word| signature = (signature ^ word) *% 0x100000001b3;
     }
     if (corners < 3) return null;
+    const refit = signature == character_signature[slot] and character_age[slot] < character_refits;
+    character_age[slot] = if (refit) character_age[slot] + 1 else 0;
+    character_signature[slot] = signature;
     vk.memoryBarrier(cmd, c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, c.VK_ACCESS_2_SHADER_WRITE_BIT, c.VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, c.VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR | c.VK_ACCESS_2_SHADER_READ_BIT);
+    profile.end(cmd, skin_scope);
     const triangles = std.mem.zeroInit(c.VkAccelerationStructureGeometryTrianglesDataKHR, .{
         .sType = c.VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
         .vertexFormat = c.VK_FORMAT_R32G32B32_SFLOAT,
@@ -1076,8 +1143,9 @@ fn prepareCharacters(cmd: c.VkCommandBuffer, meshes: []const CharacterMesh) ?Ins
     const build = std.mem.zeroInit(c.VkAccelerationStructureBuildGeometryInfoKHR, .{
         .sType = c.VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
         .type = c.VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
-        .flags = c.VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR,
-        .mode = c.VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+        .flags = character_build_flags,
+        .mode = @as(c.VkBuildAccelerationStructureModeKHR, if (refit) c.VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR else c.VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR),
+        .srcAccelerationStructure = if (refit) character_blas[slot] else null,
         .dstAccelerationStructure = character_blas[slot],
         .geometryCount = 1,
         .pGeometries = &geometry,
@@ -1204,11 +1272,15 @@ pub fn prepare(cmd: c.VkCommandBuffer, owner: *world.World, entities: []const @i
             count += 1;
         }
     }
+    const characters_scope = profile.begin(cmd, "rt characters (skin, blas)");
     if (count < max_instances) if (prepareCharacters(cmd, characters)) |instance| {
         instances[count] = instance;
         count += 1;
     };
+    profile.end(cmd, characters_scope);
+    const tlas_scope = profile.begin(cmd, "rt tlas");
     buildTlas(cmd, instances[0..count]);
+    profile.end(cmd, tlas_scope);
     const table: Table = .{
         .vertices = owner.vertex_buffer.address,
         .indices = state.indices.address,
@@ -1217,7 +1289,9 @@ pub fn prepare(cmd: c.VkCommandBuffer, owner: *world.World, entities: []const @i
     };
     const space = vk.frame().stream.alloc(@sizeOf(Table), 16) orelse return null;
     @memcpy(space.bytes[0..@sizeOf(Table)], std.mem.asBytes(&table));
+    const visibility_scope = profile.begin(cmd, "rt light visibility");
     if (cvars.vkLighting.integer != 0 and cvars.vkLightVisibility.integer != 0) refreshVisibility(cmd, owner, space.address);
+    profile.end(cmd, visibility_scope);
     if (cvars.vkDebugView.integer == 19) reportProbe(cmd, owner);
     return space.address;
 }

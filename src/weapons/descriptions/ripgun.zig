@@ -24,6 +24,7 @@ pub const spec: profiles.Spec = .{
         .fire = "e4/we_sluggershoota.wav",
         .ready = "e4/we_sluggerready.wav",
         .away = "e4/we_sluggeraway.wav",
+        .idle = .{ "e4/we_sluggeramba.wav", null, null },
     },
 };
 pub const identity = .{ .classname = "weapon_ripgun", .label = "Ripgun", .episode = 4, .interval = 100 };

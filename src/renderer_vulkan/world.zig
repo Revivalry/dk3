@@ -81,6 +81,12 @@ const LightBlock = struct {
     scale: f32,
     previous: [4]f32,
     samples: []u8,
+    /// Word index of the block's samples in `World.style_samples` (lightstyle.comp).
+    sample_word: u32 = 0,
+    /// Byte offset of the block's RGBA16F texels in `World.style_texels`.
+    texel_offset: u64 = 0,
+    /// Stepped this frame and awaiting its copy (recompositeStyles).
+    dirty: bool = false,
 };
 
 const Status = enum { free, reading, ready, failed };
@@ -126,6 +132,9 @@ pub const World = struct {
     grid_origin: Vec3 = .{ 0, 0, 0 },
     grid_bounds: [3]i32 = .{ 0, 0, 0 },
     light_blocks: []LightBlock = &.{},
+    /// The lightstyle blocks' samples and their recomposited texels on the GPU (remaster).
+    style_samples: vk.Buffer = .{},
+    style_texels: vk.Buffer = .{},
     brushes: []c.dbrush_t = &.{},
     brush_sides: []c.dbrushside_t = &.{},
     leaf_brushes: []i32 = &.{},
@@ -307,6 +316,8 @@ fn freeWorld(w: *World) void {
     @import("bake.zig").destroyWorld(&w.bake);
     @import("rt.zig").destroyWorld(&w.rt);
     vk.destroyBuffer(&w.vertex_buffer);
+    vk.destroyBuffer(&w.style_samples);
+    vk.destroyBuffer(&w.style_texels);
     a.free(w.shaders_lump);
     a.free(w.surfaces_lump);
     a.free(w.draw_verts);
@@ -435,16 +446,21 @@ pub fn half(value: f32) u16 {
 /// were lit for that display. The remaster keeps a quarter stop of headroom above white for
 /// exposure and bloom instead of the full shifted range, which washed every lit surface out.
 fn linearLight(rgb: [3]f32) [3]f32 {
-    const scale = std.math.pow(f32, 2, @floatFromInt(std.math.clamp(cvars.mapOverBrightBits.integer, 0, 8)));
     var out = rgb;
-    for (&out) |*value| value.* *= scale;
+    for (&out) |*value| value.* *= overbrightScale();
     const peak = @max(out[0], @max(out[1], out[2]));
     if (peak > 1) {
         const limit = 1 + 0.25 * (1 - @exp(-(peak - 1)));
         for (&out) |*value| value.* *= limit / peak;
     }
-    for (&out) |*value| value.* = std.math.pow(f32, value.*, 2.2);
+    // The builtins lower to the C library's exp2f/log2f, far cheaper than std.math.pow.
+    for (&out) |*value| value.* = if (value.* > 0) @exp2(2.2 * @log2(value.*)) else 0;
     return out;
+}
+
+/// lightstyle.comp mirrors linearLight on the GPU and takes this scale as a parameter.
+fn overbrightScale() f32 {
+    return @floatFromInt(@as(u32, 1) << @intCast(std.math.clamp(cvars.mapOverBrightBits.integer, 0, 8)));
 }
 
 fn colorShift(input: [3]u8) [3]u8 {
@@ -947,36 +963,100 @@ fn loadLightstyles(w: *World, file: []const u8) void {
     }
     if (p != end) common.fail(c.ERR_DROP, "dk3: trailing lightstyle data", .{});
     w.light_blocks = blocks;
+    if (blocks.len == 0) return;
+    // The remaster recomposites on the GPU (updateLightstyles): one word per sample.
+    var words: usize = 0;
+    var texel_bytes: u64 = 0;
+    for (blocks) |*b| {
+        b.sample_word = @intCast(words);
+        b.texel_offset = texel_bytes;
+        words += b.width * b.height * b.count;
+        texel_bytes += @as(u64, b.width * b.height) * 8;
+    }
+    const packed_samples = common.gpa.alloc(u32, words) catch @panic("OOM");
+    defer common.gpa.free(packed_samples);
+    for (blocks) |b| {
+        for (0..b.width * b.height * b.count) |k| {
+            const rgb = b.samples[k * 3 ..][0..3];
+            packed_samples[b.sample_word + k] = @as(u32, rgb[0]) | @as(u32, rgb[1]) << 8 | @as(u32, rgb[2]) << 16;
+        }
+    }
+    w.style_samples = vk.staticBuffer(std.mem.sliceAsBytes(packed_samples), 0);
+    w.style_texels = vk.createBuffer(texel_bytes, c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT, vk.device_flags);
+}
+
+/// Takes the block's current style values; true when any of them changed.
+fn styleStepped(b: *LightBlock, fd: *const c.refdef_t) bool {
+    var changed = false;
+    for (0..b.count) |j| {
+        const value = std.math.clamp(fd.dk3Lightstyles[b.styles[j]], 0, 4);
+        if (b.previous[j] != value) changed = true;
+        b.previous[j] = value;
+    }
+    return changed;
+}
+
+/// Remaster lightstyles: flickering and pulsing styles step at 10 Hz and a step can touch
+/// hundreds of thousands of texels, too many to recomposite on the CPU inside a frame.
+/// lightstyle.comp writes the changed blocks' texels on the GPU, then each touched page takes
+/// its blocks in one copy, all in the frame's upload commands ahead of its draws.
+fn recompositeStyles(w: *World, fd: *const c.refdef_t) void {
+    const max_regions = 64;
+    var changed_any = false;
+    for (w.light_blocks) |*b| {
+        b.dirty = styleStepped(b, fd) and b.page < w.lightmaps.len;
+        changed_any = changed_any or b.dirty;
+    }
+    if (!changed_any) return;
+    const cmd = vk.uploadCommands();
+    // The previous frame's copies may still read the texel buffer.
+    vk.memoryBarrier(cmd, vk.stage_copy, vk.access_transfer_read, c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, c.VK_ACCESS_2_SHADER_WRITE_BIT);
+    const overbright = overbrightScale();
+    for (w.light_blocks) |*b| {
+        if (!b.dirty) continue;
+        var weights: [4]f32 = .{ 0, 0, 0, 0 };
+        for (0..b.count) |j| weights[j] = b.previous[j] * b.scale;
+        vk.dispatch(cmd, "lightstyle.comp", @import("post.zig").Push{
+            .size = .{ b.width, b.height, b.count, 0 },
+            .buffer0 = w.style_samples.address + @as(u64, b.sample_word) * 4,
+            .buffer1 = w.style_texels.address + b.texel_offset,
+            .params = weights,
+            .params2 = .{ overbright, 0, 0, 0 },
+        }, b.width, b.height, 1, .{ 8, 8, 1 });
+    }
+    vk.memoryBarrier(cmd, c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, c.VK_ACCESS_2_SHADER_WRITE_BIT, vk.stage_copy, vk.access_transfer_read);
+    // Page by page: one layout round trip and one copy for all of a page's changed blocks.
+    for (w.lightmaps, 0..) |page_image, page| {
+        var regions: [max_regions]c.VkBufferImageCopy = undefined;
+        var count: u32 = 0;
+        for (w.light_blocks) |*b| {
+            if (!b.dirty or b.page != page) continue;
+            regions[count] = std.mem.zeroInit(c.VkBufferImageCopy, .{
+                .bufferOffset = b.texel_offset,
+                .imageSubresource = .{ .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1 },
+                .imageOffset = .{ .x = @as(i32, @intCast(b.x)), .y = @as(i32, @intCast(b.y)), .z = 0 },
+                .imageExtent = .{ .width = b.width, .height = b.height, .depth = 1 },
+            });
+            count += 1;
+            b.dirty = false;
+            if (count == max_regions) {
+                vk.copyRegions(cmd, w.style_texels.buffer, &page_image.texture, regions[0..count]);
+                count = 0;
+            }
+        }
+        if (count > 0) vk.copyRegions(cmd, w.style_texels.buffer, &page_image.texture, regions[0..count]);
+    }
 }
 
 /// `R_UpdateDkLightstyles`: recomposes changed blocks into the selected world's lightmaps.
 pub fn updateLightstyles(fd: *const c.refdef_t) void {
     if (fd.rdflags & c.RDF_NOWORLDMODEL != 0) return;
     const w = selected orelse return;
+    if (@import("window.zig").remaster and w.style_texels.buffer != null) return recompositeStyles(w, fd);
     var rgba: [128 * 128 * 4]u8 = undefined;
     for (w.light_blocks) |*b| {
-        var changed = false;
-        for (0..b.count) |j| if (b.previous[j] != std.math.clamp(fd.dk3Lightstyles[b.styles[j]], 0, 4)) {
-            changed = true;
-        };
-        if (!changed) continue;
-        for (0..b.count) |j| b.previous[j] = std.math.clamp(fd.dk3Lightstyles[b.styles[j]], 0, 4);
+        if (!styleStepped(b, fd)) continue;
         const pixels = b.width * b.height;
-        if (@import("window.zig").remaster) {
-            var texels: [128 * 128 * 4]u16 = undefined;
-            for (0..pixels) |pixel| {
-                var sum: [3]f32 = .{ 0, 0, 0 };
-                for (0..3) |channel| {
-                    for (0..b.count) |j| sum[channel] += @as(f32, @floatFromInt(b.samples[(j * pixels + pixel) * 3 + channel])) * b.previous[j] * b.scale;
-                    sum[channel] /= 255.0;
-                }
-                const linear = linearLight(sum);
-                for (0..3) |channel| texels[pixel * 4 + channel] = half(linear[channel]);
-                texels[pixel * 4 + 3] = half(1);
-            }
-            if (b.page < w.lightmaps.len) vk.uploadRegion(&w.lightmaps[b.page].texture, b.x, b.y, b.width, b.height, std.mem.sliceAsBytes(texels[0 .. pixels * 4]));
-            continue;
-        }
         for (0..pixels) |pixel| {
             var rgb: [3]f32 = .{ 0, 0, 0 };
             var peak: f32 = 255;

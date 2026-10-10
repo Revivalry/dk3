@@ -66,7 +66,7 @@ pub const View = struct {
     pub fn fire(self: *View, weapon: u5, serial: u32, now: i64) void {
         self.state.noteFire(weapon, serial, now);
     }
-    pub fn draw(self: *View, loadout: data.Weapons, character: data.Character, ref: *const c.refdef_t, client: i32, now: i64, weapon_end_ms: ?i64) !void {
+    pub fn draw(self: *View, loadout: data.Weapons, character: data.Character, ref: *const c.refdef_t, client: i32, now: i64, weapon_end_ms: ?i64, still: bool) !void {
         if (loadout.weapon <= 0 or loadout.weapon >= self.media.len or engine.integer("cg_drawGun") == 0) return;
         const id: u5 = @intCast(loadout.weapon);
         const entry = catalog.find(id) orelse return;
@@ -82,7 +82,7 @@ pub const View = struct {
             if (spec.audio.hum) |name| media.hum = try sound(name);
         }
         const attack_animation = catalog.attackAnimation(id, loadout.dk3WeaponSequence, loadout.dk3SwordExperience);
-        if (self.state.update(spec, .{ .weapon = id, .state = loadout.weaponstate, .sequence = loadout.dk3WeaponSequence, .reloading = catalog.isReloading(&loadout), .attack_factor = catalog.transitions.attackFactor(character.attribute(.attack, now)), .now_ms = now, .fire_pose = attack_animation.pose, .fire_rate = attack_animation.rate, .finish_ms = weapon_end_ms })) |cue| {
+        if (self.state.update(spec, .{ .weapon = id, .state = loadout.weaponstate, .sequence = loadout.dk3WeaponSequence, .reloading = catalog.isReloading(&loadout), .attack_factor = catalog.transitions.attackFactor(character.attribute(.attack, now)), .now_ms = now, .fire_pose = attack_animation.pose, .fire_rate = attack_animation.rate, .finish_ms = weapon_end_ms, .still = still, .has_ammo = loadout.ammo[id] > 0 })) |cue| {
             self.sequence = try media.view.?.sequence(cue.pose);
             self.sequence.fps = cue.rate;
             self.started_ms = if (cue.phase == .fire) (if (self.state.fire_weapon == id and !spec.animation.fire_loop) self.state.fire_ms else now) + spec.animation.fire_start_ms else now;
@@ -97,6 +97,7 @@ pub const View = struct {
             if (cue.phase == .fire and spec.animation.finish_ms > 0) self.finish_ms = self.started_ms + spec.animation.finish_ms;
             self.looping = cue.loop;
             self.state.ended_ms = self.started_ms + self.sequence.duration();
+            self.state.started(cue, self.sequence.duration());
             if (engine.integer("developer") != 0) {
                 var message: [192]u8 = undefined;
                 engine.print(try std.fmt.bufPrintZ(&message, "dk3 zig view: weapon={d} phase={s} pose={s} frames={d}..{d} rate={d}\n", .{ id, @tagName(cue.phase), cue.pose, self.sequence.first, self.sequence.last, cue.rate }));

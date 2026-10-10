@@ -7,8 +7,11 @@
 const std = @import("std");
 const c = @import("c.zig").c;
 const cvars = @import("cvars.zig");
+const common = @import("common.zig");
 const vk = @import("vk.zig");
 const post = @import("post.zig");
+const fsr = @import("fsr.zig");
+const dlss = @import("dlss.zig");
 const window = @import("window.zig");
 
 const Mat4 = [4][4]f32;
@@ -29,6 +32,23 @@ var enabled_this_frame = false;
 /// The registered camera of this frame and the previous resolved frame.
 var camera_count: u32 = 0;
 var view_projection: Mat4 = undefined;
+/// The main camera's vertical field of view in radians (external upscalers).
+var fov_y: f32 = 1.4;
+var last_resolve_ns: i128 = 0;
+
+pub const Upscaler = enum { builtin, fsr, dlss };
+
+/// The temporal upscaler this frame resolves with (r_vkUpscaler): automatic selection keeps the
+/// built-in resolve at native resolution and prefers DLSS where its runtime is installed.
+pub fn upscaler() Upscaler {
+    const wanted_kind = cvars.vkUpscaler.integer;
+    return switch (wanted_kind) {
+        0 => .builtin,
+        1 => if (fsr.available()) .fsr else .builtin,
+        2 => if (dlss.available()) .dlss else if (fsr.available()) .fsr else .builtin,
+        else => if (window.render_scale >= 1) .builtin else if (dlss.available()) .dlss else if (fsr.available()) .fsr else .builtin,
+    };
+}
 var origin: [3]f32 = .{ 0, 0, 0 };
 var previous_view_projection: Mat4 = undefined;
 var previous_origin: [3]f32 = .{ 0, 0, 0 };
@@ -54,6 +74,8 @@ pub fn create(width: u32, height: u32) void {
 }
 
 pub fn destroy() void {
+    fsr.destroy();
+    dlss.destroy();
     for (&history) |*texture| vk.destroyImage(texture);
     created = false;
     history_valid = false;
@@ -84,8 +106,10 @@ pub fn beginFrame() void {
         jitter = .{ 0, 0 };
         return;
     }
-    frame_index = (frame_index + 1) % 16;
-    // Halton(2, 3) sub-pixel offsets in render-target pixels, as NDC.
+    // Halton(2, 3) sub-pixel offsets in render-target pixels, as NDC; the external upscalers
+    // want a sequence long enough to cover each display pixel (fsr.jitterPhaseCount).
+    const phases: u32 = if (upscaler() != .builtin) fsr.jitterPhaseCount(window.hdr.width, history[0].width) else 16;
+    frame_index = (frame_index + 1) % phases;
     const w: f32 = @floatFromInt(@max(window.hdr.width, 1));
     const h: f32 = @floatFromInt(@max(window.hdr.height, 1));
     jitter = .{ (halton(frame_index + 1, 2) - 0.5) * 2 / w, (halton(frame_index + 1, 3) - 0.5) * 2 / h };
@@ -156,6 +180,13 @@ pub fn frameCounter() u32 {
     return frame_counter;
 }
 
+/// The main camera's unjittered world -> clip of this frame and of the previous one (the same
+/// when there is no previous frame), row-major, for motion vectors (scene.zig drawStage).
+pub fn motionMatrices() ?struct { current: Mat4, previous: Mat4 } {
+    if (camera_count != 1) return null;
+    return .{ .current = view_projection, .previous = if (history_valid) previous_view_projection else view_projection };
+}
+
 pub fn currentJitter() [2]f32 {
     return if (enabled_this_frame) jitter else .{ 0, 0 };
 }
@@ -165,6 +196,7 @@ pub fn currentJitter() [2]f32 {
 pub fn registerView(projection: Mat4, view_matrix: Mat4, eye: [3]f32, axis_forward: [3]f32) void {
     camera_count += 1;
     if (camera_count > 1) return;
+    fov_y = 2 * std.math.atan(1 / projection[1][1]);
     var unjittered = projection;
     if (enabled_this_frame) {
         unjittered[0][2] += jitter[0];
@@ -175,6 +207,26 @@ pub fn registerView(projection: Mat4, view_matrix: Mat4, eye: [3]f32, axis_forwa
     forward = axis_forward;
 }
 
+/// Camera-only motion for the pixels the shading pass left without a motion vector
+/// (motion_fill.comp); leaves the motion target complete for the resolve.
+fn fillMotion(cmd: c.VkCommandBuffer) void {
+    const inverse_current = inverse(view_projection) orelse return;
+    const params: Params = .{
+        .inverse = columnMajor(inverse_current),
+        .previous = columnMajor(if (history_valid) previous_view_projection else view_projection),
+    };
+    const space = vk.frame().stream.alloc(@sizeOf(Params), 16) orelse return;
+    @memcpy(space.bytes[0..@sizeOf(Params)], std.mem.asBytes(&params));
+    const extent = [2]u32{ window.motion.width, window.motion.height };
+    vk.dispatch(cmd, "motion_fill.comp", post.Push{
+        .slots = .{ window.depth_slot, window.motion_storage, 0, 0 },
+        .size = .{ extent[0], extent[1], 0, 0 },
+        .buffer1 = space.address,
+        .params = .{ jitter[0], jitter[1], window.motion_unwritten, 0 },
+    }, extent[0], extent[1], 1, .{ 8, 8, 1 });
+    vk.computeBarrier(cmd);
+}
+
 /// Resolves this frame's HDR world image to output resolution. Returns the sampled slot the
 /// post chain and composite read. The HDR target and depth must be shader-readable.
 pub fn resolve(cmd: c.VkCommandBuffer, world_drawn: bool) u32 {
@@ -182,12 +234,52 @@ pub fn resolve(cmd: c.VkCommandBuffer, world_drawn: bool) u32 {
         history_valid = false;
         return window.hdr.slot;
     }
+    fillMotion(cmd);
     const next: u1 = current ^ 1;
     var reset = !history_valid or camera_count > 1 or !enabled_this_frame;
     // Camera cuts (teleports, cinematic cuts) start a fresh history.
     const moved = [3]f32{ origin[0] - previous_origin[0], origin[1] - previous_origin[1], origin[2] - previous_origin[2] };
     if (moved[0] * moved[0] + moved[1] * moved[1] + moved[2] * moved[2] > 160 * 160) reset = true;
     if (forward[0] * previous_forward[0] + forward[1] * previous_forward[1] + forward[2] * previous_forward[2] < 0.5) reset = true;
+    const now = common.nanoseconds();
+    const frame_ms: f32 = if (last_resolve_ns != 0) @floatCast(@as(f64, @floatFromInt(now - last_resolve_ns)) / 1e6) else 16;
+    last_resolve_ns = now;
+    const kind = upscaler();
+    if (kind != .builtin and enabled_this_frame) {
+        // External upscalers write the display-resolution image the post chain reads.
+        const out = history[next];
+        const render = [2]u32{ window.hdr.width, window.hdr.height };
+        const inputs: fsr.Inputs = .{
+            .color = .{ .view = window.hdr.view, .layout = c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, .image = window.hdr.image, .format = window.hdr_format },
+            .depth = .{ .view = window.depth_view, .layout = c.VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, .image = window.hdr_depth.image, .format = vk.s.depth_format, .aspect = c.VK_IMAGE_ASPECT_DEPTH_BIT },
+            .motion = .{ .view = window.motion.view, .layout = c.VK_IMAGE_LAYOUT_GENERAL, .image = window.motion.image, .format = vk.motion_format },
+            .output = .{ .view = out.view, .layout = c.VK_IMAGE_LAYOUT_GENERAL, .image = out.image, .format = window.hdr_format },
+            .render = render,
+            .display = .{ out.width, out.height },
+            // FidelityFX/NGX convention: the image shift in pixels, y down.
+            .jitter = .{ jitter[0] * 0.5 * @as(f32, @floatFromInt(render[0])), -jitter[1] * 0.5 * @as(f32, @floatFromInt(render[1])) },
+            .near = window.view_near,
+            .far = window.view_far,
+            .fov_y = fov_y,
+            .frame_ms = frame_ms,
+            .reset = reset,
+        };
+        // The previous frame's composite may still be reading the output image.
+        vk.memoryBarrier(cmd, vk.stage_fragment | c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, c.VK_ACCESS_2_SHADER_READ_BIT, c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, c.VK_ACCESS_2_SHADER_WRITE_BIT);
+        const done = switch (kind) {
+            .fsr => fsr.dispatch(cmd, inputs),
+            .dlss => dlss.dispatch(cmd, inputs),
+            .builtin => false,
+        };
+        if (done) {
+            current = next;
+            history_valid = true;
+            previous_view_projection = view_projection;
+            previous_origin = origin;
+            previous_forward = forward;
+            return history_sampled[current];
+        }
+    }
     const inverse_current = inverse(view_projection) orelse {
         history_valid = false;
         return window.hdr.slot;
@@ -208,6 +300,7 @@ pub fn resolve(cmd: c.VkCommandBuffer, world_drawn: bool) u32 {
         .buffer1 = space.address,
         // UV offset of the jittered samples (viewport y is flipped), blend weight, reset.
         .params = .{ jitter[0] * 0.5, -jitter[1] * 0.5, if (scaled) 0.14 else 0.1, if (reset) 1 else 0 },
+        .params2 = .{ @floatFromInt(window.motion_slot), 0, 0, 0 },
     }, out.width, out.height, 1, .{ 8, 8, 1 });
     vk.computeBarrier(cmd);
     current = next;

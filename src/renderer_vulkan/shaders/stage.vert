@@ -10,7 +10,12 @@ layout(location = 2) out vec2 uv1;
 layout(location = 3) out float eyeDepth;
 layout(location = 4) out vec3 worldPos;
 layout(location = 5) out vec3 worldNormal;
+// Motion vectors (FLAG_MOTION): this frame's unjittered and the previous frame's clip position.
+layout(location = 6) out vec4 motionCurrent;
+layout(location = 7) out vec4 motionPrevious;
 out gl_PerVertex { vec4 gl_Position; float gl_ClipDistance[1]; };
+// The depth pre-pass and the shading pass must produce bit-identical depth (equal test).
+invariant gl_Position;
 
 const float TAU = 6.283185307179586;
 
@@ -245,6 +250,38 @@ Vtx fetch(Record r, uint index) {
     return v;
 }
 
+// The vertex in the previous frame's pose: the previous MD3 frames and blend, or the previous
+// skeleton; other meshes do not change shape.
+vec3 previousPosition(Record r, uint index, vec3 current) {
+    uint kind = r.mode.x;
+    if (kind == 1u) {
+        Floats a = Floats(r.prevVertices), b = Floats(r.prevFrameB);
+        uint o = index * 6u;
+        return mix(vec3(a.v[o], a.v[o + 1u], a.v[o + 2u]), vec3(b.v[o], b.v[o + 1u], b.v[o + 2u]), r.motion2.x);
+    }
+    if (kind == 2u && r.prevExtra != uvec2(0u)) {
+        Floats f = Floats(r.vertices);
+        Uints u = Uints(r.vertices);
+        Floats bones = Floats(r.prevExtra);
+        uint o = index * 12u;
+        vec4 p = vec4(f.v[o], f.v[o + 1u], f.v[o + 2u], 1.0);
+        uvec4 bi = (uvec4(u.v[o + 8u]) >> uvec4(0, 8, 16, 24)) & 255u;
+        vec4 bw = vec4((uvec4(u.v[o + 9u]) >> uvec4(0, 8, 16, 24)) & 255u) / 255.0;
+        if (bw.x == 0.0) return p.xyz;
+        vec3 sp = vec3(0.0);
+        for (int k = 0; k < 4; ++k) {
+            if (bw[k] == 0.0) continue;
+            uint m = bi[k] * 12u;
+            vec4 r0 = vec4(bones.v[m], bones.v[m + 1u], bones.v[m + 2u], bones.v[m + 3u]);
+            vec4 r1 = vec4(bones.v[m + 4u], bones.v[m + 5u], bones.v[m + 6u], bones.v[m + 7u]);
+            vec4 r2 = vec4(bones.v[m + 8u], bones.v[m + 9u], bones.v[m + 10u], bones.v[m + 11u]);
+            sp += bw[k] * vec3(dot(r0, p), dot(r1, p), dot(r2, p));
+        }
+        return sp;
+    }
+    return current;
+}
+
 vec3 deformed(Record r, Vtx v) {
     // deform[2k] = (type + 10 * waveFunc, ...), deform[2k + 1] = wave or move parameters.
     vec3 pos = v.pos;
@@ -300,6 +337,15 @@ void main() {
     vec3 pos = deformed(r, v);
     vec4 p = vec4(pos, 1.0);
     gl_Position = r.clip * p;
+    motionCurrent = vec4(0.0);
+    motionPrevious = vec4(0.0);
+    if ((r.mode2.z & FLAG_MOTION) != 0u) {
+        // The projection's sub-pixel jitter shifts NDC by r.motion.xy (taa.zig jitterProjection).
+        motionCurrent = gl_Position - vec4(r.motion.xy * gl_Position.w, 0.0, 0.0);
+        Vtx previous = v;
+        previous.pos = previousPosition(r, index, v.pos);
+        motionPrevious = r.prevClip * vec4(deformed(r, previous), 1.0);
+    }
     eyeDepth = -dot(r.modelView[2], p);
     worldPos = vec3(dot(r.model[0], p), dot(r.model[1], p), dot(r.model[2], p));
     vec3 wn = vec3(dot(r.model[0].xyz, v.normal), dot(r.model[1].xyz, v.normal), dot(r.model[2].xyz, v.normal));

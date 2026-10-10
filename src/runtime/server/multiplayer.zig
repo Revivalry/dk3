@@ -127,6 +127,7 @@ pub const State = struct {
             const supplied_color = try @import("properties.zig").number(object, "flagcolor", 0);
             const tint = rules.color(team, if (supplied_color >= 1 and supplied_color < 9) @intFromFloat(supplied_color) else 0);
             const slot = try slots.acquire(entity, null);
+            projections[slot] = std.mem.zeroes(abi.EntityProjection);
             try world.put(entity, data.Binding{ .slot = slot, .model = try @import("resources.zig").model(model) });
             try world.put(entity, data.Body{ .mins = .{ -10, -10, -10 }, .maxs = .{ 10, 8, 10 }, .contents = c.CONTENTS_TRIGGER });
             try world.put(entity, data.Objective{ .team = team, .color = tint, .home = pose.position, .angles = pose.angles, .airborne = true, .stepped_ms = now });

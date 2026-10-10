@@ -1,5 +1,11 @@
 #version 460
 // SPDX-License-Identifier: GPL-2.0-or-later
+// Variants: stage_rt.frag (RAY_QUERY), stage_early.frag / stage_rt_early.frag (EARLY_Z: the
+// depth pre-pass already holds this surface's depth, so hidden fragments are never shaded).
+#ifdef EARLY_Z_RT
+#define RAY_QUERY 1
+#define EARLY_Z 1
+#endif
 // One Q3 material stage. Classic mode reproduces renderergl1: texture (optionally modulated by
 // a collapsed lightmap stage), alpha test, dynamic lights added to lightmaps and dk3 linear
 // distance fog. Remaster mode works in linear HDR light; lightmapped world surfaces and
@@ -21,7 +27,24 @@ layout(location = 2) in vec2 uv1;
 layout(location = 3) in float eyeDepth;
 layout(location = 4) in vec3 worldPos;
 layout(location = 5) in vec3 worldNormal;
+layout(location = 6) in vec4 motionCurrent;
+layout(location = 7) in vec4 motionPrevious;
 layout(location = 0) out vec4 outColor;
+// Remaster HDR target only: render-target pixels from this frame's position to the previous one.
+layout(location = 1) out vec2 outMotion;
+
+// Pipeline specialisation (vk.zig PipelineKey.variant; scene.zig picks it per stage): 0 keeps
+// every path (debug views only); 1 remaster world materials; 2 remaster models; 3 the rest
+// (classic stages, weather); 4 liquids. One shader holding every path needed the most registers
+// of any of them for every pixel, and its pipelines took over ten seconds each to compile; the
+// narrow variants keep only their own code, run more warps and compile quickly.
+layout(constant_id = 0) const uint STAGE_VARIANT = 0u;
+const bool STAGE_ALL = STAGE_VARIANT == 0u;
+// r_vkDebugView (scene.zig weatherParams.w); always drawn with variant 0.
+float debugViewOf(ViewData view) { return STAGE_ALL ? view.weatherParams.w : 0.0; }
+#ifdef EARLY_Z
+layout(early_fragment_tests) in;
+#endif
 
 const float PI = 3.14159265;
 
@@ -134,14 +157,25 @@ bool rtLightingEnabled(Record r) {
     return ViewData(r.view).rtCellDims.w != 0u;
 }
 
+// Helper invocations (the unseen pixels of a 2x2 quad at triangle edges) only feed derivatives;
+// traced light is never differentiated, so they skip the rays.
+bool rtHelper(ViewData view) {
+    return gl_HelperInvocation;
+}
+
 // Direct light from the map lights at the fragment, `shadowRays` exact shadows, plus
 // `extraRaw` (the visible sky) in the same radiosity units before the conversion: the original
 // lightmaps summed all light first, so partial sky must not be converted on its own.
 vec3 rtDirectLight(Record r, vec3 n, vec3 rayOrigin, uint shadowRays, vec3 extraRaw) {
     ViewData view = ViewData(r.view);
+    if (rtHelper(view)) return vec3(0.0);
     // Area lights: each frame aims shadow rays at a different point of the fixture.
     rtLightJitter = rtSequence(view, 0u);
-    vec3 raw = rtMapLightRaw(view.rtTable.xy, view.rtLights.xy, view.rtLights.zw, view.rtCells, view.rtCellDims.xyz, worldPos, n, rayOrigin, shadowRays);
+    uint cost = uint(view.fogParams.w);
+    float debugView = debugViewOf(view);
+    rtDebugShadows = debugView >= 17.0 && debugView <= 19.0;
+    rtCostSkipSampled = (cost & 16u) != 0u;
+    vec3 raw = (cost & 8u) != 0u ? vec3(40.0) : rtMapLightRaw(view.rtTable.xy, view.rtLights.xy, view.rtLights.zw, view.rtCells, view.rtCellDims.xyz, worldPos, n, rayOrigin, (cost & 2u) != 0u ? 0u : shadowRays);
     // World surfaces: worldLight carries an emitting face's own light (rt.zig).
     vec3 own = (r.mode2.z & FLAG_PBR_WORLD) != 0u ? r.worldLight.rgb : vec3(0.0);
     return rtRawToLinear(raw + own + extraRaw + vec3(view.rtLightScale.z), view.rtLightScale.x, view.rtLightScale.y);
@@ -163,6 +197,8 @@ vec3 rtSkyLinear(Record r, float visible) {
 // from geometry within 64 units.
 vec2 rtSkyAndOcclusion(Record r, vec3 n, vec3 origin) {
     ViewData view = ViewData(r.view);
+    if (rtHelper(view)) return vec2(0.0);
+    if ((uint(view.fogParams.w) & 1u) != 0u) return vec2(0.5, 1.0);
     vec3 up = abs(n.z) < 0.9 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
     vec3 tx = normalize(cross(up, n)), ty = cross(n, tx);
     float sky = 0.0, open = 0.0;
@@ -180,6 +216,7 @@ vec2 rtSkyAndOcclusion(Record r, vec3 n, vec3 origin) {
 
 // Radiance leaving the first world surface along a ray, or `miss`.
 vec3 rtRadiance(Record r, vec3 origin, vec3 dir, float tmax, vec3 miss) {
+    if (rtHelper(ViewData(r.view))) return miss;
     RtHit h = rtTrace(ViewData(r.view).rtTable.xy, origin, dir, tmax, 2.0);
     return h.hit ? h.radiance : miss;
 }
@@ -470,9 +507,15 @@ float weatherShape(Record r, vec2 q) {
 void main() {
     Record r = Record(push.record);
     uint flags = r.mode2.z;
+    outMotion = vec2(0.0);
+    if ((flags & FLAG_MOTION) != 0u && motionPrevious.w > 1e-4) {
+        // The viewport flips y: NDC up is framebuffer row up.
+        vec2 delta = motionPrevious.xy / motionPrevious.w - motionCurrent.xy / motionCurrent.w;
+        outMotion = delta * vec2(0.5, -0.5) * r.motion.zw;
+    }
     bool linear = (flags & FLAG_LINEAR) != 0u;
     vec4 tex = texture(textures[nonuniformEXT(r.mode2.x)], uv0);
-    if (r.mode.x == 3u) {
+    if ((STAGE_ALL || STAGE_VARIANT == 3u) && r.mode.x == 3u) {
         // Weather particles arrive lit in linear light (stage.vert weatherLight); flakes are white.
         WeatherParams w = WeatherParams(r.vertices);
         vec3 lit = color.rgb * (w.mins.w > 0.5 ? 0.9 : 1.0);
@@ -495,9 +538,19 @@ void main() {
         vertexColor.rgb = toLinear(vertexColor.rgb);
     }
     vec4 c;
-    if ((flags & FLAG_LIQUID) != 0u) {
+    if (STAGE_VARIANT == 4u || (STAGE_ALL && (flags & FLAG_LIQUID) != 0u)) {
         c = shadeLiquid(r, tex);
-    } else if ((flags & (FLAG_PBR_WORLD | FLAG_PBR_MODEL)) != 0u) {
+    } else if (STAGE_VARIANT == 1u || STAGE_VARIANT == 2u || (STAGE_ALL && (flags & (FLAG_PBR_WORLD | FLAG_PBR_MODEL)) != 0u)) {
+        bool pbrWorld = STAGE_VARIANT == 1u || (STAGE_ALL && (flags & FLAG_PBR_WORLD) != 0u);
+        // The alpha test (below) depends only on the texture and vertex alpha here: discard
+        // before the lighting, so cut-out foliage texels pay for no rays.
+        {
+            uint func = r.mode2.w;
+            float alpha = tex.a * vertexColor.a;
+            if (func == 1u && alpha <= 0.0) discard;
+            if (func == 2u && alpha >= 0.5) discard;
+            if (func == 3u && alpha < 0.5) discard;
+        }
         // A visible surface faces the viewer. gl_FrontFacing cannot tell: the flipped viewport
         // (negative height) with Quake's winding reports ordinary visible faces as back faces, so
         // flipping on it inverted world and model normals; lit from behind, every light in
@@ -518,11 +571,11 @@ void main() {
         }
         vec3 v = normalize(r.viewPos.xyz - worldPos);
         vec3 albedo = tex.rgb;
-        if ((flags & FLAG_PBR_WORLD) != 0u) applyWeather(r, geometric, n, albedo, rough, metal);
+        if (pbrWorld) applyWeather(r, geometric, n, albedo, rough, metal);
         vec3 f0 = mix(vec3(0.04 * specularStrength), albedo, metal);
         float grazing = grazingReflectance(rough, specularStrength, metal);
         vec3 lit;
-        if ((flags & FLAG_PBR_WORLD) != 0u) {
+        if (pbrWorld) {
             bool rtLit = false;
 #ifdef RAY_QUERY
             rtLit = rtLightingEnabled(r);
@@ -539,13 +592,13 @@ void main() {
                 // Bounce light from the probes, darkened in corners and crevices, summed with the
                 // direct light and sky in radiosity units as the original lightmaps were (added
                 // after the conversion, a dim bounce counted for almost nothing).
-                vec4 probe = ddgiIrradiance(r, worldPos + geometric * 4.0, n);
+                vec4 probe = (uint(ViewData(r.view).fogParams.w) & 4u) != 0u ? vec4(0.05, 0.05, 0.05, 1.0) : ddgiIrradiance(r, worldPos + geometric * 4.0, n);
                 vec3 bounce = probe.rgb / PI * probe.a * skyAo.y;
                 vec3 direct = rtDirectLight(r, n, worldPos + geometric * 0.75, RT_LIGHT_SHADOWS, rtSkyRaw(r, skyAo.x) + rtLinearToRaw(bounce, ViewData(r.view).rtLightScale.x, ViewData(r.view).rtLightScale.y));
                 if (ViewData(r.view).rt.y == 0u) direct *= 1.0 - modelShadow(r) * 0.8;
                 irradiance = direct + rtSkyLinear(r, skyAo.x);
                 // r_vkDebugView 12 direct, 13 probe bounce, 14 sky, 15 direct without shadows.
-                float term = ViewData(r.view).weatherParams.w;
+                float term = debugViewOf(ViewData(r.view));
                 if (term == 12.0) irradiance = rtDirectLight(r, n, worldPos + geometric * 0.75, RT_LIGHT_SHADOWS, vec3(0.0));
                 else if (term == 13.0) irradiance = probe.rgb / PI * probe.a * skyAo.y;
                 else if (term == 14.0) irradiance = rtRawToLinear(rtSkyRaw(r, skyAo.x), ViewData(r.view).rtLightScale.x, ViewData(r.view).rtLightScale.y) + rtSkyLinear(r, skyAo.x);
@@ -594,7 +647,7 @@ void main() {
                     rtLightSpread = 0.0;
                     irradiance = rtDirectLight(r, n, worldPos + geometric * 0.75, RT_LIGHT_SHADOWS, vec3(0.0));
                 }
-                if (r.view != uvec2(0u) && ViewData(r.view).weatherParams.w == 4.0) {
+                if (r.view != uvec2(0u) && debugViewOf(ViewData(r.view)) == 4.0) {
                     outColor = vec4(irradiance, 1.0);
                     return;
                 }
@@ -605,15 +658,15 @@ void main() {
             // the perturbed normal differs from the flat one the radiosity was computed for.
             vec4 grid = lightGrid(r, worldPos);
             // Baked direction pages (bake.zig) supersede the coarse grid direction.
-            if (r.material2.w > 0.5 && !(r.view != uvec2(0u) && ViewData(r.view).weatherParams.w == 5.0)) {
+            if (r.material2.w > 0.5 && !(r.view != uvec2(0u) && debugViewOf(ViewData(r.view)) == 5.0)) {
                 vec4 deluxe = texture(textures[nonuniformEXT(uint(r.material2.w) - 1u)], uv1);
                 // The lightmap also holds bounce light, so only part of it follows the direction.
                 if (deluxe.a > 0.02 && all(greaterThan(deluxe.rgb, vec3(-1e-3)))) grid = vec4(deluxe.rgb, deluxe.a * 0.6);
-                if (r.view != uvec2(0u) && ViewData(r.view).weatherParams.w == 3.0) {
+                if (r.view != uvec2(0u) && debugViewOf(ViewData(r.view)) == 3.0) {
                     outColor = vec4(deluxe.rgb * deluxe.a, 1.0);
                     return;
                 }
-                if (r.view != uvec2(0u) && ViewData(r.view).weatherParams.w == 4.0) {
+                if (r.view != uvec2(0u) && debugViewOf(ViewData(r.view)) == 4.0) {
                     outColor = vec4(irradiance, 1.0);
                     return;
                 }
@@ -670,7 +723,7 @@ void main() {
         lit += pbrDynamicLights(r, n, v, albedo, f0, metal, rough, grazing);
         if (r.view != uvec2(0u)) {
             // r_vkDebugView 6: texture colour only; 7: light only (texture forced white).
-            float debug = ViewData(r.view).weatherParams.w;
+            float debug = debugViewOf(ViewData(r.view));
             if (debug == 6.0) {
                 outColor = vec4(albedo, 1.0);
                 return;
@@ -682,7 +735,7 @@ void main() {
         }
 #ifdef RAY_QUERY
         // Traced reflections on smooth and wet world materials.
-        if ((flags & FLAG_PBR_WORLD) != 0u && rough < 0.45 && rtEnabled(r, 2u)) {
+        if (pbrWorld && rough < 0.45 && rtEnabled(r, 2u)) {
             vec3 rdir = reflect(-v, n);
             if (dot(rdir, geometric) > 0.0) {
                 vec3 traced = rtRadiance(r, worldPos + geometric * 0.5, rdir, 8192.0, vec3(0.04));
@@ -691,7 +744,7 @@ void main() {
         }
 #endif
         lit += albedo * r.material.w;
-        c = vec4(lit * ((flags & FLAG_PBR_MODEL) != 0u ? vec3(1.0) : vertexColor.rgb), tex.a * vertexColor.a);
+        c = vec4(lit * (!pbrWorld ? vec3(1.0) : vertexColor.rgb), tex.a * vertexColor.a);
     } else {
         if ((flags & FLAG_FIRST_LIGHTMAP) != 0u && r.counts.z > 0u) {
             if (linear) tex.rgb += toLinear(min(dynamicLight(r), vec3(1.0)));

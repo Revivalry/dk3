@@ -7,6 +7,7 @@ const c = @import("c.zig").c;
 const common = @import("common.zig");
 const cvars = @import("cvars.zig");
 const vk = @import("vk.zig");
+const window = @import("window.zig");
 const shader_mod = @import("shader.zig");
 const scene = @import("scene.zig");
 const world = @import("world.zig");
@@ -925,6 +926,8 @@ pub fn addEntitySurfaces(view: *scene.View, entity: *scene.Entity, number: u32) 
     const model = byHandle(e.hModel);
     // Shadow tiles include the player's own third-person body.
     const personal = e.renderfx & c.RF_THIRD_PERSON != 0 and !view.is_portal and !view.shadow;
+    // The previous pose for motion vectors (motion.zig): main remaster views only.
+    const previous = if (window.remaster and !view.is_portal and !view.shadow and view.rdflags & c.RDF_NOWORLDMODEL == 0) entity.prev else null;
     switch (model.kind) {
         .bad => {
             if (personal) return;
@@ -945,6 +948,17 @@ pub fn addEntitySurfaces(view: *scene.View, entity: *scene.Entity, number: u32) 
             const md3 = lods[computeLod(view, model, base, e)] orelse base;
             const frame: u32 = @intCast(e.frame);
             const oldframe: u32 = @intCast(e.oldframe);
+            var prev_frames: ?[2]u32 = null;
+            var prev_backlerp: f32 = e.backlerp;
+            if (previous) |p| {
+                const count: c_int = @intCast(base.num_frames);
+                const pf = if (e.renderfx & c.RF_WRAP_FRAMES != 0) @mod(p.frame, count) else p.frame;
+                const po = if (e.renderfx & c.RF_WRAP_FRAMES != 0) @mod(p.oldframe, count) else p.oldframe;
+                if (pf >= 0 and pf < count and po >= 0 and po < count) {
+                    prev_frames = .{ @intCast(pf), @intCast(po) };
+                    prev_backlerp = p.backlerp;
+                }
+            }
             var mins = md3.bounds[frame][0];
             var maxs = md3.bounds[frame][1];
             for (0..3) |k| {
@@ -959,14 +973,18 @@ pub fn addEntitySurfaces(view: *scene.View, entity: *scene.Entity, number: u32) 
                 const surface_frame = @min(frame, surface.num_frames - 1);
                 const surface_old = @min(oldframe, surface.num_frames - 1);
                 const stride: u64 = @as(u64, surface.num_verts) * 24;
+                const frames_base = md3.buffer.address + surface.frames_offset;
                 scene.addDrawSurf(shader, number, .{ .mesh = .{
                     .kind = 1,
-                    .vertices = md3.buffer.address + surface.frames_offset + surface_frame * stride,
-                    .frame_b = md3.buffer.address + surface.frames_offset + surface_old * stride,
+                    .vertices = frames_base + surface_frame * stride,
+                    .frame_b = frames_base + surface_old * stride,
                     .extra = md3.buffer.address + surface.st_offset,
                     .indices = md3.buffer.address + surface.index_offset,
                     .count = surface.num_indexes,
                     .backlerp = e.backlerp,
+                    .prev_vertices = if (prev_frames) |pf| frames_base + @min(pf[0], surface.num_frames - 1) * stride else 0,
+                    .prev_frame_b = if (prev_frames) |pf| frames_base + @min(pf[1], surface.num_frames - 1) * stride else 0,
+                    .prev_backlerp = prev_backlerp,
                 } }, 0);
             }
         },
@@ -1018,6 +1036,20 @@ pub fn addEntitySurfaces(view: *scene.View, entity: *scene.Entity, number: u32) 
                 }
                 bones = space.address;
             }
+            var prev_bones: u64 = 0;
+            if (previous) |p| if (iqm.num_poses > 0) {
+                if (vk.frame().stream.alloc(@as(u64, iqm.num_poses) * 48, 16)) |space| {
+                    const mats: []f32 = @alignCast(std.mem.bytesAsSlice(f32, space.bytes));
+                    if (p.bone_count == iqm.num_poses) {
+                        for (0..iqm.num_poses) |i| @memcpy(mats[i * 12 ..][0..12], &p.bones[i]);
+                        prev_bones = space.address;
+                    } else if (e.dk3BoneCount != iqm.num_poses and iqm.num_frames > 0) {
+                        const count: c_int = @intCast(frames);
+                        computePoseMats(iqm, @intCast(@mod(p.frame, count)), @intCast(@mod(p.oldframe, count)), p.backlerp, mats);
+                        prev_bones = space.address;
+                    }
+                }
+            };
             for (iqm.surfaces) |*surface| {
                 if (surface.num_triangles == 0) continue;
                 const shader = if (e.customShader != 0) shader_mod.byHandle(e.customShader) else if (e.customSkin > 0) skinShader(e.customSkin, std.mem.sliceTo(&surface.name, 0)) else surface.shader;
@@ -1027,6 +1059,7 @@ pub fn addEntitySurfaces(view: *scene.View, entity: *scene.Entity, number: u32) 
                     .indices = iqm.buffer.address + iqm.index_offset + @as(u64, surface.first_triangle) * 12,
                     .count = surface.num_triangles * 3,
                     .extra = bones,
+                    .prev_extra = prev_bones,
                 } }, 0);
             }
         },

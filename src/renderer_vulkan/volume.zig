@@ -52,7 +52,9 @@ const Params = extern struct {
     rt_table: u64 = 0,
     rt_lights: u64 = 0,
     rt_cells_address: u64 = 0,
-    rt_pad: u64 = 0,
+    /// Farthest visible depth per froxel column (froxel_tiles.comp), or 0: froxels behind it
+    /// are never seen and skip their rays.
+    depth_tiles: u64 = 0,
     rt_cells: [4]f32 = .{ 0, 0, 0, 0 }, // cell grid origin, cell size
     rt_cell_dims: [4]u32 = .{ 0, 0, 0, 0 },
     rt_light_scale: [4]f32 = .{ 0, 0, 0, 0 }, // radiosity scale, overbright, ambient
@@ -185,8 +187,35 @@ pub fn run(cmd: c.VkCommandBuffer, in: Input) ?ViewData {
     };
     // Authored map fog (worldspawn): the original hid its draw distance in it; r_vkMapFog scales it.
     params.fog[3] *= @max(cvars.vkMapFog.value, 0);
+    // A view that was set up but never drawn leaves its work behind: record it now.
+    if (pending != null) flush(cmd, 0);
     const space = vk.frame().stream.alloc(@sizeOf(Params), 16) orelse return null;
     @memcpy(space.bytes[0..@sizeOf(Params)], std.mem.asBytes(&params));
+    pending = .{ .params = @ptrCast(@alignCast(space.bytes.ptr)), .address = space.address, .dlights = in.dlights, .traced = traced };
+    return .{
+        .rect = .{ 0, 0, 1, 1 },
+        .froxel = .{ near, 1.0 / log_range, far, 1 },
+        .slots = .{ integrated_slot, integrated_glow_slot, 0, 0 },
+    };
+}
+
+/// The view's volume work, recorded by `flush` once the view's depth pre-pass has run.
+const Pending = struct { params: *Params, address: u64, dlights: u64, traced: bool };
+var pending: ?Pending = null;
+
+pub fn hasPending() bool {
+    return pending != null;
+}
+
+/// Records the pending inject and integrate passes (outside rendering). `depth_tiles` is the
+/// froxel_tiles.comp output for this view, or 0 to compute every froxel.
+pub fn flush(cmd: c.VkCommandBuffer, depth_tiles: u64) void {
+    const work = pending orelse return;
+    pending = null;
+    work.params.depth_tiles = depth_tiles;
+    const traced = work.traced;
+    const in = .{ .dlights = work.dlights };
+    const space = .{ .address = work.address };
     // Earlier views of this frame may still sample the volume.
     vk.memoryBarrier(cmd, c.VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, c.VK_ACCESS_2_SHADER_READ_BIT, c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, c.VK_ACCESS_2_SHADER_WRITE_BIT);
     if (traced) vk.dispatch(cmd, "froxel_inject_rt.comp", post.Push{
@@ -207,11 +236,6 @@ pub fn run(cmd: c.VkCommandBuffer, in: Input) ?ViewData {
         .buffer1 = space.address,
     }, grid[0], grid[1], 1, .{ 8, 8, 1 });
     vk.memoryBarrier(cmd, c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, c.VK_ACCESS_2_SHADER_WRITE_BIT, c.VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, c.VK_ACCESS_2_SHADER_READ_BIT);
-    return .{
-        .rect = .{ 0, 0, 1, 1 },
-        .froxel = .{ near, 1.0 / log_range, far, 1 },
-        .slots = .{ integrated_slot, integrated_glow_slot, 0, 0 },
-    };
 }
 
 /// A view without volumetrics (disabled or not built).

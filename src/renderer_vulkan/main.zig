@@ -174,12 +174,15 @@ fn uploadCinematic(_: c_int, _: c_int, cols: c_int, rows: c_int, data: [*c]const
 }
 fn beginFrame(_: c.stereoFrame_t) callconv(.c) void {
     if (!registered) return;
+    const begin_start = @import("profile.zig").cpuBegin();
+    defer @import("profile.zig").cpuEnd("begin frame (slot wait)", begin_start);
     if (window.beginFrame()) scene.resetBindings();
     scene.beginFrame();
 }
 var stats_frames: i32 = 0;
 
 fn reportStats() void {
+    @import("profile.zig").report();
     const every = cvars.vkStats.integer;
     if (every <= 0) {
         scene.stats = .{};
@@ -193,7 +196,7 @@ fn reportStats() void {
     stats_frames = 0;
     const s = scene.stats;
     const f = vk.frame();
-    common.info("vk stats: views={d} entities={d} md3={d} iqm={d} iqm_culled={d} brush={d} polys={d} surfaces={d} draws={d} stream_kb={d} records_kb={d} grown_stream={d} grown_records={d} textures={d}\n", .{ s.views, s.entities, s.md3, s.iqm, s.iqm_culled, s.brush, s.polys, s.surfaces, s.draws, f.stream.bytesUsed() / 1024, f.records.bytesUsed() / 1024, f.stream.grown, f.records.grown, vk.next_slot });
+    common.info("vk stats: views={d} entities={d} md3={d} iqm={d} iqm_culled={d} brush={d} polys={d} surfaces={d} draws={d} stream_kb={d} records_kb={d} grown_stream={d} grown_records={d} textures={d} staging_kb={d}\n", .{ s.views, s.entities, s.md3, s.iqm, s.iqm_culled, s.brush, s.polys, s.surfaces, s.draws, f.stream.bytesUsed() / 1024, f.records.bytesUsed() / 1024, f.stream.grown, f.records.grown, vk.next_slot, f.staging.bytesUsed() / 1024 });
     scene.stats = .{};
 }
 
@@ -202,6 +205,8 @@ fn endFrame(front: [*c]c_int, back: [*c]c_int) callconv(.c) void {
     if (back != null) back.* = 0;
     if (!registered) return;
     reportStats();
+    const end_start = @import("profile.zig").cpuBegin();
+    defer @import("profile.zig").cpuEnd("end frame (submit, acquire, present)", end_start);
     if (capture.pending()) {
         if (window.beginFrame()) scene.resetBindings();
         window.capture_requested = true;

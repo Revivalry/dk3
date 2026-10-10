@@ -15,6 +15,7 @@ pub const spec: profiles.Spec = .{
         .away = "away",
         .fire = "shoota",
         .idle = .{ "amba", null, null },
+        .idle_loop = true,
         .alternate = "melee",
         .raise_ms = 500,
         .drop_ms = 500,
@@ -24,6 +25,7 @@ pub const spec: profiles.Spec = .{
         .ready = "e2/we_venomready.wav",
         .away = "e2/we_venomaway.wav",
         .variants = .{ "e2/we_venomshoota.wav", "e2/we_venomshootb.wav", "e2/we_venomshootc.wav" },
+        .idle = .{ "e2/we_venomamba.wav", "e2/we_venomambb.wav", "e2/we_venomambc.wav" },
     },
     .projectile_muzzle = true,
 };

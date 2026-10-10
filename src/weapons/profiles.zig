@@ -9,7 +9,13 @@ pub const Animation = struct {
     fire: [:0]const u8 = "",
     fire_variants: [4]?[:0]const u8 = @splat(null),
     reload: ?[:0]const u8 = null,
+    /// Gold ANIM_AMBIENT_STD..: one is drawn at random and played once while
+    /// the holder stands still, every 2-8 s; the last frame holds in between.
     idle: [3]?[:0]const u8 = .{ null, null, null },
+    /// Gold WFL_LOOPAMBIENT_ANIM: the first idle loops instead, even in motion.
+    idle_loop: bool = false,
+    /// Gold discusCommand: no idle while the weapon itself is out of ammunition.
+    idle_needs_ammo: bool = false,
     alternate: ?[:0]const u8 = null,
     rate: u8 = 20,
     raise_ms: u16 = 0,

@@ -278,7 +278,7 @@ def video_scenario(driver, issue, capture, process, log):
     driver.align_menu()
     driver.click(530, 212)  # Video category.
     capture("video-1")
-    for page in range(2, 8):
+    for page in range(2, 9):
         driver.click(397, 391)  # Next >.
         capture(f"video-{page}")
     driver.click(397, 391)  # Wraps back to the first page.

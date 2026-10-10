@@ -141,10 +141,10 @@ fn ensureShaders() void {
 pub const Draw = struct { shader: *shader_mod.Shader, params: u64, count: u32 };
 
 /// Particle draws for one volume (drops or flakes, and rain splashes).
-pub fn draws(volume: Volume, lighting: Lighting, out: *[2]?Draw) void {
+pub fn draws(volume: Volume, lighting: Lighting, out: *[3]?Draw) void {
     const eye = lighting.eye;
     const time = lighting.time;
-    out.* = .{ null, null };
+    out.* = .{ null, null, null };
     ensureShaders();
     // Nearest point of the volume; distant volumes are skipped.
     var nearest: f32 = 0;
@@ -215,17 +215,78 @@ pub fn draws(volume: Volume, lighting: Lighting, out: *[2]?Draw) void {
         @memcpy(space.bytes[0..@sizeOf(Params)], std.mem.asBytes(&params[part]));
         out[part] = .{ .shader = if (part == 0) &drop_shader else &splash_shader, .params = space.address, .count = count * 6 };
     }
+    if (volume.kind == .rain) out[2] = nearRain(volume, params[0], eye, density);
 }
 
-/// Box list for the view: (mins, kind), (maxs, 0).
-pub fn viewBoxes(registration: u32, boxes: *[max_view_boxes * 2][4]f32) u32 {
+/// Drops per cubic unit of the camera's own rain (r_vkWeatherDensity 1).
+const near_density: f32 = 1.5e-4;
+/// The camera's own rain: the volume's drops spread over its whole height, so the slab between
+/// the eye and the ground holds only a few, and looking down showed almost none while looking up
+/// showed the column above. A denser layer falls through a window around the eye, inside the
+/// same volume and under the same rain occlusion map.
+fn nearRain(volume: Volume, base: Params, eye: [3]f32, density: f32) ?Draw {
+    const below: f32 = 192;
+    const above: f32 = 320;
+    const reach: f32 = 384;
+    const cap: u32 = 131072;
+    const z_lo = @max(volume.mins[2], eye[2] - below);
+    const z_hi = @min(volume.maxs[2], eye[2] + above);
+    if (z_hi - z_lo < 16) return null;
+    var first_tile: [2]f32 = undefined;
+    var tiles: [2]u32 = undefined;
+    for (0..2) |axis| {
+        const lo = @max(volume.mins[axis], eye[axis] - reach);
+        const hi = @min(volume.maxs[axis], eye[axis] + reach);
+        if (hi <= lo) return null;
+        first_tile[axis] = @floor(lo / tile_size);
+        tiles[axis] = @intFromFloat(@floor(hi / tile_size) - first_tile[axis] + 1);
+    }
+    const per_tile_f = tile_size * tile_size * (z_hi - z_lo) * near_density * density;
+    const per_tile: u32 = @intFromFloat(@min(per_tile_f, 65536));
+    if (per_tile == 0) return null;
+    // Typed: @min with the comptime cap would narrow the count to 17 bits.
+    const count: u32 = @min(tiles[0] * tiles[1] * per_tile, cap);
+    var params = base;
+    params.mins[2] = z_lo;
+    params.maxs[2] = z_hi;
+    // Its own random sequence, and no splashes (the volume's layer lands them).
+    params.velocity[3] = base.velocity[3] + 7919;
+    params.eye[3] = 0;
+    params.tiles = .{ first_tile[0], first_tile[1], @floatFromInt(tiles[0]), @floatFromInt(per_tile) };
+    params.shape[3] = @floatFromInt(count);
+    const space = vk.frame().stream.alloc(@sizeOf(Params), 16) orelse return null;
+    @memcpy(space.bytes[0..@sizeOf(Params)], std.mem.asBytes(&params));
+    return .{ .shader = &drop_shader, .params = space.address, .count = count * 6 };
+}
+
+/// Box list for the view, the `max_view_boxes` volumes nearest the eye: (mins, kind), (maxs, 0).
+pub fn viewBoxes(registration: u32, eye: [3]f32, boxes: *[max_view_boxes * 2][4]f32) u32 {
+    var chosen: [max_view_boxes]struct { volume: *const Volume, distance: f32 } = undefined;
     var count: u32 = 0;
-    for (sceneVolumes()) |volume| {
+    for (sceneVolumes()) |*volume| {
         if (volume.registration != registration) continue;
-        if (count == max_view_boxes) break;
-        boxes[count * 2] = .{ volume.mins[0], volume.mins[1], volume.mins[2], @floatFromInt(@intFromEnum(volume.kind)) };
-        boxes[count * 2 + 1] = .{ volume.maxs[0], volume.maxs[1], volume.maxs[2], 0 };
-        count += 1;
+        var distance: f32 = 0;
+        for (0..3) |axis| {
+            const d = @max(@max(volume.mins[axis] - eye[axis], eye[axis] - volume.maxs[axis]), 0);
+            distance += d * d;
+        }
+        // Keep the nearest: replace the farthest kept when full.
+        var slot: ?usize = if (count < max_view_boxes) count else null;
+        if (slot == null) {
+            var farthest: usize = 0;
+            for (chosen[0..count], 0..) |entry, k| {
+                if (entry.distance > chosen[farthest].distance) farthest = k;
+            }
+            if (distance < chosen[farthest].distance) slot = farthest;
+        }
+        const k = slot orelse continue;
+        chosen[k] = .{ .volume = volume, .distance = distance };
+        if (count < max_view_boxes) count += 1;
+    }
+    for (chosen[0..count], 0..) |entry, k| {
+        const volume = entry.volume;
+        boxes[k * 2] = .{ volume.mins[0], volume.mins[1], volume.mins[2], @floatFromInt(@intFromEnum(volume.kind)) };
+        boxes[k * 2 + 1] = .{ volume.maxs[0], volume.maxs[1], volume.maxs[2], 0 };
     }
     return count;
 }

@@ -17,6 +17,7 @@ pub const spec: profiles.Spec = .{
         .away = "away",
         .fire = "shoot",
         .idle = .{ "amba", null, null },
+        .idle_loop = true,
         .raise_ms = 600,
         .drop_ms = 600,
     },

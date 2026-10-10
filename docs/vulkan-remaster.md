@@ -219,9 +219,65 @@ calibration remain.
 
 ## Image quality
 
-- TAA, then FSR 3.1 temporal upscaling (MIT, bundleable).
+- TAA, then FSR 3.1 temporal upscaling (MIT, bundleable). Implemented, with optional DLSS; see
+  "Temporal upscaling" below.
 - Bloom, auto exposure, AgX or ACES tonemapping, GTAO, cinematic motion blur and
   depth of field, HDR10 swapchain output where offered.
+
+### Temporal upscaling (implemented; sequence 380)
+
+Video → Performance in the menu holds these settings. `r_vkUpscaleQuality` sets the world's
+render resolution against the window: 0 Auto (the default), 1 native, 2 quality (0.67),
+3 balanced (0.58), 4 performance (0.5), 5 ultra performance (0.33), 6 `r_vkRenderScale`. Auto
+renders half the resolution on 4K-class displays (7 million pixels and more), two thirds from
+3.5 million pixels (1440p, 1600p), and native below. `r_vkUpscaler` chooses what brings it
+back to full resolution:
+
+| `r_vkUpscaler` | Upscaler |
+|---|---|
+| 0 | the renderer's own temporal resolve (`taa.comp`) |
+| 1 | AMD FSR 3.1 (`fsr.zig`, bundled shaders) |
+| 2 | NVIDIA DLSS (`dlss.zig`), when installed; otherwise FSR |
+| -1 (default) | at native scale the own resolve; below it DLSS when installed, else FSR |
+
+All three take the same inputs:
+- **Colour:** the jittered HDR scene at render resolution, with a Halton jitter sequence of
+  8 × (display / render)² phases.
+- **Depth:** the HDR depth buffer.
+- **Motion vectors:** an RG16F target written by the shading pass (`motion.zig`), in render
+  pixels toward the previous position:
+  - every depth-writing surface records its previous position: the previous camera, the previous
+    entity transform, and the previous MD3 frames or IQM skeleton;
+  - entities carry no identity across frames, so each is matched to the previous frame's entity of
+    the same model nearest to it (the view weapon always to its previous self);
+  - `motion_fill.comp` gives the sky and non-depth-writing pixels the camera's motion from depth.
+- **Reactive mask (FSR):** from the HDR alpha that weather particles and unmatched models lower.
+
+FSR 3.1 runs the SDK's seven passes from `engine/fidelityfx` (unmodified, MIT) with HDR input,
+render-resolution unjittered motion vectors and its own auto exposure. `fsr.zig` replaces the
+SDK's C++ host: internal resources in the general layout, push descriptors per pass.
+
+DLSS is never shipped: the DLSS SDK license forbids subjecting it to an open source license.
+`dlss.zig` loads the NGX runtime the NVIDIA driver installs (`libnvidia-ngx.so.1`) and calls its
+Vulkan entry points directly. The DLSS module (`libnvidia-ngx-dlss.so.*`, from NVIDIA's DLSS SDK
+download) is found in `r_vkDlssPath`, `DK3_DLSS_PATH`, or else `dlss/` in the game's home
+directory (`fs_homepath`; `zig-out/native-dev/play/home/dlss` for `play.py`). Without it the
+renderer uses FSR.
+`r_vkDlssPreset` picks the model: 5 (E, CNN) by default. At 3840×2400 output from half
+resolution E costs 1.7 ms against 5.3 ms for K and 9.0 ms for the runtime's default M.
+
+Measured at 3840×2400 fullscreen, half render scale, AC power (e1m1a / e1m4a / e4m1a):
+
+| Upscaler | fps | Upscale pass |
+|---|---|---|
+| Native resolution, own resolve | 43 / 38 / — | 2.2–2.4 ms |
+| Own resolve | 105 / 98 / — | 0.7–1.4 ms |
+| FSR 3.1 | 113 / 85 / — | 1.8–2.3 ms |
+| DLSS, preset E | 114 / 108 / 136 | 1.6–1.7 ms |
+
+With the defaults (Auto, no other setting) at 3840×2400: e1m4a 111 fps, e1m1a 99 fps (DLSS,
+half scale). Half-scale FSR and DLSS keep detail close to native resolution; the own resolve softens it
+(`q-*`, `presets.png` comparisons in the run log).
 
 ## Licensing
 
@@ -232,9 +288,10 @@ The tree is GPL-2.0-or-later. Every admitted component is reviewed.
 | Q2RTX | GPL-2.0 | Reference for BSP path tracing; any adapted code keeps notices |
 | RayTracedGL1 | MIT | Reference for ReSTIR/A-SVGF; adaptable with notice |
 | Quake3e `renderervk` | GPL-2.0 | Reference for Q3 stage state on Vulkan |
-| AMD FSR 3.1 (FidelityFX SDK) | MIT | Candidate bundled upscaler |
+| AMD FSR 3.1 (FidelityFX SDK) | MIT | Bundled: shader subset under `engine/fidelityfx`, own host (`fsr.zig`) |
 | AMD FSR 4 | binaries only officially | Not admitted |
-| NVIDIA DLSS, Intel XeSS, NVIDIA NRD | proprietary SDK terms | Not bundled; at most an optional, user-supplied runtime plugin |
+| NVIDIA DLSS | proprietary SDK terms (§4(e) forbids open source licensing) | Not bundled; `dlss.zig` uses the driver's NGX and a user-installed DLSS module |
+| Intel XeSS, NVIDIA NRD | proprietary SDK terms | Not bundled |
 | GPL-3.0 code (e.g. RealRTCW SSGI) | incompatible | Excluded |
 
 ## Roadmap

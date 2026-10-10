@@ -70,6 +70,9 @@ fn spawnOne(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
     const position = (try world.get(entity, data.Transform)).position;
     const slot = try slots.acquire(entity, null);
     errdefer slots.release(slot, entity) catch unreachable;
+    // A recycled slot keeps the engine's brush flag of its last occupant: the client then
+    // read this model index as an inline brush and drew some trigger volume in its place.
+    projections[slot] = std.mem.zeroes(abi.EntityProjection);
     var buffer: [c.MAX_QPATH]u8 = undefined;
     const path = try model(object, kind, episode, &buffer);
     const model_index = try resources.model(path);
@@ -114,6 +117,8 @@ fn updateProjection(world: *data.World, entity: ecs.Entity, projections: []abi.E
     projection.shared.mins = body.mins;
     projection.shared.maxs = body.maxs;
     projection.shared.ownerNum = c.ENTITYNUM_NONE;
+    // Never a brush: linking with a recycled brush flag would publish SOLID_BMODEL.
+    projection.shared.bmodel = c.qfalse;
     projection.shared.contents = if (pickup.visible) c.CONTENTS_TRIGGER else 0;
     if (pickup.visible) {
         projection.shared.svFlags &= ~@as(i32, c.SVF_NOCLIENT);
@@ -237,7 +242,7 @@ pub fn step(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
     }
 }
 
-test "pickup projection clears a previous sound event when its slot is reused" {
+test "pickup projection clears a previous sound event and brush flag when its slot is reused" {
     const t = std.testing;
     var world = data.World.init(t.allocator, 4);
     defer world.deinit();
@@ -248,7 +253,10 @@ test "pickup projection clears a previous sound event when its slot is reused" {
     projections[0].state.event = c.EV_GENERAL_SOUND;
     projections[0].state.eventParm = 17;
     projections[0].shared.ownerNum = 3;
+    // A trigger brush last held the slot.
+    projections[0].shared.bmodel = c.qtrue;
     const projected = try updateProjection(&world, item, &projections);
+    try t.expectEqual(@as(c.qboolean, c.qfalse), projected.shared.bmodel);
     try t.expectEqual(@as(i32, 0), projected.state.frame);
     try t.expectEqual(@as(i32, 0), projected.state.eFlags);
     try t.expectEqual(@as(i32, 0), projected.state.event);

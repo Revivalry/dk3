@@ -253,6 +253,7 @@ pub const State = struct {
                         const movement = try definition_value.sequence("walka") orelse idle;
                         const entity = try world.create(null, .{ data.Transform{ .position = task.destination, .angles = task.angles }, data.Performer{ .unique = unique, .classname = track.classname, .model = definition_value.model, .scale = definition_value.scale, .walk_speed = definition_value.walk, .run_speed = definition_value.run, .yaw_speed = definition_value.yaw, .animation = idle, .idle = idle, .movement = movement, .animation_ms = now, .next_ms = now }, data.Body{ .mins = .{ -12, -12, -24 }, .maxs = .{ 12, 12, 30 }, .contents = 0, .collision_mask = c.MASK_SOLID } });
                         const slot = try slots.acquire(entity, null);
+                        projections[slot] = std.mem.zeroes(abi.EntityProjection);
                         try world.put(entity, data.Binding{ .slot = slot, .model = try @import("resources.zig").model(definition_value.model) });
                         try publish(world, entity, projections, now);
                     },

@@ -23,6 +23,7 @@ pub const spec: profiles.Spec = .{
         .ready = "e3/we_sclawready.wav",
         .away = "e3/we_sclawaway.wav",
         .variants = .{ "e3/we_sclawshoota.wav", "e3/we_sclawshootb.wav", "e3/we_sclawshootc.wav" },
+        .idle = .{ "e3/we_sclawamba.wav", null, null },
     },
 };
 pub const identity = .{ .classname = "weapon_silverclaw", .label = "Silverclaw", .episode = 3, .interval = 950 };

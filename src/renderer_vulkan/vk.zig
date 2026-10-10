@@ -5,7 +5,7 @@ const std = @import("std");
 const c = @import("c.zig").c;
 const common = @import("common.zig");
 
-pub const frames_in_flight = 2;
+pub const frames_in_flight = 3;
 pub const max_textures = 16384;
 pub const scene_format = c.VK_FORMAT_R8G8B8A8_UNORM;
 
@@ -36,6 +36,11 @@ const Instance = struct {
 };
 
 const Device = struct {
+    CreateQueryPool: c.PFN_vkCreateQueryPool = null,
+    DestroyQueryPool: c.PFN_vkDestroyQueryPool = null,
+    CmdResetQueryPool: c.PFN_vkCmdResetQueryPool = null,
+    CmdWriteTimestamp2: c.PFN_vkCmdWriteTimestamp2 = null,
+    GetQueryPoolResults: c.PFN_vkGetQueryPoolResults = null,
     DestroyDevice: c.PFN_vkDestroyDevice = null,
     GetDeviceQueue: c.PFN_vkGetDeviceQueue = null,
     DeviceWaitIdle: c.PFN_vkDeviceWaitIdle = null,
@@ -104,8 +109,11 @@ const Device = struct {
     CmdDraw: c.PFN_vkCmdDraw = null,
     CmdDispatch: c.PFN_vkCmdDispatch = null,
     CreateComputePipelines: c.PFN_vkCreateComputePipelines = null,
+    GetPipelineExecutablePropertiesKHR: c.PFN_vkGetPipelineExecutablePropertiesKHR = null,
+    GetPipelineExecutableStatisticsKHR: c.PFN_vkGetPipelineExecutableStatisticsKHR = null,
     CmdFillBuffer: c.PFN_vkCmdFillBuffer = null,
     CmdClearColorImage: c.PFN_vkCmdClearColorImage = null,
+    CmdPushDescriptorSetKHR: c.PFN_vkCmdPushDescriptorSetKHR = null,
     CmdClearAttachments: c.PFN_vkCmdClearAttachments = null,
     // VK_KHR_acceleration_structure (null without the ray tracing tier).
     CreateAccelerationStructureKHR: c.PFN_vkCreateAccelerationStructureKHR = null,
@@ -152,6 +160,10 @@ pub const Capabilities = struct {
     shader_object: bool = false,
     fragment_shading_rate: bool = false,
     descriptor_heap: bool = false,
+    /// VK_KHR_push_descriptor: the FidelityFX upscaler binds its passes this way (fsr.zig).
+    push_descriptor: bool = false,
+    /// The device extensions NVIDIA NGX needs for DLSS are enabled (dlss.zig).
+    ngx: bool = false,
 };
 
 pub const State = struct {
@@ -173,7 +185,7 @@ pub var s: State = .{};
 
 const required_device_extensions = [_][*:0]const u8{c.VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
-fn getInstanceProcAddr() c.PFN_vkGetInstanceProcAddr {
+pub fn getInstanceProcAddr() c.PFN_vkGetInstanceProcAddr {
     return @ptrCast(c.SDL_Vulkan_GetVkGetInstanceProcAddr());
 }
 
@@ -360,6 +372,17 @@ pub fn createDevice(candidate: Candidate, want_ray_tracing: bool) !void {
         .shader_object = has(available, c.VK_EXT_SHADER_OBJECT_EXTENSION_NAME),
         .fragment_shading_rate = has(available, c.VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME),
         .descriptor_heap = has(available, "VK_EXT_descriptor_heap"),
+        .push_descriptor = has(available, c.VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME),
+    };
+    if (s.capabilities.push_descriptor) {
+        s.extensions[s.extension_count] = c.VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME;
+        s.extension_count += 1;
+    }
+    // NVIDIA NGX (dlss.zig) imports its kernels and reads image view handles through these.
+    s.capabilities.ngx = has(available, "VK_NVX_binary_import") and has(available, "VK_NVX_image_view_handle") and s.capabilities.push_descriptor;
+    if (s.capabilities.ngx) for ([_][*:0]const u8{ "VK_NVX_binary_import", "VK_NVX_image_view_handle" }) |name| {
+        s.extensions[s.extension_count] = name;
+        s.extension_count += 1;
     };
 
     var features: Features = .{};
@@ -409,6 +432,19 @@ pub fn createDevice(candidate: Candidate, want_ray_tracing: bool) !void {
         .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR,
         .rayQuery = c.VK_TRUE,
     });
+    // Development: DK3_VK_PIPELINE_STATS=1 prints the driver's statistics (registers, spills)
+    // of every pipeline as it is created.
+    var executable_features = std.mem.zeroInit(c.VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR, .{
+        .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR,
+        .pipelineExecutableInfo = c.VK_TRUE,
+    });
+    pipeline_stats = std.c.getenv("DK3_VK_PIPELINE_STATS") != null and has(available, c.VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
+    if (pipeline_stats) {
+        s.extensions[s.extension_count] = c.VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME;
+        s.extension_count += 1;
+        executable_features.pNext = base.pNext;
+        base.pNext = &executable_features;
+    }
     ray_tracing = want_ray_tracing and s.capabilities.acceleration_structure and s.capabilities.ray_query and
         features.base.features.shaderInt64 != 0;
     if (ray_tracing) {
@@ -424,6 +460,8 @@ pub fn createDevice(candidate: Candidate, want_ray_tracing: bool) !void {
         as_scratch_alignment = @max(as_properties.minAccelerationStructureScratchOffsetAlignment, 1);
     }
 
+    // One queue for submits and presents: presenting from a second queue of the family let
+    // frames reach the screen out of order on NVIDIA's Wayland (PRIME) path.
     const priority: f32 = 1;
     const queue = std.mem.zeroInit(c.VkDeviceQueueCreateInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -458,8 +496,23 @@ pub fn destroyDevice() void {
     s.device = null;
 }
 
+/// The queue (and swapchain host access) is shared with the presenter thread (window.zig):
+/// every queue operation, acquire and present included, holds this lock.
+var queue_mutex: std.c.pthread_mutex_t = .{};
+
+pub fn lockQueue() void {
+    pthreadCheck(std.c.pthread_mutex_lock(&queue_mutex), "pthread_mutex_lock");
+}
+
+pub fn unlockQueue() void {
+    pthreadCheck(std.c.pthread_mutex_unlock(&queue_mutex), "pthread_mutex_unlock");
+}
+
 pub fn waitIdle() void {
-    if (s.device != null) _ = d.DeviceWaitIdle.?(s.device);
+    if (s.device == null) return;
+    lockQueue();
+    defer unlockQueue();
+    _ = d.DeviceWaitIdle.?(s.device);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -749,6 +802,9 @@ pub const Frame = struct {
     pool: c.VkCommandPool = null,
     upload: c.VkCommandBuffer = null,
     draw: c.VkCommandBuffer = null,
+    /// The swapchain composite, recorded after the scene was submitted (submitScene).
+    present: c.VkCommandBuffer = null,
+    scene_submitted: bool = false,
     acquired: c.VkSemaphore = null,
     value: u64 = 0,
     staging: Ring = .{},
@@ -758,7 +814,7 @@ pub const Frame = struct {
     retired: std.ArrayList(Buffer) = .empty,
 };
 
-pub var frames: [frames_in_flight]Frame = .{ .{}, .{} };
+pub var frames: [frames_in_flight]Frame = [_]Frame{.{}} ** frames_in_flight;
 pub var frame_index: usize = 0;
 pub var timeline: c.VkSemaphore = null;
 pub var timeline_value: u64 = 0;
@@ -788,19 +844,20 @@ pub fn createFrames() void {
             .queueFamilyIndex = s.family,
         });
         must(d.CreateCommandPool.?(s.device, &pool_info, null, &slot.pool), "vkCreateCommandPool");
-        var buffers: [2]c.VkCommandBuffer = undefined;
+        var buffers: [3]c.VkCommandBuffer = undefined;
         const allocate_info = std.mem.zeroInit(c.VkCommandBufferAllocateInfo, .{
             .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
             .commandPool = slot.pool,
             .level = c.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-            .commandBufferCount = 2,
+            .commandBufferCount = 3,
         });
         must(d.AllocateCommandBuffers.?(s.device, &allocate_info, &buffers), "vkAllocateCommandBuffers");
         slot.upload = buffers[0];
         slot.draw = buffers[1];
+        slot.present = buffers[2];
         must(d.CreateSemaphore.?(s.device, &binary, null, &slot.acquired), "vkCreateSemaphore");
         slot.staging.init(staging_size, c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false);
-        slot.stream.init(stream_size, c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
+        slot.stream.init(stream_size, c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
         slot.records.init(records_size, c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
         slot.value = 0;
     }
@@ -843,8 +900,13 @@ fn beginBuffer(cmd: c.VkCommandBuffer) void {
     must(d.BeginCommandBuffer.?(cmd, &begin), "vkBeginCommandBuffer");
 }
 
+/// How long the CPU last waited for a frame slot's GPU work (profile.zig).
+pub var last_wait_ms: f64 = 0;
+
 fn beginUploads(slot: *Frame) void {
+    const wait_start = common.nanoseconds();
     waitValue(slot.value);
+    last_wait_ms = @as(f64, @floatFromInt(common.nanoseconds() - wait_start)) / 1e6;
     for (slot.retired.items) |*retired| destroyBuffer(retired);
     slot.retired.clearRetainingCapacity();
     must(d.ResetCommandPool.?(s.device, slot.pool, 0), "vkResetCommandPool");
@@ -863,17 +925,52 @@ pub fn beginDraw() c.VkCommandBuffer {
 
 pub const Present = struct { wait: c.VkSemaphore = null, signal: c.VkSemaphore = null };
 
-/// Submits the slot's uploads then its draws, and starts the next slot.
-pub fn submitFrame(present: Present) u64 {
+/// Submits the slot's uploads and draws without waiting for a swapchain image, so the GPU
+/// starts on the frame while the previous present may still block; returns the command buffer
+/// for the swapchain composite, which submitFrame submits.
+pub fn submitScene() c.VkCommandBuffer {
     const slot = frame();
     must(d.EndCommandBuffer.?(slot.upload), "vkEndCommandBuffer");
     must(d.EndCommandBuffer.?(slot.draw), "vkEndCommandBuffer");
-    timeline_value += 1;
-    slot.value = timeline_value;
     const buffers = [_]c.VkCommandBufferSubmitInfo{
         std.mem.zeroInit(c.VkCommandBufferSubmitInfo, .{ .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, .commandBuffer = slot.upload }),
         std.mem.zeroInit(c.VkCommandBufferSubmitInfo, .{ .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, .commandBuffer = slot.draw }),
     };
+    const submit = std.mem.zeroInit(c.VkSubmitInfo2, .{
+        .sType = c.VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+        .commandBufferInfoCount = 2,
+        .pCommandBufferInfos = &buffers,
+    });
+    lockQueue();
+    const submitted_result = d.QueueSubmit2.?(s.queue, 1, &submit, null);
+    unlockQueue();
+    must(submitted_result, "vkQueueSubmit2");
+    slot.scene_submitted = true;
+    beginBuffer(slot.present);
+    return slot.present;
+}
+
+/// Submits the slot's uploads then its draws (or, after submitScene, the swapchain
+/// composite), and starts the next slot.
+pub fn submitFrame(present: Present) u64 {
+    const slot = frame();
+    const split = slot.scene_submitted;
+    slot.scene_submitted = false;
+    if (split) {
+        must(d.EndCommandBuffer.?(slot.present), "vkEndCommandBuffer");
+    } else {
+        must(d.EndCommandBuffer.?(slot.upload), "vkEndCommandBuffer");
+        must(d.EndCommandBuffer.?(slot.draw), "vkEndCommandBuffer");
+    }
+    timeline_value += 1;
+    slot.value = timeline_value;
+    const all_buffers = [_]c.VkCommandBufferSubmitInfo{
+        std.mem.zeroInit(c.VkCommandBufferSubmitInfo, .{ .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, .commandBuffer = slot.upload }),
+        std.mem.zeroInit(c.VkCommandBufferSubmitInfo, .{ .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, .commandBuffer = slot.draw }),
+        std.mem.zeroInit(c.VkCommandBufferSubmitInfo, .{ .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, .commandBuffer = slot.present }),
+    };
+    // Signals in submission order cover the scene submitted earlier as well.
+    const buffers = if (split) all_buffers[2..3] else all_buffers[0..2];
     const wait = std.mem.zeroInit(c.VkSemaphoreSubmitInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
         .semaphore = present.wait,
@@ -887,12 +984,15 @@ pub fn submitFrame(present: Present) u64 {
         .sType = c.VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
         .waitSemaphoreInfoCount = @as(u32, if (present.wait != null) 1 else 0),
         .pWaitSemaphoreInfos = &wait,
-        .commandBufferInfoCount = 2,
-        .pCommandBufferInfos = &buffers,
+        .commandBufferInfoCount = @as(u32, @intCast(buffers.len)),
+        .pCommandBufferInfos = buffers.ptr,
         .signalSemaphoreInfoCount = @as(u32, if (present.signal != null) 2 else 1),
         .pSignalSemaphoreInfos = &signals,
     });
-    must(d.QueueSubmit2.?(s.queue, 1, &submit, null), "vkQueueSubmit2");
+    lockQueue();
+    const submitted_result = d.QueueSubmit2.?(s.queue, 1, &submit, null);
+    unlockQueue();
+    must(submitted_result, "vkQueueSubmit2");
     const submitted = timeline_value;
     frame_index = (frame_index + 1) % frames_in_flight;
     beginUploads(frame());
@@ -915,7 +1015,10 @@ pub fn flushUploads() void {
         .signalSemaphoreInfoCount = 1,
         .pSignalSemaphoreInfos = &signal,
     });
-    must(d.QueueSubmit2.?(s.queue, 1, &submit, null), "vkQueueSubmit2");
+    lockQueue();
+    const submitted_result = d.QueueSubmit2.?(s.queue, 1, &submit, null);
+    unlockQueue();
+    must(submitted_result, "vkQueueSubmit2");
     waitValue(timeline_value);
     // Only the upload buffer is reset; a draw buffer may already be recording in this slot.
     slot.staging.reset();
@@ -994,6 +1097,14 @@ pub fn uploadRegion(texture: *const Texture, x: u32, y: u32, width: u32, height:
         .imageExtent = .{ .width = width, .height = height, .depth = 1 },
     });
     d.CmdCopyBufferToImage.?(cmd, space.buffer, texture.image, c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    barrier(cmd, texture.image, c.VK_IMAGE_ASPECT_COLOR_BIT, c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, stage_copy, access_transfer_write, stage_fragment | stage_vertex, access_shader_read);
+}
+
+/// Copies `regions` of a device buffer into a sampled texture, in the frame's upload commands
+/// (`cmd`), restoring its shader-read layout.
+pub fn copyRegions(cmd: c.VkCommandBuffer, source: c.VkBuffer, texture: *const Texture, regions: []const c.VkBufferImageCopy) void {
+    barrier(cmd, texture.image, c.VK_IMAGE_ASPECT_COLOR_BIT, c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, stage_all, 0, stage_copy, access_transfer_write);
+    d.CmdCopyBufferToImage.?(cmd, source, texture.image, c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, @intCast(regions.len), regions.ptr);
     barrier(cmd, texture.image, c.VK_IMAGE_ASPECT_COLOR_BIT, c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, stage_copy, access_transfer_write, stage_fragment | stage_vertex, access_shader_read);
 }
 
@@ -1318,7 +1429,10 @@ pub fn computePipeline(comptime name: []const u8) c.VkPipeline {
         .layout = pipeline_layout,
     });
     var created: c.VkPipeline = null;
-    must(d.CreateComputePipelines.?(s.device, null, 1, &info, null, &created), "vkCreateComputePipelines");
+    var stats_info = info;
+    if (pipeline_stats) stats_info.flags |= c.VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
+    must(d.CreateComputePipelines.?(s.device, null, 1, &stats_info, null, &created), "vkCreateComputePipelines");
+    reportPipeline(created, name, 0);
     compute_pipelines.put(common.gpa, name, created) catch @panic("OOM");
     return created;
 }
@@ -1406,10 +1520,18 @@ pub const PipelineKey = struct {
     overlay: bool = false,
     /// HDR alpha is multiplied by (1 - source alpha): taa.comp trusts the new frame there.
     mark_motion: bool = false,
+    /// stage.frag STAGE_VARIANT specialisation (stage programs only).
+    variant: u8 = 0,
+    /// Draws into the remaster HDR target, whose second attachment holds motion vectors
+    /// (motion.zig); `motion_write` lets this stage write them.
+    motion_target: bool = false,
+    motion_write: bool = false,
 };
 
+pub const motion_format = c.VK_FORMAT_R16G16_SFLOAT;
+
 var pipelines: std.AutoHashMapUnmanaged(PipelineKey, c.VkPipeline) = .empty;
-var modules: [6]c.VkShaderModule = .{ null, null, null, null, null, null };
+var modules: [10]c.VkShaderModule = .{null} ** 10;
 
 fn spirv(comptime name: []const u8) []const u32 {
     const bytes align(4) = @embedFile(name).*;
@@ -1437,6 +1559,10 @@ pub fn createModules() void {
         modules[4] = createModule(spirv("bake.vert.spv"));
         modules[5] = createModule(spirv("bake.frag.spv"));
     }
+    modules[6] = createModule(spirv("stage.vert.spv"));
+    modules[7] = createModule(spirv("depth.frag.spv"));
+    modules[8] = createModule(spirv("stage.vert.spv"));
+    modules[9] = if (ray_tracing) createModule(spirv("stage_rt_early.frag.spv")) else createModule(spirv("stage_early.frag.spv"));
 }
 
 pub fn destroyPipelines() void {
@@ -1456,6 +1582,10 @@ pub const program_stage: u8 = 0;
 pub const program_composite: u8 = 1;
 /// Directional lightmap bake (ray tracing tier).
 pub const program_bake: u8 = 2;
+/// Depth pre-pass: stage.vert with an empty fragment shader.
+pub const program_depth: u8 = 3;
+/// The stage shader with early fragment tests, for surfaces the depth pre-pass covered.
+pub const program_stage_early: u8 = 4;
 
 /// GL blend factor codes used by material state (`blend.zig` mapping).
 pub fn blendFactor(code: u8) c.VkBlendFactor {
@@ -1479,6 +1609,9 @@ pub fn pipeline(key: PipelineKey) c.VkPipeline {
     if (pipelines.get(key)) |existing| return existing;
     // Composite and bake passes have no depth attachment.
     const composite = key.program == program_composite or key.program == program_bake;
+    const variant: u32 = key.variant;
+    const entry = c.VkSpecializationMapEntry{ .constantID = 0, .offset = 0, .size = @sizeOf(u32) };
+    const specialization = c.VkSpecializationInfo{ .mapEntryCount = 1, .pMapEntries = &entry, .dataSize = @sizeOf(u32), .pData = &variant };
     const stages = [_]c.VkPipelineShaderStageCreateInfo{
         std.mem.zeroInit(c.VkPipelineShaderStageCreateInfo, .{
             .sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -1491,6 +1624,7 @@ pub fn pipeline(key: PipelineKey) c.VkPipeline {
             .stage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
             .module = modules[@as(usize, key.program) * 2 + 1],
             .pName = "main",
+            .pSpecializationInfo = &specialization,
         }),
     };
     const vertex_input = std.mem.zeroInit(c.VkPipelineVertexInputStateCreateInfo, .{ .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO });
@@ -1533,10 +1667,14 @@ pub fn pipeline(key: PipelineKey) c.VkPipeline {
     });
     // UNDEFINED format: depth-only pass (remaster shadow atlas).
     const depth_only = key.format == c.VK_FORMAT_UNDEFINED;
+    const color_count: u32 = if (depth_only) 0 else if (key.motion_target) 2 else 1;
+    const attachments = [2]c.VkPipelineColorBlendAttachmentState{ attachment, std.mem.zeroInit(c.VkPipelineColorBlendAttachmentState, .{
+        .colorWriteMask = @as(u32, if (key.motion_write) c.VK_COLOR_COMPONENT_R_BIT | c.VK_COLOR_COMPONENT_G_BIT else 0),
+    }) };
     const blend = std.mem.zeroInit(c.VkPipelineColorBlendStateCreateInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .attachmentCount = @as(u32, if (depth_only) 0 else 1),
-        .pAttachments = &attachment,
+        .attachmentCount = color_count,
+        .pAttachments = &attachments,
     });
     const dynamic_states = [_]c.VkDynamicState{
         c.VK_DYNAMIC_STATE_VIEWPORT,         c.VK_DYNAMIC_STATE_SCISSOR,           c.VK_DYNAMIC_STATE_CULL_MODE,
@@ -1548,10 +1686,10 @@ pub fn pipeline(key: PipelineKey) c.VkPipeline {
         .dynamicStateCount = dynamic_states.len,
         .pDynamicStates = &dynamic_states,
     });
-    const formats = [_]c.VkFormat{key.format};
+    const formats = [_]c.VkFormat{ key.format, motion_format };
     const rendering = std.mem.zeroInit(c.VkPipelineRenderingCreateInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-        .colorAttachmentCount = @as(u32, if (depth_only) 0 else 1),
+        .colorAttachmentCount = color_count,
         .pColorAttachmentFormats = &formats,
         .depthAttachmentFormat = if (composite) @as(c.VkFormat, c.VK_FORMAT_UNDEFINED) else s.depth_format,
     });
@@ -1571,7 +1709,48 @@ pub fn pipeline(key: PipelineKey) c.VkPipeline {
         .layout = pipeline_layout,
     });
     var created: c.VkPipeline = null;
-    must(d.CreateGraphicsPipelines.?(s.device, null, 1, &info, null, &created), "vkCreateGraphicsPipelines");
+    var stats_info = info;
+    if (pipeline_stats) stats_info.flags |= c.VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
+    const compile_start = common.nanoseconds();
+    must(d.CreateGraphicsPipelines.?(s.device, null, 1, &stats_info, null, &created), "vkCreateGraphicsPipelines");
+    const compile_ms = @as(f64, @floatFromInt(common.nanoseconds() - compile_start)) / 1e6;
+    if (compile_ms > 50) common.info("vk pipeline compile: program {d} variant {d} took {d:.0} ms\n", .{ key.program, key.variant, compile_ms });
+    reportPipeline(created, "graphics program/variant", @as(u16, key.program) * 10 + key.variant);
     pipelines.put(common.gpa, key, created) catch @panic("OOM");
     return created;
+}
+
+fn pthreadCheck(rc: std.c.E, what: []const u8) void {
+    if (rc != .SUCCESS) common.fail(c.ERR_FATAL, "renderer_vulkan: {s} failed ({s})", .{ what, @tagName(rc) });
+}
+
+var pipeline_stats = false;
+
+fn reportPipeline(pipeline_handle: c.VkPipeline, name: []const u8, program: u16) void {
+    if (!pipeline_stats) return;
+    const info = std.mem.zeroInit(c.VkPipelineInfoKHR, .{ .sType = c.VK_STRUCTURE_TYPE_PIPELINE_INFO_KHR, .pipeline = pipeline_handle });
+    var executables: [4]c.VkPipelineExecutablePropertiesKHR = undefined;
+    for (&executables) |*e| e.* = std.mem.zeroInit(c.VkPipelineExecutablePropertiesKHR, .{ .sType = c.VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_PROPERTIES_KHR });
+    var count: u32 = executables.len;
+    _ = d.GetPipelineExecutablePropertiesKHR.?(s.device, &info, &count, &executables);
+    for (executables[0..count], 0..) |executable, index| {
+        const exec_info = std.mem.zeroInit(c.VkPipelineExecutableInfoKHR, .{ .sType = c.VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INFO_KHR, .pipeline = pipeline_handle, .executableIndex = @as(u32, @intCast(index)) });
+        var stats: [24]c.VkPipelineExecutableStatisticKHR = undefined;
+        for (&stats) |*st| st.* = std.mem.zeroInit(c.VkPipelineExecutableStatisticKHR, .{ .sType = c.VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_STATISTIC_KHR });
+        var stat_count: u32 = stats.len;
+        _ = d.GetPipelineExecutableStatisticsKHR.?(s.device, &exec_info, &stat_count, &stats);
+        var line: [1024]u8 = undefined;
+        var w: usize = 0;
+        for (stats[0..stat_count]) |st| {
+            const value: u64 = switch (st.format) {
+                c.VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_BOOL32_KHR => st.value.b32,
+                c.VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_INT64_KHR => @bitCast(st.value.i64),
+                c.VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR => st.value.u64,
+                else => @intFromFloat(st.value.f64),
+            };
+            const text = std.fmt.bufPrint(line[w..], " {s}={d};", .{ std.mem.sliceTo(&st.name, 0), value }) catch break;
+            w += text.len;
+        }
+        common.print(c.PRINT_ALL, "vk pipeline stats: {s} {d} [{s}]{s}\n", .{ name, program, std.mem.sliceTo(&executable.name, 0), line[0..w] });
+    }
 }
