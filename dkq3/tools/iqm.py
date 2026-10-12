@@ -1,13 +1,14 @@
 """IQM encoder for static meshes: ioquake3's inter-quake model format (version 2), laid out like
 code/renderercommon/iqm.h and accepted by R_LoadIQM (code/renderergl1/tr_model_iqm.c).
 
-`encode` returns the bytes of one model without joints, poses or animations: `iqmHeader_t`, the text block, the meshes, three
-vertex arrays (float positions, normals and texture coordinates), the triangles and the bounds of its one frame. Positions are floats,
+`encode` returns the bytes of one static model without joints, poses or animations: `iqmHeader_t`, the text block, the meshes, four
+vertex arrays (float positions, normals, texture coordinates and tangents), the triangles and repeated bounds for source-compatible frame slots. Positions are floats,
 so a static model keeps coordinates MD3's 1/64-unit shorts cannot hold (FRD-017). Every struct is a table of (C field
 name, struct format), checked against iqm.h by tests/test_iqm.py. Standard library only.
 
 FRD: specs/frds/FRD-017-dkm-models-with-preserved-surfaces-vertices-and-sequences.md
 """
+import math
 import struct
 from dataclasses import dataclass
 
@@ -19,10 +20,10 @@ MAX_QPATH = 64
 MAX_FILESIZE = 16 << 20
 SHADER_MAX_VERTEXES = 1000
 SHADER_MAX_INDEXES = 6 * SHADER_MAX_VERTEXES
-# Vertex array types and formats (iqm.h); R_LoadIQM requires float positions and normals of 3 and texcoords of 2.
-POSITION, TEXCOORD, NORMAL = 0, 1, 2
+# Vertex array types and formats (iqm.h); OpenGL2 also requires four-float tangents.
+POSITION, TEXCOORD, NORMAL, TANGENT = 0, 1, 2, 3
 FLOAT = 7
-ARRAYS = ((POSITION, 3), (NORMAL, 3), (TEXCOORD, 2))
+ARRAYS = ((POSITION, 3), (NORMAL, 3), (TEXCOORD, 2), (TANGENT, 4))
 # R_LoadIQM reads the meshes, vertex arrays, triangles and array values in place through 4-byte struct and int casts
 # (tr_model_iqm.c:268, :296, :385, :403, :699, :717, :725), so every block starts on a 4-byte boundary: the text block is
 # padded with NUL bytes (specs/bugs/BUG-iqm-models-misaligned-blocks-trap-ubsan.md).
@@ -102,9 +103,47 @@ def bounds(meshes):
     return BOUNDS.pack(*low, *high, xyradius, radius)
 
 
-def encode(meshes):
-    """The bytes of one static IQM model. Raises IqmError (see `validate`)."""
+def tangents(mesh):
+    """Indexed UV derivatives, with an orthogonal fallback for degenerate islands."""
+    accumulated = [[0., 0., 0.] for _ in mesh.positions]
+    bitangents = [[0., 0., 0.] for _ in mesh.positions]
+    for a, b, c in mesh.triangles:
+        p, q, r = (mesh.positions[i] for i in (a, b, c))
+        u, v, w = (mesh.texcoords[i] for i in (a, b, c))
+        e1, e2 = [q[i]-p[i] for i in range(3)], [r[i]-p[i] for i in range(3)]
+        du1, dv1, du2, dv2 = v[0]-u[0], v[1]-u[1], w[0]-u[0], w[1]-u[1]
+        determinant = du1*dv2-du2*dv1
+        if abs(determinant) < 1e-10:
+            continue
+        tangent = [(e1[i]*dv2-e2[i]*dv1)/determinant for i in range(3)]
+        bitangent = [(e2[i]*du1-e1[i]*du2)/determinant for i in range(3)]
+        for index in (a, b, c):
+            for axis in range(3):
+                accumulated[index][axis] += tangent[axis]
+                bitangents[index][axis] += bitangent[axis]
+    result = []
+    for normal, tangent, bitangent in zip(mesh.normals, accumulated, bitangents):
+        normal_length = math.sqrt(sum(value*value for value in normal))
+        n = [value/max(normal_length, 1e-10) for value in normal]
+        projection = sum(n[i]*tangent[i] for i in range(3))
+        t = [tangent[i]-n[i]*projection for i in range(3)]
+        length = math.sqrt(sum(value*value for value in t))
+        if length < 1e-10:
+            axis = min(range(3), key=lambda i: abs(n[i]))
+            basis = [float(i == axis) for i in range(3)]
+            t = [n[1]*basis[2]-n[2]*basis[1], n[2]*basis[0]-n[0]*basis[2], n[0]*basis[1]-n[1]*basis[0]]
+            length = math.sqrt(sum(value*value for value in t))
+        t = [value/max(length, 1e-10) for value in t]
+        cross = [n[1]*t[2]-n[2]*t[1], n[2]*t[0]-n[0]*t[2], n[0]*t[1]-n[1]*t[0]]
+        handedness = -1. if sum(cross[i]*bitangent[i] for i in range(3)) < 0 else 1.
+        result.append((*t, handedness))
+    return tuple(result)
+
+
+def encode(meshes, frame_count=NUM_FRAMES):
+    """The bytes of one static IQM model with source-compatible frame slots."""
     validate(meshes)
+    _check(1 <= frame_count <= 2048, "frame_count", "static model needs 1..2048 frame slots")
     text, offsets = bytearray(b"\0"), {}
     for value in (v for mesh in meshes for v in (mesh.name, mesh.material)):
         if value not in offsets:
@@ -118,7 +157,8 @@ def encode(meshes):
         triangles += b"".join(TRIANGLE.pack(*(first_vertex + i for i in t)) for t in mesh.triangles)
         first_vertex, first_triangle = first_vertex + len(mesh.positions), first_triangle + len(mesh.triangles)
     columns = {POSITION: "positions", NORMAL: "normals", TEXCOORD: "texcoords"}
-    data = [b"".join(struct.pack(f"<{size}f", *v) for mesh in meshes for v in getattr(mesh, columns[kind])) for kind, size in ARRAYS]
+    data = [b"".join(struct.pack(f"<{size}f", *v) for mesh in meshes for v in
+                     (tangents(mesh) if kind == TANGENT else getattr(mesh, columns[kind]))) for kind, size in ARRAYS]
     ofs_text = HEADER.size
     ofs_meshes = ofs_text + len(text)
     ofs_arrays = ofs_meshes + len(records) * MESH.size
@@ -129,10 +169,10 @@ def encode(meshes):
         offset += len(block)
     ofs_triangles = offset
     ofs_bounds = ofs_triangles + len(triangles)
-    filesize = ofs_bounds + BOUNDS.size
+    filesize = ofs_bounds + BOUNDS.size * frame_count
     _check(filesize <= MAX_FILESIZE, "filesize", f"{filesize} bytes, R_LoadIQM loads at most {MAX_FILESIZE}")
     counts = dict(num_text=len(text), ofs_text=ofs_text, num_meshes=len(meshes), ofs_meshes=ofs_meshes,
                   num_vertexarrays=len(ARRAYS), num_vertexes=first_vertex, ofs_vertexarrays=ofs_arrays,
-                  num_triangles=first_triangle, ofs_triangles=ofs_triangles, num_frames=NUM_FRAMES, ofs_bounds=ofs_bounds)
+                  num_triangles=first_triangle, ofs_triangles=ofs_triangles, num_frames=frame_count, ofs_bounds=ofs_bounds)
     head = HEADER.pack(MAGIC, VERSION, filesize, *(counts.get(name, 0) for name, _ in HEADER_FIELDS[3:]))
-    return head + bytes(text) + b"".join(records) + arrays + b"".join(data) + bytes(triangles) + bounds(meshes)
+    return head + bytes(text) + b"".join(records) + arrays + b"".join(data) + bytes(triangles) + bounds(meshes) * frame_count

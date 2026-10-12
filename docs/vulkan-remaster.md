@@ -70,7 +70,7 @@ Renderer stack:
   `SetDk3Fog` and the resident-world calls, `refEntity_t` bone matrices and world
   tags (`tr_types.h:120-126`), and `refdef_t.dk3Lightstyles` (`tr_types.h:142`).
 - The Zig client reaches the renderer only through cgame syscalls
-  (`src/runtime/engine/abi.zig`, `cl_cgame.c:651-711`). New renderer inputs follow
+  (`src/engine/abi.zig`, `cl_cgame.c:651-711`). New renderer inputs follow
   one pattern: `CG_DK3_<NAME>_V1` (716+) in `cg_public.h`, a case in `cl_cgame.c`, a
   `refexport_t` member implemented by every renderer, or a new `refdef_t` field.
 
@@ -93,7 +93,7 @@ Gaps found in this investigation:
   water from lava or slime.
 - **No underwater view.** The client knows the eye's water level (`client.zig:641`)
   but only passes it to sound.
-- **Weather is CPU particles.** `src/runtime/client/weather.zig` culls brush volumes
+- **Weather is CPU particles.** `src/classes/entities/weather/client/weather.zig` culls brush volumes
   and sends one poly per drop (`fx_particles.zig:84`). Rain is in episodes 1 and 4,
   snow in episode 3, none in episode 2.
 
@@ -211,7 +211,7 @@ calibration remain.
   authored fog values.
 - **GPU weather.** Compute-simulated rain and snow with depth-buffer collision and
   splashes, replacing per-drop polys. A new `CG_DK3_R_WEATHER_V1` passes kind, rate,
-  wind and volume boxes from `src/runtime/domain/weather.zig`; gameplay rules stay
+  wind and volume boxes from `src/classes/entities/weather/domain/weather.zig`; gameplay rules stay
   in Zig.
 - **Wet surfaces.** A top-down rain occlusion map drives puddles (lower roughness,
   darker albedo), ripple normals and drips; snow accumulates on upward faces.

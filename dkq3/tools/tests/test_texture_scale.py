@@ -59,7 +59,8 @@ class Ramp(unittest.TestCase):
         rows = (np.arange(512) + 0.5) / 512 * 0.48
         query = np.repeat(rows[:, None], 256, axis=1)
         out = craft_textures.ramp(query, self.STOPS)
-        self.assertLess(float(out[..., 0].max()), 0.21)   # still inside segment 0->0.44
+        # 0.48 lies in segment 0.44->0.488, so the ramp stays below the 0.488 stop's colour.
+        self.assertLess(float(out[..., 0].max()), 0.30)
 
 
 class TextureScaleDrift(unittest.TestCase):

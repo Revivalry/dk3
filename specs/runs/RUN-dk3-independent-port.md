@@ -8486,7 +8486,9 @@ Follow-ups from the owner's play session:
   Restart-only ones say so. `runtime_ui_probe.py --scenario video --renderer vulkan` clicks
   through all pages (`menu-video/`).
 
-| 376 | `vulkan-renderer-rt-light-sources` | implemented; GPU smokes `green*/`, `probe4c_fix/`, `survey13/`; owner acceptance open |
+## Sequence 376 — vulkan-renderer-rt-light-sources — every original light source is ray traced
+
+**Status.** implemented; GPU smokes `green*/`, `probe4c_fix/`, `survey13/`; owner acceptance open
 
 Every original light source is ray traced from its own data (docs/vulkan-remaster.md, "Ray
 traced light sources"):
@@ -8623,7 +8625,9 @@ Game and runtime fixes found by the runs:
 | e1m6c → credits | Open | generic chains only |
 | Full New Game → credits chain | Open | |
 
-| 377 | `vulkan-renderer-performance` | implemented; GPU benchmarks `final-*`, `perf46-*`; owner acceptance open |
+## Sequence 377 — vulkan-renderer-performance — 100+ FPS at the same quality
+
+**Status.** implemented; GPU benchmarks `final-*`, `perf46-*`; owner acceptance open
 
 The remaster renderer at the same image went from 25–34 fps to over 100 fps at 2560×1600 on
 four of five episode openers (RTX 5090 Laptop, AC power, `performance` profile, monsters
@@ -8651,7 +8655,9 @@ pacified, uncapped, no vsync). Changes:
 | e3m1a | 199 | 4.1 ms |
 | e4m1a | 113 | 7.6 ms |
 
-| 378 | `vulkan-renderer-frame-pacing` | implemented; verified by screen capture `order-*`, pacing `pace5-*`; owner acceptance open |
+## Sequence 378 — vulkan-renderer-frame-pacing — frames no longer step backwards
+
+**Status.** implemented; verified by screen capture `order-*`, pacing `pace5-*`; owner acceptance open
 
 The owner saw whole frames jump back and forth. A frame counter stamped into each presented
 image and read back from the compositor (grim, while turning) showed older frames reaching the
@@ -8669,14 +8675,18 @@ screen after newer ones:
   refreshes; the game module's 4 ms frame runs before the client render every 50 ms; a new enemy
   type decodes its 4096² skin on the main thread (0.6–0.8 s).
 
-| 379 | `native-client-resident-sound-race` | implemented; unverified (the race was not reproduced) |
+## Sequence 379 — native-client-resident-sound-race — a sound event that arrives before its configstring is retried
+
+**Status.** implemented; unverified (the race was not reproduced)
 
 A resident world's newly used sound reaches the client through its acknowledged config patch,
 which can trail the snapshot carrying the event; the client read an empty name and ended the
 game (`InvalidSoundPath`, cambot alarm in e1m1b). `events.zig` now leaves such an event
 unmarked and retries it on later snapshots while it lives; loop sounds skip the frame.
 
-| 380 | `vulkan-renderer-upscalers` | implemented; GPU smokes `mv4/`, `q-*`, `dlss1/`, benchmarks `up-*`, `preset-*`, `dlssE-*`; owner acceptance open |
+## Sequence 380 — vulkan-renderer-upscalers — FSR 3.1 bundled, DLSS as a user-installed plugin
+
+**Status.** implemented; GPU smokes `mv4/`, `q-*`, `dlss1/`, benchmarks `up-*`, `preset-*`, `dlssE-*`; owner acceptance open
 
 Motion vectors, AMD FSR 3.1 (bundled) and NVIDIA DLSS (user-installed), see
 docs/vulkan-remaster.md "Temporal upscaling".
@@ -8711,7 +8721,9 @@ Known gaps:
 - Two identical models standing together can swap their matches.
 - The FSR reactive mask covers weather and unmatched models only.
 
-| 381 | `vulkan-renderer-near-rain` | implemented; GPU smokes `rainbox*/`; owner acceptance open |
+## Sequence 381 — vulkan-renderer-near-rain — rain falls around the player
+
+**Status.** implemented; GPU smokes `rainbox*/`; owner acceptance open
 
 The owner saw rain missing around the player and appearing on looking up. Rain volumes spread
 their drops (the original 0.035 per square unit) over their whole height, 500–700 units in
@@ -8729,7 +8741,9 @@ count became 17 bits and `count * 6` overflowed); the count is typed `u32`.
 The rain occlusion map and froxel rain took the first 8 weather boxes in registration order
 (`weather.max_view_boxes`); e1m1a has 30. They now take the 8 nearest the eye.
 
-| 382 | `native-server-recycled-brush-slots` | implemented; unit test extended; owner retest open |
+## Sequence 382 — native-server-recycled-brush-slots — recycled slots never publish a stale brush flag
+
+**Status.** implemented; unit test extended; owner retest open
 
 The owner saw floating boxes with mirrored "trigger trigger" text (e1m4b garage), flat orange
 strips on the crematorium bridge fences and a translucent double of a C4 pack. The "trigger"
@@ -8744,7 +8758,9 @@ model-less train spawns now zero the recycled projection. Item projections clear
 flag on every update; the reuse test covers it. Not reproduced in a fresh session: it needs
 the slot history of real play.
 
-| 383 | `native-weapon-ambient-idles` | implemented; unit test added; e1m1a GPU smoke `idlerun/`; owner acceptance open |
+## Sequence 383 — native-weapon-ambient-idles — first-person weapon idles cycle like Gold
+
+**Status.** implemented; unit test added; e1m1a GPU smoke `idlerun/`; owner acceptance open
 
 The owner saw first-person weapons repeat one animation endlessly. The view looped the first
 idle (`idle[0]`) from the end of every animation. Gold (`weapon_funcs.cpp` "ambient",
@@ -8758,7 +8774,9 @@ frame tables: kineticore, slugger, cordite and stavros have only `amba`; novabea
 The bolter, discus, ripgun, silverclaw and venomous ambient sounds were added. A disruptor held
 still for 45 s on e1m1a played 6 ambients mixing `amba` and `ambb`.
 
-| 384 | `native-restore-hidden-event-generators` | implemented; unit test added; owner save2 (e1m4b) GPU check passed `s4/` |
+## Sequence 384 — native-restore-hidden-event-generators — event generators stay hidden after a load
+
+**Status.** implemented; unit test added; owner save2 (e1m4b) GPU check passed `s4/`
 
 The owner's save2 (e1m4b garage) still showed the floating "trigger" box after 382. Logging
 each inline model the client drew and each server brush slot after restoration showed slot 97,
@@ -8770,7 +8788,9 @@ e1m4b). Spawn and restoration now share `brushes.hiddenClass`. After the fix, sa
 without the box. Entry 382's recycled-slot hardening stands, but it was not the cause of this
 box. The e1m4a crematorium bridge strips remain open: e1m4a has no brush event generators.
 
-| 385 | `native-restore-projection-audit` | probe added; 62 of 63 single-player maps compared; owner saves dumped |
+## Sequence 385 — native-restore-projection-audit — fresh-start versus restored projection audit
+
+**Status.** probe added; 62 of 63 single-player maps compared; owner saves dumped
 
 To find more problems of entry 384's kind, a probe command `dk3_runtime_projections` (probe
 mode 2) prints what each transported entity sends, keyed by persistent ID. For every
@@ -8792,3 +8812,1194 @@ invisible-volume textures (trigger, clip, nodraw, hint, skip, origin, areaportal
 - Unrelated lead: e4m2a `monster_shark` at (-2966, 2654, -1696) (spawnflags 1) dies within
   about 3 s of a fresh start without a recorded weapon hit. Cause open.
 - All projection reuse sites zero the slot before publishing.
+
+## Sequence 386 — native-sidekick-gait-and-follow-settle — sidekicks walk when slow and stop shuffling in front of the player
+
+**Status.** implemented; unit tests added; save1 (e1m4a) GPU run passed `gait4/`
+
+The owner saw Superfly play "run" while moving slowly. Two causes:
+
+1. **Run cycle at any speed.** Companion poses only had `run`, chosen whenever horizontal speed
+   exceeded 1 u/s. Gold selects `walk`/`walka`/`walkb` (or `walka` when carrying Mikiko)
+   outside its running state (AI_SelectWalkingAnimation; 200/400 u/s). Poses now load the
+   walk set. A gait filter on the runtime pilot entry picks idle below 16 u/s (resume above
+   28), walk below the midpoint of the definition's walk and run speeds (100/300 → 200), and
+   run above. A ±20% band and a 250 ms hold stop stop-and-go steering from flipping the cycle.
+2. **Shuffling while the leader stood still.** With the leader backed toward a wall, no follow
+   spot behind it was standable. `followPoint` then fell back to the leader's own position, so
+   the companion homed in front of the leader at 19–31 u/s indefinitely (`in_way` kept it
+   following). `chooseFollow` now also tries spots beside the leader, trail points in the line
+   of fire are skipped, and with nothing usable an in-the-way companion holds its spot.
+
+In save1, after backing toward the wall, Superfly stepped beside the player and stood still
+(speed 0) for 13 s. Before the fix she shuffled for the whole run. Frame sampling at 100 ms
+showed idle → walk → run → walk without flicker. `dk3_runtime_projections` now takes an
+optional class filter and prints `frame`. Mikiko uses the same code; not checked in-game.
+
+## Sequence 387 — native-authored-currents — conveyor belts and water currents push again
+
+**Change.** The owner stood on the e1m4b conveyor belt: its texture scrolled but nothing moved.
+The converter dropped Daikatana's `CONTENTS_CURRENT_*` brush bits as a recorded loss. They affect
+20 maps:
+
+- water currents in e1m1c, e1m2a/b, e2m1a–c, e2m2a–c, e2m4c, e2m5a–e, e3m1a, e3m2a and e4m5a;
+- conveyors in e1m4b, e1m5a/b and the intro.
+
+**Engine and converter.**
+- `surfaceflags.h` admits `CONTENTS_DK3_CURRENT_{0,90,180,270,UP,DOWN}` at the unused native bits
+  0x2, 0x4, 0x400, 0x1000, 0x2000 and 0x4000. The new digest is in `engine/DEVELOPMENT.json`.
+- `dk2q3.py` maps the six bits, and the asset generation was rebuilt
+  (`c78a6623…`, 84 maps converted).
+
+**Player motor (`player_move.zig`).** It follows Gold's PM_AddCurrents for players, bots and
+sidekicks:
+- a conveyor adds a wish of 100 u/s along the ground brush's current;
+- a water current adds 400 u/s, halved when wading on the ground;
+- the combined wish is clamped to the running speed.
+
+The client trace now fills `contents`, so prediction agrees with the server.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Differential movement replay without currents | Passed | `tests/movement.zig` |
+| Idle walker on a conveyor floor, swimmer in a CURRENT_180 volume | Passed | `tests/movement.zig` |
+| Converted e1m4b, e2m2a and e1m5b carry the current bits | Passed | shader lump inspection |
+| e1m4b belt carries the player | Open | owner checking in game |
+| Monsters on conveyors (Gold P_GetCurrent, 60 u/s) | Open | not implemented |
+
+## Sequence 388 — native-difficulty-and-default-scripts — Ronin scaling and working NPCs
+
+**Change.** `domain/actors.zig` `Table.parse` takes Gold's skill multiplier (AIATTRIBUTE_ParseData):
+0.75 on Ronin, 1 on Samurai, 1.25 on Shogun. It scales `health`, `basehealth`,
+`active_distance`, `run_speed`, `walk_speed`, `attack_speed`, `weapon1_speed`, and the base and
+random damage of weapons 1–3. The scaling is a field list on the aidata row reader
+(`tables.zig`); nothing is chosen per class.
+
+`scripts.zig` starts every actor's `default_aiscript` at map start, as Gold's AI_ParseEpairs does.
+In E1, 40 workers have typing, clipboard and kneeling loops. Civilian scripts already pause while
+the actor flees.
+
+Two guard edits made in this session (holding the attack pose between bursts, and pain) went into
+the shared `hostiles.zig` and catalog. They violate class ownership and are rewritten as class
+hooks in sequence 391.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Difficulty scales only the listed fields | Passed | `tables.zig` test |
+| Workers loop their authored work animations | Open | not yet observed in game |
+| Monsters weaker on Ronin | Open | not yet observed in game |
+
+## Sequence 389 — class-ownership-lint — shared modules may only lose class-specific logic
+
+**Change.** The owner rejected class logic placed in shared modules. The rule existed only as prose
+(`src/runtime/README.md`, `docs/runtime-zig.md`) and did not cover actors.
+
+- **The lint.** `dkq3/tools/class_ownership.py` counts, in every shared module:
+  - R1: actor kind comparisons;
+  - R2: switch arms naming actor kinds;
+  - R3: classname literals;
+  - R4: weapon ids;
+  - R5: reads of class policy or state;
+  - R6: a missing role header.
+
+  `tests/test_class_ownership.py`, run by `zig build test`, fails when a count rises above
+  `class_ownership_baseline.json` or falls without the baseline being lowered. The baseline is
+  R1 417, R2 105, R3 539, R4 73, R5 434 and R6 43, across 136 shared modules.
+- **Role headers.** Line 2 of every runtime, actor, weapon and item module now declares
+  `Shared mechanism:` or a class tag such as `actor-class: <policy>` or `weapon-class:`. The tag
+  is checked against existing class modules. The central dispatch modules state the rule in their
+  headers.
+- **Documents.**
+  - AGENTS.md has a "Class ownership" section.
+  - `docs/runtime-zig.md` has a "Class contract" section.
+  - `docs/class-porting.md` sets out the review sheet, animation inventory, class-owned
+    implementation, tests and acceptance steps. The first sheet is
+    `class-porting/mishima_guard.md`.
+  - The stale `src/weapons/types` text in `docs/weapons-zig.md` is corrected.
+- **Run log.** Entries 376–386 are converted to the section format.
+
+**Next stages:**
+- 390 `actor-class-registry`
+- 391 `actor-class-mishima-guard` (pilot)
+- 392 `actor-class-load`
+- 393 `actor-class-publish`
+- 394 `actor-class-step`
+- 395 `actor-class-mechanisms`
+- 396 `actor-class-snapshot`
+- 397 `weapon-class-hooks`
+- 398 `entity-class-registry`
+- 399 `render-tag-registry`
+- 400 `actor-class-state-union`
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Rule self-tests (comment and string exclusion included) | Passed | `test_class_ownership.py` |
+| Role headers name existing classes | Passed | `test_class_ownership.py` |
+| Tree matches the baseline | Passed | `zig build test` |
+
+## Sequence 390 — actor-class-registry — kinds have owners and declared traits
+
+**Change.** `src/actors/kinds.zig` holds `Kind`. Each policy that owns kinds declares
+`pub const classes = [_]traits.Class{ .{ .kind = …, .traits = … } }` (`src/actors/traits.zig`:
+`attack` none/ground/sequence, `pain_clips`, `ambient`, `aquatic`). The new `civilians.zig` owns
+`.civilian` (workers and plain prisoners).
+
+`catalog.traits_of` is built at comptime from the 55 owning policies. An unowned or doubly owned
+kind is a compile error. The predicates `sequenceAttack`, `groundAttack`, `painAnimation`, `ambient`
+and `aquatic` read the traits; their hard-coded kind lists are gone. A catalog test pins every
+kind's result to the reviewed lists, so the change is behaviour-neutral.
+
+The lint now reads kinds from `kinds.zig` and ignores top-level test blocks, since tests may use
+classes as fixtures. Baseline: R1 396, R2 104, R3 425, R4 60, R5 419, R6 43.
+
+Deviation from the plan: the server-side adapter registry arrives with its first adapter in 391,
+instead of as an unused scaffold here.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Trait predicates equal the reviewed lists for all 64 kinds | Passed | `actors/catalog.zig` test |
+| Ownership lint and baseline | Passed | `test_class_ownership.py` |
+
+## Sequence 391 — actor-class-mishima-guard — the guard is a class adapter, not a shared module
+
+**Change.**
+- **New shared mechanisms:**
+  - `server/actor_classes/frame.zig`: `Frame` for the step, `View` for presentation and `Load` for
+    animation loading.
+  - `server/actor_classes/registry.zig`: a comptime kind→adapter table built from each adapter's
+    `policy.classes`. Hook signatures are checked at compile time, and a doubly adapted kind is an
+    error. Dispatch goes through an inline jump table; kinds without an adapter take every default.
+- **The guard adapter.** `server/actor_classes/mishima_guard.zig` replaces `server/hostiles.zig`,
+  a generic name for a guard-only module. Its hooks:
+  - `attacks`, which was a `.mishima_guard` arm in `ensure`;
+  - `loadAnimations`, the reload clip;
+  - `spawn`, the per-guard roll seed, which `spawnOne` previously seeded on every actor;
+  - `think`, the previous controller, now using the shared `actor_pain.reacting` helper;
+  - `playback`, which replaces the guard pose and start-time branches in `publish`.
+- `Definition.guardTiming` moved into the adapter as `timing`.
+
+Behaviour is the same as sequence 388's patches, which now live where they belong: the attack
+pose holds between bursts, and a hit of 35 or more plays `hita` at the policy's 75%.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Registry and guard playback unit tests (492 Zig tests) | Passed | `zig build test` |
+| No `.mishima_guard`, guard pose or guard timing in shared modules | Passed | baseline R1 393, R5 412 (only the flat `Actor.guard` field and snapshot hooks remain, for 396 and 400) |
+| In-game guard (e1m1a fixture, 100 ms frame sampling) | Passed | `guard1/`: attack clips held between shots, 8 rounds, `reload` with its sound, attack again |
+
+## Sequence 392 — actor-class-load — every class loads its own clips, events and aidata
+
+**Change.**
+- **Every kind has an adapter.** `server/actor_classes/` holds one adapter per policy (55), and the
+  registry rejects a kind without one. Monster classnames spawned by other systems (wisp,
+  firefly, the path-corner marker) are `foreign` adapters, so the actor system no longer names
+  them.
+- **Loading is declarative.** `Actors.ensure` has no kind checks. Classes declare `attacks`,
+  `attackLoad` (optional clips such as the vermin leap and the satyr transitions, rows without
+  events, kept frame-0 second strikes, jump strikes, the spider's double-rate bite), `clips`
+  (named slots with fallbacks), `routes`, `requires`, `varied_idle` and `loadAnimations` for the
+  rest (worker cower poses, the companions' weapon poses, the harpy and thunderskeet clip checks,
+  hatch sounds). `Definition.vermin_has_leap` and `satyr_has_transitions` became the generic
+  `attack_present`.
+- **Aidata is class-owned.** `Table.parse` has no kind checks: each policy's `parseTuning` reads
+  its own weapons into its `ClassTuning` (`Definition.class`, read with `definition.tuning(policy)`)
+  and may override shared columns (`weapon.Tuning.primary` for the centurion, knight2 and vermin
+  melee). The rock turret's model-only row is `shared_tuning = false`.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| `ensure` and `Table.parse` have no kind checks | Passed | `server/actors.zig` R1 263 → 0; `domain/actors.zig` R1 32 → 0 |
+| Zig tests | Passed | `zig build test`: 493 passed |
+
+## Sequence 393 — actor-class-publish — what an actor shows comes from its class
+
+**Change.**
+- `Actors.playbackOf` is the shared mode mapping; a class `playback` hook replaces it, with
+  `View.open()` saying whether a death pose, pain reaction, melee strike or script pose takes
+  precedence. `decorate` sets render tags, loop sounds and model visibility. `upright` replaces the
+  companion yaw-only special case.
+- The companions' weapon-pose playback moved out of the actor system into their adapter, with
+  its pose sets in the adapter's `Store`. `actor_audio` follows the shown clip for classes that
+  declare `audio_follows_playback`.
+- `diagnose` appends class fields to the `dk3_runtime_actors` line (frog, skeeter, camera, worker,
+  crox and turret keys keep their names; probes read them by key).
+
+| Scenario | State | Evidence |
+|---|---|---|
+| `publish` has no kind checks | Passed | `server/actors.zig` R2 72 → 0, R5 208 → 1 (the shared stone ailment tag, for 399) |
+
+## Sequence 394 — actor-class-step — the step is a fixed sequence of class hooks
+
+**Change.**
+- `Actors.step` runs the same order as before through hooks: `die`, `mustGib`, `vanish_on_death`,
+  `own_death`, `sense`, the freeze check, `prepare`, `scriptable`/`follows`, `perceive`, `preempt`,
+  `pathMove`, `takeover`, `think`, `move` and `settle`. Each class's branches (the turrets'
+  self-run step, the hanging rotworm, the ghost's own death and fade, fliers on air routes,
+  swimming rats and crox, boss phases, the companions' brain and pilot) live in its adapter.
+  `common.zig` holds the defaults once: path perception, ground and air path steering, ground
+  motion, holding still, the two-way death roll and the attacker-facing test.
+- `ground_combat.zig` is a mechanism taking a class `Spec`: pain (generic handler or roll with a
+  heavy-hit clip), gate, reach, admission rolls, attack choice, transitions, moving clips, leaps
+  and strike events (`Events`, also used by the shark and the Dopefish).
+- Velocity is the working copy only from movement on; think hooks that launch the body write the
+  component, as before.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| `step`, `spawnOne` and `ground_combat` have no kind checks | Passed | `ground_combat.zig` R1 51 → 0, R2 13 → 0, R5 38 → 0 |
+| Old/new probe parity (silent, headless) | Passed | crox, rockgat, opening-actors, bridge, tree-settlement and trigger-bounds pass on both builds; frog-landing, civilians, guard, combat, melee, laser and arena-damage fail identically on both (stale fixtures and missing checkpoints) |
+
+## Sequence 395 — actor-class-mechanisms — damage, use, audio, perception and motion ask the class
+
+**Change.**
+- **Damage.** `admitDamage` (psyclaw spawn protection, column hammer-only, lycanthir Silverclaw,
+  buboid/Kage/Nharre invulnerability), `afterDamage` (Kage refund, ghost double player hits,
+  lycanthir collapse, buboid collapse, turret pain) and `immovable` replace eleven kind branches
+  in `damage.zig` and three in `weapon_damage.zig`.
+- **Use and scripts.** `use` with `use_after_scripts` (turret pop-up, lab monkey, protopod) and
+  `pausesScript` (fleeing civilians, working surgeon, companion in pain).
+- **Audio.** `idleVaries` (crox in water, cowering workers) and `frame_attack_audio`.
+- **Traits.** `bystander`, `party`, `bloodless`, `senses` (the protopod's level, all-round, 512-unit
+  notice) and `remains` (gib material, from `fragments.zig`'s kind list) replace kind lists in
+  perception, environment, impacts, bots, co-op routing and gibbing.
+- **Flight.** `actor_motion.Flee.settles` replaces the worker classname check; the civilians
+  adapter stops the worker when its flight settles. `State.panic` takes the duration; worker panic
+  rules are the civilians adapter's `panic`.
+- **Rockets.** Each launching policy declares `rocket_styles`; `missiles.zig` resolves a variant's
+  style through the catalog and owns its saved-state check.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Mechanism modules have no kind checks | Passed | baseline R1 46 → 0, R2 18 → 7 (remaining hits are non-actor enums sharing a tag name) |
+
+## Sequence 396 — actor-class-snapshot — class state saves itself
+
+**Change.** Each class `State` declares `rebase(delta)`, `validate(check)` and `remapIds(map)`
+using `src/actors/saved_time.zig`. `snapshot_time`, `snapshot` and `snapshot_ids` loop over the
+actor's fields and call whichever exist; `validate` learns whether the actor is of the state's class
+and can ask the kind of a referenced actor (a summoned ghost's owner must be Kage). The gunner
+burst validates itself.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| No per-class lines in the snapshot modules | Passed | `snapshot.zig` R5 79 → 0, R1 7 → 0 |
+| Old-build saves restore under the new build; new saves reload | Passed | `roundtrip.py` on e1m1b (27 actors), e1m2a (65), e1m3b (31): no refusals, actor counts equal |
+| Player saves in the probe harness | Parity only | both builds refuse save1/2/4/autosave (`SaveAssetMismatch`, harness profile) and save3 (`RegionRestorePreparationFailed`) identically; needs an in-game load |
+
+## Sequence 397 — weapon-class-hooks — weapons fire, fly, step and draw through their classes
+
+**Change.**
+- **Combat policies.** `Combat` keeps generic policies only: `projectile` (shared flight and
+  contact), `flown` (spawned shared, flown by the class's server adapter) and `owned` (fired by the
+  class's server adapter). The weapon-named variants are gone.
+- **Server weapon classes** (`server/weapon_classes/`, 14 adapters): `fire`, `fire_sound`,
+  `launch`, `prepareFlight`, `seeded`, `publishProjectile`, `decorateProjectile`, `step` (the
+  fourteen per-weapon calls in `world_systems`), slot `links`/`linked` for resident mirroring,
+  `lingering` (bots), `admitsDamage` (C4 charges) and `command` (detonate).
+- **Client weapon classes** (`client/weapon_classes/`): `drawEffect`, `drawSprite`, `drawMissile`,
+  `decorateMissile`, `viewEnd`.
+- **Descriptions.** `grants` (Slugger → Cordite), `aliases` (`weapon_c4viz`), `timer` (gas hands:
+  `catalog.timed`), `default_muzzle`/`parseValues` (Metamaser cube, flashlight battery),
+  `trainsSword`. The domain's discus and venom probes became generic `traceAhead`/`bodyContact`.
+  `catalog.count` replaces every 28/29.
+- **Motor currents.** The engine supplies the current content bits through
+  `Parameters.currents`; the motor no longer copies surfaceflags.h values.
+- **Lint.** Comparisons with id 0 no longer count as weapon ids, and catalog imports are
+  recognised as references (`@import("actor_catalog").psyclaw`), which revealed 52 hidden R4/R5
+  sites; the baseline records them.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| No weapon ids in shared code | Passed | R4 60 → 1 (a sound flag that reuses the `weapon` field) |
+| Zig tests | Passed | 493 passed |
+
+## Sequence 398 — entity-class-registry — map entities belong to their classes
+
+**Change.**
+- `server/entity_classes/` holds 50 adapters. World controls (chests, lights, triggers, timers,
+  pushes, teleports, secrets, music, consoles, speakers, healers, debris…) declare their control
+  variant and hooks; `world_controls.zig` is dispatch only. Authored brushes and triggers declare
+  `brush` (zeroed angles, contents, hidden, bound), `pass`/`prepare` and `useAuthored`;
+  `brushes.zig`, `world_actions.zig` and `targets.zig` name no class.
+- **Traits** replace classname checks in bots, navigation, interactions, campaign exits and
+  multiplayer objectives.
+- **Persistence and saves.** `persistence` projects and model-checks controls through their
+  classes. Control states rebase themselves; the snapshot decoder calls the classes' saved-state
+  validators through the game root (`saved_classes`), so the domain names no class.
+- **Registries.** The actor catalog keeps only the frozen save order; each policy defines its
+  classnames. Item classnames moved to `domain/item_classes.zig` (a class registry); key rules to
+  the keys class.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Classnames in shared code | Passed | R3 426 → 8 (after excluding `@import` names and bare prefixes) |
+| Probe parity, old vs new | Passed | crox, rockgat, opening-actors, bridge, tree-settlement, trigger-bounds pass; movement and lift fail identically on both builds (timing) |
+| Old-build saves restore | Passed | `roundtrip.py` on e1m1b, e1m2a, e1m3b, e1m4a, e2m1a |
+
+## Sequence 399 — render-tag-registry — the client draws classes through their tags
+
+**Change.** `client/render_classes/` (44 adapters) draws general entities by body tag (`generic1`)
+and overlay tag (`time2`): `drawEffect`, `decorate`, `overlay`, `inline_model`. The client loop
+keeps the shared steps (stone and frost ailments, players, items). The stone tag moved to
+`domain/ailments.zig`.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Presentation counters, old vs new | Passed | e1m1a, e1m3b, e2m1a: identical models, lamps, gibs, chunks |
+| Visual spot check | Passed | e1m1a screenshots match (rain, froginator, HUD) |
+
+## Sequence 400 — actor-class-state — each class owns its actor state slot
+
+**Change.** Instead of a save-breaking union, each policy declares `state_field` (its saved key)
+and its `State`; `domain/actors.zig` assembles the actor state from the shared fields and those
+slots at compile time. The saved layout is unchanged, so no migration is needed. `panic` became a
+free function.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| `domain/actors.zig` names no class | Passed | R5 82 → 34 (remaining: component and attack type registries, a few presentation links) |
+| Old-build saves restore | Passed | `roundtrip.py` on e1m1b, e1m2a, e4m1a |
+| Zig tests | Passed | 493 passed |
+
+## Sequence 401 — actor-attack-saves — attack payloads and emitters validate themselves
+
+**Change.**
+- Each `ActorAttack` payload (fireball, knight zap, rocket, spit, shaft, rock, glob, gunner burst,
+  meteor, wisp, Wyndrax zap and bolt, reaper, summon flare, psyclaw sphere) declares its own
+  `rebase`, `remapIds`, `validSaved` and `saved_components`. `domain/actor_attack.zig` loops over the
+  union; `snapshot`, `snapshot_time` and `snapshot_ids` have no per-attack arms left.
+- Relations to other entities moved to the launching class's adapter hook `validateSavedAttack`
+  (Nharre's held victim, Wyndrax's bolt parents), called through `saved_classes`.
+- Fireflies and the wisp swarm state their own source and carrier classnames.
+- New registry tests check classnames reach their entity classes, brushes and traits.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| `domain/snapshot.zig` names no class | Passed | R5 5 → 0; total R5 32 → 26 (with sequence 402: the monster bullet admission roll moved from the rockgat policy to the shared `weapon` mechanism) |
+| Old-build saves restore | Passed | `roundtrip.py` old → new on e1m2a, e2m1a, e3m6a, e4m6c |
+| Held-victim check | Passed | Adapter unit test in `actor_classes/nharre.zig` |
+
+## Sequence 402 — mishima-guard-goals — cover, side-steps, wander and do-not-move
+
+**Change.**
+- **Shared mechanisms.**
+  - `src/actors/spawnflags.zig` names the authored monster bits.
+  - `src/actors/cover.zig` holds the cover rules and saved state; `server/actor_cover.zig` holds
+    the shoulder visibility and hide-node choice. Hide nodes are flag 0x1000, within 768 units,
+    hidden from the enemy's centre and shoulder lines, and reachable through the navigation
+    service.
+  - `wander.Roam` holds a roam's home, leg and deadline.
+  - `actor_evasion.sidestep` gives a 52-unit step for blocked shots.
+  - The actor fields `cover` and `roam` sit beside `evasion`.
+  - The ground node graph is renamed from `water_routes` to `ground_routes` (`routes.ground`).
+- **Guard.**
+  - The policy gains the `cover` style: one `ataka` per 2 s, using no rounds. The cycle reports
+    `blocked`.
+  - Spawnflag 512 fights from cover and never chases. Spawnflags 1 and 4 walk node to node with
+    `walka`. Spawnflag 128 never moves. A blocked shot side-steps.
+  - The adapter's `move` steers to the cover, look or roam point without overwriting the enemy's
+    remembered position. Its `diagnose` prints the phase, rounds, cover, look, roam and side-step
+    state.
+  - The shared actor dump prints the current route waypoint.
+- **Probes.** The `guard` scenario checks unflagged guard 65's eight rounds and reload, and cover
+  guard 90's shots (no rounds, 2 s apart) and hide-node run. The `navigation` pursuit uses
+  unflagged guard 380: a cover guard no longer chases, and 65's fixture stalls on every build.
+- **Review sheet.** `docs/class-porting/mishima_guard.md` is updated, with the animation
+  inventory.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Policy and shared unit tests | Passed | 499 Zig tests (cover shots, blocked event, shoulders, look period, roam legs, spawnflags) |
+| Cover guard (e1m3b 90) | Passed | `--scenario guard`: rounds stay 8, shots ≥ 2 s apart, runs for hidden node 209,1065,-167. A run blocked by another guard on the stairs is given up |
+| Unflagged guard cycle (e1m3b 65) | Passed | `--scenario guard`: eight rounds, reload, player damaged |
+| Wander (e1m4b 119, flag 1) | Passed | Walks node to node at walk speed; projection frames 354–373 (`walka`), idle 77 (`amba`) |
+| Do-not-move (e1m4a 80, flag 128) | Passed | Holds 1184,-616 while firing eight rounds and reloading |
+| Pursuit (`--scenario navigation`) | Passed | Guard 380 |
+| Probe batch | Passed / unchanged | opening-actors, crox, rockgat, bridge, trigger-bounds and tree-settlement pass. combat, status-weapons, returning-fire, area-weapons and civilians fail identically on the pre-change build (stale fixtures after aidata difficulty scaling) |
+| Old-build saves restore | Passed | `roundtrip.py` old → new on e1m3b, e1m4b; actor-count drift identical old → old |
+| Side-step in game | Implemented, unverified | Not staged: needs a shot blocked at the fire frame |
+| Gold parity | Open | Thief, dwarf, fletcher, rocket gang and rocket MP cover reuse the mechanisms when their sheets are written; random wander (8) is not honoured for monsters (reference behaviour undefined) |
+
+## Sequence 403 — class-registries-and-hooks — shared modules no longer import or name classes
+
+**Change.**
+- **Lint.** `class_ownership.py` gains:
+  - R7: a shared module imports a class-owned module;
+  - R8: a switch arm names a class's union tag (an attack payload, flight or world control in a
+    switch over `.attack`, `.flight` or `.action`, or a class component in a switch over a
+    component id);
+  - R9: a shared module names a class-owned component type.
+
+  R4 now counts any named-weapon read. Registries may name classes but not compare weapon ids.
+  Hook-name strings and weapon-table columns are no longer read as classnames.
+- **Registries split from dispatch.** The class lists of the actor, entity, render and weapon
+  (server and client) registries moved to data-only `classes.zig` modules. Weapon descriptions
+  are listed and named in `weapons/classes.zig`; the catalog dispatches.
+- **Assembled unions.** These are built from class declarations, keeping their saved tags:
+  - attack payloads (`attack_payloads`);
+  - projectile flights (`flight_tag`, `ballistics.stateless`);
+  - world-control states (`controls`, `domain/control_classes.zig`).
+
+  The inline control states (timer, speaker, push, teleport, toggle, music, console, room,
+  secret, remove item) moved into class modules under `domain/controls/`.
+- **Hook registries** (see docs/runtime-zig.md "Class contract"):
+  - world systems: spawn and step phases in fixed order, plus mover arrivals;
+  - projection on restore and transfer;
+  - attack handlers;
+  - session: reset, defaults, camera, player release, view takeover, and the party provider;
+  - target use stages;
+  - prop roles and breakable brushes;
+  - hazards and entity-referencing tags;
+  - client presenters: reset, screen, server command, view offset;
+  - entity hooks: `passage`, `soundtrack` and `current`, and the traits `touch_once`,
+    `player_usable` and `decoration`;
+  - weapon adapters: `holds`, action ownership, effect links and probe printing;
+  - actor attack handlers: `holds`, `damaged`, `actionOwner` and `linkedOwner`.
+- **New shared mechanisms:**
+  - props (decorations, gibs, corpses, debris and explosion sprites share one body);
+  - locks (`keyname`);
+  - held victims;
+  - the psychic warp ailment;
+  - the lightstyle table;
+  - `Random`;
+  - the scorch-mark impact;
+  - `ballistics.aimDirection`;
+  - the generic `bolt` combat policy (formerly `.ion`).
+- **Snapshot code** (a forked agent, reviewed): class components and flight states declare `remapIds`, `rebase`, `validateSaved` (through a component-name `Check`), `holdsSaved`, `describe`, `saved_bodiless` and `saved_unarmed`; `snapshot*.zig` keep only shared arms. `Monitor` moved to `domain/monitor.zig`.
+- **Moved into classes:**
+  - the level exit's travel request;
+  - wall-breakage and explosive brush behaviour;
+  - ring wards (item registry);
+  - the health-pack episode model;
+  - death-bolt looks (`laser_look`);
+  - knight attack frames (an explicit enum);
+  - the earthquake view kick (client module renamed `earthquakes.zig`);
+  - seven weapon tests from the catalog into their descriptions;
+  - probe output (weapon, flight, chest, monitor, tree and hazard state).
+- **Party provider.** Shared code asks `session_classes.party` (membership, eye height, travel capture through `domain/party_class.zig`, pickups, bot summaries) instead of reading the `Companion` component.
+- **Incident.** A new module briefly overwrote `server/world_context.zig`; it was restored from `HEAD` with the owner's permission and its two later edits (role header, `enterMap`) reapplied. New files are now created only with the Write tool.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Zig and Python tests | Passed | 503 Zig tests; Python suite passes except the unrelated `texture_scale` ramp test (fails before and after) |
+| Lint | Passed | Every rule R1–R9 at zero; the baseline holds no shared module |
+| Old-build saves restore | Passed | `roundtrip.py` 402 build → new on e1m2a, e1m3b, e1m4b, e2m1a, e3m6a, e4m6c, no errors; actor counts equal except e1m4b's post-load drift, identical to sequence 402's old → old drift |
+| Probe scenarios | Passed / unchanged | opening-actors, crox, rockgat, bridge, trigger-bounds, tree-settlement, guard, navigation, secret pass. movement, rotation, ballistics, linked-projectiles, meteors, zeus, controllers, save, laser, shockwave and beams fail identically on the 402 build. Lift is flaky on both builds |
+
+## Sequence 404 — civilian-goals — workers hide and cower, prisoners wander when alerted
+
+**Change.**
+- **Review sheet** `docs/class-porting/civilians.md` from the reference workers and prisoners,
+  with the animation inventory and decisions on its undefined paths.
+- **Policy.** `civilians.roleOf` gives each classname a role (worker, runs from pain, cower clips,
+  thin voice, always gibs); witness ranges are the reference alert radii (150 workers, 300
+  prisoners). The classname checks in `workers.zig` are gone.
+- **Adapter.**
+  - Workers see a visible player (not while a work script acts, not with spawnflag 16) and hide:
+    voice, run, cower.
+  - The skinny worker runs from pain; the fat worker is alerted and hides when he sees his
+    attacker, then wanders through his cower (he has no cower clips).
+  - Plain prisoners never fear: hurt or witnessing, they are alerted and wander node to node.
+  - Spawnflags 1/4 make calm civilians wander; 128 keeps them in place (a hidden worker cowers at
+    once).
+- **Shared.** The guard's wander and steering became `common.roam` and `common.moveTo`;
+  `actor_audio` no longer silences bystanders' sight sounds (workers have none, prisoners call
+  out).
+- **Probes.** New scenarios `workers` (e1m3a) and `worker-wander` (e1m2b); new probe command
+  `dk3_runtime_hurt <id> <amount>`.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Policy and unit tests | Passed | 503 Zig tests (roles) |
+| Sight hide and cower (e1m3a 25) | Passed | `--scenario workers`: `flee` with `runa`, then `gambc` 720–727, hide voice |
+| Alerted prisoner (e1m3a 462, 318) | Passed | Same scenario: 462 walks legs with `walka` 260–279, never flees; 318 (spawnflag 128) alerted in place |
+| Node wander (e1m2b 51) | Passed | `--scenario worker-wander`: 57 units with `walka` 983–1001 |
+| Fat worker cycle (e1m2a 9) | Passed | Headless sampling: hide, wander through cower, hide again |
+| Regression batch (installed build) | Passed | workers, worker-wander, opening-actors, crox, rockgat, bridge, trigger-bounds, tree-settlement, guard, navigation, secret |
+| Working worker blind (e1m3a 145) | Passed | Headless sampling: stays calm beside the player |
+| Gold parity | Open | Caged prisoner 462's legs stay blocked by his cell. The probe's attack input does not fire the player's weapon on any build (combat, status-weapons, civilians scenarios) (cause: a spawned player's command clock starts at the server's time, about 800 ms ahead of the slow headless client's command stamps, so early or brief presses are dropped as stale; held after the client catches up, the Glock fires. In play the gap is a frame or two), so pain is staged with `dk3_runtime_hurt`. Shared `actor_perception` traces sight from the actor's origin, which a seated actor's chair can block |
+
+## Sequence 405 — e1-flyers-and-frogs — skeets, froginator, vermin and sludge minion reviewed
+
+**Change.**
+- **Review sheets** from the reference for `froginator`, `skeeter`, `thunderskeet`, `vermin` and
+  `sludge` (docs/class-porting/), each with its animation inventory.
+- **Shared.** `common.flinch(frame, chance)`: pain for classes without a pain controller (a hit
+  from the current enemy, not the acquiring one, flinches with `hita` at the class chance).
+- **Froginator.** Pain (20%, not in mid-leap; it decides afresh afterwards); spawnflags 1/4 and,
+  once it has seen the player, node wander with `walka`; spawnflag 128 attacks from its spot.
+- **Slaughterskeet.** Pain 75%; the dart strikes within reach + 32 (80); spawnflag 128.
+- **Thunderskeet.** A volley fires two globs (frames 28 and 32, the second alternate), not
+  four; pain 10%; spawnflag 128.
+- **Vermin and sludge minion.** The hit that acquires the enemy no longer flinches; pain
+  constants moved into the policies.
+- **Ownership.** Protopod hatching moved out of the skeeter's module (`server/protopods.zig`);
+  the fade overlay tag became a shared helper (`actors/fade.zig`) instead of Kage's; `workers.zig`
+  is part of the civilians class. New lint rule R10: a class module may not read another class's
+  policy.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 504 Zig tests (two-glob volley, dart margin, pain traits) |
+| Lint | Passed | R1–R10 at zero |
+| Frog pain (e1m1b 118) | Passed | Headless: diagnostic hits flinch with `hita` 108–119 after the acquiring hit |
+| Thunderskeet volley | Implemented, unverified in game | The e1m1b thunderskeet is absent at map start |
+| Regression batch | Passed | workers, worker-wander, opening-actors, crox, rockgat, trigger-bounds, tree-settlement, guard, navigation, secret. bridge timed out once on wave 3's aggressive release and passed twice on rerun (timing). guard failed once: it timed cover shots from 0.4 s phase samples; the guard's fire log now carries its time and the scenario reads it (shots exactly 2000 ms apart) |
+| Air wander (fliers) | Implemented, unverified in game | `common.airWander`: spawnflags 1/4, or once the player was seen, legs on the air graph at twice walk speed; the one flagged E1 skeet (e1m2a) is skill-filtered out of the probe run |
+| Gold parity | Open | The frog's wall-rebound sound |
+
+## Sequence 406 — e1-second-batch — twelve more Episode 1 classes reviewed; one shared acquiring rule for pain
+
+**Change.**
+- **Review sheets** from the reference for `surgeon`, `inmater`, `lasergat`, `protopod`,
+  `cambot`, `psyclaw`, `cryotech`, `crox`, `rockgat`, `battleboar`, `deathsphere` and
+  `ragemaster` (docs/class-porting/), each with its animation inventory.
+- **Shared pain rule.** `actor_pain.generic` takes the hurt receipt and the enemy before
+  perception: the hit that makes a player the enemy skips the first roll and keeps the second,
+  as the reference's generic handler does (`actor_pain.acquiring`). The ground-combat single
+  roll applies the same rule. Every caller passes it; vermin and sludge no longer skip both rolls
+  (a 405 error).
+- **Shared hide voice.** The worker family's hide voice moved from the civilians policy to
+  `actors/hide_voice.zig`; the surgeon uses it too.
+- **Surgeon.** A player's hit clears its indifference and it cowers in place (15 s hold; a 75%
+  stall restarts the cower once per pose clip). Afterwards it sees the player and hides like a
+  skinny worker: hide voice, runs off, cowers where it stops. The class keeps its saved key; new
+  fields default.
+- **Inmater.** No flinch on the acquiring hit; engages within its last weapon's reach (laser 800,
+  punch 160).
+- **Lasergat.** Fires at any range; out of sight it keeps turning; one shot per 500 ms on the
+  clip's own clock; hits from its enemy stall it 75% (100 ms pause, 500 ms lock).
+- **Protopod.** Hatches 100 ms after noticing its enemy (the reference's random delay is dead
+  code); the map's `sight` key is its range again.
+- **Cambot.** Spots only within 64 units of height and 1024 horizontally.
+- **Cryotech.** Generic pain (25%, limit 35); engages within its spray's reach (256).
+- **Crox.** Single-roll pain 20% (`common.flinch`, `pain_clips`); a strike frame passed while
+  turned away misses.
+- **Battleboar.** Its 25% roll stops it with `hita`; otherwise a hit outside its pain window plays
+  one of three hit clips while it keeps acting.
+- **Ragemaster.** Generic pain (5%, limit 65). **Deathsphere.** Acquiring rule on its stall.
+- **Diagnostics.** The actor dump shows `script=1` while a script acts; the surgeon dump shows its
+  phase; lasergats log `fired` and `stalled` with times. Probe scenarios `surgeon` and
+  `lasergat`.
+- **Found:** the reference animates monsters and sidekicks at 20 fps (`AI_InitMonster`
+  `FRAMETIME_FPS20`); native plays the converted 10 fps. Sequence 407.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 510 Zig tests (surgeon hide and stall, pod hatch, cambot range, inmater reach, boar hit clips, acquiring rule) |
+| Lint | Passed | R1–R10 at zero; `hide_voice` is a shared helper |
+| Surgeon (e1m3a 471) | Passed | `--scenario surgeon`: ignores the player, hurt cowers (`gambc` 569–575) from 3.8 s, at 13.6 s sees him within 300, runs (`runa` 576–580) and cowers again. Scripted surgeon 476 returns to work blind |
+| Lasergat (e1m4a fixture) | Passed | `--scenario lasergat`: 21 shots 500 ms apart; 5 stalls from diagnostic hits, each next shot 300 ms later |
+| Regression batch | Passed | surgeon, lasergat, workers, worker-wander, opening-actors, crox, rockgat, bridge, trigger-bounds, tree-settlement, guard, navigation, secret. Before the rockgat probe set the ion phase's health, a slow host let the turret, crox and frogs kill the player twice (same damage per hit, slower fire loop); opening-actors once refused a save during region admission and passed on rerun |
+| Inmater, protopod, cambot, psyclaw, cryotech, battleboar, ragemaster, deathsphere changes | Implemented, unverified in game | Unit-tested where policy; no class scenario yet |
+| Gold parity | Open | Monster clips at 20 fps (sequence 407); deathsphere pain-stall task restart; cambot nearest-corner patrol |
+
+## Sequence 407 — actor-clip-rate — monsters and sidekicks animate at the reference's 20 fps
+
+**Change.**
+- **Shared.** The reference's monster and sidekick initialisation sets a 50 ms frame time, so
+  their clips run at 20 fps; the converted model metadata carries the engine default 10.
+  `Actors.ensure` now retimes a class's metadata once (`animation.retime`) to its clip rate, the
+  registry value `clip_fps` (default 20). Every consumer reads that metadata: clip lookup,
+  attack strike and sound frames, idle choices, audio cues, script poses and companion poses.
+- **Lasergat** declares `clip_fps = 10`: its first turn drops its clip to 10 fps for good, and it
+  turns before it fires, so its 500 ms shot cycle is unchanged.
+- **Spider.** Its bite keeps its double rate on top (the reference advances that clip two
+  frames per step), now 40 fps.
+- **Neural models.** Clips with rate 0 in `neural-animations.cfg` are retimed to the
+  authoritative duration, so they follow; fixed-cadence human locomotion keeps its own clock.
+- **Diagnostics.** The projection dump ends with the entity's clip rate (`rate=`); the surgeon
+  scenario asserts 20.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 512 Zig tests (retimed metadata keeps clips, frames and names) |
+| Surgeon (e1m3a 471) | Passed | Projections report `rate=20`; `gambc` now cycles in 400 ms; hide still follows the 10 s reconsider |
+| Lasergat (e1m4a fixture) | Passed | Still 500 ms between shots at `clip_fps = 10` |
+| Regression batch | Passed | surgeon, lasergat, workers, worker-wander, opening-actors, crox, rockgat, bridge, trigger-bounds, tree-settlement, guard, navigation, secret, all on the 20 fps build |
+| Neural models | Passed | `runtime_neural_monsters_probe.py` on the play install: neural inmater (e1m3b) and cryotech (e1m6a) load and render posed |
+| Spider bite rate | Implemented, unverified in game | Kept at twice the clip rate (40 fps) after the reference spec confirmed its frame increment of 2 |
+| Gold parity | Open | One-shot neural clips' authored cadence was not reviewed frame by frame at the new rate |
+
+## Sequence 408 — class-cross-imports — no class module imports another class's code
+
+**Change.**
+- **Lint.** R10 now also counts a class module's `@import` of another class's module (it caught
+  24, from the thief's range test borrowed from the knights to Garroth launching Wyndrax's wisps).
+  A shared mechanism's own payload tags are no longer class tags.
+- **Shared mechanisms with class-declared styles** (the missile pattern): `shafts` (each launcher
+  declares `shaft_styles`: the reference's knife, axe and magic-bolt touches, spin, credited
+  class), `fireballs` (`fireball_styles`: scale, secondary blasts, raised launch, light, burning
+  trail), `venom_spit` (`spit_styles`), `bursts` (`burst_styles`: opening shot, shot limit or stop
+  frame, flash model and muzzle; the shotgun's pellets moved into the gunners). Saved payload
+  tags and variant names are unchanged.
+- **Shared mechanisms split out of classes:** `thrown_range` (melee-or-thrown range test),
+  `meteors` and `summon_effect` (boss payloads), `glow_particle` and `energy_swarm` (firefly and
+  wisp particles; the swarm's collection API that Wyndrax uses; delivery goes to whichever
+  consumer named itself instead of a classname check), `wisp_lightning` (boss wisps and lightning,
+  used by Wyndrax and Garroth), client `flame_particles` and `light_beams`.
+- **Map entities.** Party members open doors through the entity registry's new `openForParty`
+  hook, declared by the door classes; companions no longer test door classnames or mover state.
+  The blood cloud belongs to the fish class.
+- **Centurion** (E2 sheet pending): its pain is one 30% roll that skips the acquiring hit; it
+  engages within its current weapon's reach (punch 90 until it throws a spear, then 700).
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 512 Zig tests (centurion reach, thrown range, hit clips) |
+| Lint | Passed | R1–R10 at zero with the stricter R10; self-tests for import detection |
+| Regression batch | Passed | surgeon, lasergat, workers, worker-wander, opening-actors, crox, rockgat, bridge, trigger-bounds, tree-settlement, guard, navigation, secret |
+| Bosses, fireflies, wisps, companions' doors | Implemented, unverified in game | No scenario covers Wyndrax, Garroth, wisp collection or a companion opening a door in this sequence |
+
+## Sequence 409 — source-layout — the tree separates game-agnostic code, shared mechanisms and classes
+
+**Change.** The owner chose a layered layout with per-class folders, so the path decides ownership:
+- `src/engine` (ioquake3 ABI), `src/core` (game-agnostic: ECS, math, animation, collision,
+  navigation, save streams, tables, sprites, audio parameters, mover kinematics),
+  `src/mechanics` (shared Daikatana mechanisms: `domain`, `server`, `client`, `ui`, `policy`),
+  `src/game` (class registries, the component list), `src/classes/<actors|weapons|items|entities>/<class>/`
+  (a class's policy at its root, its adapters in `server/`, `client/`, `domain/`). Module roots and
+  catalogs moved to the top of `src/`; the C test fixtures to `src/tests`.
+- 783 files moved by a script that rewrote every relative import against the old tree (no
+  unresolved import); the build files, the rules identity (multiplayer version string: client
+  presentation still excluded), docs and AGENTS.md follow the new paths. Saves are unaffected: no
+  saved key, tag or field changed.
+- The engine layer no longer imports game code: save-name and size validation moved to
+  `core/domain/save_stream.zig`, sound paths and mover kinematics to `core/domain`, the player
+  state transport (game code) to `mechanics/player_state.zig`.
+- **Lint.** Ownership comes from the folder (a class module's header must name its folder); R11
+  rejects game code (mechanics, classes, game, catalogs) imported by `core` or `engine`. The
+  architecture test defines pure code by path shape (domain, ECS, policies, catalogs).
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Build and play install | Passed | All products, the play install and its packaged shader |
+| Unit tests | Passed | 512 Zig tests; lint and architecture tests on the new layout |
+| Regression batch | Passed | All 13 scenarios on the moved tree |
+
+## Sequence 410 — e2-review — Episode 2 classes reviewed; firefly completes Episode 1
+
+**Change.**
+- **Review sheets** for `centurion`, `cerberus`, `thief`, `spider` (with the small spider),
+  `skeleton`, `satyr`, `column`, `griffon`, `harpy`, `medusa` and `firefly`.
+- **Cerberus.** Of the Episode 2 weapons only the trident harms it (`admits`).
+- **Thief.** Attacks every think (the reference's one-second scheduling is a dead write).
+- **Spiders.** Pain: one 75% roll, never on the acquiring hit; the small spider no longer runs from
+  the acquiring hit and runs once a flinch ends; the e2m4b swarm wakes when its trigger uses it.
+- **Skeleton, satyr.** Generic pain (20% and 5%, limit 35) instead of one roll.
+- **Column.** Its own pain callback flinches on every admitted hammer hit, the acquiring one too
+  (`skips_acquiring = false` on the ground-combat roll).
+- **Griffon.** Its own 15% flinch shows only until the next think; the shared 10% roll skips the
+  acquiring hit.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 513 Zig tests (cerberus damage admission) |
+| Lint | Passed | R1–R11 at zero |
+| Episode 2 melee (e2m1a fixtures) | Passed | New `--scenario e2-melee`: a spawned spider and skeleton attack the player; diagnostic hits make them flinch with `hita` (spider 83–100, skeleton 244–253) |
+| Regression batch | Passed | All 13 scenarios on this build |
+| Wide-actor routing | Open | A spider spawned at (−460, 1272) on a step below the start chased with zero velocity and no route for 12 s; from (−580, 1272) it reached the player |
+| Other Episode 2 classes | Implemented, unverified in game | Cerberus, thief, centurion, column, satyr, griffon, harpy, medusa |
+
+## Sequence 411 — e3-e4-review — Episodes 3 and 4 reviewed; Gold clip timing, ally alerts and melee hit sounds
+
+**Change.**
+- **Review sheets** for Episode 3 (`dwarf`, `fletcher`, `knights`, `nharre`, `wyndrax`, `wisp`,
+  `garroth`, `lycanthir`, `rotworm`, `rats`, `doombat`, `dragon`, `buboid`) and Episode 4
+  (`chaingang`, `femgang`, `labmonkey`, `rocketgang`, `rocketmp`, `shark`, `gunners`).
+- **Clip event timing (shared).** The reference raises a frame's event as the clip advances past
+  it, and ends a clip (and a pain lock) on reaching its last frame. Strikes and attack sounds are
+  stored as the raising frame (table frame + 1); monster clip ends and pain locks use
+  `Sequence.lastFrameMs`. A leap's strike exists only when its row has a second sound frame, and
+  an empty second-attack cell never strikes (`keep_second_strike` removed from nine classes:
+  the seals' running shot and the Uzi's standing stream fired twice).
+- **Ally alerts (shared, `actor_alert.zig`).** A monster that takes a new enemy, keeps one in
+  sight while chasing (one second in ten) or dies passes it to the monsters within its `speak`
+  radius (0.15 × aidata active distance, or the map key), as the reference's enemy alerts do.
+- **Melee hit sound (shared).** The ground combat plays the clip's second sound when a strike's
+  trace hits anything (the reference's punch and bite).
+- **Navigation origin (shared).** Routes are asked from the player-hull origin over the actor's
+  floor; small actors (rats, spiders) found no start area before and stood still (the "wide-actor
+  routing" item of sequence 410).
+- **Cover (shared).** The guard's between-shots routine moved to `actor_cover.between` /
+  `destination`, and `actor_cover.cycle` adds the reference's cover fight (shoot while the enemy
+  is completely visible, rest 2–8 s, hide between shots): the seals (15 placed with 512) and the
+  rocket MP (4) fight from cover; the guard keeps its own cadence on the shared routine.
+- **Shared evasion:** `startBrief` caps a class's evasive action (lycanthir, femgang: 0.5 s).
+- **Classes.** Wyndrax and Garroth: one 5% pain roll. Knight2: punches running in place (`runa`).
+  Lycanthir: engages within its aidata jump distance (160), jump range from aidata, generic pain
+  15/35, evasion after clips, howl on its real death. Rotworm: no leap (the reference's jump
+  never flies), pain 75%, attacks only within the spit's reach. Rats: plague rat generic pain
+  25/35, pipe rat skips the acquiring hit, no `swima`. Doombat: walk × 2 flight until a blind
+  chase, five-step bob, fireball re-roll every 300 ms, corpse at twice gravity. Dragon: breath
+  1100–1950 ms, an interrupted attack replays. Buboid: 100 ms thinks, 1 s holy retry, no refill
+  at the end of its rise, forgets an enemy it melted away from. Chaingang: 2.2 s start-up,
+  acquiring rule, landing in place on timeout, takeoff/landing survive pain, corpse gravity.
+  Femgang: 0.5 s evasion. Lab monkey: led, unfaced strikes, 70 reach, keeps closing in.
+  Rocketdude: no rest between volleys, stationary ones fire at any range. Rocket MP: opens in
+  its chase attack, no cooldown gate under 120, 1 s chase-evade, stationary ones fire at any
+  range. Shark: generic pain 100/25, idles unless it wanders, wanders at twice walk, gives up an
+  unroutable chase. Gunners: the Uzi's inverted end test, chasing fire after a sidestep.
+  Deathsphere: a pain stall restarts its charge or attack. Dragon: its calls carry 2048 and
+  900–1024. Chaingang: jet blast and smoke, re-chases beyond its gun's reach. Mikiko (monster):
+  engages at her sword's reach (90), 0.75 swing volume, the aura lasts through her death clip,
+  dodges while turning.
+- **Gold quirk decisions:** Nharre's minions do not inherit his deathtarget (Gold opens the exit
+  early); Garroth's meteor keeps its Gold blast (radius = damage); Wyndrax's double-counted wisp
+  is kept.
+- **Probes.** New `--scenario e3-knights` (knight2 runs in place, punching) and
+  `--scenario e3-creatures` (lycanthir and plague rat fight and flinch); the melee fixture probes
+  now test one fixture at a time (a spider in front of the player blocked the skeleton's way).
+  The actor dump prints the hull's ground support and any cover run. New `--scenario seal-cover`
+  (a fixture spawned with spawnflag 512; `dk3_runtime_actor_spawn` takes optional spawnflags).
+  The probes' health requests respect the command's 10000 limit (100000 was refused).
+- `test_texture_scale`: the ramp test's bound was wrong (0.48 lies past the 0.44 stop).
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 517 Zig tests (clip timing, lycanthir jump range, doombat bob, cover rest, alert cadence); the Python suite including the corrected ramp test |
+| Lint | Passed | R1–R11 at zero |
+| Knight2 (e2m1a fixture) | Passed | New `--scenario e3-knights`: beside the player it holds its position, attacks and plays `runa` (211–221) |
+| Episode 3 creatures | Passed | New `--scenario e3-creatures`: lycanthir `hita` 227–233, plague rat `hita` 145–151 after attacking the player (the rat routes since the navigation-origin fix) |
+| Episode 4 fighters | Passed | New `--scenario e4-fighters`: lab monkey (`hita` 296–302), femgang (143–149) and rocketdude (200–206) attack and flinch |
+| Seal cover | Passed | New `--scenario seal-cover`: a spawnflag-512 seal girl fires at 3.2, 12.5 and 18.8 s (rests after each 2.85 s shot) and runs out to look between shots; no hide node qualified near the fixture |
+| Regression batch | Passed | Batch 24: all 17 scenarios (the new four plus e2-melee, surgeon, lasergat, workers, worker-wander, opening-actors, crox, rockgat, bridge, trigger-bounds, guard, navigation, secret) |
+| Play install | Passed | `zig build play-install` |
+| Mikiko (monster) changes | Implemented, unverified in game | Built after batch 24 |
+| Other Episode 3 and 4 classes | Implemented, unverified in game | Bosses, doombat, dragon, buboid, rotworm, pipe rat, dwarf, fletcher, knight1, chaingang, rocket MP, shark, seals' running fire |
+| Fake-death alerts | Open | A lycanthir's or buboid's collapse does not alert (the shared alert fires on real deaths) |
+
+## Sequence 412 — remaining-sheets — Kage, Stavros, armed prisoners, fish, seagull and Mikiko reviewed; shared skill tiers, ring wards and fake-death alerts
+
+**Change.**
+- **Review sheets** for `kage` (with its ghosts), `stavros`, `prisoners` (armed), `fish`,
+  `seagull` and `mikiko` (monster form, its fixes listed in sequence 411). Every actor class but the companions now has a sheet.
+- **Skill tiers (shared, `difficulty.zig`).** One mapping from `g_spSkill` (Ronin 1, Samurai 3,
+  Shogun 5) to the reference's three tiers, used by the aidata scaling, the aim error, Kage,
+  Garroth and the lycanthir. Kage and Garroth had their own mapping that gave Samurai the
+  Shogun tables.
+- **Ring wards (shared).** Damage from an actor's blast or bolt carries the actor's class, so the
+  rings of fire, lightning and the undead ward off Stavros's meteors, Wyndrax's zaps and
+  Nharre's reaper.
+- **Fake-death alerts (shared).** A lethal hit a class turns into a collapse (lycanthir,
+  buboid) calls nearby monsters, as a real death does.
+- **Flight obstructions (shared, `actor_flight.avoid`).** The doombat's four probes moved to the
+  shared flight code (movers recognised by component, not by name); the seagull uses them.
+- **Classes.** Kage: shielded 15 / 7.5 / 4.5 s after each recharge; ghosts leave the attack at
+  their weapon's reach, calls at 0.95 / 512–1024; feedback flares at 900–2048. Stavros: yaw-only
+  facing within reach, an unfaced strike frame is lost. Prisoners: the punch sounds on any trace
+  hit. Fish: no banking, wander timeout distance / walk + 1 s, the dopefish engages on a first
+  sighting within 175 and skips pain on the acquiring hit.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 518 Zig tests (skill tiers; Kage's tables now read at Samurai = 3) |
+| Lint | Passed | R1–R11 at zero |
+| Regression batch | Passed | Batch 25: all 17 scenarios, including the guard (shared cover and alerts), e3-creatures (lycanthir collapse paths), e4-fighters and seal-cover |
+| Play install | Passed | `zig build play-install` |
+| Kage recharge (e2m1a fixture) | Passed | New `--scenario kage`: Kage attacks; brought to 100 health he summons protector ghosts (7 within 6 s) and a 40 hit while recharging leaves him at 265 (25% of his 900 base plus the hit, the reference's refund) |
+| Stavros, fish, seagull, prisoners, Mikiko changes; Kage's smoke escape and shield | Implemented, unverified in game | |
+| Companions sheet | Open | The sidekick review is in progress |
+
+## Sequence 413 — companions-review — sidekick item permission, health, run-from rules; every actor class has a sheet
+
+**Change.**
+- **Review sheet** for `companions` (Superfly, Mikiko, Superfly carrying Mikiko); every actor
+  class now has one.
+- **Item permission.** The reference marks every authored item off-limits to both sidekicks and
+  lets an item's own spawnflags admit Superfly (1) or Mikiko (2); native read a different key
+  and treated the bits as exclusions, so sidekicks took items meant for the player. Ordered
+  pickups still ignore the marks; items that appear later are never sought.
+- **Health.** Superfly starts with his aidata 150 (Mikiko 100, skill-scaled): the reference sets
+  100 and then applies the aidata row. Sequence 283's reading of the order was wrong.
+- **Run-from rules.** A new `sidekicks` trait (`fight`, `avoid`, `refuse_melee`) declared by each
+  monster class: sidekicks always keep away from the column, medusa and cerberus, and refuse the
+  reference's list while holding only a close-quarters weapon (replacing a blanket retreat of
+  melee-only sidekicks from any hunter).
+- A hit ends a stay order; `trigger_sidekick` no longer disables the sidekick (the reference
+  only toggles a HUD panel).
+- **Probes.** New `--scenario kage` and `--scenario e4-gunfighters`.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 518 Zig tests (sidekick item permission by authored spawnflags) |
+| Lint | Passed | R1–R11 at zero |
+| Episode 4 gunfighters (e2m1a fixtures) | Passed | New `--scenario e4-gunfighters`: rocket MP (`hita` 140–146), white prisoner (310–316), seal captain (173–179) and chaingang (360–366) attack and flinch |
+| Kage recharge | Passed | `--scenario kage` (sequence 412) on this build |
+| Regression batch | Passed | Batch 26: all 19 scenarios |
+| Play install | Passed | `zig build play-install` |
+| Sidekick permission, health, run-from rules, stay and trigger changes | Implemented, unverified in game | The earlier sidekick probes ran from owner autosaves; with the corrected permission Superfly fetches only weapons authored for him |
+| Sidekick dialogue, commands, HUD, exit feedback | Open | See the companions sheet |
+
+## Sequence 414 — sidekick-talk — authored sidekick lines from the talk nodes
+
+**Change.**
+- **Talk nodes.** The authored node graph (`authored_nodes.zig`) now keeps the reference's
+  Superfly and Mikiko talk nodes (`NODETYPE_SUPERFLYTALK` / `MIKIKOTALK`, 117 across the
+  episodes) with their line. A sidekick that comes within 128 of one of its nodes (native
+  sidekicks route by area, not through the nodes) with its owner within 800 and in sight says
+  the line once a level (`companion_talk.zig`): full volume within 512 of the owner, fading to a
+  tenth by 1500; Superfly then keeps quiet 1 s, Mikiko 5 s. A said line is not saved.
+- **Sidekick health follows the selected profile**: retail Superfly 150 / Mikiko 100; the 1.3
+  profile's rows give 5000 (Superfly carrying Mikiko 10000), skill-scaled.
+- New `--scenario sidekick-talk`.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 519 Zig tests (talk volume and pauses) |
+| Lint | Passed | R1–R11 at zero |
+| Sidekick talk (e3m1a) | Passed | New `--scenario sidekick-talk`: with the player on talk node 85, Superfly says `e3m1_sf_01a` once (the converted line loads; the engine notes its sample rate) |
+| Regression batch | Passed | Batch 27: all 20 scenarios |
+| Play install | Passed | `zig build play-install` |
+| Mikiko's lines, the other maps' nodes | Implemented, unverified in game | |
+
+## Sequence 415 — save-port — earlier native saves load on the re-converted maps
+
+**Change.**
+- Saves 1–4 (made on Oct 7–11) were refused: every world in a save records its map's checksum,
+  and this branch's re-conversion changed the maps (a new contents shader for the water
+  currents, so the shader table, the brushes' and brush sides' shader numbers). Save 3 was also
+  refused for an idle pose saved at the old 10 fps clip rate.
+- **`dkq3/tools/save_port.py`.** For each world in a save (resident levels too) it finds the
+  converted map the save was made with among the kept asset generations (the engine's MD4 map
+  checksum), checks that entities, inline models, geometry, planes, nodes, leaves and brush-side
+  planes are unchanged, and re-stamps the checksum; a structural change is refused. It keeps
+  `<save>.pre-port`.
+- **Loader.** A saved idle pose is matched to the class's idle clip by its frames and re-bound to
+  the current clip (a clip-rate change no longer invalidates saves).
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Port check | Passed | All 13 worlds of each save: made with generation e7dbc2565c3c; only shaders and brushes (shader numbers) changed |
+| Loading the ported saves | Passed | `runtime_loading_probe.py` on copies: saves 1–4 load (about 9 s each); the user's saves were then ported in place, byte-identical to the tested copies, with `.pre-port` backups |
+| Unit tests | Passed | 519 Zig tests; `test_save_port` (MD4 vectors, brush-side comparison, record round trip) |
+
+## Sequence 416 — dormant-effects — leaving a map no longer fails on its lingering effects
+
+**Change.**
+- Owner report: after e1m2b's ending cinematic and the transfer to e1m3a, e1m2a and e1m2b went
+  dormant and the game stopped with "Lost entity collision owner".
+- **Cause.** Lingering client effects (impact sprites, marks, particles, lights, effect particles)
+  keep the render and collision world they were born in. When a resident map goes dormant the
+  server cancels its publication and the client releases that world; the next frame an effect
+  still alive from it selected the released world, which `Presentation.select` treats as fatal.
+- **Fix.** `Presentation.trySelect` returns nothing when either world has been released (keeping
+  the current one); the effect loops skip or drop such effects. Entity presentation and the
+  active-world paths stay strict.
+- New `--scenario dormant-effects`: from e1m2a into e1m2b (a resident world), shotcycler marks
+  all round, then the exit to e1m3a until e1m2b goes dormant.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Reproduction (fix disabled) | Failed as reported | `dormant-effects` on a build with `trySelect` acting as `select`: e1m2b dormant, then "ERROR: Lost entity collision owner" and the same server shutdown |
+| `dormant-effects` | Passed | Same path on the fixed build: e1m2b dormant, play continues |
+| Regression subset | Passed | guard, e2-melee, seal-cover, sidekick-talk |
+| Unit tests, lint | Passed | 519 Zig tests; R1–R11 at zero |
+| Older probes `impacts`, `combat`, `travel` | Failing, pre-existing | Last passed in sequences 228–232. They fail identically with ally alerts disabled: worker 10 now hides from the player (sequence 404), a Ripgun target survives, the laser field records no hit. Unrelated to this fix; to be repaired separately |
+
+## Sequence 417 — guard-aim — skeletal monsters bend toward enemies above or below
+
+**Change.**
+- Owner report: guards below the player shoot him without looking up, and they look odd.
+- **Reference.** Monsters turn by yaw alone; the guard's clips aim level, so the classic model
+  never looked up either.
+- **Remaster aim.** The server publishes, in the actor's `angles[0]`, the pitch from its chest
+  to the enemy it is attacking (attack or reload, seen within the last second, ±60°). A new
+  shared client mechanism, `mechanics/client/skeletal_aim.zig`, applies it to rigged humanoid
+  skeletal models. It poses the joints, turns the chest by 70% and the head by 30% of the pitch
+  about the model's left axis, and eases at 120°/s, so attacks ease in and out. Running bodies
+  keep their authored lean. Creature rigs, the dead and corpses are untouched. `cg_skeletalAim 0`
+  restores the authored pose. Presentation only; the simulation does not change.
+- **Finding (open).** The neural guard model's idle, ambient, reload, pain and stance clips are
+  one static pistol pose, and its attacks move about one unit (only walk, run, crouch-walk and
+  death move). `neural_human_motion.py` generates only locomotion for the five human NPCs
+  (guard, cryotech, surgeon and the two workers). Recorded on the guard sheet; a converter fix,
+  not a runtime one.
+- New `--scenario guard-aim`, on e1m3b: a do-not-move guard fixture below the walkway engages the
+  player above it, captured with the aim on and off, with the projected frames sampled.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| `guard-aim` | Implemented, visual check | `zig-out/reports/runtime-zig-417/guard-aim`: the fixture (rise 104) shows `ataka` frames 133–136. With the aim on, its face and helmet tilt up to the player; with it off, the helmet faces down. A chasing guard on the stairs keeps its run lean |
+| Regression subset | Passed | guard, e2-melee, seal-cover, sidekick-talk |
+| Unit tests, lint | Passed | Easing and the rotation about the pivot; Zig and Python suites; R1–R11 at zero |
+| Gameplay acceptance | Open | Needs the owner's view in play |
+
+## Sequence 418 — humanoid-motion — the neural humanoid enemies play their own original clips
+
+**Change.**
+- Owner request: give the guards proper animations, and fix any other human enemies with the same
+  problem.
+- **Audit.** For every Episode 1 neural model, I measured each clip's motion range on the frames
+  it actually plays.
+  - The five human NPCs (guard, cryotech, surgeon, fat and skinny worker) moved only in walk,
+    run, crouch-walk and death. Their other 23–66 clips each were one static pose.
+  - The inmater, ragemaster and sludge minion held one pose through idle, every attack and the
+    attack start/stop clips.
+  - The prisoners, the creatures and the characters move as their sources do.
+- **Retarget.** `neural_human_motion.py` replaces the generated clips. Each model's source vertex
+  animation is retargeted, frame by frame, onto its admitted bind rig through the cinematic
+  fitter's new `seeds` mode:
+  - joint landmarks per model on the source reference frame (`GOLD_LANDMARKS`);
+  - capsule supports, with limb priority over the torso;
+  - Tukey-robust rigid fits;
+  - shoulders and hips carried by the torso parts they join;
+  - limbs carrying the source's direction and joint bend relative to rest;
+  - a grip calibration for the cryotech's rifle;
+  - no prop attachment and no rescaling.
+
+  Source frame numbers play unchanged: the eight models' lines leave `neural-animations.cfg`.
+  Mesh, weights, atlases and size are byte-identical to the masters. Mean fit residuals are
+  0.55–2.43 units.
+- **Pipeline.** `neural_monsters.py package` and `compose` apply the retarget, and the new
+  `refresh` command rewrites an installed episode package. The installed package was refreshed
+  from the pre-retarget package, which is kept as `dk3-neural-episode.before-gold-motion.pk3`.
+- New `--scenario human-poses`, on e1m3b: a do-not-move fixture of each of the eight classes,
+  framed level after pacifying, with its projected frames sampled.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Offline paired renders | Implemented, visual check | `zig-out/reports/runtime-zig-418/offline` (source / previous / retargeted). Matches: guard aim, reload and pain; cryotech rifle carry; surgeon hands on hips; workers' cower and clipboard; deaths, walks, runs; the inmater, ragemaster and sludge minion attacks. Longer neural legs deepen the workers' squats |
+| `human-poses` | Implemented, visual check | `zig-out/reports/runtime-zig-418/human-poses`: all eight render on their own clips (sampled frames: guard 77/137–139, cryotech 63–75, surgeon 55–67, skinny worker 720–726, fat worker 51–67, inmater 32–53, ragemaster 161–173, sludge minion 116–132) |
+| Regression subset | Passed | guard, workers, surgeon, e2-melee, seal-cover, sidekick-talk, guard-aim |
+| Unit tests, lint | Passed | Robust fit, limb priority, bend carrying, landmark completeness; 341 Python tests, the Zig suite; R1–R11 at zero |
+| Gameplay acceptance | Open | Needs the owner's view in play |
+
+## Sequence 419 — joint-limits-and-physical-deaths — bounded retargets, collapsing ragdolls, fewer gibs
+
+**Change.**
+- Owner requests:
+  - bound the retargeted skeletons anatomically;
+  - improve the physics-driven deaths;
+  - humans burst into gibs too often.
+- **Retarget bounds** (`neural_assets`, seeded mode):
+  - anatomical swing and twist ranges per joint, and elbows folding at most 150°
+    (`limit_joints`);
+  - the root tilting at most 25° about its rest point (`upright_root`);
+  - the spine and neck taking half the bend between their neighbours (`spread_bends`);
+  - the pelvis following its hip ring plus the hip joints, with limb capsules having
+    priority over it.
+
+  `neural_human_motion.retarget` checks every frame of every model with
+  `joint_violations` and refuses to publish on any violation. The installed package
+  was refreshed. The pelvis change fixed two real faults:
+  - the guard's alternative attacks (pelvis tilt 64–74° → 3–4°, now upright as in the source);
+  - the fat worker's bows, which had seated the body and stretched the mesh into a sack.
+- **Physical deaths** (`core/domain/ragdoll.zig`, `mechanics/client/ragdolls.zig`):
+  - knees buckle and hips drop at death, so the body crumples rather than toppling as a plank;
+  - the trunk is two girdles joined by a spine cone (60° forward, 25° back, 30° to each
+    side), a 35° twist limit and soft links for passive stiffness;
+  - the whole trunk takes the death kick;
+  - the rendered spine bone takes half the girdles' turn, and the neck turns toward the
+    head point.
+- **Gibs.**
+  - Gold's rule is unchanged in form (`AI_GibLimit`): the killing hit at 30% of base
+    health, or health below -50%. Every ion-blaster kill of a guard met it.
+  - The fractions are now the cvars `gib_damage` and `gib_overkill`. The remaster default
+    is 1 and 1; 0.3 and 0.5 restore the reference.
+  - A thousandth-of-a-point slack absorbs f32 storage.
+- New `--scenario ragdoll-deaths`, on e1m3b: guard and skinny-worker fixtures, wounded and
+  then killed by a 30-point hit, with captures and sampled ragdoll pelvis heights, server
+  states and frames.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Retarget ranges | Passed | `joint_violations` empty on all eight models; the refresh admits them (fit residuals 0.60–2.60) |
+| Offline renders | Implemented, visual check | `zig-out/reports/runtime-zig-419/offline`: the guard's alternative attacks are upright; the fat worker's bows curve along the back |
+| `ragdoll-deaths` | Implemented, partly verified | Neither body bursts. Skinny worker: the ragdoll starts by 0.3 s, the pelvis drops 32 units by 0.7 s, and the body slumps against the wall. Guard: the first death reached the client 0.82 s late because the probe's dumps stall the client (frames 170–900 ms apart); not reproduced in play |
+| Solver tests | Passed | 9 ragdoll tests, including a new crumple test (the hips sink and both knees bend within 0.5 s) and spine bend and twist ranges over 8 pushes; the test pose's pelvis now stands 3 units above the hips, as in the rigs |
+| Regression | Passed | guard, workers, surgeon, e2-melee, seal-cover, sidekick-talk, human-poses; `runtime_physics_repair_probe --scenario network` |
+| Unit tests, lint | Passed | 344 Python tests, the Zig suite; R1–R11 at zero |
+| Gameplay acceptance | Open | Needs the owner's view in play |
+
+## Sequence 420 — humanoid-rerig-and-skeleton-fit — re-rigged human bodies, whole-skeleton source motion
+
+**Change.**
+- Owner report: the retargeted humanoids "look like a mess", with fat-worker sacks and a guard
+  in a wide lunge; the strategy was not working.
+- **Diagnosis** with plain test poses on the admitted masters, no source motion involved:
+  - The human rigs placed the spine and shoulders on the back surface: the fat worker's
+    shoulders sat 8 units behind its spine, the guard's spine ran along its back.
+  - Weights were straight-line distance to a bone, so the back belonged to the upper arms.
+  - Raising an arm or bending the trunk alone tore the back into the "sack".
+  - The per-bone capsule fits of seq 418/419, and their clamps, could not fix the rig, and
+    were themselves fragile where parts touch.
+- **Re-rig** (new `neural_humanoid_rig.py`), for the guard, both workers, surgeon and cryotech:
+  - joints on the medial axis from cross-sections of the voxelized body;
+  - bone-heat weights (Baran and Popovic): diffusion on the surface, each vertex heated by its
+    nearest bone visible through the interior;
+  - detached rigid parts keep their previous bone;
+  - mesh, UVs, normals, atlas, names and hardpoints unchanged.
+
+  The mechanical creatures keep their admitted rigid-panel rigs.
+- **Source skeleton** (new `neural_gold_motion.py`): each original vertex animation becomes a
+  fixed-length skeleton per frame, solved jointly as linear-blend skinning:
+  - robust Cauchy loss with graduated non-convexity;
+  - joint markers from each bone's own body;
+  - temporal smoothness and twist limits;
+  - weights re-chosen from whole-performance motion, then a second solve.
+
+  Per-model options:
+  - `props`: the cryotech's rifle surface is its own held bone;
+  - `hidden`: the fat worker's pelvis and hips own no surface. Its pelvis keeps its offset from
+    the tracked knees and its reference orientation, and in transfer takes half of the
+    trunk's tilt about the hip centre, so bows fold at the hips over planted legs.
+- **Transfer** with anatomical bounds (`bound`):
+  - parent first, each child keeps its world rotation;
+  - twist clamping moves no joint;
+  - knees and elbows are hinges: -5° to 150° minus the bind's own bend, at most 15–20° off
+    the hinge;
+  - root travel scales with leg length, and the lowest foot keeps the source's clearance.
+- **Cleanup.** The seq 418/419 seeded path in `neural_assets.cinematic` (capsule supports,
+  Tukey fits, root clamp, spine spread, limb targets, post-hoc limiter) is removed. The
+  `joint_violations` admission check stays.
+- **Environment finding.** The system `python3` pairs NumPy 1.26.4 with Python 3.14.
+  - Temporary elision silently overwrites large local arrays in place: `u*v` clobbers `u`, and
+    trimesh's remeshing returns wrong meshes.
+  - The new modules avoid the pattern at the affected spots, and their outputs are identical
+    under that interpreter and the neural-tools Python 3.12 / NumPy 2.5.
+  - Other system-Python tooling is not audited.
+
+- **Validation corrections.** The owner found the first sequence-420 package unvalidated: the
+  bowing fat worker's legs leaned back and its feet were unplanted. Full-size source/new sheets
+  of every model then showed six more faults, all fixed:
+  - Shoulders were placed 60–120 units outside the body: an arm section re-centred into the
+    trunk.
+  - Foot bones were steep and toes sat on the ankle (the floor read from the voxel grid's
+    margin), so feet stood on their toes.
+  - The cryotech's legs were off-centre (the trunk midline assumed y = 0).
+  - Hips were hidden in the belly and dropped with it (the fat worker's legs leaned back).
+  - Thigh twist was clamped at 45° while Gold's kneels and deaths turn the hip out further, so
+    knees bent sideways.
+  - A knock-kneed standing stance read as a turned hip (the thighs twisted 50°).
+
+  New guards:
+  - the rig `check` (joints inside the body, mirrored, foot bone forward);
+  - `hinge_violations` in admission, using the same decomposition as the clamp;
+  - a hinge penalty in the source solve.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Re-rigged binds | Passed, visual check | `zig-out/reports/runtime-zig-420/validation/rerig-binds-*.png`: joints on the medial axis, shoulders in the deltoids, feet along the soles; `check` passes all five |
+| Source/new sheets | Passed, visual check | `validation/v-*.png`, front and side at full size, 4–8 frames per model across idles, attacks, reloads, pain, cower, bows, sits, kneels, deaths, walks, runs. Remaining differences: proportions (the robots' sculpted knee armour, the fat worker's longer thighs), the cryotech's left hand off its shorter rifle, the surgeon's clipboard |
+| Admission checks | Passed | the refresh admits all eight models with `joint_violations` and `hinge_violations` empty on every frame; packaged IQMs byte-identical to the validated ones |
+| Package | Installed | `dk3-neural-episode.pk3` rebuilt from `before-gold-motion`; seq 419 package kept as `dk3-neural-episode.seq419.pk3`; `zig build play-install` |
+| In-game `human-poses`, `ragdoll-deaths` | Passed (final install) | models load and pose; no gibs; skinny-worker ragdoll from 0.3 s; the guard's ragdoll sample again started late (2.0 s) under probe load |
+| Unit tests | Passed | 342 Python tests and the Zig suite; `test_neural_rig.py` adds heat falloff, section centroid, bow recovery and a sideways knee turned into its hinge without moving the foot |
+| Gameplay acceptance | Open | Needs the owner's view in play |
+
+**Second owner review (sequence 420, continued).** The owner's check of the cryotech sheet
+found more faults: the death hunch (440) leaned back, the kneels (230 and 300) stretched the
+back leg, and the hit and run frames leaned too little. A fitted-skeleton overlay on the
+source showed the source fit itself was wrong:
+- The cryotech's "pelvis" region was mostly hose and tank (its centre sat 10 units behind
+  the body).
+- The source skeleton had no waist, so a waist bend dragged the hips 15 units forward.
+- The root started from the body's centroid.
+
+Fixes:
+- vertices steer the skeleton by mesh piece and rigidity (`rigid_members`, `claim`);
+- props extend over their rigid pieces;
+- a waist joint;
+- a root started from the pelvis's own vertices;
+- re-weighting only among neighbouring bones.
+
+Five further experiments were measured and reverted because sheets or metrics got worse:
+- joint slack;
+- an own-vertex orientation term;
+- vertex-ring guides;
+- section-refined landmarks (they pulled arms into the torso);
+- far-accessory exclusion.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Source/new sheets, all eight | Passed with noted gaps, visual check | `zig-out/reports/runtime-zig-420/validation/v-*.png`. The cryotech death hunch, hit, run and kneels now follow the source; the kneeling back leg is a lunge-kneel in the source vertices themselves (thigh back and down). Gaps: the fat worker's squats (239, 600) are shallower; the inmater crouches more at 60 and 150 |
+| Admission, package | Passed, installed | `joint_violations` and `hinge_violations` empty on every frame; packaged IQMs byte-identical to the validated ones |
+| Probes, tests | Passed | `human-poses`, `ragdoll-deaths`; 342 Python tests and the Zig suite |
+| Gameplay acceptance | Open | Needs the owner's view in play |
+
+## Sequence 421 — authored-enemy-actions — sequences 418–420 rejected; authored action clips on the earlier motion
+
+**Change.**
+- **Owner rejection.** The owner tried the sequence 420 package in play (the twisted worker, the cryotech's arm and its
+  death) and judged the earlier animations much better. The source-fitted clips of sequences 418–420 are withdrawn.
+  The rejected tools (`neural_gold_motion.py`, `neural_humanoid_rig.py` and the retargeting `neural_human_motion.py`) are
+  removed from the tree and kept in `zig-out/reports/runtime-zig-420/rejected-tools/`. The sequence 420 package is kept
+  as `dk3-neural-episode.seq420.pk3`.
+- **Earlier approach recovered.** The liked motion was authored from scratch, not fitted. The 5 October human-motion tool
+  (`human_clips`) was rebuilt from the Codex session's patches. Its SHA-256 `8869bbee…` equals the hash the sequence 417
+  package records, and it reproduces that package's five human NPC models byte for byte from their masters. It is
+  restored as `neural_human_motion.py` and called by `neural_monsters.py package` again.
+- **Authored actions.** New `neural_actions.py` authors the sequences the procedural kinds rendered as a static stance:
+  attacks, pain, reload, cowers, work loops, seated poses and strikes (29 sequences on eight models). Each action is a
+  few key poses of semantic controls, solved by the shared fixed-length IK. Gold supplied only each sequence's meaning,
+  length and event frames. Authored sequences leave the shared-clip mapping (19 lines). Every other frame is unchanged
+  apart from requantization (at most 1.2×10⁻⁵ units). See docs/neural-monsters.md "Humanoid enemy motion (sequence 421)".
+- `joint_violations` checks twist on every joint again. The inmater's packaged hands, which predate the shared wrist
+  solver, are exempt only where an action keeps them.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Tool recovery | Passed | `human_clips` output equals the sequence 417 package's guard, cryotech, surgeon and worker IQMs byte for byte |
+| Gold/new sheets, all eight | Implemented, visual check | `zig-out/reports/runtime-zig-421/review/<model>.png`. Reworked after review: the skinny worker's floor work now on all fours, the fat worker's stool sitting and bent-over cower, and a reload that starts and ends aimed. The ragemaster's punches and the cryotech's flinch are milder than Gold's |
+| Admission, package | Passed, installed | No joint-range violations; mesh, bind, weights and atlases unchanged; installed package equals `dk3-neural-episode.actions.pk3` |
+| `human-poses`, `ragdoll-deaths` | Passed | `zig-out/reports/runtime-zig-421/`: the guard was sampled on its authored attacks (frames 132–142) and the inmater on `ataka`; the skinny worker was out of frame in this capture |
+| Tests | Passed | `zig build test`: 525 Zig tests, 344 Python tests (new `test_neural_actions.py`; the restored `human_clips` test) |
+| Gameplay acceptance | Open | Needs the owner's view in play |
+
+## Sequence 422 — sidekick-hud — sidekick flaps, the command window and Gold's sidekick orders
+
+**Change.**
+- **Status.** The owner asked whether the sidekick HUD worked: it had never been implemented. The party's new `status`
+  session hook packs each member's presence, view (PVS), health %, armour % of the worn armour's capacity
+  (`item_classes.armorCapacity`) and ammunition gauge into player-state stats 8–11 (unused by the engine).
+- **Flaps and window.** `companions/client/companion_hud.zig` draws Mikiko's flap bottom left and Superfly's bottom right
+  (Gold art, fades, health and armour bars, gauge) and the command window (portrait, GET/COME/STAY/ATTACK/BACK OFF,
+  selection). New client registry hooks: `console_commands`, `console`, `hud`, `holdsInventoryColumn` (the weapon list
+  yields its column while the window is open).
+- **Orders.** New `come` (a spot 64 units in front of the owner, then follow) and `backoff` (follow, start no fight)
+  orders; attack with nothing aimed at makes the sidekick willing to fight again; voice acknowledgements in the owner's
+  PVS (`cmd_mi_*`, `cmd_su_*`). `server.zig` dispatches party commands through `party.handles`/`party.command` instead
+  of a `sidekick` literal. The default binds' `companion follow|wait|attack|pickup` never reached any handler; they now
+  work. New default keys Z/X/V (`sidekick_next`, `sidekick_apply`, `sidekick_swap`) and seven Controls menu entries.
+- **Default binds not yet shipped.** `basegame.py` carries the new binds, but the installed asset generation's
+  `dk3-base.pk3` is hash-pinned and keeps the old `default.cfg` until the next asset regeneration. (An in-place
+  replacement was tried and reverted: the current generation's packages are symlinks into `e7dbc256…`.)
+
+| Scenario | State | Evidence |
+|---|---|---|
+| `sidekick-hud` (e3m1a) | Passed, visual check | `zig-out/reports/runtime-zig-422/sidekick-hud`: both flaps; Mikiko's hurt face and shorter health bar after a 2000-point hit; window open, STAY selected and given to Mikiko (`why=stay`); swap to Superfly, COME moved him about 80 units; `companion follow` ordered both |
+| `sidekick-talk` | Passed | Superfly's authored line still plays |
+| Tests, lint | Passed | `zig build test`: Zig suite, 344 Python tests, ownership lint |
+| Voice acknowledgements, ammunition gauge in play | Implemented, unverified | Not heard or seen in a probe; the probe's sidekicks were unarmed |
+| Gameplay acceptance | Open | Needs the owner's view in play |
+
+## Sequence 423 — guard-pistol-save-previews-difficulty — the guard's pistol, save pictures and times, difficulty in play
+
+**Change.**
+- **Guard pistol.** The neural Mishima guard was sculpted without his gun. The guard adapter's `decorate` tags the living
+  guard (render tag 10045) and `mishima_guard/client/render_mishima_guard.zig` draws a pistol model
+  (`models/e4/a_glock.dkm`) at the right hand's `tag_weapon`, barrel forward and handle down (measured axes and grip in
+  the class policy). The original model, which carries its own gun, is left alone.
+- **Save pictures and times.** Every save's `<slot>.info` sidecar now also records the wall-clock time (raw and local
+  "YYYY-MM-DD HH:MM"), the difficulty and a picture name. After a save the server sends `dk3_saveshot <name> <clean|hud>`
+  and the client (`save_preview.zig`) writes `screenshots/<name>.jpg`; a save the player asked for leaves the HUD out
+  (three frames before the screenshot command and four after), an autosave keeps it so play never flickers. Picture
+  names alternate a/b per slot so a cached image is never shown for a newer save. The Load and Save pages show each
+  row's date and the selected save's picture, date, map, difficulty and level; loading lists the newest first.
+- **Difficulty in play.** Extra Options has a Difficulty choice (Ronin, Samurai, Shogun = `g_spSkill` 1, 3, 5). The
+  server follows the cvar each frame (`actors.followDifficulty`, also in resident worlds): the aidata difficulty columns
+  already parsed (health, speeds, sight and call range, first weapon damage) and every living actor's health scale by
+  the new/old factor, keeping each actor's share of health. Values read at run time follow at once; which entities a
+  skill admitted at spawn stays.
+- New UI console command `dk3_menu_page <n>` (probes and diagnostics); the player probe gains `--renderer vulkan`,
+  `DK3_PROBE_KEEP_HOME` and the `save-preview` and `difficulty` scenarios.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Guard pistol | Implemented, offline visual check | Offline render of the packaged guard with the pistol at `tag_weapon` through idle, aims, kneel, pain, reload and walk; in-game framing of the guard was not captured this run |
+| `save-preview` (e1m3b, OpenGL 1) | Passed with a limit | `zig-out/reports/runtime-zig-423/save-preview`: both saves write info and pictures; the Load page lists newest first with picture, date, map, difficulty, level. The first save's picture is HUD-free; the second still shows the HUD because OpenGL renderers read the screenshot back before the frame draws (an older buffer under the headless software driver) |
+| Vulkan save pictures | Implemented, unverified | Vulkan captures the finished frame synchronously; software Vulkan crashes under the headless guard here even without these changes (`baseline-vulkan`) |
+| `difficulty` (e1m3b) | Passed | A 50-health Samurai guard becomes 63 on Shogun and 38 on Ronin; Options shows the Difficulty choice |
+| Tests, lint | Passed | `zig build test`: Zig suite (Table.rescale, save info parsing), 348 Python tests, ownership lint |
+| Gameplay acceptance | Open | Needs the owner's view in play |

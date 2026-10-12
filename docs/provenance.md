@@ -146,7 +146,9 @@ switch/ramp controllers and transport are independently written.
 - Source SHA-256: `4c401dfb37076aa1186bf1b321d4606a997a1324fd4c2c3afb933d0a045a0eff`.
 - Copyright (C) 1997-2001 Id Software, Inc.; GPL version 2 or later, as stated in
   the source header. Copyright attribution accompanies both admitted tables; the
-  project's [GPL text](../LICENSE) remains distributed.
+  project's [GPL text](../LICENSE) remains distributed. The native table now lives in
+  `src/mechanics/domain/lightstyle_table.zig` (moved from `lightstyles.zig` when the transport was
+  separated from the light class), with its attribution header.
 - Review scope: the default strings only. No Quake II runtime, game assets, headers
   or unrelated code was admitted. Public data matches the reviewed behavioral
   pattern contract; rendered native/reference comparison is still pending.
@@ -163,7 +165,7 @@ local generated assets, excluded from publication.
 
 ### Byte-direction data (sequence 279)
 
-`src/runtime/domain/direction_bytes.zig` admits only the 162 numerical direction vectors
+`src/core/domain/direction_bytes.zig` admits only the 162 numerical direction vectors
 from already bundled `engine/ioquake3/code/qcommon/q_math.c`, whose SHA-256 at review is
 `f00e75f3ea0a59176d19b6328044b84e8dd5734af14a960e8ec10d79120a7cb3`.
 Copyright (C) 1999–2005 Id Software, Inc.; GPL-2.0-or-later, preserved in the new file

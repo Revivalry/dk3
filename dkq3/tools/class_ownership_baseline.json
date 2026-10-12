@@ -1,0 +1,35 @@
+{
+ "entity_classes": [
+  "blood_cloud",
+  "chest",
+  "complex_particles",
+  "debris",
+  "earthquake",
+  "explosive",
+  "healer",
+  "healthtree",
+  "laser_beam",
+  "light",
+  "lightning",
+  "monitor",
+  "mover",
+  "path_corner",
+  "scenery",
+  "speaker",
+  "special_mover",
+  "spotlight",
+  "target_effect",
+  "teleporter",
+  "train",
+  "wall_breakage",
+  "weather"
+ ],
+ "item_classes": [
+  "chest",
+  "drugbox",
+  "healthtree",
+  "hosportal",
+  "keys"
+ ],
+ "shared_modules": {}
+}

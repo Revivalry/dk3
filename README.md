@@ -5,7 +5,7 @@ An open-source project to bring **Daikatana to the ioquake3 engine**, built with
 **Native Zig runtime under development; gameplay is incomplete.**
 
 The old gameplay runtime has been removed. The only game/client/UI implementation
-is now `src/runtime`, built on the bundled ioquake3 engine. Weapon definitions,
+is now the native Zig runtime in `src/`, built on the bundled ioquake3 engine. Weapon definitions,
 movement, ECS world systems, movers, pickups, all 28 weapon controllers, episode
 actors, scripts, cinematics, companions, saves and multiplayer modes are connected.
 The consolidated native implementation still requires gameplay verification and
@@ -102,6 +102,11 @@ Native New Game, save/load and multiplayer menus are connected; their current
 acceptance is recorded in the matrix. Development uses an isolated prefix/profile
 and does not update the preserved game or saves.
 
+A save records the checksum of each map it holds, and a re-converted map refuses it.
+When only surface or contents flags changed, `dkq3/tools/save_port.py` re-stamps the
+saves (it finds the original maps in the kept asset generations, refuses any structural
+change, and keeps `<save>.pre-port`).
+
 `play-install` builds and verifies the installed files without launching. Supplying
 `-DDK_DATA` to either play command also requests conversion; `assets` selects conversion
 alone. Conversion requires ffmpeg 7 on `PATH`. Use `-Dasset-profile=1.3` for the documented
@@ -118,9 +123,11 @@ default Internet-server trust, see [RPM packaging](docs/rpm.md).
 ```text
 engine/ioquake3/   Bundled engine, upstream foundations, and third-party notices
 engine/bspc/       Bundled navigation compiler and its notices
-src/runtime/  Native Zig game/client/UI, domain, ECS and engine adapters
-src/weapons/      Pure weapon descriptions and shared policies
-src/items/        Item metadata and key policies
+src/engine/       ioquake3 ABI adapters (syscalls, services, projections)
+src/core/         Game-agnostic runtime: ECS, math, animation, collision, navigation, saves
+src/mechanics/    Shared Daikatana mechanisms (domain, server, client, ui, policy helpers)
+src/game/         Class registries and the component list
+src/classes/      One folder per actor, weapon, item and map-entity class
 src/network/      Zig protocol and security
 src/online/       Room services and operator tools
 src/dkguard/       Process runner and its existing checks

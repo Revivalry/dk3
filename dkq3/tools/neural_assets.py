@@ -518,6 +518,70 @@ def carried_reference(model, bind, anchors):
     return result
 
 
+# Anatomical ranges for authored gameplay motion, in degrees: a joint's swing away from its
+# rest direction and its twist about its own bone, relative to its parent; elbows also fold at
+# most `ELBOW_FOLD` (the angle between upper arm and forearm). `joint_violations` checks every
+# authored action frame (neural_actions.author).
+JOINT_RANGES = {'spine': (30, 30), 'chest': (75, 45), 'neck': (45, 45), 'head': (60, 75),
+                'clavicle': (30, 20), 'upperarm': (150, 90), 'forearm': (180, 90), 'hand': (70, 90),
+                'thigh': (125, 45), 'shin': (180, 20), 'foot': (70, 30), 'toe': (35, 10)}
+ELBOW_FOLD = 150
+
+
+def _qmul(a, b):
+    ax, ay, az, aw = np.moveaxis(a, -1, 0)
+    bx, by, bz, bw = np.moveaxis(b, -1, 0)
+    return np.stack((aw*bx+ax*bw+ay*bz-az*by, aw*by-ax*bz+ay*bw+az*bx,
+                     aw*bz+ax*by-ay*bx+az*bw, aw*bw-ax*bx-ay*by-az*bz), axis=-1)
+
+
+def _qconj(q): return q*np.array([-1, -1, -1, 1])
+
+
+def _qrotate(q, v):
+    return _qmul(_qmul(q, np.concatenate([v, np.zeros(v.shape[:-1]+(1,))], axis=-1)), _qconj(q))[..., :3]
+
+
+def _qangle(q):
+    q = q*np.where(q[..., 3:4] < 0, -1, 1)
+    return 2*np.arctan2(np.linalg.norm(q[..., :3], axis=-1), q[..., 3])
+
+
+def swing_twist(delta, axis):
+    """Splits rotations into a swing (moving `axis`) after a twist about `axis`."""
+    along = (delta[..., :3]*axis).sum(axis=-1, keepdims=True)*axis
+    twist = np.concatenate([along, delta[..., 3:4]], axis=-1)
+    norm = np.linalg.norm(twist, axis=-1, keepdims=True)
+    twist = np.where(norm > 1e-9, twist/np.maximum(norm, 1e-12), np.array([0., 0, 0, 1]))
+    return _qmul(delta, _qconj(twist)), twist
+
+
+def joint_range(name):
+    base = name.rsplit('_', 1)[0] if name.endswith(('_l', '_r')) else name
+    return JOINT_RANGES.get(base)
+
+
+def joint_violations(model, frames, tolerance=.5):
+    """Frames of each joint outside its anatomical range (for admission checks)."""
+    violations = {}
+    for j, name in enumerate(model.names):
+        limits = joint_range(name)
+        children = [c for c, p in enumerate(model.parents) if p == j and not model.names[c].startswith(('tag_', 'hp_', 'hr_', 'fingers_', 'thumb_'))]
+        if limits is None or model.parents[j] < 0: continue
+        rest = model.bind[j, 3:7]/np.linalg.norm(model.bind[j, 3:7])
+        offset = model.bind[children[0], :3] if children else model.bind[j, :3]
+        axis = offset/max(np.linalg.norm(offset), 1e-9)
+        q = frames[:, j, 3:7]/np.linalg.norm(frames[:, j, 3:7], axis=-1, keepdims=True)
+        swing, twist = swing_twist(_qmul(_qconj(rest), q), axis)
+        bad = (np.degrees(_qangle(swing)) > limits[0]+tolerance) | (np.degrees(_qangle(twist)) > limits[1]+tolerance)
+        if name.startswith('forearm_') and children:
+            upper = model.bind[j, :3]/max(np.linalg.norm(model.bind[j, :3]), 1e-9)
+            lower = _qrotate(q, axis)
+            bad |= np.degrees(np.arccos(np.clip((lower*upper).sum(axis=-1), -1, 1))) > ELBOW_FOLD+tolerance
+        if bad.any(): violations[name] = np.flatnonzero(bad).tolist()
+    return violations
+
+
 def cinematic(model, surfaces, tags, *, carried=False, calibrate=True, metadata=None):
     reference_pose = CINEMATIC_REFERENCES.get(metadata.get('model')) if metadata else None
     if reference_pose:

@@ -110,7 +110,7 @@ fn begin(action: Action, id: []const u8) !void {
         if (rotation.items.len == 64) return error.InvalidRoom;
         try rotation.append(a, try a.dupe(u8, map_name));
     }
-    const create: api.RoomConfig = .{ .rotation = rotation.items, .name = try textCopy(a, "ui_roomName"), .region = try textCopy(a, "ui_roomRegion"), .mode = mode, .map = try textCopy(a, "ui_roomMap"), .slots = slots, .bots = @intCast(std.math.clamp(c.Cvar_VariableIntegerValue("ui_roomBots"), 0, slots - 1)), .skill = @intCast(@import("../runtime/domain/bot_skill.zig").normalize(c.Cvar_VariableIntegerValue("ui_roomSkill"))), .privacy = if (c.Cvar_VariableIntegerValue("ui_roomPrivate") != 0) .private else .public };
+    const create: api.RoomConfig = .{ .rotation = rotation.items, .name = try textCopy(a, "ui_roomName"), .region = try textCopy(a, "ui_roomRegion"), .mode = mode, .map = try textCopy(a, "ui_roomMap"), .slots = slots, .bots = @intCast(std.math.clamp(c.Cvar_VariableIntegerValue("ui_roomBots"), 0, slots - 1)), .skill = @intCast(@import("../mechanics/domain/bot_skill.zig").normalize(c.Cvar_VariableIntegerValue("ui_roomSkill"))), .privacy = if (c.Cvar_VariableIntegerValue("ui_roomPrivate") != 0) .private else .public };
     if (action == .create) {
         const body = try std.json.Stringify.valueAlloc(a, create, .{});
         var hash: [32]u8 = undefined;

@@ -93,7 +93,9 @@ def ensure_surface_lights(package, source):
 
 
 def install(prefix, assets, hd_textures=None, *, hd_textures_fallback=None,
-            neural_assets=None, neural_assets_fallback=None, materials=None, materials_fallback=None):
+            neural_assets=None, neural_assets_fallback=None, hd_weapons=None, hd_weapons_fallback=None,
+            hd_weapons_preview=None,
+            materials=None, materials_fallback=None):
     if not (assets / 'current' / 'manifest.json').is_file():
         raise ValueError(f'no completed asset generation in {assets}; run zig build assets '
                          '-DDK_DATA=/path/to/data -Dasset-profile=retail first, '
@@ -129,6 +131,15 @@ def install(prefix, assets, hd_textures=None, *, hd_textures_fallback=None,
         from neural_package import validate_package
         validate_package(neural, source / 'packages/dk3-models.pk3')
         files['share/dk3/zz-dk3-neural.pk3'] = neural
+    if hd_weapons and hd_weapons_preview:
+        raise ValueError('select either accepted HD weapons or an unverified preview')
+    weapons = hd_weapons_preview or hd_weapons or prefix / 'hd-weapons' / 'dk3-hd-weapons.pk3'
+    if not hd_weapons and not hd_weapons_preview and not weapons.is_file() and hd_weapons_fallback:
+        weapons = hd_weapons_fallback
+    if hd_weapons or hd_weapons_preview or weapons.is_file():
+        from hd_weapons import validate_package
+        validate_package(weapons, source / 'packages/dk3-models.pk3', allow_preview=hd_weapons_preview is not None)
+        files['share/dk3/zz-dk3-hd-weapons.pk3'] = weapons
     # Remaster material sidecars, normal maps (materialgen.py) and map surface-light sidecars
     # (surface_lights.py) are read only by renderer_vulkan; like the HD overlay they are cosmetic.
     material_package = materials or prefix / 'materials' / 'dk3-materials.pk3'
@@ -162,6 +173,8 @@ def install(prefix, assets, hd_textures=None, *, hd_textures_fallback=None,
     compatibility.update(gameplay=gameplay.hexdigest(), cosmetic='hd-textures-v1' if 'share/dk3/zz-dk3-textures-hd.pk3' in files else 'stock-v1')
     if 'share/dk3/zz-dk3-neural.pk3' in files:
         compatibility['cosmetic'] += '+neural-v1'
+    if 'share/dk3/zz-dk3-hd-weapons.pk3' in files:
+        compatibility['cosmetic'] += '+hd-weapons-preview-v1' if hd_weapons_preview else '+hd-weapons-v1'
     if 'share/dk3/zz-dk3-materials.pk3' in files:
         compatibility['cosmetic'] += '+materials-v1'
     compatibility_file = prefix / 'share/dk3/compatibility.json'
@@ -207,6 +220,8 @@ def install(prefix, assets, hd_textures=None, *, hd_textures_fallback=None,
         print(f'play-install: HD textures enabled from {hd}')
     if 'share/dk3/zz-dk3-neural.pk3' in records:
         print(f'play-install: skeletal neural characters enabled from {neural}')
+    if 'share/dk3/zz-dk3-hd-weapons.pk3' in records:
+        print(f'play-install: {"unverified HD weapon preview" if hd_weapons_preview else "accepted HD weapons"} enabled from {weapons}')
     if 'share/dk3/zz-dk3-materials.pk3' in records:
         print(f'play-install: remaster materials enabled from {material_package}')
 
@@ -241,7 +256,8 @@ def launch(prefix, guard, extra, headless=False):
                '+set', 'vm_game', '0', '+set', 'vm_cgame', '0', '+set', 'vm_ui', '0',
                '+set', 'g_gametype', '2', '+set', 'cl_renderer', 'vulkan',
                *(['+set', 'r_picmip', '0'] if any(name in manifest['files'] for name in
-                 ('share/dk3/zz-dk3-textures-hd.pk3', 'share/dk3/zz-dk3-neural.pk3')) else []), *extra]
+                 ('share/dk3/zz-dk3-textures-hd.pk3', 'share/dk3/zz-dk3-neural.pk3',
+                  'share/dk3/zz-dk3-hd-weapons.pk3')) else []), *extra]
     os.execv(command[0], command)
 
 
@@ -255,6 +271,9 @@ def main(argv=None):
     prepare.add_argument('--hd-textures-fallback', type=Path, help='shared local HD package used when the build prefix has none')
     prepare.add_argument('--neural-assets', type=Path, help='optional validated skeletal character package')
     prepare.add_argument('--neural-assets-fallback', type=Path, help='shared locally converted skeletal package')
+    prepare.add_argument('--hd-weapons', type=Path, help='accepted local HD weapon package')
+    prepare.add_argument('--hd-weapons-fallback', type=Path, help='shared local HD weapon package')
+    prepare.add_argument('--hd-weapons-preview', type=Path, help='explicit unverified HD weapon package for guarded visual review')
     prepare.add_argument('--materials', type=Path, help='optional materialgen.py remaster material package')
     prepare.add_argument('--materials-fallback', type=Path, help='shared locally generated material package')
     run = sub.add_parser('launch')
@@ -269,6 +288,8 @@ def main(argv=None):
             install(prefix, arguments.assets.resolve(), arguments.hd_textures,
                     hd_textures_fallback=arguments.hd_textures_fallback,
                     neural_assets=arguments.neural_assets, neural_assets_fallback=arguments.neural_assets_fallback,
+                    hd_weapons=arguments.hd_weapons, hd_weapons_fallback=arguments.hd_weapons_fallback,
+                    hd_weapons_preview=arguments.hd_weapons_preview,
                     materials=arguments.materials, materials_fallback=arguments.materials_fallback)
         else:
             launch(prefix, arguments.dkguard, extra[1:] if extra[:1] == ['--'] else extra, arguments.headless)

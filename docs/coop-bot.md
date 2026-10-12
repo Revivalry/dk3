@@ -303,16 +303,16 @@ sources of authored waypoints.
 | File | Owns |
 |---|---|
 | `engine/lua/`, `engine/LUA-UPSTREAM.json` | Unmodified Lua 5.4.7 (MIT) and its file hashes |
-| `src/runtime/engine/lua.zig` | Sandboxed VM, coroutines, budgets |
-| `src/runtime/domain/coop_route.zig` | Typed actions, targets, pure geometry |
-| `src/runtime/server/coop_bot.zig` | Driver: admission, levels, stages, actions, deaths, evidence |
-| `src/runtime/server/bot_pilot.zig` | Body-agnostic locomotion and combat planning (shared with companions) |
-| `src/runtime/server/coop_motor.zig` | Client adapter: pilot frame from the player, command to `usercmd_t` |
-| `src/runtime/server/bot_evasion.zig` | Threat prediction and evasion |
-| `src/runtime/server/bot_survival.zig` | Aggressor choice, hold/approach/break-off, health detours (shared with companions) |
-| `src/runtime/server/coop_targets.zig` | Selector resolution |
-| `src/runtime/server/coop_link.zig` | Client duties: reliable commands, world publication acks |
-| `src/runtime/server/coop_script.zig`, `coop_prelude.lua` | Lua boundary and the route language |
+| `src/engine/lua.zig` | Sandboxed VM, coroutines, budgets |
+| `src/mechanics/domain/coop_route.zig` | Typed actions, targets, pure geometry |
+| `src/mechanics/server/coop_bot.zig` | Driver: admission, levels, stages, actions, deaths, evidence |
+| `src/mechanics/server/bot_pilot.zig` | Body-agnostic locomotion and combat planning (shared with companions) |
+| `src/mechanics/server/coop_motor.zig` | Client adapter: pilot frame from the player, command to `usercmd_t` |
+| `src/mechanics/server/bot_evasion.zig` | Threat prediction and evasion |
+| `src/mechanics/server/bot_survival.zig` | Aggressor choice, hold/approach/break-off, health detours (shared with companions) |
+| `src/mechanics/server/coop_targets.zig` | Selector resolution |
+| `src/mechanics/server/coop_link.zig` | Client duties: reliable commands, world publication acks |
+| `src/mechanics/server/coop_script.zig`, `coop_prelude.lua` | Lua boundary and the route language |
 | `dkq3/coop/` | Campaign routes |
 | `dkq3/tools/runtime_coop_bot.py` | Headless runner and evidence |
 | `dkq3/tools/coop_route_survey.py`, `coop_route_map.py`, `coop_route_aas.py` | Route authoring: entity survey, floor maps, offline area graph |

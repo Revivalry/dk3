@@ -64,6 +64,10 @@ def scenario(driver, report):
     driver.load("rockgat_lowered")
     assert actors(driver)[85]["gun"] == "passive"
     driver.load("rockgat_firing")
+    # The ion phase lasts as long as the client's fire loop; on a slow host the turret, crox and
+    # frogs outlast the restored health, so the fixture's health is diagnostic here too.
+    driver.issue("dk3_runtime_probe_health 10000")
+    driver.until(lambda s: s["health"] == 10000, description="controlled ion-phase health")
     driver.issue("dk3_runtime_equip 2")
     driver.ready(2)
     # The stationary authored turret is a controlled contact target, not a

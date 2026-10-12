@@ -1,5 +1,13 @@
 # Native port acceptance
 
+## Sequence 374 — hd-weapons-part-pipeline — implemented; visual acceptance open
+
+The [HD weapon pipeline](hd-weapons.md) inventories all 28 classes, validates
+source-compatible IQM replacement packages, and retains an isolated generated
+Glock world-model preview. No HD weapon is selected by default; first-person
+moving-part rigs and the remaining weapon assets are unimplemented. The pilot
+needs guarded native pickup/equipped review before any model is admitted.
+
 ## Sequences 358–373 — vulkan-remaster — implemented; owner visual acceptance open
 
 The owner directed the remaster roadmap in [vulkan-remaster.md](vulkan-remaster.md)
@@ -914,9 +922,9 @@ never read anywhere in the runtime, so nothing was registered or started; and ev
 registered, a brush entity's own origin is model-local, so an event placed at the entity
 origin lands at the map origin, while one placed at the brush's audible centre but addressed
 to a listener position is dropped by the audible-set filter — a player standing 56 units in
-front of a panel heard nothing. `src/runtime/server/movers.zig` now resolves those two keys
+front of a panel heard nothing. `src/classes/entities/mover/server/movers.zig` now resolves those two keys
 through the map sound registry into two fields on the mover component
-(`src/runtime/domain/movers.zig`) and starts them from the centre of the brush's committed
+(`src/core/domain/movers.zig`) and starts them from the centre of the brush's committed
 world bounds on the broadcast path. Archives written before the fields existed stay silent,
 which the new `domain/snapshot` test pins.
 
@@ -927,12 +935,12 @@ mover size by contracting the loaded model hull by exactly that amount so that a
 behave as written. Every one of the 25 buttons on this map therefore pressed two units deeper
 than authored, and six of them are authored with lip equal to their thickness, meaning they
 were built not to move at all — those sank behind the wall surface and vanished. Travel now
-uses the authored extents. `src/runtime/root.zig` also imports `server/movers.zig` for test
+uses the authored extents. `src/runtime_tests.zig` also imports `server/movers.zig` for test
 collection, because its checks had never been reachable.
 
 The twitch was a prediction gap, not a mover defect: the server carries a rider positionally,
 but client prediction had no notion of ground-mover motion, so the camera advanced at snapshot
-rate while the ridden brush is trajectory-evaluated every frame. `src/runtime/client.zig` now
+rate while the ridden brush is trajectory-evaluated every frame. `src/client.zig` now
 carries the ridden brush's trajectory inside each replayed command.
 
 `zig build test -j8` exits 0; 203 runtime tests pass, including three new ones. Its progress
@@ -966,7 +974,7 @@ Definitions, measured turn-to-notice times and the investigation are in
 [bot skill and sight](bots-zig.md).
 
 `zig build test -j1 --summary all`: 52 steps, 427 tests pass. The aggregate check had
-been failing at its `zig fmt --check` step on `src/runtime/server/bots.zig`, not on a test
+been failing at its `zig fmt --check` step on `src/mechanics/server/bots.zig`, not on a test
 abort; the file is formatted and the whole graph runs. Sampled dedicated-match evidence is
 in `zig-out/reports/runtime-zig-322/`, produced by the new
 `dkq3/tools/runtime_bot_skill_probe.py` (parser covered by
@@ -978,7 +986,7 @@ of the cone actually in force, so an override was invisible in its own evidence.
 
 | Scenario | State | Evidence and limits |
 |---|---|---|
-| Pure ladder policy | Passed | `zig test src/runtime/domain/bot_skill.zig`: monotone 1→10, cone/proximity/range admission, rate-limited turning, an enemy at the bot's back is never visible without turning, bounded reproducible aim noise. Unit coverage only, not gameplay. |
+| Pure ladder policy | Passed | `zig test src/mechanics/domain/bot_skill.zig`: monotone 1→10, cone/proximity/range admission, rate-limited turning, an enemy at the bot's back is never visible without turning, bounded reproducible aim noise. Unit coverage only, not gameplay. |
 | Cone acquisition in a real match | Sampled, unverified | e1dm2a FFA, four bots, levels changed live (`zig-out/reports/runtime-zig-322/ladder`): samples holding a target fell 38% → 21% → 12% across levels 10/5/1 with 0 faults. Same map and levels with `dk3_bot_fov 2`: 27% → 2% → 2%. Unscheduled encounters, so the gaps are indicative; the cone geometry itself is pinned by the policy tests. No human client involved. |
 | Look-around search | Sampled, unverified | In every run the commanded view differs from the previous sample on 79–90 of 84–92 reports and the sweep headings {-80,-40,0,40,80} all appear, so the view is never locked forward. Not observed: a specific hidden enemy becoming visible only because a sweep reached it — that still needs a scripted approach from behind. |
 | Difficulty selection while hosting | Unrun | Code path is in place on both pages (`ui_roomSkill` → `dk3_bot_skill` for LAN, `RoomConfig.skill` 1..10 for the coordinator, browser row carries `bots` and `skill`). Needs real menu input on the LAN page and the Create Internet room page to confirm the level reaches the server, the room record and the browser row. |
@@ -1025,7 +1033,7 @@ retained locally as `dk3-neural-320.pk3`; the preserved game/saves were not chan
 
 The reviewed installation is `79a60df85f2bd04aafc79263deb82fb9d803f38a5e13d6673f4eba890512969a`.
 A later normal rebuild failed in concurrently edited `src/online/worker_main.zig`
-(import outside module root) and `src/runtime/ui/multiplayer.zig` (i32/f32 mismatch).
+(import outside module root) and `src/mechanics/ui/multiplayer.zig` (i32/f32 mismatch).
 Those unrelated edits were preserved. The exact immutable build used by the
 passing scenarios was published to native-dev after verifying every manifest hash
 (`publish-tested.log`); this does not claim the current concurrent source tree

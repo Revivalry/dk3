@@ -4,6 +4,7 @@
 import argparse
 import json
 import math
+import os
 from pathlib import Path
 import re
 import shutil
@@ -1343,26 +1344,323 @@ def civilians_scenario(issue, capture, log):
             "scope": "e1m2a authored civilian bodies, normal Glock input, death and witness panic; diagnostic player positioning/equipment, navigation and full actor parity unqualified"}
 
 
+# e1m3a civilians: worker 25 stands idle with no work script; plain prisoner 462 has no
+# spawnflags, plain prisoner 318 carries 128 (do not move).
+HIDING_WORKER = 25
+ALERTED_PRISONER = 462
+STILL_PRISONER = 318
+
+
+def workers_scenario(issue, capture, log):
+    issue("developer 1")
+    issue("cl_debugMove 3")
+    # A worker that sees the player runs (runa) and then cowers (gamba 692-711 or gambc 720-727).
+    worker = HIDING_WORKER
+    issue("dk3_runtime_place 1600 -400 -120 180", 0.3)
+    deadline = time.monotonic() + 12
+    text = ""
+    while time.monotonic() < deadline:
+        issue(f"dk3_runtime_projections monster_skinnyworker", 0.05)
+        issue("dk3_runtime_actors", 0.3)
+        text = log.read_text(errors="replace")
+        if re.search(rf"zig actor: id={worker} state=idle .*worker=cower", text):
+            break
+    if not re.search(rf"zig actor: id={worker} state=flee ", text):
+        raise RuntimeError(f"worker {worker} did not hide from the player in sight")
+    if not re.search(rf"worker: fear voice id={worker} |zig actor: id={worker} .*worker=cower", text):
+        raise RuntimeError(f"worker {worker} did not cower")
+    issue("dk3_runtime_projections monster_skinnyworker", 0.4)
+    frames = [int(value) for value in re.findall(rf"dk3 projection: id={worker} .*? frame=(\d+)", log.read_text(errors="replace"))]
+    cowering = [frame for frame in frames if 692 <= frame <= 711 or 720 <= frame <= 727]
+    if not cowering:
+        raise RuntimeError(f"worker {worker} showed no cower clip: {frames[-12:]}")
+    capture("worker-cower")
+    # A plain prisoner never flees: hurt by the player, he calls out and wanders (walka 260-279).
+    prisoner = ALERTED_PRISONER
+    # The player's attack input does not reach the server from the probe pipe (open), so the
+    # player hurts him through the normal damage path instead.
+    still = STILL_PRISONER
+    for identity in (prisoner, still):
+        issue(f"dk3_runtime_probe_health 1000 {identity}")
+        issue(f"dk3_runtime_hurt {identity} 10", 0.3)
+    deadline = time.monotonic() + 12
+    while time.monotonic() < deadline:
+        issue("dk3_runtime_projections monster_prisoner", 0.05)
+        issue("dk3_runtime_actors", 0.3)
+    text = log.read_text(errors="replace")
+    states = re.findall(rf"zig actor: id={prisoner} state=(\w+) health=(-?\d+)", text)
+    if not states or int(states[-1][1]) >= 1000:
+        raise RuntimeError(f"prisoner {prisoner} was not hurt")
+    if any(state == "flee" for state, _ in states):
+        raise RuntimeError(f"prisoner {prisoner} fled; plain prisoners never do")
+    if not re.search(rf"zig actor: id={prisoner} state=chase .*roam=", text):
+        raise RuntimeError(f"alerted prisoner {prisoner} did not wander")
+    still_states = re.findall(rf"zig actor: id={still} state=(\w+) health=(-?\d+) pos=([\d.,-]+) threat=(\d+)", text)
+    if not still_states or int(still_states[-1][3]) == 0 or len({position for _, _, position, _ in still_states}) != 1:
+        raise RuntimeError(f"do-not-move prisoner {still} was not alerted in place: {still_states[-1:]}")
+    walking = [int(value) for value in re.findall(rf"dk3 projection: id={prisoner} .*? frame=(\d+)", text) if 260 <= int(value) <= 279]
+    if not walking:
+        raise RuntimeError(f"prisoner {prisoner} wandered without walka")
+    capture("prisoner-wander")
+    return {"worker": worker, "cower_frames": cowering[:8], "prisoner": prisoner, "walk_frames": walking[:8],
+            "scope": "e1m3a worker sight hide, run and cower clip; plain prisoner hurt by the player (diagnostic damage) wanders with walka and never flees; work scripts and Gold timing parity unqualified"}
+
+
+# e1m2b skinny worker 51 carries spawnflag 4 (node wander).
+WANDERING_WORKER = 51
+
+
+def worker_wander_scenario(issue, capture, log):
+    issue("developer 1")
+    worker = WANDERING_WORKER
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        issue("dk3_runtime_projections monster_skinnyworker", 0.05)
+        issue("dk3_runtime_actors", 0.3)
+    text = log.read_text(errors="replace")
+    states = re.findall(rf"zig actor: id={worker} state=(\w+) health=-?\d+ pos=([\d.,-]+)", text)
+    walking = [list(map(float, position.split(','))) for state, position in states if state == "chase"]
+    if len(walking) < 2 or math.dist(walking[0][:2], walking[-1][:2]) < 32:
+        raise RuntimeError(f"worker {worker} did not wander: {states[-3:]}")
+    frames = [int(value) for value in re.findall(rf"dk3 projection: id={worker} .*? frame=(\d+)", text) if 983 <= int(value) <= 1002]
+    if not frames:
+        raise RuntimeError(f"worker {worker} wandered without walka")
+    capture("worker-wander")
+    return {"worker": worker, "travel": round(math.dist(walking[0][:2], walking[-1][:2]), 1), "walk_frames": frames[:8],
+            "scope": "e1m2b spawnflag-4 worker node wander with walka; leg choice and timing parity unqualified"}
+
+
+# e1m3a surgeon 471 (SRGNasta, spawnflag 16) assists at the operating table, ignoring the player;
+# its scripts are brief one-shots (SRGNfyst and the others loop theirs, and a working surgeon is
+# blind, so after its cower it returns to work).
+CALM_SURGEON = 471
+
+
+def surgeon_scenario(issue, capture, log):
+    issue("developer 1")
+    surgeon = CALM_SURGEON
+    # It ignores the player beside it until he hurts it; then it cowers in place (gamba 540-559 or
+    # gambc 568-575) and, after its ten-second reconsider with the player close and in sight, runs
+    # from him (runa 576-589) and cowers again where it stops.
+    issue("dk3_runtime_place 2010 -388 -470 0", 0.3)
+    issue("dk3_runtime_probe_health 10000")
+    for _ in range(12):
+        issue("dk3_runtime_actors", 0.25)
+    text = log.read_text(errors="replace")
+    if re.search(rf"zig actor: id={surgeon} state=flee ", text) or not re.search(rf"zig actor: id={surgeon} .* surgeon=calm", text):
+        raise RuntimeError(f"surgeon {surgeon} did not ignore the player")
+    issue(f"dk3_runtime_probe_health 1000 {surgeon}")
+    issue(f"dk3_runtime_hurt {surgeon} 5", 0.3)
+    deadline = time.monotonic() + 40
+    while time.monotonic() < deadline:
+        issue("dk3_runtime_projections monster_surgeon", 0.05)
+        issue("dk3_runtime_actors", 0.3)
+        text = log.read_text(errors="replace")
+        hid = re.search(rf"zig actor: id={surgeon} state=flee .* surgeon=hide", text)
+        if hid and re.search(rf"zig actor: id={surgeon} .* surgeon=cower", text[hid.end():]):
+            break
+    text = log.read_text(errors="replace")
+    rows = re.findall(rf"zig actor: id={surgeon} state=(\w+) .*?now=(\d+).* surgeon=(\w+)", text)
+    hurt_at = next((int(now) for _, now, phase in rows if phase == "cower"), None)
+    hide_at = next((int(now) for state, now, phase in rows if phase == "hide"), None)
+    if hurt_at is None:
+        raise RuntimeError(f"surgeon {surgeon} did not cower when hurt: {rows[-3:]}")
+    if hide_at is None or hide_at - hurt_at < 9500:
+        raise RuntimeError(f"surgeon {surgeon} did not hide after its reconsider delay: cower={hurt_at} hide={hide_at}")
+    frames = [int(value) for value in re.findall(rf"dk3 projection: id={surgeon} .*? frame=(\d+)", text)]
+    cowering = [frame for frame in frames if 540 <= frame <= 559 or 568 <= frame <= 575]
+    running = [frame for frame in frames if 576 <= frame <= 589]
+    if not cowering or not running:
+        raise RuntimeError(f"surgeon {surgeon} clips: cower={cowering[:4]} run={running[:4]}")
+    # Monster clips play at the reference's 20 fps.
+    rates = set(re.findall(rf"dk3 projection: id={surgeon} .* rate=(\d+)", text))
+    if rates != {"20"}:
+        raise RuntimeError(f"surgeon {surgeon} clip rates {rates}")
+    capture("surgeon-hide")
+    return {"surgeon": surgeon, "cower_ms": hurt_at, "hide_ms": hide_at, "cower_frames": cowering[:8], "run_frames": running[:8],
+            "scope": "e1m3a surgeon ignores the player until hurt (diagnostic damage), cowers in place, then after the reconsider delay hides from the player in sight and cowers again; hide-node choice and Gold timing parity unqualified"}
+
+
+def lasergat_scenario(issue, capture, log):
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+    # A lasergat that sees the player turns onto him and fires once per shot cycle: its clip runs
+    # 500 ms to its last frame (the reference cycle), never faster. A turret spawned in the start
+    # hall, 160 units ahead of the player and above him, has him in sight.
+    issue("dk3_runtime_actor_spawn monster_lasergat -576 184 180 90", 0.5)
+    fixtures = re.findall(r"actor fixture: id=(\d+)", log.read_text(errors="replace"))
+    if not fixtures:
+        raise RuntimeError("lasergat fixture did not spawn")
+    turret = int(fixtures[-1])
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        issue("dk3_runtime_actors", 0.4)
+    text = log.read_text(errors="replace")
+    identity = turret
+    times = [int(now) for now in re.findall(rf"lasergat: id={turret} fired now=(\d+)", text)]
+    gaps = [after - before for before, after in zip(times, times[1:])]
+    if len(times) < 4 or min(gaps) < 500:
+        raise RuntimeError(f"lasergat {identity} shot cycle: {times[:12]}")
+    capture("lasergat-fire")
+    # Hits from its enemy stall it now and then (75%, at most once per 500 ms): the cycle restarts
+    # after a 100 ms pause, so the next shot comes at least 300 ms after the stall.
+    issue(f"dk3_runtime_probe_health 10000 {turret}")
+    for _ in range(8):
+        issue(f"dk3_runtime_hurt {turret} 1", 0.7)
+    text = log.read_text(errors="replace")
+    stalls = [int(now) for now in re.findall(rf"lasergat: id={turret} stalled now=(\d+)", text)]
+    after = [int(now) for now in re.findall(rf"lasergat: id={turret} fired now=(\d+)", text)]
+    if not stalls:
+        raise RuntimeError(f"lasergat {turret} never stalled when hurt")
+    for stall in stalls:
+        following = [shot for shot in after if shot > stall]
+        if following and following[0] - stall < 300:
+            raise RuntimeError(f"lasergat {turret} fired {following[0] - stall} ms after a stall")
+    return {"lasergat": identity, "shots": len(times), "gaps": gaps[:10], "stalls": len(stalls),
+            "scope": "e1m4a lasergat fixture turns onto the player and fires at its 500 ms cycle; hits from the player stall and restart the cycle; unseen tracking unqualified in game"}
+
+
+def fight_and_flinch(issue, capture, log, pain, name, rounds=14):
+    """For each class in `pain` (classname -> its hita frames), one at a time: spawn it south of
+    the e2m1a start, check it attacks the player, land small diagnostic hits until it flinches
+    with its hita, then kill it so it cannot block the next one's approach."""
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+    fixtures, flinched = {}, {}
+    for classname, frames_of_pain in pain.items():
+        for x, y in ((-580, 1272), (-460, 1272), (-520, 1192), (-640, 1192), (-400, 1192), (-520, 1112)):
+            text = log.read_text(errors="replace")
+            issue(f"dk3_runtime_actor_spawn {classname} {x} {y} 1440 90 e2m1a 1 ground", 0.4)
+            found = re.findall(rf"actor fixture: id=(\d+) class={classname} .* grounded=1", log.read_text(errors="replace")[len(text):])
+            if found:
+                identity = fixtures[classname] = int(found[-1])
+                break
+        else:
+            raise RuntimeError(f"no clear spot for {classname}")
+        mark = len(log.read_text(errors="replace"))
+        deadline = time.monotonic() + 12
+        while time.monotonic() < deadline:
+            issue("dk3_runtime_actors", 0.4)
+            if re.search(rf"zig actor: id={identity} state=attack ", log.read_text(errors="replace")[mark:]):
+                break
+        text = log.read_text(errors="replace")[mark:]
+        if not re.search(rf"zig actor: id={identity} state=attack ", text):
+            raise RuntimeError(f"{classname} {identity} never attacked: {re.findall(rf'zig actor: id={identity} state=(\w+)', text)[-3:]}")
+        issue(f"dk3_runtime_probe_health 10000 {identity}")
+        for _ in range(rounds):
+            issue(f"dk3_runtime_hurt {identity} 1", 0.05)
+            for _ in range(4):
+                issue(f"dk3_runtime_projections {classname}", 0.05)
+        text = log.read_text(errors="replace")[mark:]
+        frames = [int(value) for value in re.findall(rf"dk3 projection: id={identity} .*? frame=(\d+)", text)]
+        flinched[classname] = [frame for frame in frames if frame in frames_of_pain][:6]
+        if not flinched[classname]:
+            raise RuntimeError(f"{classname} {identity} never flinched: {frames[-12:]}")
+        issue(f"dk3_runtime_probe_health 1 {identity}")
+        issue(f"dk3_runtime_hurt {identity} 1000", 0.5)
+    capture(name)
+    return fixtures, flinched
+
+
+def e2_melee_scenario(issue, capture, log):
+    # A spider and a skeleton fight the player and flinch with their hita (skeleton 244-253,
+    # generic 20% rolls; spider 81-100, one 75% roll) once the acquiring hit has made him their enemy.
+    fixtures, flinched = fight_and_flinch(issue, capture, log, {"monster_spider": range(81, 101), "monster_skeleton": range(244, 254)}, "e2-melee")
+    return {"fixtures": fixtures, "pain_frames": flinched,
+            "scope": "e2m1a skeleton and spider fixtures attack the player and flinch with hita under diagnostic hits; attack choice, leap and Gold timing parity unqualified"}
+
+
+def e4_fighters_scenario(issue, capture, log):
+    # A lab monkey (hita 296-315), a femgang (hita 143-158) and a rocketdude (hita 200-219), all
+    # on the generic pain handler, fight the player and flinch under diagnostic hits.
+    fixtures, flinched = fight_and_flinch(issue, capture, log, {"monster_labmonkey": range(296, 316), "monster_femgang": range(143, 159), "monster_rocketdude": range(200, 220)}, "e4-fighters", rounds=30)
+    return {"fixtures": fixtures, "pain_frames": flinched,
+            "scope": "e2m1a lab monkey, femgang and rocketdude fixtures attack the player and flinch with hita under diagnostic hits; leaps, hops, evasion, rockets and Gold timing parity unqualified"}
+
+
+def e4_gunfighters_scenario(issue, capture, log):
+    # A rocket MP (hita 140-159), a white prisoner (310-324), a seal captain (173-187) and a
+    # chaingang (360-369, one 75% roll; its AI starts 2.2 s after spawning) fight the player
+    # and flinch under diagnostic hits.
+    fixtures, flinched = fight_and_flinch(issue, capture, log, {"monster_rocketmp": range(140, 160), "monster_whiteprisoner": range(310, 325), "monster_sealcaptain": range(173, 188), "monster_chaingang": range(360, 370)}, "e4-gunfighters", rounds=30)
+    return {"fixtures": fixtures, "pain_frames": flinched,
+            "scope": "e2m1a rocket MP, white prisoner, seal captain and chaingang fixtures attack the player and flinch with hita under diagnostic hits; rockets, rocks, bursts, flight and Gold timing parity unqualified"}
+
+
+def e3_creatures_scenario(issue, capture, log):
+    # A lycanthir (generic pain 15%, limit 35; hita 227-241) and a plague rat (generic pain 25%,
+    # limit 35; hita 145-153) fight the player and flinch under diagnostic hits.
+    fixtures, flinched = fight_and_flinch(issue, capture, log, {"monster_lycanthir": range(227, 242), "monster_plague_rat": range(145, 154)}, "e3-creatures", rounds=24)
+    return {"fixtures": fixtures, "pain_frames": flinched,
+            "scope": "e2m1a lycanthir and plague rat fixtures attack the player and flinch with hita under diagnostic hits; leaps, evasion, resurrection and Gold timing parity unqualified"}
+
+
+def e3_knights_scenario(issue, capture, log):
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+    # A lightning knight has no melee clip: within 80 units it runs in place (runa 209-224) and
+    # punches once per loop. A dwarf beside it chops or throws. Both are spawned south of the
+    # e2m1a start; the player is then placed beside the knight.
+    fixtures = {}
+    for classname in ("monster_knight2", "monster_dwarf"):
+        for x, y in ((-580, 1272), (-460, 1272), (-520, 1192), (-640, 1192), (-400, 1192), (-520, 1112)):
+            if any(spot == (x, y) for spot in fixtures.values()):
+                continue
+            text = log.read_text(errors="replace")
+            issue(f"dk3_runtime_actor_spawn {classname} {x} {y} 1440 90 e2m1a 1 ground", 0.4)
+            found = re.findall(rf"actor fixture: id=(\d+) class={classname} .* grounded=1", log.read_text(errors="replace")[len(text):])
+            if found:
+                fixtures[classname] = (x, y)
+                fixtures[classname + "#"] = int(found[-1])
+                break
+        else:
+            raise RuntimeError(f"no clear spot for {classname}")
+    knight = fixtures["monster_knight2#"]
+    dwarf = fixtures["monster_dwarf#"]
+    issue("dk3_runtime_actors", 0.4)
+    position = re.findall(rf"zig actor: id={knight} state=\w+ health=-?\d+ pos=(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)", log.read_text(errors="replace"))
+    if not position:
+        raise RuntimeError(f"knight {knight} position unknown")
+    x, y, z = (float(value) for value in position[-1])
+    issue(f"dk3_runtime_place {x} {y + 60} {z + 24}", 0.5)
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        issue("dk3_runtime_actors", 0.2)
+        issue("dk3_runtime_projections monster_knight2", 0.2)
+    text = log.read_text(errors="replace")
+    for identity, classname in ((knight, "monster_knight2"), (dwarf, "monster_dwarf")):
+        if not re.search(rf"zig actor: id={identity} state=attack ", text):
+            raise RuntimeError(f"{classname} {identity} never attacked: {re.findall(rf'zig actor: id={identity} state=(\w+)', text)[-3:]}")
+    frames = [int(value) for value in re.findall(rf"dk3 projection: id={knight} .*? frame=(\d+)", text)]
+    running = [frame for frame in frames if 209 <= frame <= 224]
+    if not running:
+        raise RuntimeError(f"knight2 {knight} never ran in place: {frames[-12:]}")
+    capture("e3-knights")
+    return {"knight2": knight, "dwarf": dwarf, "runa_frames": running[:8],
+            "scope": "knight2 beside the player plays its in-place runa punch and attacks; a dwarf attacks; zap, axe flight and Gold timing parity unqualified"}
+
+
+# e1m3b guards: 65 has no spawnflags (eight-round cycle, chases); 90 carries spawnflag 512
+# (fights from cover: one shot per two seconds, no rounds, hide nodes, never chases).
+CYCLE_GUARD = 65
+COVER_GUARD = 90
+# Unflagged guard whose seeded pursuit leads around occlusion into a firing position (65's
+# fixture stalls at a corner on every build).
+PURSUIT_GUARD = 380
+
+
 def guard_scenario(issue, capture, log):
-    identity = 166
+    identity = CYCLE_GUARD
     issue("developer 1")
     issue("dk3_runtime_probe_health 1000")
     issue(f"dk3_runtime_face_target {identity}", 0.3)
     placement = re.findall(rf"zig combat: fixture player=([\d.,-]+) target={identity}", log.read_text(errors="replace"))
     if not placement:
         raise RuntimeError(f"no clear standing point near guard {identity}")
-    player = list(map(float, placement[-1].split(',')))
-    issue("dk3_runtime_equip 21")
     issue("dk3_runtime_actors")
-    matches = re.findall(rf"zig actor: id={identity} state=(\w+) health=(-?\d+) pos=([\d.,-]+)", log.read_text(errors="replace"))
-    if not matches:
+    if not re.search(rf"zig actor: id={identity} state=", log.read_text(errors="replace")):
         raise RuntimeError("guard did not spawn")
-    target = list(map(float, matches[-1][2].split(',')))
-    dx, dy, dz = target[0] - player[0], target[1] - player[1], target[2] + 8 - (player[2] + 22)
-    issue(f"dk3_look {math.degrees(math.atan2(dy, dx))} {-math.degrees(math.atan2(dz, math.hypot(dx, dy)))}")
-    issue("+attack", 0.15)
-    issue("-attack", 0.2)
-    capture("guard-retaliation")
+    capture("guard-sighting")
     deadline = time.monotonic() + 25
     text = ""
     while time.monotonic() < deadline:
@@ -1377,15 +1675,408 @@ def guard_scenario(issue, capture, log):
     if not health or int(health[-1]) >= 1000:
         raise RuntimeError("guard fire did not damage the player")
     capture("guard-reload")
-    return {"guard": identity, "rounds": shots, "player_health": int(health[-1]),
-            "scope": "e1m3b authored guard retaliation, eight-round firing cycle, reload and player damage; diagnostic placement/equipment/1000 health, navigation/cover/pain and full actor parity unqualified"}
+    # The cover guard: seen from the stairs above it, it shoots without spending rounds, at most
+    # once per two seconds, and picks a hide node the player cannot see.
+    cover = COVER_GUARD
+    issue("dk3_runtime_place 312 1048 -60 180", 0.3)
+    deadline = time.monotonic() + 14
+    while time.monotonic() < deadline:
+        issue("dk3_runtime_actors", 0.4)
+    text = log.read_text(errors="replace")
+    cover_shots = [int(value) for value in re.findall(rf"guard: id={cover} fired rounds=(\d+)", text)]
+    # Shot times from the fire events themselves (sampled phases are 0.4 s apart).
+    starts = [int(value) for value in re.findall(rf"guard: id={cover} fired rounds=\d+ enemy=\d+ now=(\d+)", text)]
+    if len(cover_shots) < 3 or set(cover_shots) != {8} or f"guard: id={cover} reload sound dispatched" in text:
+        raise RuntimeError(f"cover guard spent rounds or did not fire: {cover_shots}")
+    if any(b - a < 1900 for a, b in zip(starts, starts[1:])):
+        raise RuntimeError(f"cover guard fired faster than its two-second cooldown: {starts}")
+    if not re.search(rf"zig actor: id={cover} state=chase .*cover=", text):
+        raise RuntimeError("cover guard never ran for a hide node")
+    capture("guard-cover")
+    return {"guard": identity, "rounds": shots, "player_health": int(health[-1]), "cover_guard": cover, "cover_shots": len(cover_shots),
+            "scope": "e1m3b unflagged guard eight-round cycle, reload and player damage; spawnflag-512 guard cover shots (no rounds, two-second cooldown) and hide-node run; diagnostic placement/1000 health, pain and full actor parity unqualified"}
+
+
+def sidekick_talk_scenario(issue, capture, log):
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+    # e3m1a starts with both sidekicks. The player stands on Superfly's opening talk node 85,
+    # 101 units from where Superfly starts; following him, Superfly reaches it with the player
+    # near and in sight and says its line (e3m1_sf_01a) once.
+    deadline = time.monotonic() + 8
+    while time.monotonic() < deadline:
+        issue("dk3_runtime_actors", 0.5)
+        if re.search(r"zig actor: id=\d+ .*class=superfly", log.read_text(errors="replace")):
+            break
+    if not re.search(r"zig actor: id=\d+ .*class=superfly", log.read_text(errors="replace")):
+        raise RuntimeError("Superfly is not in e3m1a")
+    issue("dk3_runtime_place -3416 -522 -208 0", 0.5)
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        issue("dk3_runtime_actors", 0.5)
+        if "companion talk: superfly says" in log.read_text(errors="replace"):
+            break
+    said = re.findall(r"companion talk: (\w+) says (\S+)", log.read_text(errors="replace"))
+    if not any(who == "superfly" for who, _ in said):
+        raise RuntimeError(f"no authored sidekick line was said: {said}")
+    capture("sidekick-talk")
+    return {"lines": said, "scope": "e3m1a Superfly says his authored talk-node line once when he reaches the node with the player near and in sight; audibility and the other talk nodes unqualified"}
+
+
+def sidekick_hud_scenario(issue, capture, log):
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+    # e3m1a starts with both sidekicks beside the player: both flaps fade in. Hurting Mikiko
+    # darkens her face and shortens her health bar. The command window opens on its key, steps
+    # to STAY and orders Mikiko, then switches to Superfly and orders him to come.
+    deadline = time.monotonic() + 8
+    while time.monotonic() < deadline:
+        issue("dk3_runtime_actors", 0.5)
+        text = log.read_text(errors="replace")
+        if re.search(r"zig actor: id=\d+ .*class=superfly", text) and re.search(r"zig actor: id=\d+ .*class=mikiko", text):
+            break
+    text = log.read_text(errors="replace")
+    if not (re.search(r"class=superfly", text) and re.search(r"class=mikiko", text)):
+        raise RuntimeError("e3m1a does not start with both sidekicks")
+    issue("dk3_runtime_actors", 2.0)
+    capture("flaps")
+    issue("dk3_runtime_damage 2000 mikiko", 1.0)
+    capture("flaps-hurt")
+    issue("sidekick_next", 0.6)
+    capture("window-open")
+    issue("sidekick_next", 0.2)
+    issue("sidekick_next", 0.6)
+    capture("window-stay")
+    issue("sidekick_apply", 1.0)
+    issue("sidekick_swap", 0.4)
+    issue("sidekick_prev", 0.2)
+    issue("sidekick_prev", 0.2)
+    issue("sidekick_next", 0.6)
+    capture("window-superfly")
+    issue("sidekick_apply", 1.0)
+    issue("companion follow", 1.0)
+    text = log.read_text(errors="replace")
+    orders = re.findall(r"companion order: (\w+) (\w+) -> (\w+) refused=(\d)", text)
+    if ("mikiko", "stay", "stay", "0") not in orders:
+        raise RuntimeError(f"the window did not order Mikiko to stay: {orders}")
+    if ("superfly", "come", "come", "0") not in orders:
+        raise RuntimeError(f"the window did not order Superfly to come: {orders}")
+    if not any(o[1] == "follow" for o in orders):
+        raise RuntimeError(f"the default companion bind gave no order: {orders}")
+    return {"orders": orders, "scope": "e3m1a sidekick flaps fade in, hurt face and bars, command window open/step/STAY to Mikiko, swap and COME to Superfly, default companion bind; voice acknowledgements and ammo gauge levels visual only"}
+
+
+def save_preview_scenario(issue, capture, log, home):
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+    # Two saves made as the player makes them: each writes its info sidecar (wall-clock time, map,
+    # difficulty, picture name) and the client takes a HUD-free picture. The Load page lists the
+    # newest first with its picture, time and map.
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline and "dk3 autosave: saved" not in log.read_text(errors="replace"):
+        issue("dk3_runtime_actors", 0.5)
+    saves = home / "state/dk3/saves"
+    issue("save probe_one", 2.0)
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline and not (saves / "probe_one.info").exists():
+        issue("dk3_runtime_actors", 1.0)
+    issue("dk3_runtime_place 818.916 -479.481 -823.875", 3.0)
+    issue("save probe_two", 2.0)
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline and not (saves / "probe_two.info").exists():
+        issue("dk3_runtime_actors", 1.0)
+    results = {}
+    for slot in ("probe_one", "probe_two"):
+        info_path = saves / f"{slot}.info"
+        if not info_path.exists():
+            raise RuntimeError(f"no info sidecar for {slot}")
+        info = info_path.read_text()
+        shot = re.search(r'shot "([^"]+)"', info)
+        date = re.search(r'date "([^"]+)"', info)
+        if not shot or not date or not date.group(1):
+            raise RuntimeError(f"{slot} info lacks a picture or date: {info}")
+        picture = home / "dk3/screenshots" / f"{shot.group(1)}.jpg"
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline and not (picture.exists() and picture.stat().st_size >= 1000):
+            issue("dk3_runtime_actors", 1.0)
+        if not picture.exists() or picture.stat().st_size < 1000:
+            raise RuntimeError(f"{slot} picture not written: {picture}")
+        results[slot] = {"date": date.group(1), "shot": shot.group(1), "bytes": picture.stat().st_size}
+        shutil.copy2(picture, log.parent / f"picture-{slot}.jpg")
+    issue("dk3_menu_page 2", 4.0)
+    capture("load-page")
+    issue("dk3_menu_page 3", 4.0)
+    capture("save-page")
+    return {"saves": results, "scope": "e1m3b: two saves write their info sidecars and HUD-free pictures; Load and Save pages show newest first with picture, time and map (visual)"}
+
+
+def difficulty_scenario(issue, capture, log):
+    issue("developer 1")
+    # Changing the difficulty during play rescales living monsters at once, keeping their share of
+    # health: a 50-health Samurai guard becomes 63 on Shogun (x1.25) and 38 on Ronin (x0.6).
+    def guards():
+        issue("dk3_runtime_actors", 1.0)
+        text = log.read_text(errors="replace")
+        block = text[text.rfind("dk3 zig actor: id="):]
+        return {int(i): int(h) for i, h in re.findall(r"zig actor: id=(\d+) state=\w+ health=(-?\d+) [^\n]*class=monster_mishimaguard", text[-200000:])}
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline and "dk3 autosave: saved" not in log.read_text(errors="replace"):
+        issue("dk3_runtime_actors", 0.5)
+    issue("g_spSkill 3", 1.0)
+    before = guards()
+    issue("g_spSkill 5", 1.5)
+    shogun = guards()
+    issue("g_spSkill 1", 1.5)
+    ronin = guards()
+    changes = re.findall(r"dk3 difficulty: skill=(\d) ratio=([\d.]+)", log.read_text(errors="replace"))
+    guard = next((i for i, h in before.items() if h == 50 and i in shogun and i in ronin), None)
+    if guard is None:
+        raise RuntimeError(f"no full-health Samurai guard to follow: {before}")
+    if shogun[guard] != 63 or ronin[guard] != 38:
+        raise RuntimeError(f"guard {guard} health {before[guard]} -> {shogun[guard]} -> {ronin[guard]}, changes {changes}")
+    issue("dk3_menu_page 9", 1.0)
+    capture("options-difficulty")
+    return {"guard": guard, "health": [before[guard], shogun[guard], ronin[guard]], "changes": changes,
+            "scope": "e1m3b g_spSkill 3 -> 5 -> 1 during play rescales a guard's health 50 -> 63 -> 38; Options page shows Difficulty (visual)"}
+
+
+def kage_scenario(issue, capture, log):
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+    # Kage spawned south of the e2m1a start fights the player; brought below his recharge
+    # threshold he summons his ring of protector ghosts (one every 0.65 s) and refunds damage.
+    identity = None
+    for x, y in ((-580, 1272), (-460, 1272), (-520, 1192), (-640, 1192)):
+        text = log.read_text(errors="replace")
+        issue(f"dk3_runtime_actor_spawn monster_kage {x} {y} 1440 90 e2m1a 1 ground", 0.4)
+        found = re.findall(r"actor fixture: id=(\d+) class=monster_kage .* grounded=1", log.read_text(errors="replace")[len(text):])
+        if found:
+            identity = int(found[-1])
+            break
+    if identity is None:
+        raise RuntimeError("no clear spot for Kage")
+    mark = len(log.read_text(errors="replace"))
+    deadline = time.monotonic() + 12
+    while time.monotonic() < deadline:
+        issue("dk3_runtime_actors", 0.4)
+        if re.search(rf"zig actor: id={identity} state=attack ", log.read_text(errors="replace")[mark:]):
+            break
+    if not re.search(rf"zig actor: id={identity} state=attack ", log.read_text(errors="replace")[mark:]):
+        raise RuntimeError(f"Kage {identity} never attacked")
+    issue(f"dk3_runtime_probe_health 100 {identity}")
+    mark = len(log.read_text(errors="replace"))
+    deadline = time.monotonic() + 6
+    while time.monotonic() < deadline:
+        issue("dk3_runtime_actors", 0.5)
+    text = log.read_text(errors="replace")[mark:]
+    ghosts = set(re.findall(r"zig actor: id=(\d+) state=\w+ health=-?\d+ .*class=monster_ghost", text))
+    if len(ghosts) < 3:
+        raise RuntimeError(f"Kage {identity} summoned {len(ghosts)} protector ghosts")
+    before = [int(h) for h in re.findall(rf"zig actor: id={identity} state=\w+ health=(-?\d+)", text)][-1]
+    issue(f"dk3_runtime_hurt {identity} 40", 0.6)
+    issue("dk3_runtime_actors", 0.3)
+    after = [int(h) for h in re.findall(rf"zig actor: id={identity} state=\w+ health=(-?\d+)", log.read_text(errors="replace"))][-1]
+    if after < before:
+        raise RuntimeError(f"Kage {identity} lost health while recharging: {before} -> {after}")
+    capture("kage-recharge")
+    return {"kage": identity, "ghosts": len(ghosts), "health_before_hit": before, "health_after_hit": after,
+            "scope": "e2m1a Kage fixture attacks, summons protector ghosts below his recharge threshold and refunds damage while recharging; smoke escape, shield and Gold timing parity unqualified"}
+
+
+def seal_cover_scenario(issue, capture, log):
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+    # A seal girl spawned with spawnflag 512 south of the e2m1a start shoots from cover only
+    # while the player is completely visible, rests 2-8 s after each shot (her ataka runs 2.85 s
+    # to its last frame) and hides between shots.
+    identity = None
+    for x, y in ((-580, 1272), (-460, 1272), (-520, 1192), (-640, 1192)):
+        text = log.read_text(errors="replace")
+        issue(f"dk3_runtime_actor_spawn monster_sealgirl {x} {y} 1440 90 e2m1a 1 ground 512", 0.4)
+        found = re.findall(r"actor fixture: id=(\d+) class=monster_sealgirl .* grounded=1", log.read_text(errors="replace")[len(text):])
+        if found:
+            identity = int(found[-1])
+            break
+    if identity is None:
+        raise RuntimeError("no clear spot for the cover seal girl")
+    mark = len(log.read_text(errors="replace"))
+    deadline = time.monotonic() + 24
+    while time.monotonic() < deadline:
+        issue("dk3_runtime_actors", 0.3)
+    text = log.read_text(errors="replace")[mark:]
+    samples = re.findall(rf"zig actor: id={identity} state=(\w+) .*? now=(\d+)", text)
+    starts = [int(now) for (state, now), (before, _) in zip(samples[1:], samples) if state == "attack" and before != "attack"]
+    if len(starts) < 2:
+        raise RuntimeError(f"cover seal girl {identity} fired fewer than two shots: {[state for state, _ in samples][-12:]}")
+    if any(b - a < 4400 for a, b in zip(starts, starts[1:])):
+        raise RuntimeError(f"cover seal girl {identity} shot again without resting: {starts}")
+    ran = bool(re.search(rf"zig actor: id={identity} state=chase .*cover=", text))
+    capture("seal-cover")
+    return {"girl": identity, "shot_starts": starts, "ran_for_cover": ran,
+            "scope": "e2m1a seal girl fixture with spawnflag 512 fires from cover with a rest of at least 2 s after each 2.85 s shot; hide-node choice recorded, not required; damage and Gold timing parity unqualified"}
+
+
+def guard_aim_scenario(issue, capture, log):
+    # A guard that may not move (spawnflag 128), below the e1m3b stairs, engages the player
+    # above it: its skeletal model bends its chest and head toward him (remaster aim), compared
+    # with the authored level pose (cg_skeletalAim 0).
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+    issue("dk3_runtime_place 312 1048 -60 180", 0.5)
+    text = log.read_text(errors="replace")
+    found = []
+    # Nearest clear floor first: the closer the guard, the larger it is in the captures.
+    for spot in ("250 980 -140", "230 960 -140", "210 940 -140", "200 920 -140", "175 880 -140"):
+        issue(f"dk3_runtime_actor_spawn monster_mishimaguard {spot} 45 e1m3b 1 ground 128", 0.5)
+        found = re.findall(r"actor fixture: id=(\d+) class=monster_mishimaguard .* grounded=1", log.read_text(errors="replace")[len(text):])
+        if found:
+            break
+    if not found:
+        raise RuntimeError("no clear spot for the aiming guard")
+    guard = int(found[-1])
+    deadline = time.monotonic() + 10
+    engaged = None
+    while time.monotonic() < deadline:
+        issue("dk3_runtime_actors", 0.4)
+        states = re.findall(rf"zig actor: id={guard} state=(\w+) health=-?\d+ pos=([\d.,-]+) threat=(\d+)", log.read_text(errors="replace"))
+        if states and states[-1][2] != "0":
+            engaged = states[-1]
+            break
+    if engaged is None:
+        raise RuntimeError(f"guard {guard} never engaged the player")
+    target = list(map(float, engaged[1].split(',')))
+    dx, dy, dz = target[0] - 312, target[1] - 1048, target[2] + 10 - (-60 + 22)
+    issue(f"dk3_look {math.degrees(math.atan2(dy, dx))} {-math.degrees(math.atan2(dz, math.hypot(dx, dy)))}", 1.0)
+    issue("set cg_skeletalAim 1", 0.4)
+    capture("guard-aim-on")
+    issue("set cg_skeletalAim 0", 0.4)
+    capture("guard-aim-off")
+    issue("set cg_skeletalAim 1", 0.1)
+    mark = len(log.read_text(errors="replace"))
+    for _ in range(30):
+        issue("dk3_runtime_projections monster_mishimaguard", 0.1)
+    frames = [int(value) for value in re.findall(rf"dk3 projection: id={guard} .*? frame=(\d+)", log.read_text(errors="replace")[mark:])]
+    return {"guard": guard, "guard_position": engaged[1], "rise": round(-dz, 1), "frames": frames,
+            "scope": "e1m3b do-not-move guard fixture engaging the player above it, captured with and without skeletal aim; visual inspection only"}
+
+
+def human_poses_scenario(issue, capture, log):
+    # Each humanoid class as a do-not-move fixture on the e1m3b floor, seen level from a clear
+    # point: its neural model plays the class's own source clips (sequence 418).
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+    issue("set cg_skeletalAim 0")
+    # Clear floor around the room below the stairs, nearest first; big hulls take the open middle.
+    spots = sorted((f"{x} {y} -130" for x in range(-40, 441, 40) for y in range(700, 1181, 40)),
+                   key=lambda spot: math.hypot(float(spot.split()[0]) - 200, float(spot.split()[1]) - 920))
+    result = {}
+    for classname in ("monster_mishimaguard", "monster_cryotech", "monster_surgeon", "monster_skinnyworker", "monster_fatworker",
+                      "monster_inmater", "monster_ragemaster", "monster_sludgeminion"):
+        found = []
+        while spots and not found:
+            mark = len(log.read_text(errors="replace"))
+            spot = spots.pop(0)
+            issue(f"dk3_runtime_actor_spawn {classname} {spot} 45 e1m3b 1 ground 128", 0.2)
+            found = re.findall(rf"actor fixture: id=(\d+) class={classname} .* grounded=1", log.read_text(errors="replace")[mark:])
+            # Keep later fixtures clear of this one.
+            if found: spots = [other for other in spots if math.dist(map(float, other.split()[:2]), map(float, spot.split()[:2])) > 90]
+        if not found:
+            raise RuntimeError(f"no clear spot for {classname}")
+        identity = int(found[-1])
+        time.sleep(2)  # a class seen for the first time registers its model
+        # Nothing attacks during the capture, so no damage flash tints it; idle clips play.
+        issue("dk3_runtime_pacify_monsters", 1.2)
+        mark = len(log.read_text(errors="replace"))
+        issue(f"dk3_runtime_face_target {identity} 110", 0.4)
+        issue("dk3_runtime_actors", 0.3)
+        text = log.read_text(errors="replace")[mark:]
+        player = re.findall(rf"zig combat: fixture player=([\d.,-]+) target={identity}", text)
+        target = re.findall(rf"zig actor: id={identity} state=\w+ health=-?\d+ pos=([\d.,-]+)", text)
+        if player and target:
+            eye = list(map(float, player[-1].split(",")))
+            aim = list(map(float, target[-1].split(",")))
+            dx, dy, dz = aim[0] - eye[0], aim[1] - eye[1], aim[2] + 8 - (eye[2] + 22)
+            issue(f"dk3_look {math.degrees(math.atan2(dy, dx))} {-math.degrees(math.atan2(dz, math.hypot(dx, dy)))}", 0.8)
+        mark = len(log.read_text(errors="replace"))
+        for _ in range(12):
+            issue("dk3_runtime_projections " + classname, 0.1)
+        frames = [int(value) for value in re.findall(rf"dk3 projection: id={identity} .*? frame=(\d+)", log.read_text(errors="replace")[mark:])]
+        capture(classname.removeprefix("monster_"))
+        result[classname] = {"id": identity, "frames": frames}
+    issue("set cg_skeletalAim 1")
+    result["scope"] = "human NPC fixtures framed level; visual inspection of the retargeted source clips"
+    return result
+
+
+def ragdoll_deaths_scenario(issue, capture, log):
+    # A humanoid fixture killed by a single 30-point hit (an ion bolt) in front of the camera:
+    # with the remaster gib thresholds it keeps its body, and its physical fall is captured.
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+    issue("set cg_skeletalAim 0")
+    spots = sorted((f"{x} {y} -130" for x in range(-40, 441, 40) for y in range(700, 1181, 40)),
+                   key=lambda spot: math.hypot(float(spot.split()[0]) - 200, float(spot.split()[1]) - 920))
+    result = {}
+    for classname in ("monster_mishimaguard", "monster_skinnyworker"):
+        found = []
+        while spots and not found:
+            mark = len(log.read_text(errors="replace"))
+            spot = spots.pop(0)
+            issue(f"dk3_runtime_actor_spawn {classname} {spot} 45 e1m3b 1 ground 128", 0.2)
+            found = re.findall(rf"actor fixture: id=(\d+) class={classname} .* grounded=1", log.read_text(errors="replace")[mark:])
+            if found: spots = [other for other in spots if math.dist(map(float, other.split()[:2]), map(float, spot.split()[:2])) > 90]
+        if not found:
+            raise RuntimeError(f"no clear spot for {classname}")
+        identity = int(found[-1])
+        time.sleep(2)
+        issue("dk3_runtime_pacify_monsters", 1.2)
+        mark = len(log.read_text(errors="replace"))
+        issue(f"dk3_runtime_face_target {identity} 110", 0.4)
+        issue("dk3_runtime_actors", 0.3)
+        text = log.read_text(errors="replace")[mark:]
+        player = re.findall(rf"zig combat: fixture player=([\d.,-]+) target={identity}", text)
+        target = re.findall(rf"zig actor: id={identity} state=\w+ health=(-?\d+) pos=([\d.,-]+)", text)
+        if player and target:
+            eye = list(map(float, player[-1].split(",")))
+            aim = list(map(float, target[-1][1].split(",")))
+            dx, dy, dz = aim[0] - eye[0], aim[1] - eye[1], aim[2] - 8 - (eye[2] + 22)
+            issue(f"dk3_look {math.degrees(math.atan2(dy, dx))} {-math.degrees(math.atan2(dz, math.hypot(dx, dy)))}", 0.6)
+        name = classname.removeprefix("monster_")
+        capture(f"{name}-alive")
+        mark = len(log.read_text(errors="replace"))
+        health = int(target[-1][0]) if target else 30
+        # Wounded first, then killed by a 30-point hit (an ion bolt).
+        if health > 10: issue(f"dk3_runtime_hurt {identity} {health - 10}", 0.6)
+        issue(f"dk3_runtime_hurt {identity} 30", 0.05)
+        started = time.monotonic()
+        heights = {}
+        for moment in (0.15, 0.3, 0.5, 0.7, 1.0, 1.4, 2.0, 3.0):
+            time.sleep(max(0, started + moment - time.monotonic()))
+            if moment in (0.3, 0.7, 1.4, 3.0): capture(f"{name}-dead-{moment}s")
+            before = len(log.read_text(errors="replace"))
+            issue("dk3_runtime_presentation", 0.05)
+            issue("dk3_runtime_actors", 0.05)
+            issue(f"dk3_runtime_projections {classname}", 0.05)
+            recent = log.read_text(errors="replace")[before:]
+            sample = re.findall(rf"dk3 ragdoll: slot=\d+ identity={identity} .*? contacts=(\d+) sleep=(\d) pelvis=[\d.-]+,[\d.-]+,([\d.-]+)", recent)
+            state = re.findall(rf"zig actor: id={identity} state=(\w+)", recent)
+            frame = re.findall(rf"dk3 projection: id={identity} .*? frame=(\d+)", recent)
+            heights[moment] = {"pelvis_z": float(sample[-1][2]) if sample else None, "contacts": int(sample[-1][0]) if sample else None,
+                               "asleep": sample[-1][1] == "1" if sample else None, "state": state[-1] if state else None, "frame": int(frame[-1]) if frame else None}
+        text = log.read_text(errors="replace")[mark:]
+        result[classname] = {"id": identity, "killing_hit": 30, "fall": heights,
+                             "gibbed": f"retired: " in text and bool(re.search(rf"actor retired: .* id={identity} reason=gibbed", text)),
+                             "ragdoll": len(re.findall(r"dk3 ragdoll: ", text))}
+    issue("set cg_skeletalAim 1")
+    result["scope"] = "single-hit kills of humanoid fixtures with the remaster gib thresholds; physical falls captured for inspection"
+    return result
 
 
 def navigation_scenario(issue, capture, log):
     issue("developer 1")
-    issue("dk3_runtime_chase 166", 0.2)
+    issue(f"dk3_runtime_chase {PURSUIT_GUARD}", 0.2)
     text = log.read_text(errors="replace")
-    fixtures = re.findall(r"navigation fixture: actor=166 start=([\d.,-]+) goal=([\d.,-]+) travel=(\d+) occluded=1", text)
+    fixtures = re.findall(rf"navigation fixture: actor={PURSUIT_GUARD} start=([\d.,-]+) goal=([\d.,-]+) travel=(\d+) occluded=1", text)
     if not fixtures:
         raise RuntimeError("no occluded reachable pursuit fixture")
     start = list(map(float, fixtures[-1][0].split(',')))
@@ -1397,14 +2088,14 @@ def navigation_scenario(issue, capture, log):
     while time.monotonic() < deadline:
         issue("dk3_runtime_actors", 0.3)
         text = log.read_text(errors="replace")
-        states = re.findall(r"zig actor: id=166 state=(\w+) health=(-?\d+) pos=([\d.,-]+)", text)
+        states = re.findall(rf"zig actor: id={PURSUIT_GUARD} state=(\w+) health=(-?\d+) pos=([\d.,-]+)", text)
         if states:
             samples.append(states[-1])
-        if "guard: id=166 fired" in text:
+        if f"guard: id={PURSUIT_GUARD} fired" in text:
             break
     capture("pursuit-arrival")
     displacement = max((math.dist(start, list(map(float, sample[2].split(',')))) for sample in samples), default=0)
-    if displacement < 24 or "guard: id=166 fired" not in text:
+    if displacement < 24 or f"guard: id={PURSUIT_GUARD} fired" not in text:
         raise RuntimeError(f"guard failed to navigate from occlusion into a firing position: {displacement=} {samples=}")
     return {"fixture": fixtures[-1], "samples": samples, "displacement": displacement,
             "scope": "e1m3b guard physically pursues a seeded last-seen goal around occlusion and resumes normal fire; diagnostic player placement, sight memory and health; full navigation matrix open"}
@@ -1465,6 +2156,56 @@ def laser_scenario(issue, capture, log):
     capture("laser-shutdown-restored")
     return {"hazard_center": center, "box": 125,
             "scope": "ordinary Glock fire breaks authored supply box; timed target chain removes controls; enabled hurt field damages, disabled field stays harmless at both approaches before and after native save/load; diagnostic placement/equipment/health, beam/audio presentation unqualified"}
+
+
+def dormant_effects_scenario(issue, capture, log, home, process):
+    # Effects left in a map outlive the player's departure; when that map goes dormant (its worlds
+    # released) the client must drop them, not fail on their released world. As in play: from
+    # e1m2a into e1m2b (a resident world), shoot there, then leave for e1m3a.
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 1000")
+
+    def leave(destination):
+        issue("dk3_runtime_world")
+        exits = re.findall(rf"zig exit: id=(\d+) map={destination} .*center=([\d.,-]+)", log.read_text(errors="replace"))
+        if not exits:
+            raise RuntimeError(f"no exit to {destination}")
+        center = list(map(float, exits[-1][1].split(',')))
+        issue(f"dk3_runtime_place {center[0] + 400} {center[1]} {center[2]}", 0.1)
+        before = len(log.read_text(errors="replace"))
+        issue("dk3_runtime_place " + ' '.join(map(str, center)), 0.05)
+        wait(process, log, lambda text: "traveler entered authored landing" in text[before:])
+        return before
+
+    leave("e1m2b")
+    time.sleep(1)
+    issue("dk3_runtime_probe_health 1000")
+    issue("dk3_runtime_equip 4", 0.8)
+    mark = len(log.read_text(errors="replace"))
+    # Shotcycler pellets all round, so some leave marks (they last 10 s; metal takes none).
+    for yaw, pitch in ((0, 10), (90, 10), (180, 10), (270, 10), (45, 60), (225, 60)):
+        issue(f"dk3_look {yaw} {pitch}", 0.1)
+        issue("+attack", 0.5)
+        issue("-attack", 0.2)
+    marks = sum(int(m) for m in re.findall(r"zig impact: .* marks=(\d+)", log.read_text(errors="replace")[mark:]))
+    if marks == 0:
+        raise RuntimeError("no shot left a mark in e1m2b")
+    shot_at = time.monotonic()
+    before = leave("e1m3a")
+    deadline = time.monotonic() + 25
+    while time.monotonic() < deadline and "map=e1m2b dormant" not in log.read_text(errors="replace")[before:]:
+        issue("dk3_runtime_actors", 0.5)
+    dormant_at = time.monotonic()
+    for _ in range(6):
+        issue("dk3_runtime_actors", 0.5)
+    text = log.read_text(errors="replace")[before:]
+    if "Lost entity" in text or process.poll() is not None:
+        raise RuntimeError("the client failed on a released world")
+    if "map=e1m2b dormant" not in text:
+        raise RuntimeError("e1m2b never went dormant")
+    capture("dormant-effects")
+    return {"dormant_after_shots_s": round(dormant_at - shot_at, 1),
+            "scope": "effects fired in e1m2b (entered from e1m2a) just before leaving for e1m3a, when e1m2b goes dormant; no client failure"}
 
 
 def travel_scenario(issue, capture, log, home, process):
@@ -1540,7 +2281,7 @@ def run(args):
     identity = record_identity(args.engine, args.prefix, args.report)
     log = args.report / "client.log"
     inputs = []
-    with tempfile.TemporaryDirectory(prefix="dk3-runtime-client-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="dk3-runtime-client-", delete=not os.environ.get("DK3_PROBE_KEEP_HOME")) as temporary:
         home = Path(temporary)
         stage_client_modules(args.prefix, home)
         command = [str(args.guard), "--headless", "--screen", "960x540",
@@ -1603,6 +2344,44 @@ def run(args):
                     result = lift_scenario(issue, capture, log)
                 elif args.scenario == "guard":
                     result = guard_scenario(issue, capture, log)
+                elif args.scenario == "e2-melee":
+                    result = e2_melee_scenario(issue, capture, log)
+                elif args.scenario == "e3-creatures":
+                    result = e3_creatures_scenario(issue, capture, log)
+                elif args.scenario == "e4-fighters":
+                    result = e4_fighters_scenario(issue, capture, log)
+                elif args.scenario == "e4-gunfighters":
+                    result = e4_gunfighters_scenario(issue, capture, log)
+                elif args.scenario == "guard-aim":
+                    result = guard_aim_scenario(issue, capture, log)
+                elif args.scenario == "human-poses":
+                    result = human_poses_scenario(issue, capture, log)
+                elif args.scenario == "ragdoll-deaths":
+                    result = ragdoll_deaths_scenario(issue, capture, log)
+                elif args.scenario == "dormant-effects":
+                    result = dormant_effects_scenario(issue, capture, log, home, process)
+                elif args.scenario == "sidekick-talk":
+                    result = sidekick_talk_scenario(issue, capture, log)
+                elif args.scenario == "difficulty":
+                    result = difficulty_scenario(issue, capture, log)
+                elif args.scenario == "save-preview":
+                    result = save_preview_scenario(issue, capture, log, home)
+                elif args.scenario == "sidekick-hud":
+                    result = sidekick_hud_scenario(issue, capture, log)
+                elif args.scenario == "kage":
+                    result = kage_scenario(issue, capture, log)
+                elif args.scenario == "seal-cover":
+                    result = seal_cover_scenario(issue, capture, log)
+                elif args.scenario == "e3-knights":
+                    result = e3_knights_scenario(issue, capture, log)
+                elif args.scenario == "lasergat":
+                    result = lasergat_scenario(issue, capture, log)
+                elif args.scenario == "surgeon":
+                    result = surgeon_scenario(issue, capture, log)
+                elif args.scenario == "worker-wander":
+                    result = worker_wander_scenario(issue, capture, log)
+                elif args.scenario == "workers":
+                    result = workers_scenario(issue, capture, log)
                 elif args.scenario == "civilians":
                     result = civilians_scenario(issue, capture, log)
                 elif args.scenario == "combat":
@@ -1666,9 +2445,9 @@ def main():
     parser.add_argument("--report", type=Path, default=None)
     parser.add_argument("--map")
     parser.add_argument("--checkpoint", type=Path, help="Captured native save for a checkpoint diagnostic")
-    parser.add_argument("--scenario", choices=("movement", "lift", "secret", "rotation", "inventory", "effects", "combat", "presentation", "impacts", "ballistics", "grenade-contact", "melee", "status-weapons", "area-weapons", "attached-charge", "shockwave", "linked-projectiles", "beams", "returning-fire", "meteors", "zeus", "controllers", "bridge", "trigger-bounds", "opening-actors", "crox", "rockgat", "tree-settlement", "frog-landing", "arena-damage", "save", "travel", "civilians", "guard", "navigation", "laser"), default="movement")
+    parser.add_argument("--scenario", choices=("movement", "lift", "secret", "rotation", "inventory", "effects", "combat", "presentation", "impacts", "ballistics", "grenade-contact", "melee", "status-weapons", "area-weapons", "attached-charge", "shockwave", "linked-projectiles", "beams", "returning-fire", "meteors", "zeus", "controllers", "bridge", "trigger-bounds", "opening-actors", "crox", "rockgat", "tree-settlement", "frog-landing", "arena-damage", "save", "travel", "civilians", "workers", "worker-wander", "surgeon", "lasergat", "e2-melee", "e3-knights", "e3-creatures", "e4-fighters", "seal-cover", "kage", "e4-gunfighters", "sidekick-talk", "sidekick-hud", "save-preview", "difficulty", "dormant-effects", "guard-aim", "human-poses", "ragdoll-deaths", "guard", "navigation", "laser"), default="movement")
     parser.add_argument("--workers", type=int, choices=range(9), default=4)
-    parser.add_argument("--renderer", choices=("opengl1", "opengl2"), default="opengl1")
+    parser.add_argument("--renderer", choices=("opengl1", "opengl2", "vulkan"), default="opengl1")
     parser.add_argument("--mover", type=int, help="optional known delayed-door persistent ID; e1m3b uses 255")
     args = parser.parse_args()
     defaults = {
@@ -1704,6 +2483,25 @@ def main():
         "arena-damage": ("e1m1b", "runtime-zig-291/arena-damage"),
         "save": ("e1m3a", "runtime-zig-230/save"),
         "civilians": ("e1m2a", "runtime-zig-225/civilians"),
+        "workers": ("e1m3a", "runtime-zig-403/workers"),
+        "worker-wander": ("e1m2b", "runtime-zig-403/worker-wander"),
+        "surgeon": ("e1m3a", "runtime-zig-406/surgeon"),
+        "lasergat": ("e1m4a", "runtime-zig-406/lasergat"),
+        "e2-melee": ("e2m1a", "runtime-zig-410/e2-melee"),
+        "e3-knights": ("e2m1a", "runtime-zig-411/e3-knights"),
+        "e3-creatures": ("e2m1a", "runtime-zig-411/e3-creatures"),
+        "seal-cover": ("e2m1a", "runtime-zig-411/seal-cover"),
+        "e4-fighters": ("e2m1a", "runtime-zig-411/e4-fighters"),
+        "kage": ("e2m1a", "runtime-zig-412/kage"),
+        "sidekick-talk": ("e3m1a", "runtime-zig-413/sidekick-talk"),
+        "sidekick-hud": ("e3m1a", "runtime-zig-422/sidekick-hud"),
+        "save-preview": ("e1m3b", "runtime-zig-423/save-preview"),
+        "difficulty": ("e1m3b", "runtime-zig-423/difficulty"),
+        "dormant-effects": ("e1m2a", "runtime-zig-416/dormant-effects"),
+        "guard-aim": ("e1m3b", "runtime-zig-417/guard-aim"),
+        "human-poses": ("e1m3b", "runtime-zig-418/human-poses"),
+        "ragdoll-deaths": ("e1m3b", "runtime-zig-419/ragdoll-deaths"),
+        "e4-gunfighters": ("e2m1a", "runtime-zig-412/e4-gunfighters"),
         "guard": ("e1m3b", "runtime-zig-226/guard"),
         "navigation": ("e1m3b", "runtime-zig-227/navigation"),
         "laser": ("e1m3b", "runtime-zig-227/laser"),

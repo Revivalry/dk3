@@ -19,8 +19,9 @@ from forearm roll. A fresh capture of the owner's rear gate walk shows Hiro's
 repaired left wrist. Human gameplay retains moving arms for each weapon grip;
 running has opposed arm swing and a flight phase. Native players distinguish
 walking from running by relative speed, and extra multiplayer appearances use
-their own serialized clip ranges. Five human NPCs receive refreshed locomotion
-on frozen admitted rigs. All geometry, heads, weights and atlases stay exact.
+their own serialized clip ranges. The five human NPCs and three humanoid creatures play
+their own original clips (sequences 418 and 420). All geometry, heads and atlases stay
+exact; the human NPCs are re-rigged with medial joints and bone-heat weights.
 The full opening, five UDP walk/run appearances, three held-weapon grips,
 Superfly movement and controlled human NPC rendering/restoration pass. Paired
 sample inspection covers all 102 cinematic variants and five human NPCs; complete
@@ -241,241 +242,108 @@ the run. Every rebuilt cinematic receives four matching skin files.
 
 The optional `neural_cinematic_rebuild.py --human-motion` pass also regenerates
 gameplay and extra multiplayer motion on the exact admitted bind rigs. The default
-cinematic-only pass retains gameplay IQMs. `neural_human_motion.py` composes those
-character outputs with refreshed Cryotech, Mishima Guard, Fatworker, Skinnyworker
-and Surgeon loops; normal `neural_monsters.py package` applies the same human
-motion policy. It normalizes authoring coordinates without changing vertices,
-weights or binds. Appended 30 Hz loops retain original authority ranges/events.
-Native qualification lives in separate run receipts. The embedded candidate
-receipt records its status before scenario qualification; changing that embedded
-receipt would create another archive identity.
+cinematic-only pass retains gameplay IQMs.
+
+### Humanoid enemy motion (sequence 421)
+
+The eight humanoid enemies (Mishima guard, cryotech, surgeon, both workers, inmater, ragemaster,
+sludge minion) use motion authored from scratch on their admitted anatomical rigs. Nothing is
+fitted to the original vertex animation: the owner rejected both attempts to recreate these
+clips from the source (sequences 418–420) and found the earlier authored motion much better.
+
+Three stages produce a model's clips, all on the admitted bind rig, weights and mesh:
+
+1. `neural_monster_skeleton.fit_humanoid` gives every source sequence an independent
+   performance from the procedural author (`neural_rig.pose`), chosen by the sequence's
+   category (idle, walk, run, crouch, jump, death; attacks and pain as `attack`), with the
+   class's stance grip and the source's frame count and event frames.
+2. `neural_human_motion.human_clips` (the 5 October tool, restored byte for byte, SHA-256
+   `8869bbee…`) appends shared idle, walk, run, crouch and back-step cycles at 30 Hz for the
+   five human NPCs and maps their locomotion and ambient sequences onto them in
+   `neural-animations.cfg`.
+3. `neural_actions` authors the actions the procedural kinds cannot express, as a few key
+   poses of semantic controls per sequence. Frames ease between keys; the shared fixed-length
+   IK (`neural_assets.connected_motion`) solves the limbs, as for the procedural clips.
+
+| Model | Authored sequences |
+|---|---|
+| Mishima guard | `ataka` one-handed aim, `atakb` kneeling aim, `atakc` turned aim (each kicks on the shot and settles aimed, for the hold between shots); `hita` doubles over; `reload` brings the pistol to the chest and returns to aim |
+| Cryotech | `bambb` spray: sprayer carried level at the hip, swept right to left across clip frames 8–22; `bambc`, `bamba` short and ambient sweeps; `hita` twisting flinch |
+| Skinny worker | `gamba` kneeling cower and `gambc` standing cower (hands over the head); `eambd` clipboard; `famba` hands in pockets; `bamba` console work; `camba` floor work on all fours; `samba` seated typing |
+| Surgeon | `gamba`, `gambc` cowers; `eambd` clipboard |
+| Fat worker | `scared` bent-over cower; `samba`, `tamba`, `camba` on a stool (head scratch, typing, a talk with raised arms); `howmany` standing gestures |
+| Inmater | `ataka` cannon shot with recoil; `atakb` stab; `atakc` six-shot sweep (shots on clip frames 10, 14, 18, 22, 26, 36); `hita` |
+| Ragemaster | `atake` right then left punch (clip frames 14 and 22); `hita` arms raised |
+| Sludge minion | `ataka` left then right glob recoil; `atakb` both; `hita` arms flung up |
+
+Every other sequence keeps stages 1–2. Authored sequences leave the shared-clip mapping and
+play their own frames at the authoritative rate.
+
+**Controls.** The authoring space is the normalized 56-unit body (+X forward, Z up, floor at
+−24, pelvis over the origin), recovered from the packaged model: scale from the mesh height,
+offset from the pelvis. A key sets the pelvis offset and rotation; a torso bend, split 35/65
+between spine and chest; the head; hand targets in the upright body, carried by the bent chest
+(or fixed in the world, for hands on the floor); elbow pole hints; planted foot offsets and a
+toe pitch for kneeling; finger curl; and `aim`, the direction of an item rigidly bound to a
+hand joint (the cryotech's sprayer belongs to `fingers_r`). Clavicles ride the chest. The
+pelvis drops automatically when a leg cannot reach its foot. Loops ease from their last key
+back to the first.
+
+**Older creature hands.** The inmater, ragemaster and sludge minion masters predate the
+shared wrist solver of sequence 333, which no longer reproduces their packaged hand roll. Their
+actions keep each frame's packaged hand, finger and weapon-tag channels, so weapons built into
+a hand point as in that model's other clips. The inmater's packaged wrists are outside the
+hand range already; only those joints are exempt from the admission check.
+
+**Admission.** `author` fails if a solved frame leaves an anatomical joint range
+(`joint_violations`, swing and twist for every joint). The package keeps mesh, bind,
+weights and atlases. Frames outside the authored sequences are unchanged apart from IQM
+requantization (at most 1.2×10⁻⁵ units).
+
+**Build.** `neural_monsters.py package` runs all three stages. The installed package was
+produced from the sequence 417 package (`dk3-neural-episode.before-gold-motion.pk3`, which the
+restored `human_clips` reproduces byte for byte from the masters):
 
 ```sh
-OPENBLAS_NUM_THREADS=1 zig-out/neural-tools/runtime/bin/python -B \
-  dkq3/tools/neural_cinematic_rebuild.py --workers 2
-zig-out/neural-tools/runtime/bin/python -B dkq3/tools/neural_monsters.py package \
-  --characters zig-out/neural-monsters/episode1/dk3-neural-characters.pk3
-OPENBLAS_NUM_THREADS=1 zig-out/neural-tools/runtime/bin/python -B \
-  dkq3/tools/neural_cinematic_review.py \
-  --packages zig-out/neural-monsters/episode1/dk3-neural-characters.pk3 \
-  --out zig-out/reports/runtime-zig-330/all-cinematic-review
-python3 -m http.server 8833 --bind 127.0.0.1 \
-  --directory zig-out/reports/runtime-zig-330/all-cinematic-review
+/usr/bin/python3 -B dkq3/tools/neural_actions.py \
+  --package zig-out/neural-monsters/episode1/dk3-neural-episode.before-gold-motion.pk3 \
+  --output zig-out/neural-monsters/episode1/dk3-neural-episode.actions.pk3
 ```
 
-The viewer provides clip/frame selection, playback, orbit and zoom, with original
-and serialized replacement geometry at the same scale. Numeric angular-step triage
-excludes clip boundaries. Its clock is diagnostic; native interpolation, timing,
-facial performance and whole-scene completion require separate acceptance. The
-current review inspects 300 samples across all 102 models, retaining unresolved
-cloth, rolled/death and prop defects in the acceptance matrix.
-
-Combined packages use classic ZIP32 with unsigned offsets below 4 GiB. Python's
-default switches to ZIP64 at 2 GiB, which the bundled reader cannot consume.
-`neural_package.classic_archive` uses the actual ZIP32 bound and forbids ZIP64;
-validation rejects ZIP64 directories, extra fields and local headers before
-installation. A package above the format bound requires partitioning. The repaired
-sequence-330 archive preserves every reviewed model/texture payload byte.
-
-Other creatures use source vertex trajectories clustered into motion regions,
-a parent-first hierarchy and fitted authored frames. Their upright yaw search
-uses area-sampled original surfaces; GLB orientation alone proved unreliable for
-Crox. Original frame numbers, intervals, class timing and hardpoint translations
-remain intact; cosmetic skinning does not reschedule gameplay events.
-Protopod uses a fixed base and four independently hinged rigid shell panels.
-Panel boundary vertices are split before skinning so its original hatch interval
-opens the egg without stretching it into a flat disk. The native mosquito spawn
-remains a separate actor and original gameplay event. A reviewed `alignment.json`
-can record an additional yaw correction, such as Sludgeminion's front/back
-ambiguity; it is an admitted conversion input rather than a source-asset edit.
-
-Venomvermin uses a measured, connected 16-joint quadruped instead of independently
-fitted motion clusters. Local capsule weights connect its carapace and four limbs;
-new diagonal walk/run cycles, strikes, reactions and collapse poses retain every
-source sequence and event interval. Segment lengths stay fixed. Grounded forward
-kinematics approximates paw contact; it does not provide independent four-paw IK.
-The conversion receipt records semantic landmarks and their `creature_00`–`15`
-physics labels. Its all-frame 99th-percentile edge stretch drops from 10.27 to 1.92.
-
-`conversion.json` records frame counts, joint counts and residual errors by clip.
-Anatomical performances report independently authored motion rather than a
-misleading source-fit residual. Extreme poses, single-image reconstruction and merged cloth/armor geometry can
-require refinement. Current runtime materials consume the base-color atlas;
-the retained GLB also contains the generated PBR material data.
-Pose previews frame each generated/original pair at a shared scale and position,
-including jumping creatures. Their IQM positions and actual serialized normals
-are rendered together; preview camera changes do not alter animation data.
-
-```sh
-OPENBLAS_NUM_THREADS=1 zig-out/neural-tools/runtime/bin/python -B \
-  dkq3/tools/neural_monster_preview.py \
-  --actor zig-out/neural-monsters/episode1/mishimaguard
-zig-out/neural-tools/runtime/bin/python -B dkq3/tools/neural_monsters.py status
-zig-out/neural-tools/runtime/bin/python -B dkq3/tools/neural_monsters.py package
-```
-
-Previews render the bind pose, reference pose and available idle, run, walk, attack, hatch
-and death samples from the **serialized IQM**, including its actual skinned normals.
-The studio renderer does not substitute recalculated smooth normals. They are visual diagnostics;
-passing stage receipts alone are not visual or gameplay acceptance.
-Each sample also renders the same original animation frame. Run
-`neural_monster_gallery.py` to update the standalone `review.html` comparison.
-`neural_monster_audit.py` checks serialized structure, original hardpoints and
-source event/frame counts, finite skinning across every frame, and fixed
-anatomical bone lengths. It records motion bounds and mesh-edge stretch for
-review in `quality-audit.json`; these numerical checks do not establish visual
-animation quality by themselves.
-
-Generated masters receive a final lighting repair after any registered face
-bake. `neural_surface.py` calculates area-weighted head normals across coincident UV
-boundaries, then makes their tangents orthogonal. It preserves sculpt creases;
-broad spatial smoothing produced incorrect shading on folded surfaces. Missing
-normal vectors anywhere on a generated body are reconstructed from incident
-faces; an unresolvable degenerate vector rejects conversion. It changes only
-the two lighting arrays; positions, UVs, textures, weights, joints and encoded
-animation frames remain byte-identical. Each `surface-normals.json` records the
-input/output IQM hashes, changed byte ranges and preserved input file. Exact
-lighting-only upgrades retain a completed conversion when every other input and
-product still matches. Registered face provenance refers to the mesh before this
-lighting pass. `face-lit-review/` separately records the current serialized head
-under studio lighting; the original projection captures remain intact.
-
-The close-up repair pass adds a closed-surface stage for the 19 human characters
-and monsters with reviewed faces. Both chained prisoners remain protected. Thin
-mechanical wings and the separately articulated pod panels keep their qualified
-surface path. `face-quality-preview` prepares separate candidates, using the
-untouched pre-face atlas and the existing serialized rig:
-
-```sh
-zig-out/neural-tools/runtime/bin/python -B dkq3/tools/neural_monsters.py face-quality-preview \
-  --models hiro mikiko superfly mishimaguard \
-  --candidate zig-out/neural-monsters/face-candidates
-```
-
-Each candidate has actual albedo, lit, and gray clay views from the front and
-both sides. Inspect the clay eyelid slots before generating paint. Use the built-in
-image tool to restore diffuse skin detail against these exact references; preserve
-the camera, head direction, clothing, and modeled hair. Generate independent side
-images where hair or a hood hides the cheek. A frontal image must never be mirrored
-onto an asymmetric hairstyle.
-
-`face-plan-quality.json` pairs measured target-mesh UV landmarks with their positions
-in each generated image. Coordinates use bottom-left image UVs; convert a top-left
-pixel `(x,y)` to `(x/width,1-y/height)`. The inverse thin-plate mapping moves painted
-eyes into actual sockets, and is bounded away from the face to preserve the canvas.
-The baker checks the mapped 201-square coordinate grid and rejects a nonpositive
-Jacobian, which signals a folded or collapsed registration. Keep glasses edges,
-ears, jaws and clothing boundaries registered against the actual camera references.
-Each `projections` entry contains a sibling PNG path, SHA-256, view angle (0, -60,
-or +60 degrees), and registration anchors. Keep the actual reference hashes and
-candidate geometry digest. Review the resulting `body-quality.png` on the mesh,
-including both profiles; checking the generated painting alone is insufficient.
-
-```sh
-zig-out/neural-tools/runtime/bin/python -B dkq3/tools/neural_monsters.py face-quality \
-  --model hiro --candidate zig-out/neural-monsters/face-candidates/hiro
-```
-
-Admission records `surface-quality.json`, preserves the previous art inputs, and
-rebuilds the candidate through the normal conversion pipeline. It does not substitute
-a candidate IQM for conversion. The fine shell/voxel repair uses 0.14/0.1 normalized
-units, a 36,000-triangle runtime budget, and a fresh atlas produced by the already
-pinned `xatlas==0.0.11` tooling. Head and body are separate parameterization inputs;
-scaling the head input by 2.5 increases its texture density without changing runtime
-geometry. Eight-pixel chart padding leaves room for four-pixel bake expansion and
-filtering. Positive-area triangle overlap and collapsed UV faces reject admission
-and production conversion, including overlaps within one chart. The helper verifies
-that vertex remapping preserves the exact triangle order and winding, and records
-the atlas settings, producer version, input/output hashes and retained MIT notice.
-Folded sliver faces receive independent charts and are repacked at the same density;
-the overlap test runs again on the resulting atlas before Blender bakes its albedo.
-See the [xatlas producer](https://github.com/jpcy/xatlas) and
-[Python binding API](https://github.com/mworchel/xatlas-python).
-Albedo is ray-baked from the original surface; existing skin influences are transferred
-locally. Detached components smaller than two voxel widths are removed as remeshing
-debris; connected skin is retained. Conversion rejects open/nonmanifold/degenerate topology or changes to skeleton,
-attachment names, bind channels, and animation frame channels. `surface-closure.json`
-records the exact input/output identities and preservation measurements.
-
-Registered face baking renders 2048-square first-surface depth maps for each actual
-camera, then checks visibility per atlas texel and blends independent views by
-incidence. Scalar depth lives in the float EXR alpha channel to bypass color-space
-and white-point transformations; the RGB channels do not encode qualified depth.
-The measured frontal image takes priority within the registered eye sockets.
-This override requires named eye anchors and is limited to the front of the head;
-glasses-only portraits do not receive an invented eye region. A camera contributes
-no weight where the serialized surface normal faces away from it, outside the
-named anterior orbital override.
-Side views cover the cheek and neck. Include ears and the full neck in the admitted
-head bounds; a narrow frontal face box leaves old reconstruction patches at the sides.
-The bake normalizes view weights per texel and keys the actual gray backdrop sampled
-from each image's upper corners, with a smooth color-distance fade. It preserves gray
-beard, cloth and bone detail rather than classifying all gray as background,
-and leaves unseen surfaces on their original albedo. New islands allow four pixels of
-padding; historical tightly packed atlases use none. The original atlas bytes remain
-exact outside nonzero repair coverage. All side images, registration code, closure
-settings, and source references participate in conversion and package validation.
-Where edited portraits move a bob haircut across the cheek, measured hair-boundary
-anchors and optional `protect_dark_hair: true` retain its dark surface outside the
-eye region. Side views cannot repaint those hair texels as skin; visible frontal hair
-detail can still transfer. Inspect the resulting hair and face together.
-Geometry, art, motion, and native acceptance still need review after admission.
-
-For CPU conversion/previews alongside an already running producer, invoke
-`neural_monsters_watch.py --producer-pid PID --preview-workers 3` with the isolated
-Python. It prioritizes character conversions, renders independent previews on
-three CPU workers, reloads worker scripts for each actor, and drains receipts
-published while conversion was running before stopping after producer exit.
-
-The package builds selected character variants from the new masters and adds the
-complete episode. After a monster-only repair, reuse the already rebuilt character
-variants with:
-
-```sh
-zig-out/neural-tools/runtime/bin/python -B dkq3/tools/neural_monsters.py package \
-  --characters zig-out/neural-monsters/episode1/dk3-neural-characters.pk3
-```
-
-When character masters are present, reuse requires the exact current master roster,
-IQM and atlas hashes, conversion metadata and face provenance. Without this option,
-the variants are rebuilt from the current masters. A monster-only roster can also
-merge an existing character overlay. Admission checks its closed cosmetic namespace, source
-generation, mappings, physics skeletons and every file hash. Stale inputs or an
-unfinished class prevent publication. The validated archive atomically replaces
-only `zig-out/neural-monsters/episode1/dk3-neural-episode.pk3`.
-The overlay includes all four existing native skin/render variants per monster.
-Atlas export explicitly encodes PNG pixels; a packed WebP buffer with a renamed
-suffix is rejected during conversion and package admission.
-
-Additional story identities are Casseti, Charon/Ferryman, the female guard,
-Garroth, the warrior guard, Ninja, Osaka, the priest, Tatsuo and Toshiro. Shared
-identities retain their original cinematic aliases. The ledger, character manifest
-and final package report record the exact admitted source and target paths.
-
-For an existing completed prisoner conversion, `preserve --models prisoner prisonerb`
-verifies and records its source/concept lineage and exact IQM/atlas hashes. Subsequent
-stage commands retain these frozen products; packaging validates them explicitly.
-This is an owner-requested exception, not a claim that prisoners were regenerated.
-
-Sludgeminion and Ragemaster use measured mechanical shoulder, elbow and distal
-claw pivots. Their armor triangles follow individual rigid segments, with split
-vertices at articulation boundaries. This keeps long panels from stretching
-between a moving forearm and a stationary shin. They share the fixed-length biped
-leg motion, hardpoints and native humanoid physics, with independently authored
-heavy arm swings and strikes measured from their own bind chains. Mechanical claws follow their
-hand segment and boots follow their foot segment.
+The report's `enemy_actions` records the tool and base package hashes and each model's
+authored sequences. Review sheets pair Gold's frame (for meaning only) with the new frame:
+`zig-out/reports/runtime-zig-421/review/<model>.png`. The rejected source-fitting tools are
+kept outside the tree in `zig-out/reports/runtime-zig-420/rejected-tools/`.
 
 ## Native physics and isolated gameplay verification
 
 `dk3/neural-physics.cfg` opts generated creature skeletons into the native client
 solver. Anatomical bipeds use the existing humanoid solver; Laser/Rockgat turrets
 and Protopod use anchored roots; other creatures use free articulated bodies.
-At ordinary death, the solver starts from the last
-visible pose and velocity. It runs at 120 Hz with parent-length constraints,
-approximate bend limits, self separation, swept world/brush contacts, friction
-and sleep. Attachment bones follow their parent and are not extra particles.
-Live matrices use the existing renderer path; `cg_ragdolls 0` restores authored
-death presentation. Original gib/hatch behavior and server health remain authoritative.
+At ordinary death, the solver starts from the last visible pose and velocity. It
+runs at 120 Hz with parent-length constraints, approximate bend limits, self
+separation, swept world/brush contacts, friction and sleep. Attachment bones
+follow their parent and are not extra particles. Live matrices use the existing
+renderer path; `cg_ragdolls 0` restores the authored death presentation. Server
+health remains authoritative.
+
+Sequence 419 changes three things for humanoids:
+- **Collapse.** At death the knees give way forward and the hips drop, so a body
+  crumples instead of toppling stiff-legged like a plank.
+- **Flexible spine.** The trunk is now two rigid girdles, hips and shoulders. The
+  spine between them bends within 60° forward, 25° back and 30° to either side,
+  twists at most 35°, and has passive stiffness from soft links. Hip cones are
+  measured in the pelvis frame; shoulder and neck cones in the chest frame.
+- **Head and spine rendering.** The rendered spine bone takes half the bend
+  between the girdles, and the neck turns toward the head point, so the neck
+  cone's nod and loll show on the mesh.
+
+Burst thresholds are the `gib_damage` and `gib_overkill` cvars: a killing hit of
+that fraction of base health, or health below minus that fraction. The reference
+values are 0.3 and 0.5, which burst nearly every rifle and blaster kill. The
+remaster defaults to 1 and 1, so bodies remain for the physical deaths and
+explosions still burst them. Authored always-gib classes (the fat worker) and
+spawnflags are unchanged.
 
 The generic creature solver uses motion-region pivots; anatomical bipeds retain
 the character hinge/length and mesh stability approach.

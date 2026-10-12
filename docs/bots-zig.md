@@ -7,7 +7,7 @@ implements one ten-level skill ladder and a real field of view. Status:
 
 ## Why the previous bots were "hardcore"
 
-The whole bot brain is `src/runtime/server/bots.zig`: it picks goals and submits
+The whole bot brain is `src/mechanics/server/bots.zig`: it picks goals and submits
 ordinary user commands through the same player motor as humans. Its combat edge came
 from perception and handling, not from better movement:
 
@@ -23,7 +23,7 @@ from perception and handling, not from better movement:
 
 ## Ten-level ladder
 
-`src/runtime/domain/bot_skill.zig` defines the ladder once. The hosting menu, the room
+`src/mechanics/domain/bot_skill.zig` defines the ladder once. The hosting menu, the room
 services and the server brain all use it, so a room created anywhere behaves identically.
 Level 10 keeps roughly the previous perfect behaviour; level 1 is the least dangerous.
 Default is 5.

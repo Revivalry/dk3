@@ -343,7 +343,7 @@
       "upstream_sha256": "1bc3f8ad1c47a540cd999367453d053b68b6baee9716f059bae970e79cbd12fe"
     },
     "code/qcommon/surfaceflags.h": {
-      "current_sha256": "33311ec28948ee703e7f9b93feff2b0bc19b5e5bb26e06fb8464b7005d700806",
+      "current_sha256": "6c1e92d6a741c9d23416fde2e03c85fc921d21056a4e38c646d6ea1e55e6211b",
       "upstream_sha256": "db143be27dff77047353074431a723e98816e3231dea9c3aac8a0f33b5d8d807"
     },
     "code/qcommon/vm.c": {

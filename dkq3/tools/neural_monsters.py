@@ -610,8 +610,12 @@ def package(args):
     files['dk3/neural-models.cfg'] = mapping.encode()
     files['dk3/neural-physics.cfg'] = physics.encode()
     files['scripts/dk3-neural.shader'] = shader.encode()
+    # Humanoid enemies' attacks, pain, cowering and work loops are authored action clips.
+    from neural_actions import apply as author_actions
+    files,enemy_actions=author_actions(output,document['episode'],files)
     report = {k:value for k,value in character_report.items() if k not in ('files','losses')}
     report['human_motion']=dict(models=human_motion,geometry_bind_weights_atlases='unchanged',native_acceptance='unverified')
+    report['enemy_actions']=enemy_actions
     report.update(dict(format=1, source_models_sha256=document['source_models_sha256'], episode=document['episode'],
                   actors=rows, files={n: hashlib.sha256(data).hexdigest() for n, data in files.items()},
                   losses=['Single-image geometry and material inference; anatomical biped and Venomvermin quadruped motion is authored independently, other creature motion is fitted to the source.',

@@ -25,6 +25,13 @@ pub fn declare(b: *std.Build, packages: assets.Assets, guard: *std.Build.Step.Co
     if (b.option([]const u8, "neural-assets", "Optional locally converted skeletal character PK3")) |path| {
         prepare.addArgs(&.{ "--neural-assets", path });
     }
+    prepare.addArgs(&.{ "--hd-weapons-fallback", b.pathFromRoot("zig-out/hd-weapons/dk3-hd-weapons.pk3") });
+    if (b.option([]const u8, "hd-weapons", "Accepted local HD weapon PK3")) |path| {
+        prepare.addArgs(&.{ "--hd-weapons", path });
+    }
+    if (b.option([]const u8, "hd-weapons-preview", "Explicit isolated unverified HD weapon review PK3")) |path| {
+        prepare.addArgs(&.{ "--hd-weapons-preview", path });
+    }
     prepare.has_side_effects = true;
     // Supplying source data explicitly requests conversion. Routine play uses
     // the last completed asset generation and only rebuilds changed code.

@@ -168,7 +168,7 @@ e1m3a, before and after (evidence below): 14,190 reachable floors; uncovered
 245 → 9; unrouted 10,355 → 402; 1,537 floors are gated behind lasers and force
 fields that the level switches off.
 
-**Live gates** (`src/runtime/server/navigation_gates.zig`). The compiled AAS treats
+**Live gates** (`src/mechanics/server/navigation_gates.zig`). The compiled AAS treats
 every dynamic blocker as open; a gate is one such entity with the areas it fills,
 disabled for routing (`AAS_EnableRoutingArea`) while it blocks: a damaging volume
 dealing 10 or more while switched on, a toggled wall while it stands, a door opened

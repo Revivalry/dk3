@@ -13,12 +13,14 @@ restored to the pre-rewrite working tree (`ed0755f`) by restoration commit `e396
 Do not merge or push this work to main without an explicit release/merge request.
 The old-runtime removal decision applies to this feature branch.
 
-The permanent source root is `src/runtime`, with `domain`, `ecs`, `engine`, `server`,
-`client`, `ui`, and `tests` layers. `build/runtime.zig` composes native modules and tests
-from the same named dependencies. Class-owned catalogs live in `src/weapons`,
-`src/actors`, and `src/items`. Architectural checks reject private gameplay headers
-and engine/system imports from pure domain/catalog code. See
-[`src/runtime/README.md`](../src/runtime/README.md) for ownership rules.
+The permanent source root is `src/`, layered by ownership (sequence 409): `engine/` (ioquake3
+ABI), `core/` (game-agnostic runtime), `mechanics/` (shared Daikatana mechanisms: `domain`,
+`server`, `client`, `ui`, `policy`), `game/` (class registries and the component list) and
+`classes/<actors|weapons|items|entities>/<class>/` (everything one class owns), with the module
+roots and catalogs at the top. `build/runtime.zig` composes native modules and tests from the same
+named dependencies. Architectural checks reject private gameplay headers, engine/system imports
+from pure domain/policy code, and game code in `core/` or `engine/`. See
+[`src/README.md`](../src/README.md) for ownership rules.
 
 ## Scope and boundaries
 
@@ -65,6 +67,179 @@ service locator. Prefer compile-time composition and use runtime interfaces only
 real substitution boundaries. Share prediction/server rules and schemas. Keep the
 ECS tailored to the game; no plugin or dependency-injection framework. Explicit state
 unions, allocators and recoverable errors replace implicit flags/global mutation.
+
+## Class contract
+
+Shared modules are mechanisms; concrete classes own policy. This makes the SOLID rule above
+checkable.
+
+- **Roles.** Line 2 of every runtime, actor, weapon and item module declares its role:
+  `//! Shared mechanism: ...`, or `//! actor-class: <policy>` / `weapon-class: <description>` /
+  `item-class: <name>` / `entity-class: <name>`. A class module is named after its class, never
+  generically (the guard controller once lived in a module called `hostiles.zig`).
+- **What a shared module may not contain.** Actor kind comparisons or switch arms (R1, R2), map
+  classname literals (R3), weapon-id literals or named weapons (R4), reads of a class policy or
+  class sub-state (R5), imports of a class-owned module (R7), and switch arms naming a class's
+  union tag: an attack payload, flight or world control in a switch over `.attack`, `.flight` or
+  `.action`, or a class component in a switch over a component id (R8).
+  `dkq3/tools/class_ownership.py` counts these and missing role headers (R6).
+  `dkq3/tools/tests/test_class_ownership.py` fails the build when a count rises, or when it falls
+  without the baseline (`class_ownership_baseline.json`) being lowered with
+  `python3 dkq3/tools/class_ownership.py --update`.
+- **Where class code goes.**
+  - Everything lives in the class folder `src/classes/<kind>/<class>/`: pure decisions, state,
+    timing and Gold-derived constants in the policy at its root; engine plumbing in its
+    `server/`, `client/` and `domain/` adapters.
+- **How shared code reaches a class.** Only through contracts that are checked at compile time:
+  - weapon description hooks found with `@hasDecl` in `src/weapon_catalog.zig`;
+  - actor class adapters through `mechanics/server/actor_classes/registry.zig`: a comptime kind→adapter table
+    with default hooks in `common.zig`, plus `traits` declared by each policy;
+  - the classname registry for map entities;
+  - the render-tag registry on the client;
+  - the phase and hook registries below.
+  A missing or duplicate owner is a compile error. Every registry keeps its class list in a
+  data-only `//! Class registry:` module (`classes.zig` beside each `registry.zig`,
+  `weapons/classes.zig`, and the `*_classes.zig` files); the dispatching module never imports a
+  class module itself.
+- **Hook registries** (server unless noted). Each lists its classes in the order the shared
+  schedule runs them; a class declares only the hooks it needs.
+
+  | Registry | Hooks | Run by |
+  |---|---|---|
+  | `world_system_classes.zig` | `worldSpawn`, `worldPrepare`/`worldMove`/`worldFinish`/`worldArrive` (brush movers), `worldStep`; movers also `publishPart`, `authoredPart`, `nextStop`, `carryPart`/`delayPart`/`samplePart`, `ownsPart`, `pathPhase`; `probes` (`probe`) | `world_systems.zig` (fixed phases; spawn order fixes slot numbers), `pusher.zig`, `attachments.zig`, `platforms.zig`, `coop_bot.zig`, `world_probe.zig` |
+  | `projection_classes.zig` | `projected` components, `project`, `restorable`, `effect`, `modelless`; load hooks `restoreAdmit`/`restoreBegin`/`restoreEnd` | `persistence.zig` |
+  | `damage_classes.zig` | `admitsDamage` | `damage.zig` |
+  | `attack_classes.zig` | per payload owner: `publish`, `step`, `holds`, `damaged`, `admitsDamage`, `actionOwner`, `linkedOwner` | `actor_attacks.zig` |
+  | `session_classes.zig` | `sessionReset`, `restoreDefaults`, `camera`, `releasePlayer`, `takesView`; `party` (the party provider: membership, travel capture and arrival, orders, exits, pickups, eye height, bot summaries) | `server.zig`, `clients.zig`, `cinematics.zig`, `damage.zig`, `items.zig`, the bots |
+  | `use_classes.zig` | `useTarget` per router stage, `killed` | `targets.zig` |
+  | `prop_classes.zig` | `propAge`, `propTick`, `propContact` | `props.zig` |
+  | `destructible_classes.zig` | `destructibleUse`, `destructibleStep`, `destructibleRecipient` | `world_actions.zig`, `damage.zig` |
+  | `hazard_classes.zig` | `contact_missile`, `hazard` + `forecast`, `probe`, `diagnostic_name` | `bot_evasion.zig`, `combat_probe.zig`, `coop_bot.zig` |
+  | `linked_tag_classes.zig` | `linked_body_tags`, `linked_overlay_tags` | `region_presentation.zig` |
+  | `domain/control_classes.zig` | `controls` (`.{ .tag, .State }`: the saved `WorldControl` variants) | `domain/world_controls.zig` builds `Action` |
+  | `client/client_classes.zig` | `reset`, `world_state`, `screen`, `command`, `viewOffset` | `client.zig` |
+  | `entity_classes` (by control tag) | `passage`, `soundtrack`, `current`, `touchesWithBody` | `bot_routes.zig`, `music.zig`, `bot_pilot.zig`, `interactions.zig` |
+
+- **Declarations assembled at compile time.** Shared unions are built from what classes declare,
+  so a new class never edits them: actor attack payloads (`attack_payloads`:
+  `.{ .tag, .Payload, .modelless }`), projectile flights (`flight_tag` + `BallisticState`; the
+  one `void` state is `ballistics.stateless`), world-control states (`controls`), and laser looks
+  (`laser_look` on the class owning a `laser.Kind`: model, tag, lifetime, splash, contact
+  sounds). Tags are the saved names, so old saves keep loading.
+- **Weapon entity hooks** (`server/weapon_classes`): besides the table below, `holds` (a victim
+  held frozen), `actionOwner`/`actionSource`/`actionInvolves`/`removeAction` (who runs an action
+  entity, for disconnection and travel), `effectOwner`/`effectSecond` (slots an effect names) and
+  `probeBeam`/`probeArea` (probe output).
+- **Actor class adapters.** Every policy in `src/actor_catalog.zig` `owners` has exactly one
+  adapter in its class folder (`classes/actors/<policy>/server/`), listed in
+  `game/server/actor_classes/classes.zig`. An adapter declares only
+  the hooks its class needs; the registry's header table lists every hook with its default, and
+  the defaults live once in `common.zig`. Signatures are checked at compile time, and a public
+  function that is not a hook (a misspelling would silently take the default) is a compile error
+  unless the adapter lists it in `helpers`.
+  - **Load:** `attacks`, `attackLoad` (optional clips, event rows, second strikes, jump strikes),
+    `clips` (named clip slots with fallbacks), `routes`, `requires`, `varied_idle`,
+    `loadAnimations`, `preload`.
+  - **Per-map state:** a `Store` type with `enterMap` and `tick`, held by the actor system in
+    `stores` (the companions' weapon poses and teleport nodes).
+  - **Spawn and death:** `spawn`, `vanish_on_death`, `own_death`, `die`, `mustGib`.
+  - **Step, in order:** `sense`, the freeze check, `prepare`, `scriptable`/`follows`, `perceive`,
+    `preempt`, `path_gait`/`pathMove`, `takeover`, `think`, `move`, `settle`.
+  - **Publish:** `playback` (the shared mode mapping applies when it returns null; `View.open()`
+    says whether a shared pose takes precedence), `decorate` (render tags, loop sounds), `upright`.
+  - **Mechanisms:** `idleVaries`, `frame_attack_audio`, `audio_follows_playback`, `admitDamage`,
+    `afterDamage`, `immovable`, `use`/`use_after_scripts`, `pausesScript`, `diagnose`.
+  - **Ground melee:** classes that fight on foot pass a `ground_combat.Spec` (pain, reach,
+    admission rolls, attack choice, transitions, leaps, strike events) to the shared mechanism.
+- **Traits.** Capabilities shared systems may read without naming a class are declared per kind
+  in the policy's `classes` (`src/mechanics/policy/actors/traits.zig`): attack style, pain clips, ambient,
+  aquatic, bystander, party, bloodless, senses and remains (gib material).
+- **Class data owned by the class.** Aidata beyond the shared columns is the policy's
+  `ClassTuning` with `parseTuning` (stored in `Definition.class`, read with
+  `definition.tuning(policy)`). A launched payload shared by several classes keeps a saved
+  variant per launcher, and each launching policy declares the variant's style: `rocket_styles`
+  (missiles), `shaft_styles` (spears, bolts, knives by touch: knife, axe, magic), `fireball_styles`,
+  `spit_styles` (venom spit) and `burst_styles` (burst fire). The mechanism reads only the style.
+- **Class state across saves.** A class `State` declares `rebase(delta)`, `validate(check)` and
+  `remapIds(map)`; the snapshot code loops over the actor's fields and calls whichever exist
+  (`src/mechanics/policy/actors/saved_time.zig` holds the shared primitives).
+- **Weapon class adapters.** Pure weapon behaviour stays in the descriptions
+  (`classes/weapons/<weapon>/<weapon>.zig`, `@hasDecl` hooks in `weapon_catalog.zig`: `grants`, `aliases`,
+  `timer`, `default_muzzle`/`parseValues`, `swordExperience`). Engine behaviour lives in
+  the weapon folder's `server/` adapter (`fire` for the `.owned` combat policy, `launch`,
+  `prepareFlight`, `seeded`, `publishProjectile`/`decorateProjectile`, `step`, slot `links`,
+  `lingering`, `admitsDamage`, `command`) and its `client/` adapter (`drawEffect`,
+  `drawSprite`, `drawMissile`, `decorateMissile`, `viewEnd`). `catalog.count` replaces the
+  weapon-count literals.
+- **Map-entity class adapters.** `classes/entities/<class>/server/`, listed in its registry:
+  world controls declare their `WorldControl.action` variant (`tag`) and `spawn`, `bind`, `use`,
+  `touches`/`touch`, `step`, `publish`, `savedModel`, `validateSaved`; authored brushes and
+  triggers declare `brush`, `pass`/`prepare` and `useAuthored` (the level exit's travel request
+  is its own). Classes declare `traits` (button, player usable, relay, touch volume, touch once,
+  breakable, door, liquid, capture zone, level exit, decoration, monitor, exploding wall, train,
+  team flag) that bots, navigation, interactions and saves read instead of classnames, and
+  `passage` (where touching it sends an actor) for route planning.
+- **Render classes.** A class folder's `client/` render module (a shared mechanism's in
+  `mechanics/client/render_classes/`) draws by render tag: a general entity's
+  body tag (`generic1`) and overlay tag (`time2`) select `drawEffect`, `decorate` and `overlay`.
+- **Saved class state.** The snapshot decoder calls back class validators supplied by the game
+  root (`saved_classes`, dependency inversion): world controls validate themselves; actor class
+  states rebase, validate and remap their own ids; control states rebase themselves.
+  - **Actor attacks.** Each `ActorAttack` payload owns its save contract, all optional:
+    `rebase(delta)`, `remapIds(map)`, `validSaved(born_ms, stepped_ms)` (its own bounds) and
+    `saved_components` (component names its entity carries). `domain/actor_attack.zig` loops over
+    the payload union. Relations to other entities (Nharre's held victim, Wyndrax's bolt parents)
+    are checked by the launching class's adapter hook `validateSavedAttack`.
+  - **Emitters.** A component owned by one class states its own source or carrier classname
+    (`firefly.State.sourceClassname`, `wisp.Swarm.saved_classname`).
+  - Class validators run only in the game module: unit tests run under the test runner's root, so
+    a class's own validator is tested beside its adapter.
+- **Class registries.** A module whose role is `//! Class registry:` enumerates classes as data
+  (the actor catalog's frozen save order, item classnames and rings, the item catalog, the ECS
+  component list in `domain/components.zig` with its frozen ids, and the hook registries above).
+  It may name classes (R3, R5, named weapons, R7); it holds no behaviour and never compares
+  weapon ids. Each actor policy defines its classnames (`definitions`) and
+  declares its actor state slot (`state_field`), from which the actor state is assembled.
+- **Shared behaviour.** When several classes need the same behaviour (pain, perception, melee
+  cycle, wander, cover), it is a shared mechanism taking class-supplied parameters, such as
+  `actor_pain.generic(hurt, previous_threat, chance, limit)`. A default lives once and classes
+  override it, never copy it. Interactions between classes go through a registry hook too: a party
+  member opens a door through the entity registry's `openForParty`, Wyndrax collects wisps through
+  the shared collectable swarm (`energy_swarm`).
+  - **Pain** follows the reference's acquiring rule in one place (`actor_pain.acquiring`): the hit
+    that makes a player the enemy skips the first roll (`generic`, the ground-combat `.roll`;
+    a class whose own callback flinches regardless opts out).
+  - **Spawnflags** (`src/mechanics/policy/actors/spawnflags.zig`) name the authored monster bits once (wander, path
+    follow, node wander, random wander, ignore player, sniper, do-not-move, take cover). Each class
+    decides which goals it supports.
+  - **Cover** (`src/mechanics/policy/actors/cover.zig` rules and saved state, `server/actor_cover.zig` complete
+    visibility and hide-node choice) and **wander** (`src/mechanics/policy/actors/wander.zig` `Roam`,
+    `server/actor_wander.zig` leg choice) keep their state in the shared actor fields `cover` and
+    `roam`, beside `evasion` (`server/actor_evasion.zig` `sidestep` for blocked shots). A class
+    composes them in its `think` and `move` (`common.roam` picks legs, `common.moveTo` walks them);
+    the Mishima guard and the civilians use them.
+  - The ground node graph (`Actors.ground_routes`, adapter `routes.ground`) carries hide nodes
+    (flag 0x1000) and water nodes (0x2).
+  - **Props** (`domain/props.zig`, `server/props.zig`): authored decorations, gibs, corpses,
+    debris and explosion sprites share one physical body (the `Scenery` component); their roles
+    add `propAge`/`propTick`/`propContact`. Explosion sprites are `props.explosion*`.
+  - **Locks** (`server/locks.zig`): an authored `keyname` admits only activators holding the key.
+  - **Platforms** (`server/platforms.zig`): whether an entity is a mover part, and a path
+    platform's phase, for riders, bots and the pusher.
+  - **Held victims** (`server/held.zig`): an entity is held when its motion owner (an attack or
+    a weapon entity) answers `holds`.
+  - **Psychic warp** (`domain/psychic_warp.zig`, `server/psychic_warp.zig`): an ailment like
+    poison or freezing; psyclaws inflict it.
+  - **Lightstyles** (`domain/lightstyle_table.zig`): the 256-level transport and default styles;
+    light classes only pick patterns.
+  - **Scorch marks** (`weapons/impact.zig` `scorch_mark_tag`): an authored effect's impact.
+- **Save ABI.** `Actor.definition` is an index into `actors/catalog.zig` `entries` and is saved,
+  so that order is frozen. Saved field names change only with a snapshot schema migration.
+
+The migration from the existing leaks is staged (sequences 389–400 and 403 in the run log). The
+baseline records what is left.
+
+Gold behaviour is ported per class following [class porting](class-porting.md).
 
 ## Build and compatibility
 
@@ -688,7 +863,7 @@ acceptance remain required work.
 Multiplayer bots previously searched every client regardless of facing, aimed exactly
 on the acquiring tick and ignored the difficulty value they were created with, so every
 match played at maximum strength. One ten-level ladder in
-`src/runtime/domain/bot_skill.zig` now governs view cone, sight range, target memory,
+`src/mechanics/domain/bot_skill.zig` now governs view cone, sight range, target memory,
 reaction delay, view turn rate, aim error, burst discipline and gunshot-awareness error,
 and the same value is selected on both hosting pages and carried through the room
 service as `dk3_bot_skill`. Target acquisition is a cone around the bot's own view, the

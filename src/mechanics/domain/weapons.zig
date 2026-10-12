@@ -1,0 +1,216 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+//! Shared mechanism: ECS-owned loadout and controller state. Concrete weapon definitions own shared input policies.
+const std = @import("std");
+const catalog = @import("weapon_catalog");
+const rules = catalog.transitions;
+const collision = @import("../../core/domain/collision.zig");
+const movement = @import("player_move.zig");
+const slide = @import("../../core/domain/slide.zig");
+const v = @import("../../core/domain/vector.zig");
+pub const State = struct {
+    dk3Inventory: i32 = 0,
+    ammo: [32]i32 = @splat(0),
+    weapon: i32 = 0,
+    weaponTime: i32 = 0,
+    weaponstate: i32 = 0,
+    dk3Burst: i32 = 0,
+    dk3Charge: i32 = 0,
+    dk3NovaSpent: i32 = 0,
+    dk3WeaponSequence: i32 = 0,
+    dk3AttackHeld: i32 = 0,
+    dk3GlockClip: i32 = 10,
+    dk3SwordExperience: i32 = 0,
+    gas_until_ms: i64 = 0,
+    event_sequence: u32 = 0,
+    last_fire_ms: ?i64 = null,
+    pub fn discardInventory(self: *State) void {
+        // Retain the selected class for the body's death grip. It no longer
+        // owns a usable weapon, and respawn creates a new loadout.
+        self.dk3Inventory = 0;
+        self.ammo = @splat(0);
+        self.dk3Burst = 0;
+        self.dk3Charge = 0;
+        self.dk3NovaSpent = 0;
+        self.dk3AttackHeld = 0;
+        self.gas_until_ms = 0;
+    }
+    pub fn acquire(self: *State, table: *const Table, id: u5, rounds: i32) bool {
+        const entry = catalog.find(id) orelse return false;
+        var owned: u32 = @bitCast(self.dk3Inventory);
+        const previous = self.weapon;
+        if (!@import("inventory_rules").acquire(&owned, &self.ammo, &self.weapon, id, rounds, .{ .maximum = table.entries[id].ammoMax, .auto_select = entry.spec.auto_select })) return false;
+        if (self.weapon != previous) {
+            // A server-forced pickup still enters the shared raise transition.
+            // Its timer covers queued commands that carry the previous selection.
+            self.weaponstate = catalog.transitions.state.raising;
+            self.weaponTime = catalog.transitions.switchTime(self.weapon, true);
+            self.dk3Burst = 0;
+            self.dk3Charge = 0;
+            self.dk3NovaSpent = 0;
+            self.dk3WeaponSequence = 0;
+            self.dk3AttackHeld = 0;
+        }
+        if (catalog.grants(id)) |granted| @import("inventory_rules").grantPair(&owned, &self.ammo, granted, table.entries[granted].ammoMax, table.entries[granted].initialAmmo);
+        self.dk3Inventory = @bitCast(owned);
+        return true;
+    }
+};
+pub const Table = struct {
+    entries: [@as(usize, catalog.count) + 1]catalog.values.Values = @splat(.{}),
+    pub fn parse(bytes: []const u8) !Table {
+        var table: Table = .{};
+        var loaded: [29]bool = @splat(false);
+        var reader = try @import("../../core/domain/tables.zig").Reader.init(bytes);
+        while (try reader.next()) |row| {
+            const classname = row.field("classname") orelse return error.MissingWeaponClass;
+            const id: u5 = blk: {
+                for (catalog.entries) |entry| if (std.mem.eql(u8, entry.classname, classname)) break :blk entry.id;
+                return error.UnknownWeaponClass;
+            };
+            if (loaded[id]) return error.DuplicateWeaponClass;
+            table.entries[id] = try catalog.parseValues(id, &row);
+            loaded[id] = true;
+        }
+        for (loaded[1..28]) |present| if (!present) return error.MissingWeaponClass;
+        return table;
+    }
+};
+pub const Fired = struct { weapon: u5, sequence: i32, command_ms: i64, position: v.Vec3, angles: v.Vec3, view_height: f32 = 22, ducked: bool = false, charge: i32 };
+pub const Event = union(enum) { fired: Fired, no_ammo };
+pub const Events = struct {
+    values: [128]Event = undefined,
+    count: usize = 0,
+    pub fn append(self: *Events, event: Event) !void {
+        if (self.count == self.values.len) return error.WeaponEventCapacity;
+        self.values[self.count] = event;
+        self.count += 1;
+    }
+};
+pub const Context = struct {
+    ps: *State,
+    table: *const Table,
+    events: *Events,
+    service: collision.Collision,
+    slot: u16,
+    shot_mask: u32,
+    healthy: bool = true,
+    single_player: bool = true,
+    attack_boost: i32 = 0,
+    camera_active: bool = false,
+    msec: i32 = 0,
+    command: movement.Command = undefined,
+    player: *movement.Player = undefined,
+    motion: *slide.State = undefined,
+    failure: ?anyerror = null,
+    pub fn hook(self: *Context) movement.AfterStep {
+        return .{ .context = self, .run_fn = step };
+    }
+    fn step(raw: *anyopaque, player: *movement.Player, motion: *slide.State, command: movement.Command, milliseconds: u32) !void {
+        const self: *Context = @ptrCast(@alignCast(raw));
+        self.player = player;
+        self.motion = motion;
+        self.command = command;
+        self.msec = @intCast(milliseconds);
+        if (!self.canFire()) self.inventoryTick();
+        rules.tick(self);
+        if (self.failure) |err| return err;
+    }
+    pub fn canFire(self: *const Context) bool {
+        return self.healthy and self.player.mode == .normal and !self.player.respawned;
+    }
+    pub fn selection(self: *const Context) i32 {
+        return self.command.weapon;
+    }
+    pub fn now(self: *const Context) i32 {
+        return @intCast(self.command.time_ms);
+    }
+    pub fn ammoCost(self: *const Context, id: i32) i32 {
+        return self.table.entries[@intCast(id)].ammoCost;
+    }
+    pub fn lifetime(self: *const Context, id: i32) f32 {
+        return self.table.entries[@intCast(id)].lifetime;
+    }
+    pub fn interval(_: *const Context, id: i32) i32 {
+        return (catalog.find(@intCast(id)) orelse unreachable).interval;
+    }
+    pub fn boost(self: *const Context) i32 {
+        return self.attack_boost;
+    }
+    pub fn scaled(self: *const Context, duration: i32) i32 {
+        return @intFromFloat(@as(f32, @floatFromInt(duration)) / rules.attackFactor(self.boost()));
+    }
+    pub fn pressed(self: *const Context) bool {
+        return self.command.attack and !self.command.talking;
+    }
+    pub fn release(self: *Context) void {
+        rules.release(self);
+    }
+    pub fn fire(self: *Context, comptime W: type, shot: catalog.Shot) void {
+        rules.fire(self, W, shot);
+    }
+    pub fn automatic(self: *Context, comptime W: type) void {
+        rules.automatic(self, W);
+    }
+    pub fn noAmmo(self: *Context) void {
+        self.ps.event_sequence +%= 1;
+        self.events.append(.no_ammo) catch |err| {
+            self.failure = err;
+        };
+    }
+    pub fn fireEvent(self: *Context) void {
+        self.ps.event_sequence +%= 1;
+        self.ps.last_fire_ms = self.command.time_ms;
+        self.events.append(.{ .fired = .{ .weapon = @intCast(self.ps.weapon), .sequence = self.ps.dk3WeaponSequence, .command_ms = self.command.time_ms, .position = self.motion.position, .angles = self.command.angles, .view_height = self.player.view_height, .ducked = self.player.ducked, .charge = self.ps.dk3Charge } }) catch |err| {
+            self.failure = err;
+        };
+        const policy = catalog.find(@intCast(self.ps.weapon)).?.spec.combat;
+        if (policy == .pellets and policy.pellets.recoil != 0) self.motion.velocity = v.add(self.motion.velocity, v.scale(v.basis(self.command.angles).forward, -policy.pellets.recoil));
+        if ((policy == .projectile or policy == .flown) and !catalog.find(@intCast(self.ps.weapon)).?.spec.projectile.recoil_on_launch) self.motion.velocity = v.add(self.motion.velocity, v.scale(v.basis(self.command.angles).forward, -catalog.find(@intCast(self.ps.weapon)).?.spec.projectile.recoil));
+    }
+    pub fn inventoryTick(self: *Context) void {
+        if (!self.single_player or self.ps.dk3Inventory & (@as(i32, 1) << catalog.timed.id) == 0) return;
+        if (catalog.timed.timer.advance(self.ps.gas_until_ms, self.command.time_ms, self.msec, self.healthy, self.ps.weapon != catalog.timed.id or self.camera_active or self.player.mode == .frozen)) |deadline| {
+            self.ps.gas_until_ms = deadline;
+        } else {
+            self.ps.gas_until_ms = 0;
+            rules.expireGas(self.ps);
+        }
+    }
+    fn contact(self: *Context, range: f32, eye_offset: f32, body: bool) ?collision.Trace {
+        var eye = self.motion.position;
+        eye[2] += eye_offset;
+        return self.service.trace(.{ .start = eye, .end = v.add(eye, v.scale(v.basis(self.command.angles).forward, range)), .mins = if (body) .{ -15, -15, -24 } else @splat(0), .maxs = if (body) .{ 15, 15, if (self.player.ducked) @as(f32, 4) else 32 } else @splat(0), .slot = self.slot, .mask = self.shot_mask }) catch |err| {
+            self.failure = err;
+            return null;
+        };
+    }
+    /// Whether a ray from `start` along the view meets anything within `range`.
+    pub fn traceAhead(self: *Context, start: v.Vec3, range: f32) bool {
+        const hit = self.service.trace(.{ .start = start, .end = v.add(start, v.scale(v.basis(self.command.angles).forward, range)), .mins = @splat(0), .maxs = @splat(0), .slot = self.slot, .mask = self.shot_mask }) catch |err| {
+            self.failure = err;
+            return false;
+        };
+        return hit.fraction < 1;
+    }
+    /// Whether a body-sized sweep from the eye (raised by `eye_offset`) meets an entity within `range`.
+    pub fn bodyContact(self: *Context, range: f32, eye_offset: f32) bool {
+        const hit = self.contact(range, eye_offset, true) orelse return false;
+        return hit.fraction < 1 and hit.entity < 2046;
+    }
+};
+
+test "pickup raise protects selection from queued input and ammo does not restart it" {
+    var table: Table = .{};
+    table.entries[2].ammoMax = 100;
+    var loadout: State = .{ .weapon = 1, .dk3Inventory = 1 << 1 };
+    try std.testing.expect(loadout.acquire(&table, 2, 50));
+    try std.testing.expectEqual(@as(i32, 2), loadout.weapon);
+    try std.testing.expectEqual(catalog.transitions.state.raising, loadout.weaponstate);
+    try std.testing.expectEqual(catalog.transitions.switchTime(2, true), loadout.weaponTime);
+    const context = struct { ps: *State }{ .ps = &loadout };
+    try std.testing.expect(!catalog.transitions.switchWeapon(context, 1));
+    try std.testing.expectEqual(@as(i32, 2), loadout.weapon);
+    loadout.weaponTime = 25;
+    try std.testing.expect(loadout.acquire(&table, 2, 10));
+    try std.testing.expectEqual(@as(i32, 25), loadout.weaponTime);
+}

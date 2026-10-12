@@ -79,7 +79,7 @@ the two exact clip mappings.
 
 ## Evidence and limits
 
-`zig fmt --check src/runtime/client/neural_models.zig` and `zig build
+`zig fmt --check src/mechanics/client/neural_models.zig` and `zig build
 test-runtime` passed after the per-sequence fallback change. Focused Python
 tests cover package determinism, exact mapping, refusal to overwrite output,
 and rejection of the hand-weighted robe tab as skin. The guarded native

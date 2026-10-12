@@ -80,6 +80,6 @@ Verification for this trial: 29 focused Python tests passed; the local 23-clip
 build passed; `zig build test-runtime` passed (453 Zig tests). The wider
 `zig build test -Dpython=/usr/bin/python3` run reached 453/453 Zig tests but
 failed on two checks outside this change: `test_texture_scale`'s ramp
-expectation and formatting in `src/runtime/server/coop_bot.zig`. Neither file
+expectation and formatting in `src/mechanics/server/coop_bot.zig`. Neither file
 was changed for this motion trial. The full run log is
 `zig-out/reports/cinematic-motion-343/zig-test.log`.
