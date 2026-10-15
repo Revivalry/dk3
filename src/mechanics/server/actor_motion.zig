@@ -10,8 +10,13 @@ const v = @import("../../core/domain/vector.zig");
 const slide = @import("../../core/domain/slide.zig");
 const Collision = @import("../../core/domain/collision.zig").Collision;
 
+/// Support and line-of-travel probes test world geometry only: a body in the way (the enemy being
+/// chased, above all) is the slide's to stop, not a missing floor or a blocked line.
+fn worldMask(body: data.Body) u32 {
+    return body.collision_mask & ~@as(u32, c.CONTENTS_BODY);
+}
 fn floorWith(collision: Collision, position: v.Vec3, body: data.Body, slot: u16) !?v.Vec3 {
-    const hit = try collision.trace(.{ .start = v.add(position, .{ 0, 0, 18 }), .end = v.add(position, .{ 0, 0, -32 }), .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = body.collision_mask });
+    const hit = try collision.trace(.{ .start = v.add(position, .{ 0, 0, 18 }), .end = v.add(position, .{ 0, 0, -32 }), .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = worldMask(body) });
     if (hit.start_solid or hit.fraction == 1 or hit.normal[2] < 0.7 or hit.contents & (c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_NITRO) != 0) return null;
     return hit.end;
 }
@@ -32,12 +37,29 @@ fn directWith(collision: Collision, position: v.Vec3, destination: v.Vec3, body:
         const fraction = @as(f32, @floatFromInt(i + 1)) / @as(f32, @floatFromInt(@max(count, 1)));
         const point = v.add(position, v.scale(v.subtract(destination, position), fraction));
         const supported = try floorWith(collision, point, body, slot) orelse return false;
-        const hit = try collision.trace(.{ .start = v.add(previous, .{ 0, 0, 18 }), .end = v.add(supported, .{ 0, 0, 18 }), .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = body.collision_mask });
+        const hit = try collision.trace(.{ .start = v.add(previous, .{ 0, 0, 18 }), .end = v.add(supported, .{ 0, 0, 18 }), .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = worldMask(body) });
         if (hit.start_solid or hit.fraction < 1) return false;
         previous = supported;
     }
     return true;
 }
+/// A route service that falls back to the authored node graph where the player-hull navigation
+/// areas have none: a small actor in a pipe, a corner or under a prop, where a player cannot stand.
+pub const NodeFallback = struct {
+    primary: nav.Service,
+    routes: *const @import("air_routes.zig").Routes,
+    body: data.Body,
+    pub fn service(self: *NodeFallback) nav.Service {
+        return .{ .context = self, .next_fn = next };
+    }
+    fn next(raw: *anyopaque, request: nav.Request) !?nav.Waypoint {
+        const self: *NodeFallback = @ptrCast(@alignCast(raw));
+        if (try self.primary.next(request)) |point| return point;
+        // Requests carry the navigation origin; the node graph wants the body's own.
+        const position = v.subtract(request.position, .{ 0, 0, self.body.mins[2] + 24 });
+        return .{ .point = try self.routes.next(position, request.destination, self.body, request.slot) orelse return null };
+    }
+};
 pub fn escape(service: nav.Service, position: v.Vec3, threat: v.Vec3, body: data.Body, slot: u16) !?v.Vec3 {
     return escapeWith(@import("actor_collision.zig").service(), service, position, threat, body, slot);
 }

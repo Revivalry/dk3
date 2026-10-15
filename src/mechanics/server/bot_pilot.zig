@@ -67,6 +67,16 @@ pub const Capabilities = struct {
     /// mostly pass over a crouched player), and put blast weapons away when
     /// badly hurt while another weapon reaches.
     duck_to_shoot: bool = true,
+    /// Careful footing for a body nothing authored leads (a party member):
+    /// the lethal-liquid guard covers straight steering as well, looks as far
+    /// ahead as the body would slide before stopping (further on slick
+    /// floor), counter-steers a slide toward lethal liquid, never hops to
+    /// land in it, and climbs straight out of any it ends up in.
+    careful_footing: bool = false,
+    /// A body that breathes like a player and is not following a dive keeps
+    /// its head above water: idle or under way, it rises to the surface
+    /// instead of sinking (an idle swimmer otherwise sinks).
+    tread_water: bool = false,
 };
 /// Who this body fights: hostile actors (campaign), or the enemy players of
 /// a match (by team alliance).
@@ -210,6 +220,10 @@ pub const Report = struct {
     /// gate in time, or nothing opens it); pursue other goals this long.
     give_up_ms: i64 = 0,
     sidestepped: bool = false,
+    /// Standing in lava, slime or nitrogen (careful footing): heading for the
+    /// nearest safe floor, or with none found.
+    escaping: bool = false,
+    escape_failed: bool = false,
 };
 /// One frame of movement input, before any sink encodes it.
 pub const Command = struct {
@@ -277,6 +291,14 @@ pub const Pilot = struct {
     scan_until: i64 = 0,
     scan_yaw: f32 = 0,
     submerged_ms: i64 = 0,
+    /// Where it last had its head out of the water, and the open water it
+    /// heads for when trapped under a ceiling.
+    breath_point: ?v.Vec3 = null,
+    air_target: ?v.Vec3 = null,
+    air_search_ms: i64 = 0,
+    /// Safe floor it climbs out to from lethal liquid (careful footing).
+    escape_target: ?v.Vec3 = null,
+    escape_search_ms: i64 = 0,
     direct_mark: v.Vec3 = @splat(0),
     direct_ms: i64 = 0,
     /// A civilian in the way since `blocker_ms`; one that stayed there long
@@ -1114,16 +1136,35 @@ pub const Pilot = struct {
         // straight at a prey the area graph has no way to, stops at the edge.
         // (Authored straight segments keep their line: a running drop over
         // the nitrogen onto e1m6b's platform is meant.)
-        if (!intent.direct and player.ground_entity != c.ENTITYNUM_NONE and player.water_level < 2 and v.length(direction) > 0.01) {
-            const lethal: u32 = c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_NITRO;
-            const ahead = v.add(pose.position, v.scale(v.normalize(.{ direction[0], direction[1], 0 }), 24));
-            const below = try frame.collision.trace(.{ .start = ahead, .end = v.add(ahead, .{ 0, 0, -200 }), .mins = .{ -4, -4, 0 }, .maxs = .{ 4, 4, 0 }, .slot = frame.slot, .mask = @as(u32, c.MASK_PLAYERSOLID) | lethal });
+        // Careful footing looks as far as the body would slide before it
+        // stopped, and guards straight steering too (nothing authored leads
+        // it across).
+        const careful = frame.capabilities.careful_footing;
+        const velocity_now = (try world.get(entity, data.Velocity)).linear;
+        const slick = careful and player.ground_entity != c.ENTITYNUM_NONE and try slickUnder(frame, pose.position);
+        if ((careful or !intent.direct) and player.ground_entity != c.ENTITYNUM_NONE and player.water_level < 2 and v.length(direction) > 0.01) {
+            // (No further than the step's own target: a turn short of the
+            // liquid is the route's, and the slide check below brakes it.)
+            const reach: f32 = if (careful) @min(stoppingReach(nav.horizontalDistance(velocity_now, @splat(0)), slick), @max(24, nav.horizontalDistance(movement, @splat(0)) + 16)) else 24;
             // (No hop to shake loose there either: it lands in the liquid.)
-            if (below.fraction < 1 and below.contents & lethal != 0) {
+            if (try lethalAlong(frame, pose.position, direction, reach)) {
                 direction = @splat(0);
                 self.unstick_until = 0;
                 self.jump_until = 0;
                 report.blocked = true;
+            }
+        }
+        // Carried toward lethal liquid faster than it could stop (ice
+        // underfoot, a shove, a turn taken at a run): steer against the slide.
+        if (careful and player.ground_entity != c.ENTITYNUM_NONE and player.water_level < 2) {
+            const speed = nav.horizontalDistance(velocity_now, @splat(0));
+            if (speed > 40) {
+                const sliding: v.Vec3 = v.normalize(.{ velocity_now[0], velocity_now[1], 0 });
+                if (v.dot(direction, sliding) > -0.5 and try lethalAlong(frame, pose.position, sliding, stoppingReach(speed, slick))) {
+                    const braked = v.subtract(direction, v.scale(sliding, 1.5));
+                    direction = v.normalize(.{ braked[0], braked[1], 0 });
+                    self.jump_until = 0;
+                }
             }
         }
         // Precise straight steering brakes into its goal instead of overrunning it.
@@ -1157,7 +1198,16 @@ pub const Pilot = struct {
             const sight = try frame.collision.trace(.{ .start = low, .end = enemy_point, .mins = @splat(0), .maxs = @splat(0), .slot = frame.slot, .mask = @as(u32, c.MASK_SHOT) & ~@as(u32, c.CONTENTS_BODY) });
             if (sight.fraction == 1) command.up = -127;
         }
-        if (frame.now < self.jump_until or intent.jump) command.up = 127;
+        if (frame.now < self.jump_until or intent.jump) {
+            // A hop (a lip, shaking loose) that would come down in lethal
+            // liquid is not taken; the route's own jumps were checked when
+            // planned.
+            const hop = careful and !intent.jump and !jumping and player.ground_entity != c.ENTITYNUM_NONE and player.water_level < 2;
+            if (hop and try hopLandsLethal(frame, pose.position, velocity_now, direction)) {
+                self.jump_until = 0;
+                self.unstick_until = 0;
+            } else command.up = 127;
+        }
         if (ladder and @abs(movement[2]) > 8) command.up = if (movement[2] > 0) 127 else -127;
         // Swimming: rise toward a higher goal, dive toward a deeper one (also
         // a waypoint more below than beside, such as the gap under a submerged
@@ -1181,11 +1231,84 @@ pub const Pilot = struct {
             }
         }
         // Under water the route's own depth is followed (tunnels and passages
-        // under barriers); a player has twelve seconds of air, so after nine
-        // the bot surfaces wherever air lies straight above. Under a ceiling
-        // the stroke stays on the route: rising there only slows the swim out.
-        if (player.water_level != 3) self.submerged_ms = frame.now;
-        if (player.water_level == 3 and frame.now - self.submerged_ms > 9000 and try airAbove(frame, pose.position)) command.up = 127;
+        // under barriers). A player-like body has twelve seconds of air: it
+        // rises straight up in time to reach the air measured above it, at a
+        // cautious stroke. Under a ceiling (a pier, a grate, a flooded hall),
+        // once a third of its air is gone it swims to the nearest open water
+        // with air above, else back to where it last breathed (the reference
+        // sends a drowning sidekick to its nearest ground node).
+        if (player.water_level != 3) {
+            self.submerged_ms = frame.now;
+            self.breath_point = pose.position;
+            self.air_target = null;
+        } else {
+            const under = frame.now - self.submerged_ms;
+            if (try airDistance(frame, pose.position, player.view_height)) |distance| {
+                if (under + surfacing_margin_ms + @as(i64, @intFromFloat(distance / surfacing_speed * 1000)) >= air_ms) {
+                    command.up = 127;
+                    command.forward = 0;
+                    command.right = 0;
+                }
+            } else if (under >= air_ms / 3) {
+                if (frame.now >= self.air_search_ms) {
+                    self.air_search_ms = frame.now + 500;
+                    self.air_target = try nearestAir(frame, pose.position, player.view_height) orelse self.breath_point;
+                }
+                if (self.air_target) |point| {
+                    const toward = v.subtract(point, pose.position);
+                    const across = nav.horizontalDistance(toward, @splat(0));
+                    if (across > 8) {
+                        const yaw = command.angles[1] * std.math.pi / 180;
+                        const flat: v.Vec3 = .{ toward[0] / across, toward[1] / across, 0 };
+                        command.forward = @intFromFloat(std.math.clamp((flat[0] * @cos(yaw) + flat[1] * @sin(yaw)) * 127, -127, 127));
+                        command.right = @intFromFloat(std.math.clamp((flat[0] * @sin(yaw) - flat[1] * @cos(yaw)) * 127, -127, 127));
+                    }
+                    command.up = if (toward[2] > 8) 127 else 0;
+                }
+            }
+        }
+        if (frame.capabilities.tread_water and !ladder and player.water_level >= 2 and command.up == 0 and !intent.crouch and movement[2] >= -12) {
+            if (player.water_level == 3) {
+                // Head under with nothing calling for depth: up to the air
+                // straight above (none under a ceiling: the air budget above
+                // finds it).
+                if (try airDistance(frame, pose.position, player.view_height) != null) command.up = 127;
+            } else if (command.forward == 0 and command.right == 0 and player.ground_entity == c.ENTITYNUM_NONE) {
+                // At the surface with nothing pressed a swimmer sinks: tread water
+                // (one standing waist-deep on the bottom stays put).
+                command.up = 24;
+            }
+        }
+        // The swim stroke follows the view's pitch: aiming down at an enemy,
+        // a forward stroke would dive. Cancel the pitch's share of it.
+        if (player.water_level >= 2 and !ladder and command.up == 0 and command.forward != 0) {
+            const sink = @sin(command.angles[0] * std.math.pi / 180) * @as(f32, @floatFromInt(command.forward));
+            command.up = @intFromFloat(std.math.clamp(sink, -127, 127));
+        }
+        // In lava, slime or nitrogen (knocked in, a slide, a missed landing):
+        // nothing else matters, straight for the nearest safe floor, jumping
+        // for its rim.
+        if (frame.capabilities.careful_footing and player.mode == .normal) {
+            const feet = try frame.collision.contents(v.add(pose.position, .{ 0, 0, frame.hull.mins[2] + 1 }), frame.slot);
+            if (feet & lethal_liquids != 0) {
+                if (self.escape_target == null or frame.now >= self.escape_search_ms) {
+                    self.escape_search_ms = frame.now + 400;
+                    self.escape_target = try safeFloorNear(frame, pose.position);
+                }
+                if (self.escape_target) |point| {
+                    report.escaping = true;
+                    const toward = v.subtract(point, pose.position);
+                    const across = nav.horizontalDistance(toward, @splat(0));
+                    if (across > 4) {
+                        const yaw = command.angles[1] * std.math.pi / 180;
+                        const flat: v.Vec3 = .{ toward[0] / across, toward[1] / across, 0 };
+                        command.forward = @intFromFloat(std.math.clamp((flat[0] * @cos(yaw) + flat[1] * @sin(yaw)) * 127, -127, 127));
+                        command.right = @intFromFloat(std.math.clamp((flat[0] * @sin(yaw) - flat[1] * @cos(yaw)) * 127, -127, 127));
+                    }
+                    command.up = if (toward[2] > -8 or player.water_level >= 2) 127 else 0;
+                } else report.escape_failed = true;
+            } else self.escape_target = null;
+        }
         command.use = report.used;
         return .{ .report = report, .command = command };
     }
@@ -1599,10 +1722,106 @@ fn waterNear(frame: Frame, eye: v.Vec3, origin: v.Vec3, aim: ?v.Vec3) !bool {
 }
 /// Whether a submerged player rising straight up would get its head out of
 /// the water within a short climb.
-fn airAbove(frame: Frame, position: v.Vec3) !bool {
+/// Air for a player-like swimmer, the time it budgets for the margin, and the rising speed it
+/// assumes (half its run speed is the swim stroke; this stays under it).
+const air_ms: i64 = 12000;
+const surfacing_margin_ms: i64 = 1500;
+const surfacing_speed: f32 = 120;
+/// How far the body must rise to have its head out of the water, when air lies straight above
+/// within 1024 units and short of a ceiling; null when there is none.
+fn airDistance(frame: Frame, position: v.Vec3, view: f32) !?f32 {
     const collision = frame.collision;
-    const rise = try collision.trace(.{ .start = position, .end = v.add(position, .{ 0, 0, 160 }), .mins = frame.hull.mins, .maxs = frame.hull.maxs, .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
-    return try collision.contents(v.add(rise.end, .{ 0, 0, frame.state.view_height }), frame.slot) & c.MASK_WATER == 0;
+    const rise = try collision.trace(.{ .start = position, .end = v.add(position, .{ 0, 0, 1024 }), .mins = frame.hull.mins, .maxs = frame.hull.maxs, .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
+    if (rise.start_solid) return null;
+    if (try collision.contents(v.add(rise.end, .{ 0, 0, view }), frame.slot) & (c.MASK_WATER | c.CONTENTS_SOLID) != 0) return null;
+    var low: f32 = 0;
+    var high: f32 = rise.end[2] - position[2];
+    for (0..8) |_| {
+        const middle = (low + high) * 0.5;
+        if (try collision.contents(v.add(position, .{ 0, 0, middle + view }), frame.slot) & c.MASK_WATER != 0) low = middle else high = middle;
+    }
+    return high;
+}
+const lethal_liquids: u32 = c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_NITRO;
+/// Slick floor (ice) straight under the hull.
+fn slickUnder(frame: Frame, position: v.Vec3) !bool {
+    const floor = try frame.collision.trace(.{ .start = position, .end = v.add(position, .{ 0, 0, -4 }), .mins = frame.hull.mins, .maxs = frame.hull.maxs, .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
+    return floor.fraction < 1 and floor.slick;
+}
+/// How far ahead a body moving this fast still travels once it lets go,
+/// with a stride's margin: ground friction stops a runner within about
+/// 45 units; on slick floor only the opposing stroke (about 320 u/s²) does.
+fn stoppingReach(speed: f32, slick: bool) f32 {
+    const travel = if (slick) speed * speed / 640 else speed / 7;
+    return std.math.clamp(16 + travel, 24, 256);
+}
+/// Whether lethal liquid lies under the way within `reach` along the
+/// horizontal `heading`, before any floor (up to 256 units down). The way
+/// ends at a wall: what lies beyond it is not underfoot.
+fn lethalAlong(frame: Frame, position: v.Vec3, heading: v.Vec3, reach: f32) !bool {
+    const flat = v.normalize(.{ heading[0], heading[1], 0 });
+    if (v.length(flat) < 0.5) return false;
+    const open = try frame.collision.trace(.{ .start = position, .end = v.add(position, v.scale(flat, reach)), .mins = @splat(0), .maxs = @splat(0), .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
+    const limit = if (open.start_solid) 24 else @max(@as(f32, 24), reach * open.fraction);
+    var along: f32 = 24;
+    while (true) : (along += 24) {
+        const ahead = v.add(position, v.scale(flat, @min(along, limit)));
+        const below = try frame.collision.trace(.{ .start = ahead, .end = v.add(ahead, .{ 0, 0, -256 }), .mins = .{ -4, -4, 0 }, .maxs = .{ 4, 4, 0 }, .slot = frame.slot, .mask = @as(u32, c.MASK_PLAYERSOLID) | lethal_liquids });
+        if (below.fraction < 1 and below.contents & lethal_liquids != 0) return true;
+        if (along >= limit) return false;
+    }
+}
+/// Whether a hop taken now comes down in lethal liquid: a jump stays about
+/// two thirds of a second in the air, carried by the speed it has.
+fn hopLandsLethal(frame: Frame, position: v.Vec3, velocity: v.Vec3, direction: v.Vec3) !bool {
+    const speed = nav.horizontalDistance(velocity, @splat(0));
+    const heading = if (speed > 60) velocity else direction;
+    if (nav.horizontalDistance(heading, @splat(0)) < 0.01) return false;
+    return lethalAlong(frame, position, heading, @max(speed, 160) * 0.7 + 24);
+}
+/// The nearest floor out of lava, slime, nitrogen and water around a body
+/// standing in one, that it reaches by rising and then moving straight
+/// across: rings out to 576 units (a wide pool's rim).
+fn safeFloorNear(frame: Frame, position: v.Vec3) !?v.Vec3 {
+    const hull = frame.hull;
+    const feet = hull.mins[2] + 1;
+    for ([_]f32{ 40, 72, 112, 160, 208, 256, 336, 448, 576 }) |radius| {
+        var best: ?v.Vec3 = null;
+        var best_rise: f32 = 0;
+        for (0..12) |step| {
+            const angle = @as(f32, @floatFromInt(step)) * std.math.pi / 6;
+            const column = v.add(position, .{ @cos(angle) * radius, @sin(angle) * radius, 64 });
+            const floor = try frame.collision.trace(.{ .start = column, .end = v.add(column, .{ 0, 0, -192 }), .mins = hull.mins, .maxs = hull.maxs, .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
+            if (floor.start_solid or floor.all_solid or floor.fraction == 1 or floor.normal[2] < 0.7) continue;
+            if (try frame.collision.contents(v.add(floor.end, .{ 0, 0, feet }), frame.slot) & (lethal_liquids | c.MASK_WATER) != 0) continue;
+            // Up to the floor's height (and a step), then across to it.
+            const height = @max(position[2], floor.end[2]) + 18;
+            const rise = try frame.collision.trace(.{ .start = position, .end = .{ position[0], position[1], height }, .mins = hull.mins, .maxs = hull.maxs, .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
+            if (rise.start_solid or rise.fraction < 1) continue;
+            const across = try frame.collision.trace(.{ .start = rise.end, .end = .{ floor.end[0], floor.end[1], height }, .mins = hull.mins, .maxs = hull.maxs, .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
+            if (across.fraction < 1) continue;
+            const climb = floor.end[2] - position[2];
+            if (best == null or climb < best_rise) {
+                best = floor.end;
+                best_rise = climb;
+            }
+        }
+        if (best) |point| return point;
+    }
+    return null;
+}
+/// The nearest point at the same depth, reachable in a straight stroke, with air straight above.
+fn nearestAir(frame: Frame, position: v.Vec3, view: f32) !?v.Vec3 {
+    for ([_]f32{ 64, 128, 256, 384, 512 }) |radius| {
+        for (0..8) |step| {
+            const angle = @as(f32, @floatFromInt(step)) * std.math.pi / 4;
+            const point = v.add(position, .{ @cos(angle) * radius, @sin(angle) * radius, 0 });
+            const stroke = try frame.collision.trace(.{ .start = position, .end = point, .mins = frame.hull.mins, .maxs = frame.hull.maxs, .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
+            if (stroke.start_solid or stroke.fraction < 1) continue;
+            if (try airDistance(frame, point, view) != null) return point;
+        }
+    }
+    return null;
 }
 /// Outward normal of a ladder surface touching the player hull, if any (the
 /// same four-way probe the movement code uses to start climbing).
@@ -1765,4 +1984,58 @@ fn enteringWithin(frame: Frame, slot: u16, position: v.Vec3, stride: v.Vec3, mar
     const hull_maxs: v.Vec3 = .{ frame.hull.maxs[0], frame.hull.maxs[1], head };
     return route.overlaps(stride, hull_mins, hull_maxs, mins, maxs) and
         !route.overlaps(position, hull_mins, hull_maxs, mins, maxs);
+}
+
+const testing = std.testing;
+/// Floor at z = 0 for x < 100; beyond, a lava pool (surface z = 0) over a
+/// floor at z = -64. Every horizontal way is open.
+const Pool = struct {
+    fn trace(_: *anyopaque, request: collision_module.Request) anyerror!collision_module.Trace {
+        const down = request.end[2] < request.start[2] - 1 and @abs(request.end[0] - request.start[0]) < 0.5 and @abs(request.end[1] - request.start[1]) < 0.5;
+        if (!down) return .{ .fraction = 1, .end = request.end, .normal = .{ 0, 0, 1 } };
+        const liquid = request.start[0] >= 100;
+        const surface: f32 = if (liquid and request.mask & c.CONTENTS_LAVA == 0) -64 else 0;
+        const rest = surface - request.mins[2];
+        if (request.start[2] < rest or request.end[2] > rest) return .{ .fraction = 1, .end = request.end, .normal = .{ 0, 0, 1 } };
+        const fraction = (request.start[2] - rest) / (request.start[2] - request.end[2]);
+        return .{ .fraction = fraction, .end = .{ request.start[0], request.start[1], rest }, .normal = .{ 0, 0, 1 }, .contents = if (liquid and surface == 0) c.CONTENTS_LAVA else c.CONTENTS_SOLID };
+    }
+    fn contents(_: *anyopaque, point: v.Vec3, _: u16) anyerror!u32 {
+        return if (point[0] >= 100 and point[2] < 0) c.CONTENTS_LAVA else 0;
+    }
+};
+fn poolFrame(world: *data.World, slots: *Slots) Frame {
+    const static = struct {
+        var pool: u8 = 0;
+    };
+    return .{ .world = world, .slots = slots, .projections = &.{}, .service = undefined, .collision = .{ .context = &static.pool, .trace_fn = Pool.trace, .contents_fn = Pool.contents }, .table = undefined, .slot = 0, .entity = undefined, .state = .{}, .now = 0 };
+}
+test "careful footing looks as far ahead as the body slides, further on ice" {
+    try testing.expectEqual(@as(f32, 24), stoppingReach(0, false));
+    try testing.expect(stoppingReach(320, false) > 55 and stoppingReach(320, false) < 70);
+    try testing.expect(stoppingReach(320, true) > 170);
+    try testing.expect(stoppingReach(2000, true) <= 256);
+}
+test "lethal liquid ahead is seen within the reach and only there" {
+    var world = data.World.init(testing.allocator, 1);
+    defer world.deinit();
+    var slots: Slots = .{};
+    const frame = poolFrame(&world, &slots);
+    const at: v.Vec3 = .{ 40, 0, 24 };
+    try testing.expect(!try lethalAlong(frame, at, .{ 1, 0, 0 }, 24));
+    try testing.expect(try lethalAlong(frame, at, .{ 1, 0, 0 }, 80));
+    try testing.expect(!try lethalAlong(frame, at, .{ -1, 0, 0 }, 200));
+    // A run at the pool's edge would take a hop into it; a hop from rest away from it would not.
+    try testing.expect(try hopLandsLethal(frame, at, .{ 300, 0, 0 }, .{ 1, 0, 0 }));
+    try testing.expect(!try hopLandsLethal(frame, at, @splat(0), .{ -1, 0, 0 }));
+}
+test "a body in lava heads for the nearest dry floor" {
+    var world = data.World.init(testing.allocator, 1);
+    defer world.deinit();
+    var slots: Slots = .{};
+    const frame = poolFrame(&world, &slots);
+    const out = (try safeFloorNear(frame, .{ 150, 0, -40 })).?;
+    try testing.expect(out[0] < 100);
+    try testing.expectApproxEqAbs(@as(f32, 24), out[2], 0.01);
+    try testing.expect(out[0] > 60);
 }

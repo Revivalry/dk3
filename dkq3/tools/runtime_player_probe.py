@@ -1595,6 +1595,47 @@ def e3_creatures_scenario(issue, capture, log):
             "scope": "e2m1a lycanthir and plague rat fixtures attack the player and flinch with hita under diagnostic hits; leaps, evasion, resurrection and Gold timing parity unqualified"}
 
 
+def rats_scenario(issue, capture, log):
+    """Each rat spawned about 200 units from the player on a diagonal must close in and bite: the
+    player's health drops (a leap alone never damages)."""
+    issue("developer 1")
+    deadline = time.monotonic() + 15
+    origin = [0.0, 0.0, 0.0]
+    while origin == [0.0, 0.0, 0.0] and time.monotonic() < deadline:
+        issue("viewpos", 0.5)
+        origin = [float(value) for value in re.findall(r"zig viewpos: (-?[\d.]+) (-?[\d.]+) (-?[\d.]+)", log.read_text(errors="replace"))[-1]]
+    results = {}
+    for classname in ("monster_plague_rat", "monster_piperat"):
+        issue("dk3_runtime_probe_health 1000")
+        for dx, dy in ((140, 140), (-140, 140), (140, -140), (-140, -140), (200, 0), (0, 200), (-200, 0), (0, -200)):
+            text = log.read_text(errors="replace")
+            issue(f"dk3_runtime_actor_spawn {classname} {origin[0] + dx:.0f} {origin[1] + dy:.0f} {origin[2] + 16:.0f} 0 e2m1a 1 ground", 0.4)
+            found = re.findall(rf"actor fixture: id=(\d+) class={classname} .* grounded=1", log.read_text(errors="replace")[len(text):])
+            if found:
+                identity = int(found[-1])
+                break
+        else:
+            raise RuntimeError(f"no clear spot for {classname}")
+        mark = len(log.read_text(errors="replace"))
+        deadline = time.monotonic() + 15
+        bitten = None
+        while time.monotonic() < deadline and bitten is None:
+            issue("dk3_runtime_inventory", 0.3)
+            issue("dk3_runtime_actors", 0.2)
+            health = re.findall(r"zig inventory .*health=(-?\d+)", log.read_text(errors="replace")[mark:])
+            if health and int(health[-1]) < 1000:
+                bitten = int(health[-1])
+        text = log.read_text(errors="replace")[mark:]
+        states = re.findall(rf"zig actor: id={identity} state=(\w+) health=-?\d+ pos=([\d.,-]+)", text)
+        if bitten is None:
+            raise RuntimeError(f"{classname} {identity} never bit the player: {states[:2]} .. {states[-2:]}")
+        results[classname] = {"id": identity, "health": bitten, "first": states[0] if states else None, "last": states[-1] if states else None}
+        capture(f"bitten-{classname}")
+        issue(f"dk3_runtime_probe_health 1 {identity}")
+        issue(f"dk3_runtime_hurt {identity} 1000", 0.5)
+    return {"rats": results, "scope": "e2m1a plague and pipe rat fixtures spawned about 200 units off on a diagonal close in and bite the player (health drop); nest routing off the player areas and Gold timing parity unqualified"}
+
+
 def e3_knights_scenario(issue, capture, log):
     issue("developer 1")
     issue("dk3_runtime_probe_health 10000")
@@ -1723,6 +1764,438 @@ def sidekick_talk_scenario(issue, capture, log):
     return {"lines": said, "scope": "e3m1a Superfly says his authored talk-node line once when he reaches the node with the player near and in sight; audibility and the other talk nodes unqualified"}
 
 
+def sidekick_stop_scenario(issue, capture, log):
+    """e1m4b's stop node (1089,1030,-503) makes Superfly wait where he stands while the player goes
+    on; its teleport node (2022,991,-256) sends him to (1319,-508,-528) and ends the wait, and he
+    follows again (reference CLIENT_HandleStopGoingFurther, CLIENT_HandleTeleportAndComeNear)."""
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+
+    def superfly(after=0):
+        rows = re.findall(r"dk3 sidekick: t=\d+ who=superfly [^\n]*?pos=(-?\d+),(-?\d+),(-?\d+) [^\n]* why=(\w*)", log.read_text(errors="replace")[after:])
+        return [((int(x), int(y), int(z)), why) for x, y, z, why in rows]
+
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and not superfly():
+        issue("dk3_runtime_actors", 0.5)
+    if not superfly():
+        issue("viewpos", 0.3)
+        x, y, z = re.findall(r"zig viewpos: (-?[\d.]+) (-?[\d.]+) (-?[\d.]+)", log.read_text(errors="replace"))[-1]
+        issue(f"dk3_runtime_actor_spawn superfly {float(x) + 64:.0f} {float(y):.0f} {float(z):.0f} 0 e1m4b 1 ground", 2.0)
+    if not superfly():
+        raise RuntimeError("Superfly is not in e1m4b")
+    # Bring him along to the stop node: place the player beside it, wait for him, then step on it.
+    issue("dk3_runtime_place 1089 1130 -480 0", 0.5)
+    mark = len(log.read_text(errors="replace"))
+    issue("dk3_runtime_place 1089 1030 -480 0", 2.0)
+    if "dk3 sidekick node: stop" not in log.read_text(errors="replace")[mark:]:
+        raise RuntimeError("the stop node did not fire")
+    issue("dk3_runtime_place 1500 1030 -480 0", 0.5)
+    mark = len(log.read_text(errors="replace"))
+    time.sleep(5)
+    waiting = superfly(mark)
+    if not waiting or any(why != "stopped" for _, why in waiting) or math.dist(waiting[0][0], waiting[-1][0]) > 48:
+        raise RuntimeError(f"Superfly did not wait at the stop: {waiting}")
+    capture("superfly-waiting")
+    mark = len(log.read_text(errors="replace"))
+    issue("dk3_runtime_place 2022 991 -240 0", 3.0)
+    if "dk3 sidekick node: teleport" not in log.read_text(errors="replace")[mark:]:
+        raise RuntimeError("the teleport node did not fire")
+    time.sleep(3)
+    resumed = superfly(mark)
+    if not resumed or resumed[-1][1] == "stopped":
+        raise RuntimeError(f"the teleport node did not end the wait: {resumed}")
+    capture("superfly-resumed")
+    return {"waiting": waiting, "resumed": resumed, "scope": "e1m4b stop node holds Superfly while the player leaves; the teleport node sends him on and he no longer waits; the stop line's audibility and the second sidekick's stagger unqualified"}
+
+
+def sidekick_water_scenario(issue, capture, log):
+    """Superfly follows the player to the bottom of e1m1c's 704-unit pool for 60 s: he dives after
+    the player, surfaces for air and dives again, and must not drown (his air refills at the
+    surface). Every other actor is removed first, so only the water can hurt him."""
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+    issue("dk3_runtime_actors", 0.5)
+    actors = re.findall(r"zig actor: id=(\d+) state=(?!dead)\w+ [^\n]*class=(\w+)", log.read_text(errors="replace"))
+    for identity in {i for i, kind in actors if kind not in ("superfly", "mikiko", "mikikofly")}:
+        issue(f"dk3_runtime_probe_health 1 {identity}", 0.02)
+        issue(f"dk3_runtime_hurt {identity} 1000", 0.02)
+    mark = len(log.read_text(errors="replace"))
+    if not any(kind == "superfly" for _, kind in actors):
+        # The first clear spot in the pool, near its surface.
+        for x, y in ((1744, 272), (1650, 272), (1840, 272), (1744, 180), (1744, 360), (1600, 150), (1900, 400)):
+            before = len(log.read_text(errors="replace"))
+            issue(f"dk3_runtime_actor_spawn superfly {x} {y} 380 0 e1m1c 1", 0.6)
+            if "class=superfly" in log.read_text(errors="replace")[before:]:
+                pool = (x, y)
+                break
+        else:
+            raise RuntimeError("no clear spot for Superfly in the pool")
+    else:
+        pool = (1744, 272)
+    # He starts in the pool beside the player and follows him to the bottom.
+    bottom = f"dk3_runtime_place {pool[0]} {pool[1] - 40} -250 0"
+    issue(bottom, 0.5)
+    deadline = time.monotonic() + 60
+    rows = []
+    while time.monotonic() < deadline:
+        issue(bottom, 2.0)
+        rows = re.findall(r"dk3 sidekick: t=(\d+) who=superfly health=(-?\d+)/(\d+) pos=(\S+) [^\n]* water=(\d) ", log.read_text(errors="replace")[mark:])
+        if rows and int(rows[-1][1]) <= 0:
+            break
+    submerged = sum(1 for row in rows if row[4] == "3")
+    capture("superfly-pool")
+    if not rows or int(rows[-1][1]) < int(rows[-1][2]):
+        raise RuntimeError(f"Superfly lost health in the water: {rows[-3:]}")
+    if submerged < 10:
+        raise RuntimeError(f"Superfly was not held under water long enough to test: {submerged} submerged samples")
+    return {"samples": len(rows), "submerged": submerged, "last": rows[-1], "scope": "e1m1c pool: Superfly follows the player under water for 60 s, surfacing and diving again, without drowning; enemies removed; the player's own air is diagnostic health"}
+
+
+# Lethal-pool scenarios: brush contents (CONTENTS_SLIME 16, CONTENTS_LAVA 8, CONTENTS_DK3_NITRO 0x800).
+HAZARD_SCENARIOS = {"sidekick-nitro": (0x800, "nitrogen"), "sidekick-slime": (16, "slime"), "sidekick-lava": (8, "lava")}
+
+
+def hazard_volumes(engine, map_name, mask):
+    """Axis-aligned bounds of the map's brushes with any of `mask`'s contents (read from the
+    engine generation's converted BSP: shader content flags, axial brush sides)."""
+    import struct
+    import zipfile
+    with zipfile.ZipFile(engine / "share/dk3/dk3-maps.pk3") as package:
+        data = package.read(f"maps/{map_name}.bsp")
+    lump = lambda index: struct.unpack_from("<ii", data, 8 + index * 8)
+    offset, length = lump(1)
+    shaders = [struct.unpack_from("<64sii", data, offset + index * 72) for index in range(length // 72)]
+    offset, length = lump(2)
+    planes = [struct.unpack_from("<4f", data, offset + index * 16) for index in range(length // 16)]
+    offset, length = lump(8)
+    brushes = [struct.unpack_from("<3i", data, offset + index * 12) for index in range(length // 12)]
+    side_offset, _ = lump(9)
+    volumes = []
+    for first, count, shader in brushes:
+        if shaders[shader][2] & mask == 0:
+            continue
+        low, high = [-1e9] * 3, [1e9] * 3
+        for side in range(first, first + count):
+            plane = planes[struct.unpack_from("<2i", data, side_offset + side * 8)[0]]
+            normal, distance = plane[:3], plane[3]
+            for axis in range(3):
+                if abs(normal[axis] - 1) < 1e-4:
+                    high[axis] = min(high[axis], distance)
+                elif abs(normal[axis] + 1) < 1e-4:
+                    low[axis] = max(low[axis], -distance)
+        if all(abs(value) < 1e8 for value in low + high) and high[0] - low[0] >= 48 and high[1] - low[1] >= 48:
+            volumes.append((tuple(low), tuple(high)))
+    return volumes
+
+
+def spawn_superfly_beside(issue, log, map_name):
+    """Superfly beside the player (an existing one is kept): the first clear floor round the
+    player's settled position. Returns his persistent id."""
+    issue("dk3_runtime_actors", 0.5)
+    found = re.findall(r"zig actor: id=(\d+) state=(?!dead)\w+ [^\n]*class=superfly", log.read_text(errors="replace"))
+    if found:
+        return found[-1]
+    issue("viewpos", 0.3)
+    x, y, z = (float(value) for value in re.findall(r"zig viewpos: (-?[\d.]+) (-?[\d.]+) (-?[\d.]+)", log.read_text(errors="replace"))[-1])
+    for dx, dy in ((-48, 0), (48, 0), (0, -48), (0, 48), (-64, 0), (64, 0), (0, -64), (0, 64), (-40, -40), (40, 40), (-40, 40), (40, -40)):
+        before = len(log.read_text(errors="replace"))
+        # (Above the player's origin: Superfly's hull reaches lower; the server grounds him.)
+        issue(f"dk3_runtime_actor_spawn superfly {x + dx:.0f} {y + dy:.0f} {z + 16:.0f} 0 {map_name} 1 ground", 0.6)
+        spawned = re.findall(r"dk3 actor fixture: id=(\d+) class=superfly [^\n]*water=(\d+)", log.read_text(errors="replace")[before:])
+        if spawned and spawned[-1][1] == "0" and abs(z - viewpos_z(issue, log, spawned[-1][0])) < 40:
+            return spawned[-1][0]
+        if spawned:
+            # In liquid or fallen below the player's floor: not a fixture.
+            issue(f"dk3_runtime_probe_health 1 {spawned[-1][0]}", 0.02)
+            issue(f"dk3_runtime_hurt {spawned[-1][0]} 100000", 0.3)
+    raise RuntimeError(f"no clear floor for Superfly beside the player in {map_name} at {x:.0f},{y:.0f},{z:.0f}")
+
+
+def viewpos_z(issue, log, identity):
+    """An actor's height from the actor listing (z of `pos=`)."""
+    issue("dk3_runtime_actors", 0.4)
+    found = re.findall(rf"zig actor: id={identity} [^\n]*?pos=\(?(-?[\d.]+),\s*(-?[\d.]+),\s*(-?[\d.]+)", log.read_text(errors="replace"))
+    return float(found[-1][2]) if found else float("inf")
+
+
+def dry_floor(issue, log, map_name, x, y, z):
+    """The origin height of a player-sized body standing on dry floor under (x, y, z), probed with
+    a throwaway fixture the server grounds (within 128 units) and then removes; None without one."""
+    before = len(log.read_text(errors="replace"))
+    issue(f"dk3_runtime_actor_spawn monster_plague_rat {x:.0f} {y:.0f} {z:.0f} 0 {map_name} 1 ground", 0.4)
+    spawned = re.findall(r"dk3 actor fixture: id=(\d+) class=monster_plague_rat [^\n]*water=(\d+)", log.read_text(errors="replace")[before:])
+    if not spawned:
+        return None
+    identity, water = spawned[-1]
+    height = viewpos_z(issue, log, identity)
+    issue(f"dk3_runtime_probe_health 1 {identity}", 0.02)
+    issue(f"dk3_runtime_hurt {identity} 100000", 0.2)
+    # (The rat's origin sits lower over its floor than a player's: 24 units for the player.)
+    return None if water != "0" or not math.isfinite(height) else height
+
+
+def settled_viewpos(issue, log):
+    """The player's view position once it stops changing (a placement falls to the floor)."""
+    last = None
+    for _ in range(8):
+        issue("viewpos", 0.4)
+        found = re.findall(r"zig viewpos: (-?[\d.]+) (-?[\d.]+) (-?[\d.]+)", log.read_text(errors="replace"))
+        current = tuple(float(value) for value in found[-1]) if found else None
+        if current is not None and last is not None and math.dist(current, last) < 1:
+            return current
+        last = current
+    return last
+
+
+def sidekick_hazard_scenario(issue, capture, log, engine, map_name, mask, label):
+    """Superfly follows the player along the rims of the map's lethal pools (lava, slime or
+    nitrogen) for about 70 s: the player stands on the floor beside each pool's sides in turn, so
+    the follow spots behind and beside him often lie over the liquid. Every other actor is removed
+    and Superfly is given 10000 health: any loss is contact with the pool (nitrogen kills a party
+    member three seconds after contact whatever its health)."""
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+    volumes = hazard_volumes(engine, map_name, mask)
+    if not volumes:
+        raise RuntimeError(f"{map_name} has no {label} pools")
+    def clear_hostiles():
+        # Monsters the map spawns later (triggers, waves) are removed too: only the pools may hurt.
+        before = len(log.read_text(errors="replace"))
+        issue("dk3_runtime_actors", 0.4)
+        actors = re.findall(r"zig actor: id=(\d+) state=(?!dead)\w+ [^\n]*class=(\w+)", log.read_text(errors="replace")[before:])
+        for identity in {i for i, kind in actors if kind not in ("superfly", "mikiko", "mikikofly")}:
+            issue(f"dk3_runtime_probe_health 1 {identity}", 0.02)
+            issue(f"dk3_runtime_hurt {identity} 1000", 0.02)
+
+    clear_hostiles()
+
+    # Rim stands: 56 units out from the middle of each side of each pool, on a floor no lower
+    # than the pool's top (the player must land there, not in the pool or below it).
+    rims = []
+    for low, high in sorted(volumes, key=lambda box: -(box[1][0] - box[0][0]) * (box[1][1] - box[0][1]))[:6]:
+        middle = ((low[0] + high[0]) / 2, (low[1] + high[1]) / 2)
+        for x, y, yaw in ((low[0] - 56, middle[1], 0), (high[0] + 56, middle[1], 180), (middle[0], low[1] - 56, 90), (middle[0], high[1] + 56, 270)):
+            # The rim itself, or a catwalk above the pool's edge (e1m6c's rooms).
+            for lift in (40, 160, 280):
+                floor = dry_floor(issue, log, map_name, x, y, high[2] + lift)
+                if floor is not None and floor >= high[2] - 8:
+                    rims.append((x, y, floor + 32, yaw))
+                    break
+        if len(rims) >= 8:
+            break
+    if not rims:
+        raise RuntimeError(f"no floor beside any {label} pool in {map_name}: {volumes[:4]}")
+    first = rims[0]
+    issue(f"dk3_runtime_place {first[0]:.0f} {first[1]:.0f} {first[2]:.0f} {first[3]}", 0.5)
+
+    def superfly(after=0):
+        rows = re.findall(r"dk3 sidekick: t=\d+ who=superfly health=(-?\d+)/(\d+) pos=(-?\d+),(-?\d+),(-?\d+) [^\n]* water=(\d) escaping=(\d) [^\n]*why=(\S*)", log.read_text(errors="replace")[after:])
+        return [(int(health), (int(x), int(y), int(z)), int(water), int(escaping), why) for health, _, x, y, z, water, escaping, why in rows]
+
+    settled_viewpos(issue, log)
+    identity = spawn_superfly_beside(issue, log, map_name)
+    issue(f"dk3_runtime_probe_health 10000 {identity}", 0.2)
+    mark = len(log.read_text(errors="replace"))
+    deadline = time.monotonic() + 70
+    index = 0
+    while time.monotonic() < deadline:
+        rim = rims[index % len(rims)]
+        issue(f"dk3_runtime_place {rim[0]:.0f} {rim[1]:.0f} {rim[2]:.0f} {rim[3]}", 3.0)
+        clear_hostiles()
+        index += 1
+        rows = superfly(mark)
+        if rows and rows[-1][0] <= 0:
+            break
+    rows = superfly(mark)
+    capture(f"superfly-{label}")
+    catchups = re.findall(r"dk3 sidekick: catch-up who=superfly reason=(\w+)", log.read_text(errors="replace")[mark:])
+    if not rows:
+        raise RuntimeError("no Superfly status lines")
+    wet = [row for row in rows if row[2] or row[3]]
+    if wet:
+        raise RuntimeError(f"Superfly was in the {label}: {wet[:6]}")
+    if rows[-1][0] <= 0:
+        raise RuntimeError(f"Superfly died: {rows[-4:]}")
+    # Lava and slime hurt every tenth of a second and nitrogen kills within three: a touch between
+    # the one-second samples still shows as a large loss; small losses elsewhere (a hurting volume
+    # on the way, a landing) are reported.
+    lost = rows[0][0] - min(row[0] for row in rows)
+    if lost >= 100:
+        raise RuntimeError(f"Superfly lost {lost} health following round the {label}: {rows[-4:]}")
+    return {"rims": len(rims), "pools": len(volumes), "samples": len(rows), "catch_ups": catchups, "health_lost": lost, "health": rows[-1][0], "scope": f"{map_name}: Superfly follows the player round {label} pool rims for 70 s, never in the {label} at a sample and alive; enemies removed"}
+
+
+def sidekick_surface_scenario(issue, capture, log):
+    """Superfly starts in e1m1c's pool while the player stands dry at the map's start: he must
+    get out of the water (or be caught up) rather than sink, and never stay with his head under
+    for more than 3 s while nothing calls him down."""
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+    # Dry floor: the map's authored player start from e1m1b's side, 1200 units from the pool.
+    start = (680, -152, 904)
+    issue("dk3_runtime_actors", 0.5)
+    actors = re.findall(r"zig actor: id=(\d+) state=(?!dead)\w+ [^\n]*class=(\w+)", log.read_text(errors="replace"))
+    for identity in {i for i, kind in actors if kind not in ("superfly", "mikiko", "mikikofly")}:
+        issue(f"dk3_runtime_probe_health 1 {identity}", 0.02)
+        issue(f"dk3_runtime_hurt {identity} 1000", 0.02)
+    existing = re.findall(r"zig actor: id=(\d+) state=(?!dead)\w+ [^\n]*class=superfly", log.read_text(errors="replace"))
+    mark = len(log.read_text(errors="replace"))
+    # Into the pool: the existing Superfly is sent there by placing the player in it first.
+    issue("dk3_runtime_place 1744 232 300 0", 0.5)
+    if not existing:
+        for x, y in ((1744, 272), (1650, 272), (1840, 272), (1744, 180), (1744, 360)):
+            before = len(log.read_text(errors="replace"))
+            issue(f"dk3_runtime_actor_spawn superfly {x} {y} 300 0 e1m1c 1", 0.6)
+            if "class=superfly" in log.read_text(errors="replace")[before:]:
+                break
+        else:
+            raise RuntimeError("no clear spot for Superfly in the pool")
+    time.sleep(8)
+    mark = len(log.read_text(errors="replace"))
+    issue(f"dk3_runtime_place {start[0]} {start[1]} {start[2]} 0", 0.5)
+    rows = []
+    deadline = time.monotonic() + 45
+    while time.monotonic() < deadline:
+        time.sleep(1)
+        rows = re.findall(r"dk3 sidekick: t=(\d+) who=superfly health=(-?\d+)/(\d+) pos=(\S+) [^\n]* water=(\d) ", log.read_text(errors="replace")[mark:])
+        if len(rows) > 5 and all(row[4] == "0" for row in rows[-5:]):
+            break
+    capture("superfly-surface")
+    catchups = re.findall(r"dk3 sidekick: catch-up who=superfly reason=(\w+)[^\n]*", log.read_text(errors="replace")[mark:])
+    if not rows:
+        raise RuntimeError("no Superfly status lines")
+    longest = run = 0
+    for row in rows:
+        run = run + 1 if row[4] == "3" else 0
+        longest = max(longest, run)
+    if rows[-1][4] != "0":
+        raise RuntimeError(f"Superfly is still in the water after 45 s: {rows[-5:]}")
+    if float(rows[-1][3].split(",")[2]) < -400:
+        raise RuntimeError(f"Superfly fell out of the world: {rows[-5:]}")
+    if longest > 3:
+        raise RuntimeError(f"Superfly stayed under water {longest} s: {rows}")
+    if int(rows[-1][1]) < int(rows[0][1]):
+        raise RuntimeError(f"Superfly lost health: {rows[0][1]} -> {rows[-1][1]}")
+    return {"samples": len(rows), "longest_submerged_s": longest, "catch_ups": catchups, "last": rows[-1], "scope": "e1m1c: Superfly leaves the pool for the dry player instead of sinking; catch-up may bring him when the way is long"}
+
+
+def sidekick_catchup_scenario(issue, capture, log):
+    """e1m4b: with Superfly beside the player, the player is moved 2850 units away, across the map:
+    Superfly, further than 1536 for 3 s, must reappear near the player within 20 s, where the
+    player sees neither his departure nor his arrival (logged `catch-up`)."""
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+
+    def superfly(after=0):
+        rows = re.findall(r"dk3 sidekick: t=\d+ who=superfly [^\n]*?pos=(-?\d+),(-?\d+),(-?\d+) [^\n]* why=(\S*)", log.read_text(errors="replace")[after:])
+        return [((int(x), int(y), int(z)), why) for x, y, z, why in rows]
+
+    issue("developer 2")
+
+    def clear_hostiles():
+        before = len(log.read_text(errors="replace"))
+        issue("dk3_runtime_actors", 0.4)
+        actors = re.findall(r"zig actor: id=(\d+) state=(?!dead)\w+ [^\n]*class=(\w+)", log.read_text(errors="replace")[before:])
+        for identity in {i for i, kind in actors if kind not in ("superfly", "mikiko", "mikikofly")}:
+            issue(f"dk3_runtime_probe_health 1 {identity}", 0.02)
+            issue(f"dk3_runtime_hurt {identity} 1000", 0.02)
+
+    clear_hostiles()
+    issue("dk3_runtime_place 1089 1130 -480 0", 0.5)
+    settled_viewpos(issue, log)
+    # The map's own Superfly joins the player here; a fixture only without him.
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and not superfly():
+        time.sleep(0.5)
+    if not superfly():
+        spawn_superfly_beside(issue, log, "e1m4b")
+    clear_hostiles()
+    time.sleep(3)
+    if not superfly():
+        raise RuntimeError("Superfly is not flown in e1m4b")
+    # Beside the shotcycler and rockets on the far side of the map, 2850 units away.
+    far = (1054, -1654, 200)
+    mark = len(log.read_text(errors="replace"))
+    issue(f"dk3_runtime_place {far[0]} {far[1]} {far[2]} 90", 0.5)
+    landed = settled_viewpos(issue, log)
+    deadline = time.monotonic() + 20
+    caught = []
+    while time.monotonic() < deadline:
+        clear_hostiles()
+        time.sleep(0.6)
+        caught = re.findall(r"dk3 sidekick: catch-up who=superfly reason=(\w+) from=(\S+) to=(-?\d+),(-?\d+),(-?\d+)", log.read_text(errors="replace")[mark:])
+        if caught:
+            break
+    time.sleep(2)
+    rows = superfly(mark)
+    capture("superfly-caught-up")
+    if not rows:
+        raise RuntimeError("no Superfly status lines")
+    distance = math.dist(rows[-1][0], far)
+    if not caught:
+        pending = sorted(set(re.findall(r"catch-up pending who=superfly reason=(\w+) \(([^)]*)\)", log.read_text(errors="replace")[mark:])))
+        raise RuntimeError(f"Superfly did not catch up: {distance:.0f} from the player at {landed}; pending {pending}; {rows[-3:]}")
+    if distance > 512:
+        raise RuntimeError(f"Superfly caught up but is {distance:.0f} from the player: {caught}; {rows[-3:]}")
+    return {"catch_ups": caught, "final_distance": round(distance), "last": rows[-1], "scope": "e1m4b: Superfly left 2850 units behind reappears near the player out of his view; the arrival's invisibility is judged by the server's sight test, not the capture"}
+
+
+def conveyor_meat_scenario(issue, capture, log):
+    """e1m5a "Processing": the START_ON train `4am` carries its body parts down the belt right
+    after the map loads, before any trigger (reference train_find), and then waits at slice1."""
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+    samples = []
+    deadline = time.monotonic() + 16
+    while time.monotonic() < deadline:
+        mark = len(log.read_text(errors="replace"))
+        issue("dk3_runtime_trains", 1.0)
+        row = re.findall(r"zig train id=\d+ name=4am phase=(\w+) [^\n]* pos=(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)", log.read_text(errors="replace")[mark:])
+        if row:
+            samples.append((row[-1][0], float(row[-1][1])))
+    moving = [x for phase, x in samples if phase == "moving"]
+    if not moving or max(x for _, x in samples) < 400:
+        raise RuntimeError(f"4am did not carry its meat down the belt after load: {samples}")
+    issue("dk3_runtime_place -560 1840 -780 0", 0.3)
+    issue("dk3_look 0 15", 1.0)
+    capture("belt")
+    return {"samples": samples, "scope": "e1m5a 4am leaves its wait-for-trigger first corner at load (START_ON) and crosses the belt; the timed chopper/pile show after the trigger is unchanged"}
+
+
+def robot_gibs_scenario(issue, capture, log):
+    """A lasergat destroyed in plain view: its mechanical chunks render (they now use the scripted
+    `@alpha` variant of their skin, depth-tested, not the 2D shader that drew through walls)."""
+    issue("developer 1")
+    issue("dk3_runtime_probe_health 10000")
+    deadline = time.monotonic() + 15
+    origin = [0.0, 0.0, 0.0]
+    while origin == [0.0, 0.0, 0.0] and time.monotonic() < deadline:
+        issue("viewpos", 0.5)
+        origin = [float(value) for value in re.findall(r"zig viewpos: (-?[\d.]+) (-?[\d.]+) (-?[\d.]+)", log.read_text(errors="replace"))[-1]]
+    issue("dk3_look 90 10", 0.3)
+    for depth in range(160, 400, 40):
+        mark = len(log.read_text(errors="replace"))
+        issue(f"dk3_runtime_actor_spawn monster_lasergat {origin[0]:.0f} {origin[1] + depth:.0f} {origin[2]:.0f} 270 e1m3b 1 ground", 0.4)
+        found = re.findall(r"actor fixture: id=(\d+) class=monster_lasergat", log.read_text(errors="replace")[mark:])
+        if found:
+            break
+    else:
+        raise RuntimeError("no clear spot ahead for the lasergat")
+    identity = int(found[-1])
+    issue("dk3_runtime_pacify_monsters", 0.2)
+    capture("before-gibs")
+    issue(f"dk3_runtime_probe_health 1 {identity}", 0.05)
+    issue(f"dk3_runtime_hurt {identity} 1000", 0.15)
+    mark = len(log.read_text(errors="replace"))
+    issue("dk3_runtime_presentation", 0.05)
+    capture("gibs")
+    presented = [(int(g), int(k)) for g, k in re.findall(r"dk3 presentation: .* gibs=(\d+) chunks=(\d+)", log.read_text(errors="replace")[mark:])]
+    if not presented or presented[-1][0] + presented[-1][1] == 0:
+        raise RuntimeError(f"no mechanical chunks were drawn: {presented}")
+    return {"depth": depth, "presented": presented, "scope": "e1m3b: a destroyed lasergat's chunks render in view with the scripted @alpha skin variant; occlusion behind walls follows from that shader's depth test (code), not from a capture"}
+
+
 def sidekick_hud_scenario(issue, capture, log):
     issue("developer 1")
     issue("dk3_runtime_probe_health 10000")
@@ -1763,7 +2236,25 @@ def sidekick_hud_scenario(issue, capture, log):
         raise RuntimeError(f"the window did not order Superfly to come: {orders}")
     if not any(o[1] == "follow" for o in orders):
         raise RuntimeError(f"the default companion bind gave no order: {orders}")
-    return {"orders": orders, "scope": "e3m1a sidekick flaps fade in, hurt face and bars, command window open/step/STAY to Mikiko, swap and COME to Superfly, default companion bind; voice acknowledgements and ammo gauge levels visual only"}
+    # The reference's HUD cycle: a profile without the cycle binds gets them (o, k, l, ;); o steps
+    # weapons, items, Superfly's then Mikiko's command mode; ; gives the lit order.
+    mark = len(log.read_text(errors="replace"))
+    for key in ("o", "k", "l", "SEMICOLON"):
+        issue(f"bind {key}", 0.1)
+    binds = dict(re.findall(r'"(\w+)" = "([^"]*)"', re.sub(r"\^\d", "", log.read_text(errors="replace")[mark:])))
+    if [binds.get(key) for key in ("o", "k", "l", ";")] != ["hud_cycle", "hud_prev", "hud_next", "hud_use"] and [binds.get(key) for key in ("o", "k", "l", "SEMICOLON")] != ["hud_cycle", "hud_prev", "hud_next", "hud_use"]:
+        raise RuntimeError(f"the HUD cycle binds were not added: {binds}")
+    issue("hud_cycle", 0.6)
+    capture("cycle-superfly")
+    issue("hud_next", 0.3)
+    issue("hud_use", 1.0)
+    issue("hud_cycle", 0.6)
+    capture("cycle-mikiko")
+    issue("hud_use", 1.0)
+    cycled = re.findall(r"companion order: (\w+) (\w+) -> (\w+) refused=(\d)", log.read_text(errors="replace")[mark:])
+    if [o[0] for o in cycled][:2] != ["superfly", "mikiko"]:
+        raise RuntimeError(f"the HUD cycle did not order Superfly then Mikiko: {cycled}")
+    return {"orders": orders, "cycled": cycled, "binds": binds, "scope": "e3m1a sidekick flaps fade in, hurt face and bars, command window open/step/STAY to Mikiko, swap and COME to Superfly, default companion bind, HUD cycle binds added to a profile without them and the cycle ordering Superfly then Mikiko; voice acknowledgements and ammo gauge levels visual only"}
 
 
 def save_preview_scenario(issue, capture, log, home):
@@ -2285,7 +2776,7 @@ def run(args):
         home = Path(temporary)
         stage_client_modules(args.prefix, home)
         command = [str(args.guard), "--headless", "--screen", "960x540",
-                   "--timeout", "180s" if args.scenario == "controllers" else "90s", "--mem", "8G", "--", str(args.engine / "bin/dk3")]
+                   "--timeout", "180s" if args.scenario in ("controllers", "crox", "sidekick-water", "sidekick-surface", "sidekick-nitro", "sidekick-slime", "sidekick-lava") else "90s", "--mem", "8G", "--", str(args.engine / "bin/dk3")]
         settings = client_settings(args.engine, home, args.renderer, args.workers)
         if args.scenario in ("opening-actors", "bridge", "trigger-bounds", "crox", "rockgat", "tree-settlement", "frog-landing", "arena-damage"):
             settings["g_spSkill"] = "3"
@@ -2346,8 +2837,25 @@ def run(args):
                     result = guard_scenario(issue, capture, log)
                 elif args.scenario == "e2-melee":
                     result = e2_melee_scenario(issue, capture, log)
+                elif args.scenario == "conveyor-meat":
+                    result = conveyor_meat_scenario(issue, capture, log)
+                elif args.scenario == "robot-gibs":
+                    result = robot_gibs_scenario(issue, capture, log)
+                elif args.scenario == "sidekick-water":
+                    result = sidekick_water_scenario(issue, capture, log)
+                elif args.scenario == "sidekick-surface":
+                    result = sidekick_surface_scenario(issue, capture, log)
+                elif args.scenario == "sidekick-catchup":
+                    result = sidekick_catchup_scenario(issue, capture, log)
+                elif args.scenario in HAZARD_SCENARIOS:
+                    mask, label = HAZARD_SCENARIOS[args.scenario]
+                    result = sidekick_hazard_scenario(issue, capture, log, args.engine, args.map, mask, label)
+                elif args.scenario == "sidekick-stop":
+                    result = sidekick_stop_scenario(issue, capture, log)
                 elif args.scenario == "e3-creatures":
                     result = e3_creatures_scenario(issue, capture, log)
+                elif args.scenario == "rats":
+                    result = rats_scenario(issue, capture, log)
                 elif args.scenario == "e4-fighters":
                     result = e4_fighters_scenario(issue, capture, log)
                 elif args.scenario == "e4-gunfighters":
@@ -2445,7 +2953,7 @@ def main():
     parser.add_argument("--report", type=Path, default=None)
     parser.add_argument("--map")
     parser.add_argument("--checkpoint", type=Path, help="Captured native save for a checkpoint diagnostic")
-    parser.add_argument("--scenario", choices=("movement", "lift", "secret", "rotation", "inventory", "effects", "combat", "presentation", "impacts", "ballistics", "grenade-contact", "melee", "status-weapons", "area-weapons", "attached-charge", "shockwave", "linked-projectiles", "beams", "returning-fire", "meteors", "zeus", "controllers", "bridge", "trigger-bounds", "opening-actors", "crox", "rockgat", "tree-settlement", "frog-landing", "arena-damage", "save", "travel", "civilians", "workers", "worker-wander", "surgeon", "lasergat", "e2-melee", "e3-knights", "e3-creatures", "e4-fighters", "seal-cover", "kage", "e4-gunfighters", "sidekick-talk", "sidekick-hud", "save-preview", "difficulty", "dormant-effects", "guard-aim", "human-poses", "ragdoll-deaths", "guard", "navigation", "laser"), default="movement")
+    parser.add_argument("--scenario", choices=("movement", "lift", "secret", "rotation", "inventory", "effects", "combat", "presentation", "impacts", "ballistics", "grenade-contact", "melee", "status-weapons", "area-weapons", "attached-charge", "shockwave", "linked-projectiles", "beams", "returning-fire", "meteors", "zeus", "controllers", "bridge", "trigger-bounds", "opening-actors", "crox", "rockgat", "tree-settlement", "frog-landing", "arena-damage", "save", "travel", "civilians", "workers", "worker-wander", "surgeon", "lasergat", "e2-melee", "e3-knights", "e3-creatures", "rats", "e4-fighters", "seal-cover", "kage", "e4-gunfighters", "sidekick-talk", "sidekick-hud", "sidekick-stop", "sidekick-water", "sidekick-surface", "sidekick-catchup", "sidekick-nitro", "sidekick-slime", "sidekick-lava", "robot-gibs", "conveyor-meat", "save-preview", "difficulty", "dormant-effects", "guard-aim", "human-poses", "ragdoll-deaths", "guard", "navigation", "laser"), default="movement")
     parser.add_argument("--workers", type=int, choices=range(9), default=4)
     parser.add_argument("--renderer", choices=("opengl1", "opengl2", "vulkan"), default="opengl1")
     parser.add_argument("--mover", type=int, help="optional known delayed-door persistent ID; e1m3b uses 255")
@@ -2490,11 +2998,21 @@ def main():
         "e2-melee": ("e2m1a", "runtime-zig-410/e2-melee"),
         "e3-knights": ("e2m1a", "runtime-zig-411/e3-knights"),
         "e3-creatures": ("e2m1a", "runtime-zig-411/e3-creatures"),
+        "rats": ("e2m1a", "runtime-zig-424/rats"),
         "seal-cover": ("e2m1a", "runtime-zig-411/seal-cover"),
         "e4-fighters": ("e2m1a", "runtime-zig-411/e4-fighters"),
         "kage": ("e2m1a", "runtime-zig-412/kage"),
         "sidekick-talk": ("e3m1a", "runtime-zig-413/sidekick-talk"),
         "sidekick-hud": ("e3m1a", "runtime-zig-422/sidekick-hud"),
+        "sidekick-stop": ("e1m4b", "runtime-zig-424/sidekick-stop"),
+        "sidekick-water": ("e1m1c", "runtime-zig-425/sidekick-water"),
+        "sidekick-surface": ("e1m1c", "runtime-zig-426/sidekick-surface"),
+        "sidekick-catchup": ("e1m4b", "runtime-zig-426/sidekick-catchup"),
+        "sidekick-nitro": ("e1m6c", "runtime-zig-426/sidekick-nitro"),
+        "sidekick-slime": ("e2m5c", "runtime-zig-426/sidekick-slime"),
+        "sidekick-lava": ("e3m3c", "runtime-zig-426/sidekick-lava"),
+        "robot-gibs": ("e1m3b", "runtime-zig-425/robot-gibs"),
+        "conveyor-meat": ("e1m5a", "runtime-zig-425/conveyor-meat"),
         "save-preview": ("e1m3b", "runtime-zig-423/save-preview"),
         "difficulty": ("e1m3b", "runtime-zig-423/difficulty"),
         "dormant-effects": ("e1m2a", "runtime-zig-416/dormant-effects"),

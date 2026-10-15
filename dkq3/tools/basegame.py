@@ -24,7 +24,8 @@ BINDINGS = (("w", "+forward"), ("s", "+back"), ("a", "+moveleft"), ("d", "+mover
             ("e", "use"), ("i", "inventory"), ("MWHEELUP", "weapprev"), ("MWHEELDOWN", "weapnext"),
             ("F5", "save quick"), ("F9", "load quick"), ("f", "companion follow"), ("h", "companion stay"),
             ("g", "companion attack"), ("j", "companion get"), ("z", "sidekick_next"), ("x", "sidekick_apply"),
-            ("v", "sidekick_swap"), ("p", "attribute_next"), ("o", "attribute_increase"), ("ENTER", "cin_skip"),
+            ("v", "sidekick_swap"), ("o", "hud_cycle"), ("k", "hud_prev"), ("l", "hud_next"), ("SEMICOLON", "hud_use"),
+            ("p", "attribute_next"), ("u", "attribute_increase"), ("ENTER", "cin_skip"),
             ("TAB", "+scores"))
 
 # sound/feedback/hit.wav: the default sound effect (code/client/snd_openal.c:484, code/client/snd_dma.c:402), a short

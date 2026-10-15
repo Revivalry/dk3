@@ -894,6 +894,7 @@ fn ensureWorld(cmd: c.VkCommandBuffer, w: *world.World) bool {
     const state = &w.rt;
     if (state.built) return true;
     if (state.failed or w.status != .ready or w.bmodels.len == 0 or w.vertex_buffer.address == 0) return false;
+    const started = common.milliseconds();
     const a = common.gpa;
     var indices: std.ArrayList(u32) = .empty;
     defer indices.deinit(a);
@@ -981,7 +982,7 @@ fn ensureWorld(cmd: c.VkCommandBuffer, w: *world.World) bool {
         model.address = asAddress(model.handle);
     };
     state.built = true;
-    common.developer("renderer_vulkan: world ray tracing structures: {d} triangles in {d} models\n", .{ state.triangles, w.bmodels.len });
+    common.developer("renderer_vulkan: world ray tracing structures: map={s} {d} triangles in {d} models build_ms={d}\n", .{ w.nameSlice(), state.triangles, w.bmodels.len, common.milliseconds() - started });
     return true;
 }
 

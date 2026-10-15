@@ -520,7 +520,7 @@ fn createTargets() void {
         vk.must(vk.d.CreateImageView.?(vk.s.device, &view_info, null, &depth_view), "vkCreateImageView");
         depth_slot = vk.bindView(depth_view, .nearest_clamp, c.VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL);
     }
-    readback = vk.createBuffer(@as(u64, width) * height * 4, c.VK_BUFFER_USAGE_TRANSFER_DST_BIT, vk.host_flags);
+    readback = vk.createBuffer(@as(u64, width) * height * 4, c.VK_BUFFER_USAGE_TRANSFER_DST_BIT, vk.readbackFlags());
 }
 
 /// Releases everything this module created. `destroy_window` also closes SDL video.

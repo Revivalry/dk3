@@ -24,10 +24,21 @@ pub fn pending() bool {
 
 /// Reads back the frame's composited image (window.capture_requested, after the submit).
 pub fn process(capture: window.Capture, value: u64) void {
+    const started = common.milliseconds();
     vk.waitValue(value);
+    const waited = common.milliseconds();
+    defer common.developer("dk3 capture: wait_ms={d} process_ms={d}\n", .{ waited - started, common.milliseconds() - waited });
     const width = capture.width;
     const height = capture.height;
     const rgba = capture.buffer.mapped.?[0 .. @as(usize, width) * height * 4];
+    if (video == null) if (shot) |request| {
+        const name = std.mem.sliceTo(&request.name, 0);
+        if (request.jpeg and !request.levelshot and isSavePreview(name, width, height)) {
+            savePreview(name, rgba, width, height);
+            shot = null;
+            return;
+        }
+    };
     const rgb = common.gpa.alloc(u8, @as(usize, width) * height * 3) catch return;
     defer common.gpa.free(rgb);
     // Bottom-up rows, as glReadPixels returns them.
@@ -63,34 +74,43 @@ fn saveTga(name: []const u8, rgb: []const u8, width: u32, height: u32) void {
     common.ri.FS_WriteFile.?(common.qpath(@ptrCast(&path), name).ptr, buffer.ptr, @intCast(buffer.len));
 }
 
-/// `R_SavePreviewJPEG` (dk3_savepreview.inc): menu thumbnails at 400x300.
-fn savePreview(name: []const u8, rgb: []const u8, width: u32, height: u32) bool {
-    const preview_width = 400;
-    const preview_height = 300;
-    if (!std.mem.startsWith(u8, name, "screenshots/dk3-save-") or width <= preview_width or height <= preview_height) return false;
+/// `R_SavePreviewJPEG` (dk3_savepreview.inc): menu thumbnails at 400x300, sampled straight from
+/// the top-down RGBA readback (at most 4x4 samples a pixel) so a save never converts the whole frame.
+fn isSavePreview(name: []const u8, width: u32, height: u32) bool {
+    // Save pictures are named dk3save-<slot>-a|b (persistence.zig); dk3-save- is the old name.
+    return (std.mem.startsWith(u8, name, "screenshots/dk3save-") or std.mem.startsWith(u8, name, "screenshots/dk3-save-")) and width > preview_width and height > preview_height;
+}
+const preview_width = 400;
+const preview_height = 300;
+fn savePreview(name: []const u8, rgba: []const u8, width: u32, height: u32) void {
     var preview: [preview_width * preview_height * 3]u8 = undefined;
     for (0..preview_height) |py| {
-        const y0 = py * height / preview_height;
-        const y1 = (py + 1) * height / preview_height;
+        // Bottom-up rows, as the JPEG writer expects.
+        const y0 = (preview_height - 1 - py) * height / preview_height;
+        const y1 = (preview_height - py) * height / preview_height;
+        const y_step = @max(1, (y1 - y0) / 4);
         for (0..preview_width) |px| {
             const x0 = px * width / preview_width;
             const x1 = (px + 1) * width / preview_width;
+            const x_step = @max(1, (x1 - x0) / 4);
             var sum = [3]u32{ 0, 0, 0 };
             var count: u32 = 0;
-            for (y0..y1) |sy| for (x0..x1) |sx| {
-                for (0..3) |k| sum[k] += rgb[(sy * width + sx) * 3 + k];
-                count += 1;
-            };
+            var sy = y0;
+            while (sy < y1) : (sy += y_step) {
+                var sx = x0;
+                while (sx < x1) : (sx += x_step) {
+                    for (0..3) |k| sum[k] += rgba[(sy * width + sx) * 4 + k];
+                    count += 1;
+                }
+            }
             for (0..3) |k| preview[(py * preview_width + px) * 3 + k] = @intCast(sum[k] / @max(count, 1));
         }
     }
     var path: [c.MAX_OSPATH]u8 = undefined;
     cext.RE_SaveJPG(common.qpath(@ptrCast(&path), name).ptr, cvars.screenshotJpegQuality.integer, preview_width, preview_height, &preview, 0);
-    return true;
 }
 
 fn saveJpeg(name: []const u8, rgb: []u8, width: u32, height: u32) void {
-    if (savePreview(name, rgb, width, height)) return;
     var path: [c.MAX_OSPATH]u8 = undefined;
     cext.RE_SaveJPG(common.qpath(@ptrCast(&path), name).ptr, cvars.screenshotJpegQuality.integer, @intCast(width), @intCast(height), rgb.ptr, 0);
 }

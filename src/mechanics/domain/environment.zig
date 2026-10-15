@@ -12,6 +12,8 @@ pub const Exposure = struct {
     protected_air: bool = false,
     protected_liquid: bool = false,
     cold_water: bool = false,
+    /// The subject swims when submerged (traits `amphibious`): water never drowns it.
+    amphibious: bool = false,
 };
 pub const Tick = struct { damage: i32 = 0, bypass_armor: bool = false, freeze: f32 = 0, drowning: bool = false, surfaced: bool = false };
 pub const State = struct {
@@ -32,7 +34,10 @@ pub const State = struct {
     /// sampled at the reference 100 ms gameplay cadence, independent of rendering.
     pub fn sample(self: *State, at: i64, exposure: Exposure) Tick {
         var result: Tick = .{};
-        const air: i64 = if (exposure.subject == .player) 12000 else 10000;
+        // A party member breathes as the player does: twelve seconds of air, refilled whenever
+        // its head is out of the water (a sidekick treading water at the surface breathes).
+        const breathes_like_player = exposure.subject == .player or exposure.subject == .party_member;
+        const air: i64 = if (breathes_like_player) 12000 else 10000;
         const prior_level = self.level;
         self.level = exposure.level;
         self.kind = exposure.kind;
@@ -66,9 +71,9 @@ pub const State = struct {
             if (at >= deadline) result.damage = 32000;
         }
         if (result.damage > 0) return result;
-        const drowning = if (exposure.subject == .aquatic_actor) exposure.level == 0 else exposure.kind == .water and exposure.level == 3 and !exposure.protected_air;
+        const drowning = if (exposure.subject == .aquatic_actor) exposure.level == 0 else exposure.kind == .water and exposure.level == 3 and !exposure.protected_air and !exposure.amphibious;
         if (!drowning) {
-            if (exposure.subject == .player or exposure.level == 0 or exposure.subject == .aquatic_actor or exposure.protected_air) self.air_until_ms = at + air;
+            if (breathes_like_player or exposure.level == 0 or exposure.subject == .aquatic_actor or exposure.protected_air or exposure.amphibious) self.air_until_ms = at + air;
             if (prior_level == 3 and exposure.level < 3) result.surfaced = true;
         } else if (at >= self.air_until_ms and at >= self.damage_ms) {
             const rate: f32 = if (exposure.subject == .player or exposure.subject == .aquatic_actor) 0.75 else 0.05;
@@ -119,4 +124,41 @@ test "air recovery liquid cadence and party-member nitro use distinct contracts"
     try t.expectEqual(@as(i32, 0), state.sample(0, .{ .kind = .nitro, .level = 3, .subject = .robot }).damage);
     try t.expectEqual(@as(i32, 9), fall(600, 0, false));
     try t.expectEqual(@as(i32, 0), fall(1000, 1, true));
+}
+
+test "amphibious creatures never drown but liquids still burn them" {
+    const t = std.testing;
+    var state: State = .{};
+    state.initialize(0, .robot);
+    var damage: i32 = 0;
+    var at: i64 = 0;
+    while (at <= 120_000) : (at += 50) damage += state.sample(at, .{ .kind = .water, .level = 3, .subject = .robot, .amphibious = true }).damage;
+    try t.expectEqual(@as(i32, 0), damage);
+    try t.expect(state.sample(at + 100, .{ .kind = .lava, .level = 1, .subject = .land_actor, .amphibious = true }).damage > 0);
+    var drowning: State = .{};
+    drowning.initialize(0, .robot);
+    damage = 0;
+    at = 0;
+    while (at <= 30_000) : (at += 50) damage += drowning.sample(at, .{ .kind = .water, .level = 3, .subject = .robot }).damage;
+    try t.expect(damage > 0);
+}
+
+test "a party member surfacing between dives gets its air back" {
+    const t = std.testing;
+    var state: State = .{};
+    state.initialize(0, .party_member);
+    var damage: i32 = 0;
+    var at: i64 = 0;
+    // Three 11 s dives with a second at the surface (head out, level 2) between them.
+    for (0..3) |_| {
+        const surface = at + 11_000;
+        while (at < surface) : (at += 50) damage += state.sample(at, .{ .kind = .water, .level = 3, .subject = .party_member }).damage;
+        const dive = at + 1_000;
+        while (at < dive) : (at += 50) damage += state.sample(at, .{ .kind = .water, .level = 2, .subject = .party_member }).damage;
+    }
+    try t.expectEqual(@as(i32, 0), damage);
+    // Held under past its air, it drowns.
+    const held = at + 20_000;
+    while (at < held) : (at += 50) damage += state.sample(at, .{ .kind = .water, .level = 3, .subject = .party_member }).damage;
+    try t.expect(damage > 0);
 }

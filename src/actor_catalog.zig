@@ -415,5 +415,6 @@ test "declared class traits reproduce the reviewed capability lists" {
         try std.testing.expectEqual(is_sequence or std.mem.indexOfScalar(Kind, &own_pain, kind) != null, painAnimation(kind));
         try std.testing.expectEqual(kind == .fish or kind == .seagull, ambient(kind));
         try std.testing.expectEqual(kind == .shark or kind == .fish or kind == .dopefish, aquatic(kind));
+        try std.testing.expectEqual(kind == .crox or kind == .froginator or kind == .piperat or kind == .plague_rat, traitsOf(kind).amphibious);
     }
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! actor-class: rats. Pure rats class policy: state, tuning and decisions.
 const class_traits = @import("../../../mechanics/policy/actors/traits.zig");
-pub const classes = [_]class_traits.Class{ .{ .kind = .piperat, .traits = .{ .attack = .ground } }, .{ .kind = .plague_rat, .traits = .{ .attack = .ground } } };
+pub const classes = [_]class_traits.Class{ .{ .kind = .piperat, .traits = .{ .attack = .ground, .amphibious = true } }, .{ .kind = .plague_rat, .traits = .{ .attack = .ground, .amphibious = true } } };
 /// The actor field holding this class's `State` (its saved key).
 pub const state_field = "rat";
 /// Aidata: the plague rat's poison is weapon 2.

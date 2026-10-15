@@ -67,4 +67,13 @@ def scenario(driver, report):
     delta[2] -= 22
     driver.aim(math.degrees(math.atan2(delta[1], delta[0])), -math.degrees(math.atan2(delta[2], math.hypot(*delta[:2]))))
     capture("crox-contact-restored")
-    return {"scope": "Focused authored Crox admission, observed full submersion/swimming movement and saved pending melee contact. Diagnostic placement and health; no connected bridge traversal or complete amphibious/reference parity.", "submerged": submerged, "swim_restored": restored, "swim_moved": moved[submerged], "attack_restored": state, "contact": contact.group(0)}
+    # Amphibious: a submerged Crox never drowns (the shared land rule killed one in 21-27 s).
+    deadline = time.monotonic() + 50
+    breathing = actors(driver)[submerged]
+    while int(breathing["now"]) - int(restored["now"]) < 32000 and time.monotonic() < deadline:
+        time.sleep(1)
+        driver.observe()
+        breathing = actors(driver)[submerged]
+    assert int(breathing["now"]) - int(restored["now"]) >= 32000, "the submerged hold did not reach 32 s of game time"
+    assert breathing["health"] == 150 and breathing["state"] != "dead", f"submerged Crox drowned: {breathing}"
+    return {"scope": "Focused authored Crox admission, observed full submersion/swimming movement, saved pending melee contact and 32 s of game time submerged without drowning. Diagnostic placement and health; no connected bridge traversal or complete amphibious/reference parity.", "submerged": submerged, "breathing": breathing, "swim_restored": restored, "swim_moved": moved[submerged], "attack_restored": state, "contact": contact.group(0)}

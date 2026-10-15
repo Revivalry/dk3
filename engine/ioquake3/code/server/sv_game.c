@@ -372,6 +372,8 @@ intptr_t SV_GameSystemCalls( intptr_t *args ) {
         return FS_DK3SaveWrite(args[1], VMA(2), VMA(3), args[4]);
     case G_DK3_SAVE_READ:
         return FS_DK3SaveRead(args[1], VMA(2), VMA(3), args[4], args[5]);
+    case G_DK3_SAVE_LINK_V1:
+        return FS_DK3SaveLink(VMA(1), VMA(2));
     case G_DK3_HOLD_WORLD:
         return SV_DK3HoldWorld(args[1], args[2] != 0);
     case G_DK3_WORLD_REQUEST_V1:

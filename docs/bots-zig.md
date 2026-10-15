@@ -194,7 +194,11 @@ companion's own player motor with its class hull and speed; its trigger decision
 to the companion weapon step, where the weapon's own leader-safety lane check stays the
 last gate. Companions never operate controls, take teleporter passages or press use,
 and keep out of any enabled hurting volume of 5 damage or more (the co-op bot: 25),
-besides lava, slime, nitro, drops, currents beside drops and descending lifts. Weapons
+besides lava, slime, nitro, drops, currents beside drops and descending lifts. Their
+pilot frame sets `careful_footing` (lethal liquid checked as far ahead as the body would
+slide, further on slick floor, on straight steering too; no hop that lands in it; a slide
+toward it counter-steered; out of lava, slime or nitrogen to the nearest dry floor) and
+`tread_water` (head above water unless the route dives; no sinking while idle). Weapons
 are chosen by the bot scoring over what the companion carries, excluding those whose
 splash or spread the reviewed companion rules keep away from the leader; an emptied
 discus or venom still strikes up close.
@@ -207,7 +211,9 @@ discus or venom still strikes up close.
 | Healthy, threatened | Hostiles hunting the companion or the leader, or seen: hold and shoot from a stand, or close in along the area graph, never beyond 512 of the leader (1024 under an attack order). |
 | Below 50% health | No closing in; fires from the follow spot; detours to a reachable health pack it may take (never one past the enemy). |
 | Below 25% health, or only a melee weapon while hunted | Falls back behind the leader away from the enemy, out of its line of fire, never by way of it; fires only when cornered (enemy within 192) or to finish an enemy at 15 health or less. |
-| Off the area graph, or the leader where no route goes | After 2 s without headway, walks back to where a route last existed; with none, waits (4, 8, then 16 s) instead of hopping against the obstacle. |
+| Off the area graph, or the leader where no route goes | After 2 s without headway, walks back to where a route last existed; with none, waits (1, then 2 s) instead of hopping against the obstacle. |
+| In water | Never settled under water, in water the leader is not in, or more than 48 below its spot; the pilot keeps its head up. |
+| Stuck far behind, or in trouble | `companion_catchup.zig`: beyond 1536 for 3 s; no headway for 8 s beyond 512 or in water the leader is not in; 2.5 s in lava or slime; or 2.5 s of air left. It is put down beside the leader (behind first, then on the leader's trail) where the leader sees neither departure nor arrival. Developer lines: `dk3 sidekick: catch-up`, and at `developer 2` `catch-up pending` with the reason it waits. |
 
 Orders (`stay`, `move`, `attack`, `collect`), authored stops and teleports, item
 collection and lane yielding keep their meaning. Planning state is transient (never

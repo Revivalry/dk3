@@ -13,12 +13,49 @@ pub const entries = [_]Entry{
     .{ .label = "Use", .command = "use" },                           .{ .label = "Inventory", .command = "inventory" },
     .{ .label = "Next inventory item", .command = "invnext" },       .{ .label = "Previous inventory item", .command = "invprev" },
     .{ .label = "Next attribute", .command = "attribute_next" },     .{ .label = "Increase attribute", .command = "attribute_increase" },
+    .{ .label = "HUD cycle", .command = "hud_cycle" },               .{ .label = "HUD use", .command = "hud_use" },
+    .{ .label = "HUD next", .command = "hud_next" },                 .{ .label = "HUD previous", .command = "hud_prev" },
     .{ .label = "Quicksave", .command = "save quick" },              .{ .label = "Quickload", .command = "load quick" },
     .{ .label = "Sidekicks follow", .command = "companion follow" }, .{ .label = "Sidekicks stay", .command = "companion stay" },
     .{ .label = "Sidekicks attack", .command = "companion attack" }, .{ .label = "Sidekicks get item", .command = "companion get" },
     .{ .label = "Sidekick commands", .command = "sidekick_next" },   .{ .label = "Give sidekick order", .command = "sidekick_apply" },
     .{ .label = "Switch sidekick", .command = "sidekick_swap" },
 };
+/// Default binds the game added after a profile was saved, in versions. `upgrade` brings a saved
+/// profile forward once: renamed commands keep their keys, a key still holding its old default takes
+/// the new one, and a new command unbound everywhere takes its default key while that key is free.
+pub const binds_version = 2;
+const Rename = struct { old: []const u8, new: [:0]const u8 };
+const renames = [_]Rename{ .{ .old = "companion wait", .new = "companion stay" }, .{ .old = "companion pickup", .new = "companion get" } };
+const Replace = struct { key: i32, old: []const u8, new: [:0]const u8 };
+/// The reference's HUD cycle key (default.cfg `o hud_cycle`) replaces the old attribute default.
+const replacements = [_]Replace{.{ .key = 'o', .old = "attribute_increase", .new = "hud_cycle" }};
+const Default = struct { key: i32, command: [:0]const u8 };
+const added = [_]Default{
+    .{ .key = 'o', .command = "hud_cycle" },      .{ .key = 'k', .command = "hud_prev" },           .{ .key = 'l', .command = "hud_next" },
+    .{ .key = ';', .command = "hud_use" },        .{ .key = 'u', .command = "attribute_increase" }, .{ .key = 'z', .command = "sidekick_next" },
+    .{ .key = 'x', .command = "sidekick_apply" }, .{ .key = 'v', .command = "sidekick_swap" },
+};
+pub fn upgrade() void {
+    var buffer: [256]u8 = undefined;
+    if (engine.number("dk3_binds") >= binds_version) return;
+    for (1..c.MAX_KEYS) |key_value| {
+        const code: i32 = @intCast(key_value);
+        const command = engine.binding(code, &buffer);
+        for (renames) |rename| if (std.ascii.eqlIgnoreCase(command, rename.old)) engine.bind(code, rename.new);
+    }
+    for (replacements) |replacement| if (std.ascii.eqlIgnoreCase(engine.binding(replacement.key, &buffer), replacement.old)) engine.bind(replacement.key, replacement.new);
+    for (added) |default| {
+        if (boundTo(default.command) == null and engine.binding(default.key, &buffer).len == 0) engine.bind(default.key, default.command);
+    }
+    engine.register("dk3_binds", "0");
+    engine.setNumber("dk3_binds", binds_version);
+}
+fn boundTo(command: []const u8) ?i32 {
+    var buffer: [256]u8 = undefined;
+    for (1..c.MAX_KEYS) |key_value| if (std.ascii.eqlIgnoreCase(engine.binding(@intCast(key_value), &buffer), command)) return @intCast(key_value);
+    return null;
+}
 pub const Capture = struct {
     action: ?usize = null,
     conflict: ?i32 = null,
@@ -56,7 +93,5 @@ fn assign(action: usize, key_code: i32) void {
     engine.bind(key_code, entries[action].command);
 }
 pub fn bound(action: usize) ?i32 {
-    var buffer: [256]u8 = undefined;
-    for (1..c.MAX_KEYS) |key_value| if (std.ascii.eqlIgnoreCase(engine.binding(@intCast(key_value), &buffer), entries[action].command)) return @intCast(key_value);
-    return null;
+    return boundTo(entries[action].command);
 }

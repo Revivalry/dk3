@@ -109,12 +109,20 @@ fn beginRegistration(config: [*c]c.glconfig_t) callconv(.c) void {
     config.* = window.config;
     scene.clearScene();
     registered = true;
+    in_play = false;
 }
 
+/// Between `EndRegistration` and the next level load, models and skins registered (a seamless
+/// region's characters, admitted while playing) take their PNGs off the frame (image.zig).
+var in_play = false;
 fn registerModel(name: [*c]const u8) callconv(.c) c.qhandle_t {
+    @import("image.zig").defer_requests = in_play;
+    defer @import("image.zig").defer_requests = false;
     return model.register(name);
 }
 fn registerSkin(name: [*c]const u8) callconv(.c) c.qhandle_t {
+    @import("image.zig").defer_requests = in_play;
+    defer @import("image.zig").defer_requests = false;
     return model.registerSkin(name);
 }
 fn registerShader(name: [*c]const u8) callconv(.c) c.qhandle_t {
@@ -124,12 +132,15 @@ fn registerShaderNoMip(name: [*c]const u8) callconv(.c) c.qhandle_t {
     return shader.register(common.span(name), false);
 }
 fn loadWorld(name: [*c]const u8) callconv(.c) void {
+    in_play = false;
     world.load(name);
 }
 fn setWorldVisData(_: [*c]const u8) callconv(.c) void {
     // Each resident world owns its PVS bytes (dk3_worlds.inc ignores external vis data).
 }
-fn endRegistration() callconv(.c) void {}
+fn endRegistration() callconv(.c) void {
+    in_play = true;
+}
 
 fn clearScene() callconv(.c) void {
     scene.clearScene();
@@ -177,6 +188,7 @@ fn beginFrame(_: c.stereoFrame_t) callconv(.c) void {
     const begin_start = @import("profile.zig").cpuBegin();
     defer @import("profile.zig").cpuEnd("begin frame (slot wait)", begin_start);
     if (window.beginFrame()) scene.resetBindings();
+    @import("image.zig").pollDeferred();
     scene.beginFrame();
 }
 var stats_frames: i32 = 0;

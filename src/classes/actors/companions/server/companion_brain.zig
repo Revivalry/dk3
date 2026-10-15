@@ -74,10 +74,11 @@ pub const State = struct {
     /// Where straight steering last made headway.
     lost_mark: v.Vec3 = @splat(0),
     retracing: bool = false,
-    /// Stranded (no route on, none back): wait here until then; each
-    /// fruitless retry doubles the wait (4 s up to 16 s).
+    /// Stranded (no route on, none back): wait here until then; a fruitless
+    /// retry doubles the wait once (the reference pauses a second and retries:
+    /// AI_StartFollowRunning's TASKTYPE_SIDEKICK_STOP), so it keeps catching up.
     stranded_until: i64 = 0,
-    stranded_wait: i64 = 4000,
+    stranded_wait: i64 = stranded_first_ms,
     engagement: survival.Engagement = .{},
     ignoring: survival.Ignore = .{},
     detour: survival.Detour = .{},
@@ -87,10 +88,18 @@ pub const State = struct {
     exit_near: bool = false,
     /// The branch that set this frame's intent (developer status line).
     why: []const u8 = "",
+    /// Stuck far behind, or in trouble it cannot get out of: when to warp
+    /// to the leader unseen.
+    catchup: @import("companion_catchup.zig").State = .{},
 };
+
+const stranded_first_ms: i64 = 1000;
+const stranded_longest_ms: i64 = 2000;
 
 pub fn think(actors: *const Actors, navigation: nav.Service, world: *data.World, slots: *Slots, projections: []abi.EntityProjection, entity: ecs.Entity, actor: *data.Actor, pose: *data.Transform, definition: @import("../../../../mechanics/domain/actors.zig").Definition, now: i64) !void {
     const table = &actors.weapons;
+    // Sound events are structural: said before any component pointer is taken.
+    try @import("companion_talk.zig").stopLine(world, slots, projections, entity, (try world.get(entity, data.Companion)).identity, pose.position, now);
     const companion = try world.get(entity, data.Companion);
     const self_id = try world.persistentId(entity);
     const flown = flight.entry(world, self_id, @intFromEnum(companion.identity), now);
@@ -129,6 +138,10 @@ pub fn think(actors: *const Actors, navigation: nav.Service, world: *data.World,
     const leader_grounded = if (leader_state) |state| state.ground_entity != c.ENTITYNUM_NONE else true;
     const leader_wet = if (leader_state) |state| state.water_level > 0 else false;
     remember(brain, leader.position, leader_grounded, now);
+    if (try @import("companion_catchup.zig").step(&brain.catchup, frame, entity, actor, pose, owner, leader, leader_state, brain.crumbs[0..brain.crumb_count], flown.report, now)) {
+        brain.why = "catch-up";
+        return;
+    }
     try @import("companion_talk.zig").speak(world, slots, projections, entity, companion, pose.position, owner, now);
     if (companion.order != .stay) brain.stay_anchor = null;
 
@@ -299,6 +312,10 @@ pub fn think(actors: *const Actors, navigation: nav.Service, world: *data.World,
     if (brain.exit_near and nav.horizontalDistance(pose.position, leader.position) > exit_far and gap > 8) brain.following = true;
     // Standing in the leader's line of fire: step aside however short the way.
     if (brain.in_way and gap > 8) brain.following = true;
+    // Never settled under water, in water the leader is not in, or well
+    // below the spot (the floor of a pool under the leader): an idle body
+    // there sinks.
+    if (unsettled(frame.state.water_level, leader_wet, pose.position, follow_point)) brain.following = true;
     if (brain.following) {
         intent.destination = follow_point;
         intent.close_in = false;
@@ -330,7 +347,7 @@ fn retrace(brain: *State, report: pilot.Report, intent: *pilot.Intent, position:
         brain.lost_ms = null;
         brain.retracing = false;
         brain.stranded_until = 0;
-        brain.stranded_wait = 4000;
+        brain.stranded_wait = stranded_first_ms;
         return;
     }
     if (brain.retracing) {
@@ -359,7 +376,7 @@ fn retrace(brain: *State, report: pilot.Report, intent: *pilot.Intent, position:
     }
     // Straight steering that is getting somewhere is not lost.
     if (brain.lost_ms == null or nav.horizontalDistance(position, brain.lost_mark) > 48) {
-        if (brain.lost_ms != null) brain.stranded_wait = 4000;
+        if (brain.lost_ms != null) brain.stranded_wait = stranded_first_ms;
         brain.lost_ms = now;
         brain.lost_mark = position;
         return;
@@ -372,7 +389,7 @@ fn retrace(brain: *State, report: pilot.Report, intent: *pilot.Intent, position:
     };
     brain.stranded_until = now + brain.stranded_wait;
     brain.lost_ms = brain.stranded_until;
-    brain.stranded_wait = @min(brain.stranded_wait * 2, 16000);
+    brain.stranded_wait = @min(brain.stranded_wait * 2, stranded_longest_ms);
     intent.destination = null;
 }
 fn steerBack(intent: *pilot.Intent, back: v.Vec3) void {
@@ -394,6 +411,9 @@ fn cornered(report: pilot.Report, aggressor: ?survival.Aggressor) bool {
     if (report.enemy != 0 and report.enemy_distance < cornered_range) return true;
     if (aggressor) |target| if (report.enemy == target.id and report.dodging) return target.distance < cornered_range * 1.5;
     return false;
+}
+fn unsettled(water_level: u2, leader_wet: bool, position: v.Vec3, follow_point: v.Vec3) bool {
+    return water_level == 3 or (water_level > 0 and !leader_wet) or follow_point[2] - position[2] > 48;
 }
 fn tethered(leader: v.Vec3, point: v.Vec3, reach: f32) bool {
     return nav.horizontalDistance(leader, point) <= reach and @abs(point[2] - leader[2]) <= tether_rise;
@@ -445,7 +465,10 @@ fn followPoint(frame: pilot.Frame, brain: *State, leader: data.Transform, leader
     const chosen = if (stays) position else chooseFollow(frame, brain, leader, leader_wet, identity, position, now) catch null;
     // With no spot out of the way (the leader backed against a wall), hold
     // still: heading for the leader itself only shuffles in front of it.
-    brain.follow = chosen orelse if (brain.in_way) position else leader.position;
+    // Not in water the leader is not in: there holding still is treading
+    // water for good; out toward the leader instead.
+    const stranded_wet = frame.state.water_level > 0 and !leader_wet;
+    brain.follow = chosen orelse if (brain.in_way and !stranded_wet) position else leader.position;
     brain.follow_ms = now;
     brain.follow_leader = leader.position;
     return brain.follow.?;
@@ -668,15 +691,15 @@ test "a stranded companion waits instead of hopping against the way it cannot go
     retrace(&brain, .{ .routeless = true }, &intent, .{ 4, 0, 30 }, 2200);
     try testing.expectEqual(@as(?v.Vec3, null), intent.destination);
     intent = .{ .destination = .{ 500, 0, 0 } };
-    retrace(&brain, .{ .routeless = true }, &intent, .{ 4, 0, 0 }, 4000);
+    retrace(&brain, .{ .routeless = true }, &intent, .{ 4, 0, 0 }, 2700);
     try testing.expectEqual(@as(?v.Vec3, null), intent.destination);
     // The idle pilot's clean report does not end the wait early.
     intent = .{ .destination = .{ 500, 0, 0 } };
-    retrace(&brain, .{}, &intent, .{ 4, 0, 0 }, 4100);
+    retrace(&brain, .{}, &intent, .{ 4, 0, 0 }, 2800);
     try testing.expectEqual(@as(?v.Vec3, null), intent.destination);
-    // The wait over, it tries again.
+    // The wait over (a second, as the reference), it tries again.
     intent = .{ .destination = .{ 500, 0, 0 } };
-    retrace(&brain, .{ .routeless = true }, &intent, .{ 4, 0, 0 }, 6300);
+    retrace(&brain, .{ .routeless = true }, &intent, .{ 4, 0, 0 }, 3300);
     try testing.expectEqual(@as(?v.Vec3, .{ 500, 0, 0 }), intent.destination);
 }
 test "a retreat never runs past the enemy" {
@@ -721,4 +744,12 @@ test "a leader with its back to a drop gets the companion beside it, never homin
     const blocked: data.Transform = .{ .position = .{ 199, 150, 24 }, .angles = .{ 0, 180, 0 } };
     brain = .{};
     try testing.expectEqual(v.Vec3{ 120, 150, 24 }, followPoint(frame, &brain, blocked, false, .superfly, .{ 120, 150, 24 }, 1000));
+}
+test "a companion is never settled under water, in water the leader is not in, or below its spot" {
+    try testing.expect(!unsettled(0, false, .{ 0, 0, 24 }, .{ 40, 0, 24 }));
+    try testing.expect(unsettled(3, true, .{ 0, 0, 24 }, .{ 40, 0, 24 }));
+    try testing.expect(unsettled(1, false, .{ 0, 0, 24 }, .{ 40, 0, 24 }));
+    try testing.expect(!unsettled(2, true, .{ 0, 0, 24 }, .{ 40, 0, 24 }));
+    // The floor of a pool right under the leader.
+    try testing.expect(unsettled(2, true, .{ 0, 0, -80 }, .{ 0, 0, 24 }));
 }

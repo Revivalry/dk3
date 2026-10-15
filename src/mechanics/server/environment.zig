@@ -18,6 +18,10 @@ fn subject(world: *data.World, entity: ecs.Entity) !rules.Subject {
     if (catalog.aquatic(policy.kind)) return .aquatic_actor;
     return if (policy.nitro_immune) .robot else .land_actor;
 }
+fn amphibious(world: *data.World, entity: ecs.Entity) bool {
+    const actor = world.get(entity, data.Actor) catch return false;
+    return catalog.traitsOf(catalog.entries[actor.definition].kind).amphibious;
+}
 pub fn measure(service: @import("../../core/domain/collision.zig").Collision, position: v.Vec3, body: data.Body, view: f32, slot: u16) !rules.Exposure {
     const mask = c.MASK_WATER | c.CONTENTS_DK3_NITRO;
     const feet = try service.contents(v.add(position, .{ 0, 0, body.mins[2] + 1 }), slot);
@@ -86,6 +90,7 @@ pub fn step(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
         const view: f32 = if (player) |value| value.view_height else if (@import("../../game/server/session_classes.zig").party.viewHeight(world, entity)) |height| height else @max(body.mins[2] + 2, body.maxs[2] - 4);
         var exposure = try measure(engine.collisionService(), (try world.get(entity, data.Transform)).position, body, view, (try world.get(entity, data.Binding)).slot);
         exposure.subject = who;
+        exposure.amphibious = amphibious(world, entity);
         exposure.active = !cinematic and (try world.get(entity, data.Health)).current > 0 and (world.get(entity, data.Performer) catch null) == null;
         if (player) |value| if (value.mode != .normal) {
             exposure.active = false;

@@ -600,6 +600,16 @@ pub const Buffer = struct {
 };
 
 pub const host_flags: u32 = c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+/// Memory the CPU reads back (captures): cached when the device offers it. Uncached host memory
+/// reads at bus speed, so sampling one capture from it took over 200 ms.
+pub fn readbackFlags() u32 {
+    const cached = host_flags | c.VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+    var index: u32 = 0;
+    while (index < s.memory.memoryTypeCount) : (index += 1) {
+        if (s.memory.memoryTypes[index].propertyFlags & cached == cached) return cached;
+    }
+    return host_flags;
+}
 pub const device_flags: u32 = c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
 pub fn createBuffer(size: u64, usage: c.VkBufferUsageFlags, flags: c.VkMemoryPropertyFlags) Buffer {

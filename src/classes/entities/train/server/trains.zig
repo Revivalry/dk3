@@ -93,8 +93,14 @@ fn initialize(world: *data.World, projections: []abi.EntityProjection, entity: e
     train.phase = .paused;
     train.action = .{};
     train.departure_wait_ms = 0;
-    if (object.targetname.len > 0 and object.flags & 128 == 0) return false;
-    try arrived(world, entity, now);
+    const first_object = (try world.get(first, data.MapObject)).*;
+    const named = object.targetname.len > 0;
+    if (!rules.startsAtOnce(object.flags & 128 != 0, named, first_object.flags & 8 != 0, try prop.number(first_object, "health", 0))) {
+        // An unnamed train still settles at its waiting corner as an arrival does.
+        if (!named) try arrived(world, entity, now);
+        return !named;
+    }
+    try leave(world, projections, entity, now);
     return true;
 }
 fn leave(world: *data.World, projections: []abi.EntityProjection, entity: ecs.Entity, now: i64) !void {

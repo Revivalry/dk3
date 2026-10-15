@@ -2,7 +2,7 @@
 //! actor-class: crox. Amphibious melee policy. Numeric weapon tuning belongs to supplied aidata.
 const std = @import("std");
 const class_traits = @import("../../../mechanics/policy/actors/traits.zig");
-pub const classes = [_]class_traits.Class{.{ .kind = .crox, .traits = .{ .pain_clips = true, .remains = .{ .robotic = true, .no_blood = true } } }};
+pub const classes = [_]class_traits.Class{.{ .kind = .crox, .traits = .{ .pain_clips = true, .amphibious = true, .remains = .{ .robotic = true, .no_blood = true } } }};
 /// The actor field holding this class's `State` (its saved key).
 pub const state_field = "crox";
 pub const attacks = [_][]const u8{ "ataka", "atakb", "atakc", "atakd" };

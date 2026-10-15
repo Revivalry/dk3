@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! actor-class: companions. Party lane yielding and physical, unlocked door use, plus scripted motion.
-//! No catch-up teleport.
+//! The catch-up warp to the leader is companion_catchup.zig.
 const data = @import("../../../../game/domain/components.zig");
 const ecs = @import("../../../../core/ecs/world.zig");
 const v = @import("../../../../core/domain/vector.zig");

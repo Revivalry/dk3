@@ -148,9 +148,11 @@ fn loadPixels(name: []const u8) ?Pixels {
     return null;
 }
 
-/// `R_FindImageFile`: null when no file loads (callers choose the default image).
+/// `R_FindImageFile`: null when no file loads (callers choose the default image). During a
+/// registration made in play (`defer_requests`) a PNG decodes in the background instead.
 pub fn find(name: []const u8, flags: Flags) ?*Image {
     if (name.len == 0 or name.len >= c.MAX_QPATH) return null;
+    if (defer_requests and !by_name.contains(name)) if (deferPng(name, flags)) |image| return image;
     if (by_name.get(name)) |existing| {
         if (!std.mem.eql(u8, name, "*white") and @as(u8, @bitCast(existing.flags)) != @as(u8, @bitCast(flags)))
             common.developer("WARNING: reused image {s} with mixed flags\n", .{name});
@@ -187,6 +189,96 @@ fn mipLevel(source: []const u8, width: u32, height: u32, out: []u8) void {
     }
 }
 
+/// The CPU half of `R_CreateImage`: the mip chain, light scaling, mean colour and alpha test.
+/// Touches no renderer state but the read-only gamma tables, so it runs on worker threads too.
+const Levels = struct {
+    levels: [16][]u8 = undefined,
+    count: usize = 0,
+    /// Index of the first uploaded level (picmip and the device limit drop the largest).
+    skip: usize = 0,
+    upload_width: u32,
+    upload_height: u32,
+    average: [3]f32 = .{ 0.5, 0.5, 0.5 },
+    has_alpha: bool = false,
+    fn used(self: *const Levels) []const []u8 {
+        return self.levels[self.skip..self.count];
+    }
+    fn deinit(self: *Levels) void {
+        for (self.levels[0..self.count]) |level| std.heap.c_allocator.free(level);
+        self.count = 0;
+    }
+};
+fn prepareLevels(pixels: []const u8, width: u32, height: u32, flags: Flags, picmip: i32, limit: u32) !Levels {
+    const allocator = std.heap.c_allocator;
+    var result: Levels = .{ .upload_width = width, .upload_height = height };
+    errdefer result.deinit();
+    result.levels[0] = try allocator.dupe(u8, pixels);
+    result.count = 1;
+    var w = width;
+    var h = height;
+    if (flags.mipmap) {
+        while ((w > 1 or h > 1) and result.count < result.levels.len) {
+            const next = try allocator.alloc(u8, @as(usize, @max(w >> 1, 1)) * @max(h >> 1, 1) * 4);
+            mipLevel(result.levels[result.count - 1], w, h, next);
+            result.levels[result.count] = next;
+            result.count += 1;
+            w = @max(w >> 1, 1);
+            h = @max(h >> 1, 1);
+        }
+    }
+    var skip: usize = 0;
+    if (flags.picmip and flags.mipmap and picmip > 0) skip = @min(@as(usize, @intCast(picmip)), result.count - 1);
+    while (skip + 1 < result.count and ((width >> @intCast(skip)) > limit or (height >> @intCast(skip)) > limit)) skip += 1;
+    result.skip = skip;
+    result.upload_width = @max(width >> @intCast(skip), 1);
+    result.upload_height = @max(height >> @intCast(skip), 1);
+    {
+        var sum: [3]f64 = .{ 0, 0, 0 };
+        const step: usize = @max(pixels.len / 4 / 4096, 1);
+        var samples: f64 = 0;
+        var index: usize = 0;
+        while (index < pixels.len / 4) : (index += step) {
+            for (0..3) |channel| sum[channel] += @floatFromInt(pixels[index * 4 + channel]);
+            samples += 1;
+        }
+        if (samples > 0) for (0..3) |channel| {
+            result.average[channel] = @floatCast(sum[channel] / samples / 255.0);
+        };
+    }
+    for (0..pixels.len / 4) |index| {
+        if (pixels[index * 4 + 3] != 255) {
+            result.has_alpha = true;
+            break;
+        }
+    }
+    if (!flags.no_light_scale) for (result.used()) |level| {
+        var index: usize = 0;
+        while (index < level.len) : (index += 4) {
+            for (0..3) |channel| {
+                const value = level[index + channel];
+                level[index + channel] = if (flags.mipmap) gamma_table[intensity_table[value]] else gamma_table[value];
+            }
+        }
+    };
+    return result;
+}
+/// The GPU half: a new texture holding the prepared levels, bound to a fresh bindless slot.
+fn commit(image: *Image, prepared: *const Levels) void {
+    const used = prepared.used();
+    image.upload_width = prepared.upload_width;
+    image.upload_height = prepared.upload_height;
+    image.average = prepared.average;
+    image.has_alpha = prepared.has_alpha;
+    image.texture = vk.createImage(image.upload_width, image.upload_height, @intCast(used.len), c.VK_FORMAT_R8G8B8A8_UNORM, c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT, c.VK_IMAGE_ASPECT_COLOR_BIT);
+    var const_levels: [16][]const u8 = undefined;
+    for (used, 0..) |level, index| const_levels[index] = level;
+    vk.uploadTexture(&image.texture, const_levels[0..used.len], true);
+    vk.bindTexture(&image.texture, samplerFor(image.flags));
+}
+fn deviceLimit() u32 {
+    return @intCast(@max(vk.s.properties.limits.maxImageDimension2D, 1));
+}
+
 /// `R_CreateImage`: registers `name` with RGBA8 `pixels` and uploads it.
 pub fn create(name: []const u8, pixels: []const u8, width: u32, height: u32, flags: Flags) *Image {
     const image = common.gpa.create(Image) catch @panic("OOM");
@@ -200,68 +292,146 @@ pub fn create(name: []const u8, pixels: []const u8, width: u32, height: u32, fla
         .has_alpha = false,
     };
     _ = common.qpath(&image.name, name);
-    // Mip chain: level 0 is the source; picmip removes the largest levels.
-    var levels: std.ArrayList([]u8) = .empty;
-    defer {
-        for (levels.items) |level| common.gpa.free(level);
-        levels.deinit(common.gpa);
-    }
-    const first = common.gpa.dupe(u8, pixels) catch @panic("OOM");
-    levels.append(common.gpa, first) catch @panic("OOM");
-    var w = width;
-    var h = height;
-    if (flags.mipmap) {
-        while (w > 1 or h > 1) {
-            const next = common.gpa.alloc(u8, @as(usize, @max(w >> 1, 1)) * @max(h >> 1, 1) * 4) catch @panic("OOM");
-            mipLevel(levels.items[levels.items.len - 1], w, h, next);
-            levels.append(common.gpa, next) catch @panic("OOM");
-            w = @max(w >> 1, 1);
-            h = @max(h >> 1, 1);
-        }
-    }
-    var skip: usize = 0;
-    if (flags.picmip and flags.mipmap and cvars.picmip.integer > 0) skip = @min(@as(usize, @intCast(cvars.picmip.integer)), levels.items.len - 1);
-    const limit: u32 = @intCast(@max(vk.s.properties.limits.maxImageDimension2D, 1));
-    while (skip + 1 < levels.items.len and ((width >> @intCast(skip)) > limit or (height >> @intCast(skip)) > limit)) skip += 1;
-    const used = levels.items[skip..];
-    image.upload_width = @max(width >> @intCast(skip), 1);
-    image.upload_height = @max(height >> @intCast(skip), 1);
-    {
-        var sum: [3]f64 = .{ 0, 0, 0 };
-        const step: usize = @max(pixels.len / 4 / 4096, 1);
-        var samples: f64 = 0;
-        var index: usize = 0;
-        while (index < pixels.len / 4) : (index += step) {
-            for (0..3) |channel| sum[channel] += @floatFromInt(pixels[index * 4 + channel]);
-            samples += 1;
-        }
-        if (samples > 0) for (0..3) |channel| {
-            image.average[channel] = @floatCast(sum[channel] / samples / 255.0);
-        };
-    }
-    for (0..pixels.len / 4) |index| {
-        if (pixels[index * 4 + 3] != 255) {
-            image.has_alpha = true;
-            break;
-        }
-    }
-    if (!flags.no_light_scale) for (used) |level| {
-        var index: usize = 0;
-        while (index < level.len) : (index += 4) {
-            for (0..3) |channel| {
-                const value = level[index + channel];
-                level[index + channel] = if (flags.mipmap) gamma_table[intensity_table[value]] else gamma_table[value];
-            }
-        }
-    };
-    image.texture = vk.createImage(image.upload_width, image.upload_height, @intCast(used.len), c.VK_FORMAT_R8G8B8A8_UNORM, c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT, c.VK_IMAGE_ASPECT_COLOR_BIT);
-    var const_levels: [16][]const u8 = undefined;
-    for (used, 0..) |level, index| const_levels[index] = level;
-    vk.uploadTexture(&image.texture, const_levels[0..used.len], true);
-    vk.bindTexture(&image.texture, samplerFor(flags));
+    var prepared = prepareLevels(pixels, width, height, flags, cvars.picmip.integer, deviceLimit()) catch @panic("OOM");
+    defer prepared.deinit();
+    commit(image, &prepared);
     images.append(common.gpa, image) catch @panic("OOM");
     by_name.put(common.gpa, image.nameSlice(), image) catch @panic("OOM");
     return image;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Deferred images. Model and skin textures requested during play (a seamless region's characters
+// admitted ahead of the player) would stall a frame for their PNG decode (200-300 ms at 4096^2)
+// and mip chain. They register at once with a neutral placeholder; a background read and decode
+// (the resident PNG batch), then a worker's mip chain, run off the frame, and the finished
+// texture replaces the placeholder at a frame start, one per frame.
+
+/// Set by the model registry around registrations made during play (main.zig opens it after
+/// `EndRegistration`; level loads stay synchronous so nothing pops in on the first frame).
+pub var defer_requests: bool = false;
+const Deferred = struct {
+    image: *Image,
+    batch: ?*cext.ImageBatch,
+    stage: enum { decoding, mipping } = .decoding,
+    pixels: ?Pixels = null,
+    thread: ?std.Thread = null,
+    done: std.atomic.Value(bool) = .init(false),
+    prepared: ?Levels = null,
+    picmip: i32,
+    limit: u32,
+    fn work(self: *Deferred) void {
+        const pixels = self.pixels.?;
+        self.prepared = prepareLevels(pixels.data[0 .. @as(usize, pixels.width) * pixels.height * 4], pixels.width, pixels.height, self.image.flags, self.picmip, self.limit) catch null;
+        self.done.store(true, .release);
+    }
+    fn release(self: *Deferred) void {
+        if (self.thread) |thread| thread.join();
+        self.thread = null;
+        if (self.prepared) |*prepared| prepared.deinit();
+        self.prepared = null;
+        if (self.pixels) |pixels| common.ri.Free.?(pixels.data);
+        self.pixels = null;
+        cext.R_FreeImageBatch(self.batch);
+        self.batch = null;
+    }
+};
+var deferred: std.ArrayList(*Deferred) = .empty;
+
+/// Whether `name` resolves (as `loadPixels` resolves it) to a PNG file.
+fn resolvesToPng(name: []const u8) bool {
+    var buffer: [c.MAX_QPATH + 8]u8 = undefined;
+    const ext = extension(name);
+    var local: []const u8 = name;
+    var original: ?usize = null;
+    if (ext.len > 0) for (loaders, 0..) |loader, index| {
+        if (!std.ascii.eqlIgnoreCase(ext, loader.ext)) continue;
+        if (common.fileExists(common.qpath(buffer[0..c.MAX_QPATH], name).ptr)) return std.ascii.eqlIgnoreCase(ext, "png");
+        original = index;
+        local = stripExtension(name);
+        break;
+    };
+    for (loaders, 0..) |loader, index| {
+        if (original == index) continue;
+        const path = std.fmt.bufPrintZ(&buffer, "{s}.{s}", .{ local, loader.ext }) catch continue;
+        if (common.fileExists(path.ptr)) return std.mem.eql(u8, loader.ext, "png");
+    }
+    return false;
+}
+fn deferPng(name: []const u8, flags: Flags) ?*Image {
+    if (!resolvesToPng(name)) return null;
+    const batch = cext.R_CreateImageBatch(1) orelse return null;
+    if (!prepare(batch, name)) {
+        cext.R_FreeImageBatch(batch);
+        return null;
+    }
+    var grey: [4 * 4 * 4]u8 = undefined;
+    @memset(&grey, 128);
+    const image = create(name, &grey, 4, 4, flags);
+    const entry = common.gpa.create(Deferred) catch @panic("OOM");
+    entry.* = .{ .image = image, .batch = batch, .picmip = cvars.picmip.integer, .limit = deviceLimit() };
+    deferred.append(common.gpa, entry) catch @panic("OOM");
+    return image;
+}
+
+/// Advances deferred images; called once per frame before drawing.
+pub fn pollDeferred() void {
+    var committed = false;
+    var index: usize = 0;
+    while (index < deferred.items.len) {
+        const entry = deferred.items[index];
+        switch (entry.stage) {
+            .decoding => {
+                const ready = cext.R_PollImageBatch(entry.batch);
+                if (ready == 0) {
+                    index += 1;
+                    continue;
+                }
+                if (ready > 0) {
+                    // Decoded on the batch's worker: taking the pixels is a copy, not a decode.
+                    cext.R_SelectImageBatch(entry.batch);
+                    entry.pixels = loadPixels(entry.image.nameSlice());
+                    cext.R_SelectImageBatch(null);
+                }
+                cext.R_FreeImageBatch(entry.batch);
+                entry.batch = null;
+                if (entry.pixels == null) {
+                    common.warn("Deferred image {s} did not load; keeping its placeholder\n", .{entry.image.nameSlice()});
+                    drop(index);
+                    continue;
+                }
+                entry.stage = .mipping;
+                entry.thread = std.Thread.spawn(.{}, Deferred.work, .{entry}) catch blk: {
+                    entry.work();
+                    break :blk null;
+                };
+                index += 1;
+            },
+            .mipping => {
+                if (committed or !entry.done.load(.acquire)) {
+                    index += 1;
+                    continue;
+                }
+                if (entry.thread) |thread| thread.join();
+                entry.thread = null;
+                if (entry.prepared) |*prepared| {
+                    const image = entry.image;
+                    // A frame in flight may still sample the placeholder; it is released at shutdown.
+                    replaced.append(common.gpa, image.texture) catch @panic("OOM");
+                    image.width = entry.pixels.?.width;
+                    image.height = entry.pixels.?.height;
+                    commit(image, prepared);
+                    committed = true;
+                }
+                drop(index);
+            },
+        }
+    }
+}
+fn drop(index: usize) void {
+    const entry = deferred.orderedRemove(index);
+    entry.release();
+    common.gpa.destroy(entry);
 }
 
 fn samplerFor(flags: Flags) vk.SamplerKind {
@@ -402,6 +572,11 @@ pub fn createBuiltins() void {
 
 /// Destroys every content image; the caller releases their memory blocks.
 pub fn shutdown() void {
+    for (deferred.items) |entry| {
+        entry.release();
+        common.gpa.destroy(entry);
+    }
+    deferred.clearAndFree(common.gpa);
     for (images.items) |image| {
         vk.destroyImage(&image.texture);
         common.gpa.destroy(image);

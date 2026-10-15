@@ -11,6 +11,7 @@ export fn dllEntry(callback: abi.Syscall) callconv(.c) void {
 fn init() !void {
     _ = engine.gateway.call(c.UI_CVAR_REGISTER, .{ @as(?*c.vmCvar_t, null), @as([*:0]const u8, "dk3_runtime_build"), @as([*:0]const u8, @import("mechanics/player_state.zig").version), @as(isize, c.CVAR_USERINFO | c.CVAR_ROM) });
     engine.set("dk3_runtime_build", @import("mechanics/player_state.zig").version);
+    @import("mechanics/ui/controls.zig").upgrade();
     try menu.init();
     engine.print("dk3 zig: native menus initialized\n");
 }

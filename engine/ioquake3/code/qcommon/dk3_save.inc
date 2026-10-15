@@ -64,6 +64,41 @@ done:
     return result;
 }
 
+/* Makes save `to` the same file as save `from` without copying it: a hard link, replaced with
+   the same previous-save rotation as a write. Saves are never modified in place (each write
+   renames a new file over the slot), so the shared file stays valid for both names. */
+int FS_DK3SaveLink(const char *from, const char *to) {
+    char source[64], current[64], temporary[80], previous[80], backup[96];
+    int directory, savedError = 0, result = -1;
+    if (!DK3_SaveName(from) || !DK3_SaveName(to) || !strcmp(from, to)) return -1;
+    directory = DK3_SaveDirectory();
+    if (directory < 0) return -1;
+    Com_sprintf(source, sizeof(source), "%s.sav", from);
+    Com_sprintf(current, sizeof(current), "%s.sav", to);
+    Com_sprintf(temporary, sizeof(temporary), "%s.pending", current);
+    Com_sprintf(previous, sizeof(previous), "%s.previous", current);
+    Com_sprintf(backup, sizeof(backup), "%s.pending", previous);
+    if (unlinkat(directory, temporary, 0) && errno != ENOENT) goto done;
+    if (linkat(directory, source, directory, temporary, 0)) goto done;
+    if (unlinkat(directory, backup, 0) && errno != ENOENT) goto done;
+    if (!linkat(directory, current, directory, backup, 0)) {
+        if (renameat(directory, backup, directory, previous)) goto done;
+    } else if (errno != ENOENT) goto done;
+    if (renameat(directory, temporary, directory, current)) goto done;
+    /* Renaming onto a name of the same file leaves the source name in place. */
+    if (unlinkat(directory, temporary, 0) && errno != ENOENT) goto done;
+    if (fsync(directory)) goto done;
+    result = 0;
+done:
+    savedError = errno;
+    if (result < 0) {
+        unlinkat(directory, temporary, 0);
+        Com_Printf("dk3 save %s: link from %s failed: %s\n", to, from, strerror(savedError));
+    }
+    close(directory);
+    return result;
+}
+
 int FS_DK3SaveRead(int version, const char *slot, void *data, int capacity, qboolean previous) {
     char name[80];
     struct stat status;

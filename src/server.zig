@@ -270,7 +270,12 @@ fn saveCommand(command: []const u8) !bool {
 fn saveRegion(slot: []const u8, preview: persistence.Preview) !void {
     var scratch = std.heap.ArenaAllocator.init(std.heap.c_allocator);
     defer scratch.deinit();
+    const started = engine.gateway.call(c.G_MILLISECONDS, .{});
     const members = try resident_worlds.captureOthers(scratch.allocator(), &initial_context, active);
+    if (engine.integer("developer") >= 1) {
+        var timing: [128]u8 = undefined;
+        engine.print(std.fmt.bufPrintZ(&timing, "dk3 save timing: residents={d} capture_ms={d}\n", .{ members.len, engine.gateway.call(c.G_MILLISECONDS, .{}) - started }) catch "dk3 save timing\n");
+    }
     var cold: std.ArrayList(@import("mechanics/domain/snapshot.zig").Archive) = .empty;
     archives: for (campaign.visited) |archive| {
         if (std.mem.eql(u8, archive.map, std.mem.sliceTo(&active.map_name, 0))) continue;
@@ -308,8 +313,11 @@ fn saveFeedback(err: anyerror) void {
     _ = engine.gateway.call(c.G_CVAR_SET, .{ @as([*:0]const u8, "com_errorMessage"), message.ptr });
 }
 fn rememberCheckpoint(slot: []const u8, previous: bool) !void {
-    if (!std.mem.eql(u8, slot, checkpoint_rules.slot)) {
-        const bytes = try @import("engine/save_storage.zig").read(std.heap.c_allocator, slot, previous);
+    if (!std.mem.eql(u8, slot, checkpoint_rules.slot)) checkpoint: {
+        const storage = @import("engine/save_storage.zig");
+        // The checkpoint is the save just written: link it rather than read it back and copy it.
+        if (!previous) if (storage.link(slot, checkpoint_rules.slot)) break :checkpoint else |_| {};
+        const bytes = try storage.read(std.heap.c_allocator, slot, previous);
         defer std.heap.c_allocator.free(bytes);
         try @import("engine/save_storage.zig").write(checkpoint_rules.slot, bytes, false);
     }
@@ -331,11 +339,12 @@ fn recovery() !void {
         // Advance the deadline only after the atomic write has completed. Failed
         // storage is retried with a bound rather than once per simulation frame.
         autosave.retry_ms = clock.now_ms + 5000;
+        const started = engine.gateway.call(c.G_MILLISECONDS, .{});
         try saveRegion(slot, .hud);
         try rememberCheckpoint(slot, false);
         autosave.completed(clock.now_ms);
         var message: [128]u8 = undefined;
-        engine.print(try std.fmt.bufPrintZ(&message, "dk3 autosave: saved slot={s} now={d}\n", .{ slot, clock.now_ms }));
+        engine.print(try std.fmt.bufPrintZ(&message, "dk3 autosave: saved slot={s} now={d} save_ms={d}\n", .{ slot, clock.now_ms, engine.gateway.call(c.G_MILLISECONDS, .{}) - started }));
     }
     var input: c.usercmd_t = undefined;
     engine.usercmd(0, &input);

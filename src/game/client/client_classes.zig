@@ -13,6 +13,7 @@
 //! | `console(name, now_ms) bool` | the class handles no local console command |
 //! | `hud(*const playerState_t, now_ms, display) void` | nothing drawn over the HUD |
 //! | `holdsInventoryColumn() bool` | the weapon list keeps its column |
+//! | `cycle_panels: usize` with `cycleOpen(slot, now_ms) bool`, `cycleClose(slot, now_ms)`, `cycleStep(slot, direction, now_ms)`, `cycleApply(slot, now_ms)` | the class adds no HUD cycle mode (hud_cycle.zig); `cycleOpen` false skips an absent panel |
 pub const presenters = .{
     @import("../../mechanics/client/flame_particles.zig"),               @import("../../classes/actors/chaingang/client/chaingang.zig"),                   @import("../../classes/actors/buboid/client/buboid.zig"),
     @import("../../mechanics/client/venom_spit.zig"),                    @import("../../classes/weapons/ion/client/ion.zig"),                              @import("../../classes/actors/wisp/client/wisps.zig"),

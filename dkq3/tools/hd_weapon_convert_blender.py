@@ -10,6 +10,7 @@ from pathlib import Path
 import sys
 
 import bpy
+import bmesh
 import numpy as np
 from mathutils import Vector
 
@@ -20,7 +21,12 @@ import iqm
 def principal(points):
     center = points.mean(axis=0)
     centered = points-center
-    values, axes = np.linalg.eigh((centered.T @ centered) / (len(points)-1))
+    if len(points) < 3 or not np.isfinite(centered).all():
+        raise ValueError('principal-axis fitting needs finite generated and source points')
+    covariance = np.einsum('ni,nj->ij', centered, centered, optimize=False) / (len(points)-1)
+    values, axes = np.linalg.eigh(covariance)
+    if values[0] <= 0:
+        raise ValueError('principal-axis fitting needs three-dimensional source geometry')
     order = np.argsort(values)[::-1]
     return center, values[order], axes[:, order]
 
@@ -110,6 +116,35 @@ def model_meshes(obj, scale, rotation, generated_center, source_center, material
     return chunks
 
 
+def keep_part(obj, scale, rotation, generated_center, source_center, axis, cut, side):
+    """Select a reviewed rigid region by a plane in the source reference pose."""
+    direction = np.asarray(axis, dtype=float)
+    direction /= np.linalg.norm(direction)
+    # Bisect in object space; the authored plane is measured in source space.
+    world_point = generated_center + rotation.T @ (direction * cut / scale)
+    object_point = obj.matrix_world.inverted() @ Vector(world_point)
+    object_normal = np.asarray(obj.matrix_world.to_3x3()).T @ (rotation.T @ direction)
+    object_normal /= np.linalg.norm(object_normal)
+    mesh = bmesh.new()
+    mesh.from_mesh(obj.data)
+    cut_geometry = bmesh.ops.bisect_plane(mesh, geom=list(mesh.verts) + list(mesh.edges) + list(mesh.faces),
+                                          dist=1e-5, plane_co=object_point, plane_no=object_normal,
+                                          clear_inner=side == 'upper', clear_outer=side == 'lower')
+    boundary = [edge for edge in cut_geometry['geom_cut'] if isinstance(edge, bmesh.types.BMEdge) and edge.is_boundary]
+    if boundary:
+        bmesh.ops.holes_fill(mesh, edges=boundary)
+    bmesh.ops.triangulate(mesh, faces=list(mesh.faces))
+    loose = [vertex for vertex in mesh.verts if not vertex.link_faces]
+    if loose:
+        bmesh.ops.delete(mesh, geom=loose, context='VERTS')
+    if not mesh.faces:
+        mesh.free()
+        raise ValueError('reviewed part plane selected no geometry')
+    mesh.to_mesh(obj.data)
+    mesh.free()
+    obj.data.update()
+
+
 def convert(args):
     if args.out_iqm.exists() or args.out_texture.exists() or args.report.exists() or (args.preview and args.preview.exists()):
         raise ValueError('candidate output exists; use a new versioned path')
@@ -131,6 +166,23 @@ def convert(args):
     if requested is not None and (len(requested) != 3 or any(value not in (-1, 1) for value in requested)):
         raise ValueError('signs must be auto or three comma-separated +1/-1 values')
     scale, rotation, generated_center, source_center, score, signs = align(generated, reference, requested)
+    if args.fit_pickup_bounds:
+        if args.placement_source_npz:
+            raise ValueError('pickup bounds fit uses the world source directly')
+        _, _, axes = principal(reference)
+        axis = axes[:, 0]
+        oriented = (generated-generated_center) @ rotation.T
+        source_span = np.ptp(reference @ axis)
+        candidate_span = np.ptp(oriented @ axis)
+        if source_span <= 0 or candidate_span <= 0:
+            raise ValueError('pickup bounds fit needs a nonzero source and candidate length')
+        scale = float(source_span / candidate_span)
+        fitted = oriented * scale + source_center
+        source_min, source_max = reference.min(axis=0), reference.max(axis=0)
+        fitted_min, fitted_max = fitted.min(axis=0), fitted.max(axis=0)
+        source_center += np.array([(source_min[0]+source_max[0]-fitted_min[0]-fitted_max[0])/2,
+                                   (source_min[1]+source_max[1]-fitted_min[1]-fitted_max[1])/2,
+                                   source_min[2]-fitted_min[2]])
     if args.placement_source_npz:
         placement = reference_points(args.placement_source_npz, args.placement_frame)
         _, placement_values, _ = principal(placement)
@@ -146,6 +198,11 @@ def convert(args):
         decimate = obj.modifiers.new('weapon runtime detail', 'DECIMATE')
         decimate.ratio = args.triangles / len(obj.data.polygons)
         bpy.ops.object.modifier_apply(modifier=decimate.name)
+    if args.part_axis:
+        axis = tuple(float(value) for value in args.part_axis.split(','))
+        if len(axis) != 3 or not np.isfinite(axis).all() or np.linalg.norm(axis) < 1e-6 or args.part_cut is None or not args.part_side:
+            raise ValueError('part selection needs finite axis, cut and lower/upper side')
+        keep_part(obj, scale, rotation, generated_center, source_center, axis, args.part_cut, args.part_side)
     meshes = model_meshes(obj, scale, rotation, generated_center, source_center, args.material)
     encoded = iqm.encode(meshes, args.frames)
     base_color(obj, args.out_texture)
@@ -169,6 +226,8 @@ def convert(args):
                   scale=scale, rotation=rotation.tolist(), source_center=source_center.tolist(),
                   generated_center=generated_center.tolist(), registration_score=score, principal_signs=signs,
                   triangles=sum(len(mesh.triangles) for mesh in meshes), surfaces=len(meshes),
+                  fit_pickup_bounds=args.fit_pickup_bounds,
+                  part_plane=dict(axis=args.part_axis, cut=args.part_cut, side=args.part_side) if args.part_axis else None,
                   acceptance='implemented; unverified')
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2) + '\n')
@@ -182,6 +241,7 @@ def main():
     parser.add_argument('--frame', type=int, required=True)
     parser.add_argument('--placement-source-npz', type=Path, help='separate world-model scale/center reference')
     parser.add_argument('--placement-frame', type=int, default=0)
+    parser.add_argument('--fit-pickup-bounds', action='store_true', help='match world length and align its base above ground')
     parser.add_argument('--out-iqm', type=Path, required=True)
     parser.add_argument('--out-texture', type=Path, required=True)
     parser.add_argument('--material', required=True)
@@ -190,6 +250,9 @@ def main():
     parser.add_argument('--triangles', type=int, default=16000)
     parser.add_argument('--frames', type=int, default=1, help='repeat the static pose for the source .anim frame count')
     parser.add_argument('--signs', default='auto', help='PCA axis signs, e.g. 1,-1,-1, after visual review')
+    parser.add_argument('--part-axis', help='reviewed source-pose cut plane axis as x,y,z')
+    parser.add_argument('--part-cut', type=float, help='plane distance from the source centroid')
+    parser.add_argument('--part-side', choices=('lower', 'upper'))
     args = parser.parse_args(sys.argv[sys.argv.index('--')+1:])
     if args.triangles < 500 or args.triangles > 36000:
         raise ValueError('runtime triangle target outside 500..36000')

@@ -50,6 +50,15 @@ pub fn speak(world: *data.World, slots: *Slots, projections: []abi.EntityProject
     }
 }
 
+/// The line of a stop node this sidekick was first to heed (SIDEKICK_DoStopGoingFurther, order 1).
+pub fn stopLine(world: *data.World, slots: *Slots, projections: []abi.EntityProjection, entity: ecs.Entity, identity: policy.Identity, position: v.Vec3, now: i64) !void {
+    for (nodes.stopNodes()) |*stop| {
+        if (stop.speaker != @intFromEnum(identity)) continue;
+        stop.speaker = null;
+        try @import("../../../../mechanics/server/events.zig").configuredSound(world, slots, projections, stop.sound(), position, (try world.get(entity, data.Binding)).slot, abi.c.CHAN_VOICE, now, .{ .nondirectional = true });
+    }
+}
+
 test "a talk line is full within 512 and fades to a tenth by 1500" {
     const t = std.testing;
     try t.expectEqual(@as(f32, 1), volume(400));

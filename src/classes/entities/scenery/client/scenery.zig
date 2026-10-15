@@ -14,5 +14,5 @@ pub fn decorate(model: *context.Model) !void {
     if (entity.weapon & 8 != 0) model.draw.counters.chunks += 1;
     if (entity.weapon & 1 != 0) @import("../../../../mechanics/client/gibs.zig").emit(entity, model.rendered.origin, model.draw.now);
     model.rendered.shaderRGBA[3] = @intCast(std.math.clamp(entity.time2, 0, 255));
-    if (entity.clientNum > 0) model.rendered.customShader = try @import("../../../../mechanics/client/models.zig").firstMaterial(model.draw.game, entity.clientNum, if (model.rendered.shaderRGBA[3] < 255) .alpha else .ordinary);
+    if (entity.clientNum > 0) model.rendered.customShader = try @import("../../../../mechanics/client/models.zig").firstMaterial(model.draw.game, entity.clientNum);
 }

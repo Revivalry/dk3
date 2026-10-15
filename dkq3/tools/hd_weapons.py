@@ -75,6 +75,8 @@ def iqm(data):
         raise ValueError('invalid IQM header')
     if not 1 <= h['num_meshes'] <= 256 or not 1 <= h['num_frames'] <= 65535 or h['num_joints'] > 128:
         raise ValueError('IQM model exceeds renderer frame, mesh or joint bounds')
+    if h['num_poses'] != h['num_joints'] or (h['num_joints'] == 0 and h['num_framechannels'] != 0):
+        raise ValueError('IQM joint and pose tables disagree')
     if h['ofs_text'] + h['num_text'] > len(data) or h['ofs_meshes'] + h['num_meshes'] * MESH.size > len(data):
         raise ValueError('IQM text or mesh table outside file')
     if h['ofs_vertexarrays'] + h['num_vertexarrays'] * VERTEX_ARRAY.size > len(data):
@@ -105,6 +107,9 @@ def iqm(data):
         if not name.startswith(MODEL_PREFIX) or '..' in name.split('/'):
             raise ValueError('IQM material outside HD weapon namespace')
         materials.add(name)
+    if h['num_joints']:
+        import skeletal_iqm
+        skeletal_iqm.read(data)
     return h['num_frames'], materials, joints
 
 
@@ -279,6 +284,41 @@ def capture(base, class_name, output, *, representation='view', surfaces=None, b
     return document
 
 
+def parts_inventory(base):
+    """Measure source surfaces for part authoring across the registered roster."""
+    import numpy as np
+    from hd_weapon_assemble import rigid_fit
+    from neural_assets import read_md3
+
+    classes = roster()
+    measured = {}
+    with zipfile.ZipFile(base) as archive:
+        for source in sorted(source_paths()):
+            metadata = json.loads(archive.read(source + '.json'))
+            source_meshes, _ = read_md3(archive.read(source + '.md3'))
+            clips = metadata['sequences']['frame_data']
+            ready = next((clip for clip in clips if clip['animation_name'] in ('ready', 'readya')), None)
+            idle = next((clip for clip in clips if clip['animation_name'].startswith('amb')), None)
+            reference = (ready or idle or {'first': 0})['first']
+            surfaces = []
+            for mesh in source_meshes:
+                if (mesh['name'] == 'unused' or mesh['name'].startswith(('hr_', 'hp_')) or
+                        mesh['material'] == 'models/dkq3/nodraw'):
+                    continue
+                points = mesh['points']
+                errors = [rigid_fit(points[reference], frame)[1] for frame in points]
+                motion = np.linalg.norm(points.mean(axis=1) - points[reference].mean(axis=0), axis=1)
+                surfaces.append(dict(name=mesh['name'], material=mesh['material'], vertices=len(points[0]),
+                                     triangles=len(mesh['tri']), max_rigid_rms=float(max(errors)),
+                                     max_center_displacement=float(max(motion))))
+            measured[source] = dict(source=source, frames=len(source_meshes[0]['points']),
+                                    reference_frame=reference, clips=[dict(name=clip['animation_name'],
+                                    first=clip['first'], last=clip['last']) for clip in clips],
+                                    surfaces=surfaces, hardpoints=[mesh['name'] for mesh in source_meshes
+                                    if mesh['name'] in ('hr_muzzle', 'fire')])
+    return dict(format=1, classes=classes, models=measured)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
@@ -301,6 +341,9 @@ def main():
     check.add_argument('--package', type=Path, required=True)
     check.add_argument('--base-models', type=Path, required=True)
     check.add_argument('--allow-preview', action='store_true')
+    parts = sub.add_parser('parts-inventory', help='Measure source surfaces and rigid motion for all registered weapons')
+    parts.add_argument('--base-models', type=Path, required=True)
+    parts.add_argument('--out', type=Path, required=True)
     args = parser.parse_args()
     if args.command == 'inventory':
         rows = roster()
@@ -315,6 +358,14 @@ def main():
     elif args.command == 'capture':
         print(json.dumps(capture(args.base_models, args.class_name, args.out,
                                  representation=args.representation, surfaces=args.surface, blender=args.blender)['actor'], indent=2))
+    elif args.command == 'parts-inventory':
+        if args.out.exists():
+            raise ValueError('parts inventory exists; use a new versioned path')
+        document = parts_inventory(args.base_models)
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(document, indent=2) + '\n')
+        print(json.dumps(dict(classes=len(document['classes']), models=len(document['models']),
+                              output=str(args.out)), indent=2))
     else:
         print(json.dumps(validate_package(args.package, args.base_models, allow_preview=args.allow_preview), indent=2))
 

@@ -19,6 +19,9 @@ pub const Traits = struct {
     ambient: bool = false,
     /// Lives in water and follows water routes.
     aquatic: bool = false,
+    /// Walks on land and swims once submerged (the reference's DFL_AMPHIBIOUS creatures switch to
+    /// MOVETYPE_SWIM in water): it never drowns, and dry land does not suffocate it.
+    amphibious: bool = false,
     /// Flees rather than fights: bots treat it as an obstacle, never an enemy, and it gives no
     /// sight cry.
     bystander: bool = false,

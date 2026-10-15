@@ -31,14 +31,21 @@ pub fn save(world: *data.World, clients: *const @import("clients.zig").Clients, 
     defer arena.deinit();
     const allocator = arena.allocator();
     const bytes = try allocator.alloc(u8, format.maximum);
+    const clock_start = engine.gateway.call(c.G_MILLISECONDS, .{});
     var map: [64]u8 = undefined;
     const header: format.Header = .{ .at_ms = now, .player_id = try world.persistentId(player), .episode = clients.episode, .next_id = world.next_id, .namespace = @intCast(world.id_first >> 24), .asset_crc = @truncate(@as(usize, @bitCast(engine.gateway.call(c.G_DK3_WORLD_CHECKSUM_V1, .{})))), .resources = try @import("resources.zig").capture(allocator), .pending = targets.pending };
     const saved = try format.captureRegion(allocator, bytes, world, mapName(&map), @intCast(std.math.clamp(engine.integer("g_spSkill"), 1, 5)), header, visited, residents);
+    const captured_ms = engine.gateway.call(c.G_MILLISECONDS, .{});
     // This also catches semantic schema omissions before replacing a prior save.
     var admitted = try format.decode(allocator, saved);
     defer admitted.deinit(allocator);
     try admit(&admitted, systems);
+    const validated_ms = engine.gateway.call(c.G_MILLISECONDS, .{});
     try storage.write(slot, saved, false);
+    if (engine.integer("developer") >= 1) {
+        var timing: [160]u8 = undefined;
+        engine.print(std.fmt.bufPrintZ(&timing, "dk3 save timing: slot={s} bytes={d} capture_ms={d} validate_ms={d} write_ms={d}\n", .{ slot, saved.len, captured_ms - clock_start, validated_ms - captured_ms, engine.gateway.call(c.G_MILLISECONDS, .{}) - validated_ms }) catch "dk3 save timing\n");
+    }
     var info: [768]u8 = undefined;
     const health = (try world.get(player, data.Health)).current;
     const character = (try world.get(player, data.Character)).*;

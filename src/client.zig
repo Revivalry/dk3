@@ -60,6 +60,7 @@ fn shutdown() void {
     @import("mechanics/client/fx_particles.zig").reset();
     @import("mechanics/client/gibs.zig").reset();
     inline for (presenters) |Class| if (@hasDecl(Class, "reset")) Class.reset();
+    hud_cycle.reset();
     weapon_view.deinit();
     if (world) |*value| value.deinit();
     world = null;
@@ -152,6 +153,7 @@ fn init(server_message: i32, sequence: i32, client: i32, boundary: i32) !void {
     _ = engine.gateway.call(c.CG_ADDCOMMAND, .{@as([*:0]const u8, "dk3_runtime_render_world")});
     _ = engine.gateway.call(c.CG_ADDCOMMAND, .{@as([*:0]const u8, "use")});
     for ([_][*:0]const u8{ "cin_skip", "dk3_runtime_presentation", "weapon", "weapnext", "weapprev", "attribute", "inventory", "invnext", "invprev", "attribute_next", "attribute_increase", "save", "load", "+scores", "-scores", "say", "say_team", "ready", "team", "callvote", "vote" }) |command_name| _ = engine.gateway.call(c.CG_ADDCOMMAND, .{command_name});
+    for (hud_cycle.commands) |command_name| _ = engine.gateway.call(c.CG_ADDCOMMAND, .{command_name});
     inline for (presenters) |Class| if (@hasDecl(Class, "console_commands")) for (Class.console_commands) |command_name| {
         _ = engine.gateway.call(c.CG_ADDCOMMAND, .{command_name});
     };
@@ -477,10 +479,35 @@ fn draw(now: i32) !void {
     try @import("mechanics/client/scoreboard.zig").render(hud.font, display, &game, &snapshot.ps, now);
 }
 fn console() isize {
-    var buffer: [128]u8 = @splat(0);
-    _ = engine.gateway.call(c.CG_ARGV, .{ @as(isize, 0), &buffer, @as(isize, buffer.len) });
-    const name = std.mem.sliceTo(&buffer, 0);
+    var name_buffer: [128]u8 = @splat(0);
+    _ = engine.gateway.call(c.CG_ARGV, .{ @as(isize, 0), &name_buffer, @as(isize, name_buffer.len) });
+    const name = std.mem.sliceTo(&name_buffer, 0);
     if (world == null or !have_snapshot) return 0;
+    const cycle_context: hud_cycle.Context = .{ .has_items = snapshot.ps.dk3Keys != 0, .points_pending = bridge.readCharacter(&snapshot.ps).points > 0 };
+    if (hud_cycle.console(name, cycle_context, presentation.now)) |action| {
+        switch (action) {
+            .none => {},
+            .items_open, .items_close => hud.inventory_open = action == .items_open,
+            .attribute_prev => {
+                hud.attribute_choice = (hud.attribute_choice + 4) % 5;
+                hud.inventory_open = true;
+            },
+            inline else => |mapped| _ = run(switch (mapped) {
+                .weapon_next => "weapnext",
+                .weapon_prev => "weapprev",
+                .item_next => "invnext",
+                .item_prev => "invprev",
+                .attribute_next => "attribute_next",
+                .attribute_apply => "attribute_increase",
+                else => unreachable,
+            }),
+        }
+        return 1;
+    }
+    return run(name);
+}
+fn run(name: []const u8) isize {
+    var buffer: [128]u8 = @splat(0);
     if (std.mem.eql(u8, name, "dk3_runtime_render_world")) {
         resident_worlds.command() catch |err| {
             var message: [160]u8 = undefined;
@@ -555,6 +582,7 @@ export fn vmMain(command: c_int, arg0: isize, arg1: isize, arg2: isize, arg3: is
     return 0;
 }
 const presenters = @import("game/client/client_classes.zig").presenters;
+const hud_cycle = @import("mechanics/client/hud_cycle.zig");
 /// The view angle offsets the client classes add (`viewOffset`).
 fn classViewOffset(now: i64) @import("core/domain/vector.zig").Vec3 {
     var total: @import("core/domain/vector.zig").Vec3 = @splat(0);

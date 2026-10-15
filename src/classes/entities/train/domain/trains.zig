@@ -43,6 +43,22 @@ pub const Train = struct {
         if (self.position.duration_ms <= 0 or self.angles.duration_ms <= 0 or self.speed <= 0) return error.InvalidSavedTrain;
     }
 };
+/// Whether a train leaves its first corner as soon as it is placed there (reference train_find):
+/// START_ON, an unnamed train whose first corner does not wait for a trigger, or a named train
+/// whose first corner gives it health. A START_ON train leaves even a wait-for-trigger corner;
+/// later arrivals there do wait (e1m5a's `4am` carries its body parts down the belt at load).
+pub fn startsAtOnce(start_on: bool, named: bool, corner_waits: bool, corner_health: f32) bool {
+    return start_on or (!named and !corner_waits) or (named and corner_health > 0);
+}
+
+test "a START_ON train leaves even a wait-for-trigger first corner; a named one waits" {
+    try std.testing.expect(startsAtOnce(true, true, true, 0));
+    try std.testing.expect(startsAtOnce(false, false, false, 0));
+    try std.testing.expect(!startsAtOnce(false, false, true, 0));
+    try std.testing.expect(!startsAtOnce(false, true, false, 0));
+    try std.testing.expect(startsAtOnce(false, true, false, 50));
+}
+
 pub const Leg = struct { duration_ms: i32, angular_end: v.Vec3 };
 pub fn leg(from: v.Vec3, to: v.Vec3, angles: v.Vec3, speed: f32, rotation: v.Vec3, rates: v.Vec3, flags: u32) !Leg {
     if (!std.math.isFinite(speed) or speed <= 0) return error.InvalidTrainSpeed;

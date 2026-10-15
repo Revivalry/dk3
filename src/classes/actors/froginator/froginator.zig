@@ -2,7 +2,7 @@
 //! actor-class: froginator. Froginator decisions and authored attack events, independent of engine transport.
 const std = @import("std");
 const class_traits = @import("../../../mechanics/policy/actors/traits.zig");
-pub const classes = [_]class_traits.Class{.{ .kind = .froginator, .traits = .{ .pain_clips = true, .remains = .{ .robotic = true, .no_blood = true } } }};
+pub const classes = [_]class_traits.Class{.{ .kind = .froginator, .traits = .{ .pain_clips = true, .amphibious = true, .remains = .{ .robotic = true, .no_blood = true } } }};
 /// The actor field holding this class's `State` (its saved key).
 pub const state_field = "frog";
 pub const ClassTuning = Tuning;

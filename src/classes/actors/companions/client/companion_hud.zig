@@ -97,19 +97,9 @@ pub fn console(name: []const u8, now_ms: i64) bool {
         if (std.mem.eql(u8, std.mem.span(command), name)) break i;
     } else return false;
     const who = commanded(commanding, statuses) orelse return true;
-    const open = window > 0;
     switch (index) {
-        0, 1 => {
-            if (open) selected = (selected + (if (index == 0) @as(usize, 1) else policy.command_labels.len - 1)) % policy.command_labels.len;
-            sound(if (open) "global/skill_selector.wav" else "global/skill_start.wav");
-        },
-        2 => if (open) {
-            var buffer: [64]u8 = undefined;
-            const command: policy.Command = @enumFromInt(selected);
-            const text = std.fmt.bufPrintZ(&buffer, "sidekick_{s} {s}", .{ @tagName(command), @tagName(who) }) catch return true;
-            _ = engine.gateway.call(c.CG_SENDCLIENTCOMMAND, .{text.ptr});
-            sound("global/skill_increase.wav");
-        } else sound("global/skill_start.wav"),
+        0, 1 => stepSelection(if (index == 0) 1 else -1),
+        2 => giveOrder(who),
         3 => {
             const other: policy.Identity = if (who == .mikiko) .superfly else .mikiko;
             commanding = commanded(other, statuses) orelse who;
@@ -118,9 +108,61 @@ pub fn console(name: []const u8, now_ms: i64) bool {
         else => unreachable,
     }
     if (commanding == null) commanding = who;
+    show(now_ms);
+    return true;
+}
+fn stepSelection(direction: i32) void {
+    const open = window > 0;
+    if (open) selected = (selected + (if (direction > 0) @as(usize, 1) else policy.command_labels.len - 1)) % policy.command_labels.len;
+    sound(if (open) "global/skill_selector.wav" else "global/skill_start.wav");
+}
+fn giveOrder(who: policy.Identity) void {
+    if (window <= 0) return sound("global/skill_start.wav");
+    var buffer: [64]u8 = undefined;
+    const command: policy.Command = @enumFromInt(selected);
+    const text = std.fmt.bufPrintZ(&buffer, "sidekick_{s} {s}", .{ @tagName(command), @tagName(who) }) catch return;
+    _ = engine.gateway.call(c.CG_SENDCLIENTCOMMAND, .{text.ptr});
+    sound("global/skill_increase.wav");
+}
+fn show(now_ms: i64) void {
     window = @max(window, 0.01);
     window_until = now_ms + window_hold_ms;
+}
+
+/// HUD cycle modes (hud_cycle): Superfly's command mode, then Mikiko's (reference INV_MODE_SIDEKICK1/2).
+pub const cycle_panels = 2;
+fn cycleIdentity(slot: usize) policy.Identity {
+    return if (slot == 0) .superfly else .mikiko;
+}
+fn living(who: policy.Identity) bool {
+    const status = statuses[@intFromEnum(who)];
+    return status.exists and status.health_pct > 0;
+}
+pub fn cycleOpen(slot: usize, now_ms: i64) bool {
+    const who = cycleIdentity(slot);
+    if (!living(who)) return false;
+    commanding = who;
+    sound("global/skill_start.wav");
+    show(now_ms);
     return true;
+}
+pub fn cycleClose(slot: usize, now_ms: i64) void {
+    _ = slot;
+    window_until = @min(window_until, now_ms);
+}
+pub fn cycleStep(slot: usize, direction: i32, now_ms: i64) void {
+    const who = cycleIdentity(slot);
+    if (!living(who)) return;
+    commanding = who;
+    stepSelection(direction);
+    show(now_ms);
+}
+pub fn cycleApply(slot: usize, now_ms: i64) void {
+    const who = cycleIdentity(slot);
+    if (!living(who)) return;
+    commanding = who;
+    giveOrder(who);
+    show(now_ms);
 }
 fn sound(name: []const u8) void {
     const handle = engine.registerSound(name) catch return;
@@ -184,7 +226,7 @@ pub fn hud(state: *const c.playerState_t, now_ms: i64, display: c.glconfig_t) vo
     draw.rect(left, height - (rows[selected] + 3) * scale, 128 * scale, 32 * scale, pictures.select, .{ 1, 1, 1, window });
     for (policy.command_labels, rows) |label, row| {
         const text_x = width - 48 * scale - pictures.font.metrics.width(label, scale) * 0.5;
-        draw.text(pictures.font, text_x, height - row * scale, scale, label, .{ 1, 1, 1, info_alpha });
+        draw.text(pictures.font, text_x, height - row * scale, scale, label, .{ 1, 1, 1, @min(info_alpha, window) });
     }
 }
 

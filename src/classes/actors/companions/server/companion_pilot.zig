@@ -96,7 +96,7 @@ pub fn frame(actors: *const Actors, world: *data.World, slots: *Slots, projectio
         .hull = .{ .mins = definition.mins, .maxs = definition.maxs },
         .now = now,
         .region = true,
-        .capabilities = .{ .controls = false, .operate_lifts = false, .passages = false, .exits = false, .use = false, .nuisance = false, .ignore_ambient = true, .duck_to_shoot = false },
+        .capabilities = .{ .controls = false, .operate_lifts = false, .passages = false, .exits = false, .use = false, .nuisance = false, .ignore_ambient = true, .duck_to_shoot = false, .careful_footing = true, .tread_water = true },
         .exclusion = .{ .context = actors, .mask = exclusion },
         // Companions keep out of anything that hurts, not only what kills.
         .hazard_damage = 5,
@@ -135,8 +135,10 @@ pub fn drive(actors: *const Actors, world: *data.World, slots: *Slots, projectio
         const health = (try world.get(entity, data.Health)).*;
         const destination = flown.intent.destination orelse pose.position;
         const waypoint = if (steering.report.waypoint) |point| point.point else pose.position;
-        var text: [448]u8 = undefined;
-        @import("../../../../engine/server.zig").print(std.fmt.bufPrintZ(&text, "dk3 sidekick: t={d} who={s} health={d}/{d} pos={d:.0},{d:.0},{d:.0} goal={d:.0},{d:.0},{d:.0} leash={d} fire={s} enemy={d} range={d:.0} fired={d} dodging={d} avoided={d} weapon={d} waypoint={d:.0},{d:.0},{d:.0} blocked={d} no_route={d} routeless={d} ground={d} water={d} lost={d} stranded={d} retracing={d} routable={d} collecting={d} why={s}\n", .{ now, @tagName(companion.identity), health.current, health.maximum, pose.position[0], pose.position[1], pose.position[2], destination[0], destination[1], destination[2], @intFromBool(flown.intent.leash != null), @tagName(flown.intent.fire), steering.report.enemy, steering.report.enemy_distance, @intFromBool(command.attack), @intFromBool(steering.report.dodging), steering.report.avoided_exit, command.weapon, waypoint[0], waypoint[1], waypoint[2], @intFromBool(steering.report.blocked), @intFromBool(steering.report.no_route), @intFromBool(steering.report.routeless), companion.motor.ground_entity, companion.motor.water_level, if (flown.brain.lost_ms) |since| now - since else -1, @max(0, flown.brain.stranded_until - now), @intFromBool(flown.brain.retracing), @intFromBool(flown.brain.routable != null), companion.collecting, flown.brain.why }) catch "dk3 sidekick: status\n");
+        var liquid_text: [32]u8 = undefined;
+        const liquid = std.fmt.bufPrint(&liquid_text, "water={d} escaping={d}", .{ companion.motor.water_level, @as(u8, @intFromBool(steering.report.escaping)) + @as(u8, @intFromBool(steering.report.escape_failed)) * 2 }) catch "";
+        var text: [512]u8 = undefined;
+        @import("../../../../engine/server.zig").print(std.fmt.bufPrintZ(&text, "dk3 sidekick: t={d} who={s} health={d}/{d} pos={d:.0},{d:.0},{d:.0} goal={d:.0},{d:.0},{d:.0} leash={d} fire={s} enemy={d} range={d:.0} fired={d} dodging={d} avoided={d} weapon={d} waypoint={d:.0},{d:.0},{d:.0} blocked={d} no_route={d} routeless={d} ground={d} {s} lost={d} stranded={d} retracing={d} routable={d} collecting={d} why={s}\n", .{ now, @tagName(companion.identity), health.current, health.maximum, pose.position[0], pose.position[1], pose.position[2], destination[0], destination[1], destination[2], @intFromBool(flown.intent.leash != null), @tagName(flown.intent.fire), steering.report.enemy, steering.report.enemy_distance, @intFromBool(command.attack), @intFromBool(steering.report.dodging), steering.report.avoided_exit, command.weapon, waypoint[0], waypoint[1], waypoint[2], @intFromBool(steering.report.blocked), @intFromBool(steering.report.no_route), @intFromBool(steering.report.routeless), companion.motor.ground_entity, liquid, if (flown.brain.lost_ms) |since| now - since else -1, @max(0, flown.brain.stranded_until - now), @intFromBool(flown.brain.retracing), @intFromBool(flown.brain.routable != null), companion.collecting, flown.brain.why }) catch "dk3 sidekick: status\n");
     }
     // Item pursuit judges reachability by the route's progress.
     actor.route = flown.pilot.route;

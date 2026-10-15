@@ -43,7 +43,14 @@ pub fn think(frame: *Frame) !void {
     try @import("rats.zig").think(frame.world, frame.slots, frame.projections, frame.entity, frame.actor, frame.pose, frame.definition.*, frame.now);
 }
 pub fn move(frame: *Frame) !void {
-    if (frame.dead or !frame.actor.rat.swimming) return common.move(frame);
+    if (frame.dead) return common.move(frame);
+    if (!frame.actor.rat.swimming) {
+        // Rats nest in pipes and under props, off the player's navigation areas: the node graph
+        // takes them out (the reference moves rats by its nodes).
+        const motion = @import("../../../../mechanics/server/actor_motion.zig");
+        var fallback: motion.NodeFallback = .{ .primary = frame.navigation, .routes = &frame.actors.ground_routes, .body = frame.body.* };
+        return motion.step(frame.actor, frame.pose, frame.body, frame.velocity, fallback.service(), frame.threat, frame.definition.speed * frame.slow, frame.slot, frame.now, frame.elapsed);
+    }
     frame.actor.rat.water = try @import("../../../../mechanics/server/actor_water.zig").move(&frame.actors.ground_routes, frame.actor, frame.pose, frame.body, frame.velocity, frame.definition.speed * frame.slow, frame.slot, frame.elapsed);
 }
 /// Strafing, the rat keeps facing its strafe yaw.

@@ -1293,4 +1293,5 @@ extern huffman_t clientHuffTables;
 
 /* dk3 save service v1: private loose saves, durable replacement and recovery copy. */
 int FS_DK3SaveWrite(int version, const char *slot, const void *data, int length);
+int FS_DK3SaveLink(const char *from, const char *to);
 int FS_DK3SaveRead(int version, const char *slot, void *data, int capacity, qboolean previous);

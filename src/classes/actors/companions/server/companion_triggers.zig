@@ -75,7 +75,9 @@ pub fn use(actors: *Actors, world: *data.World, slots: *Slots, projections: []ab
             if (!teleport and (state.stopped or state.authored == .stop)) continue;
             if (owner) |player| state.owner = try world.persistentId(player);
             state.authored = if (teleport) .teleport else .stop;
-            state.stopped = false;
+            // A teleport trigger without STAY or COMEHERE resumes what the sidekick was doing,
+            // a stop included; a teleport node always ends it.
+            if (!teleport or object.flags & 3 != 0) state.stopped = false;
             state.destination = point;
             state.target = 0;
             state.collecting = 0;
@@ -104,6 +106,32 @@ pub fn use(actors: *Actors, world: *data.World, slots: *Slots, projections: []ab
     const used = try world.get(entity, data.Trigger);
     used.uses += 1;
     used.ready_ms = now + used.wait_ms;
+}
+/// A reference sidekick stop node (see sidekick_nodes): each living companion not already waiting
+/// runs to `point` (none: stays where it is) and waits there. Returns the first one stopped, who
+/// says the node's line, or null when none heeded it.
+pub fn stopParty(world: *data.World, owner: ecs.Entity, point: v.Vec3) !?policy.Identity {
+    var first: ?policy.Identity = null;
+    for ([_]policy.Identity{ .superfly, .mikiko }) |identity| {
+        const follower = party.find(world, identity) orelse continue;
+        if ((try world.get(follower, data.Health)).current <= 0) continue;
+        const state = try world.get(follower, data.Companion);
+        if (state.stopped or state.authored == .stop) continue;
+        state.owner = try world.persistentId(owner);
+        state.authored = .stop;
+        state.destination = point;
+        state.target = 0;
+        state.collecting = 0;
+        state.collect_forced = false;
+        state.yielding_until_ms = 0;
+        state.animation_until = null;
+        const actor = try world.get(follower, data.Actor);
+        actor.mode = .idle;
+        actor.scripted_pose = null;
+        actor.route = .{};
+        if (first == null) first = identity;
+    }
+    return first;
 }
 /// A reference sidekick teleport node (see sidekick_nodes): each living
 /// companion is moved to `point` as by an authored teleport and goes on with
@@ -166,7 +194,8 @@ pub fn advance(world: *data.World, entity: ecs.Entity, actor: *data.Actor, pose:
                 actor.threat_position = state.destination;
                 actor.mode = .chase;
             } else {
-                state.order = .stay;
+                // A stop is a hold over the order, not a stay order: a teleport node or the
+                // player's next order ends it (SIDEKICK_StartStopGoingFurther).
                 state.stopped = true;
                 state.authored = .none;
             }
@@ -175,18 +204,23 @@ pub fn advance(world: *data.World, entity: ecs.Entity, actor: *data.Actor, pose:
             if (now < state.next_ms) return true;
             state.next_ms = now + 100;
             const point = try clearSpot(world, entity, state.destination) orelse return true;
-            pose.position = point;
-            state.motor = .{ .command_ms = now, .ducked = state.motor.ducked };
-            state.jump_started_ms = 0;
-            (try world.get(entity, data.Velocity)).linear = @splat(0);
-            actor.route = .{};
             state.order = state.after_teleport;
             state.authored = .none;
-            // Nothing planned on the far side of the jump still holds.
-            @import("companion_pilot.zig").forget(try world.persistentId(entity));
+            try place(world, entity, actor, pose, point, now);
         },
     }
     return true;
+}
+/// Put the companion down at `point` at rest: a fresh motor, no velocity,
+/// and nothing planned on the far side of the jump still holds.
+pub fn place(world: *data.World, entity: ecs.Entity, actor: *data.Actor, pose: *data.Transform, point: v.Vec3, now: i64) !void {
+    const state = try world.get(entity, data.Companion);
+    pose.position = point;
+    state.motor = .{ .command_ms = now, .ducked = state.motor.ducked };
+    state.jump_started_ms = 0;
+    (try world.get(entity, data.Velocity)).linear = @splat(0);
+    actor.route = .{};
+    @import("companion_pilot.zig").forget(try world.persistentId(entity));
 }
 /// World-system hook (world_system_classes.zig).
 pub fn worldSpawn(spawning: *const @import("../../../../mechanics/server/system_context.zig").Spawn) !void {
