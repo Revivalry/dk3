@@ -8,10 +8,11 @@ Implemented code and verified acceptance are tracked separately in the run log.
 
 ## Branch and layout
 
-All unfinished runtime development is on `rewrite/native-zig-runtime`. `main` was
-restored to the pre-rewrite working tree (`ed0755f`) by restoration commit `e3966c4`.
-Do not merge or push this work to main without an explicit release/merge request.
-The old-runtime removal decision applies to this feature branch.
+The native rewrite was merged into `main` on 19 October 2026 (PR #1). Main now
+contains the native runtime; it no longer denotes the pre-rewrite source tree.
+The separate preserved installation and saves remain untouched. Connected native
+work continues on the rewrite branch and reaches main through reviewed merges.
+The old gameplay runtime remains removed. See [current state](status.md).
 
 The permanent source root is `src/`, layered by ownership (sequence 409): `engine/` (ioquake3
 ABI), `core/` (game-agnostic runtime), `mechanics/` (shared Daikatana mechanisms: `domain`,

@@ -1,172 +1,94 @@
-# Game completion state
+# Current game state
 
-Feature branch `rewrite/native-zig-runtime` contains the incomplete native runtime;
-`main` is restored to the working pre-rewrite tree. Sequence 225 replaces the temporary
-source root with `src/runtime` and enforces domain/engine dependency boundaries.
-Glock/Disruptor trace damage and Ion projectiles are connected. Four civilian classes
-have authored metadata, animation, movement, death and witness panic; the e1m2a
-worker scenario has passed with diagnostic positioning/equipment. Sequence 226 connects Mishima guard perception, retaliation, pistol/reload cycles
-and player damage, with an authored guard scenario passing. Most weapon combat,
-remaining actors, full navigation, scripts/cinematics, save restore/travel, full presentation
-and multiplayer integration remain open. Sequence 227 connects AAS pursuit/escape and authored
-destructible controls, event sequences, wall toggles and hurt volumes. Focused
-worker, occluded guard pursuit and laser shutdown scenarios pass; full navigation
-and world presentation remain open. Sequence 228 connects class-owned view-weapon
-animation/audio, additive Glock/Ion flashes, weapon shine, HUD and inventory.
-The three currently implemented combat weapons pass presentation transitions and
-inspected captures. Sequence 229 connects native menu navigation, supplied artwork,
-settings, conflict-aware rebinding, difficulty start and pause/resume. The mouse and
-keyboard scenario passes after repairing signed native ABI mouse arguments.
-Sequence 230 connects native staged save restoration and persistent mouse save-slot
-selection. Mid-lift load, previous-save recovery, corruption rejection and direct
-main-menu saved-map loading pass focused scenarios. Sequence 231 connects authored
-touch exits, named arrivals, incoming player state and visited-map archives. An
-e1m3b/e1m3a round trip and a full save recover the destroyed laser control without
-replacing the incoming player's health/equipment. Diagnostic positioning was used.
-Sequence 232 adds Shotcycler/Slugger pellet damage, Ripgun traces, saved spread RNG,
-shared recoil and native impact sound/decal/particle/light presentation. Focused normal
-attacks pass for five ranged weapons; Ion flesh hits choose explosion sounds and
-world hits choose spark sounds. Six weapon combat policies are now implemented,
-including Disruptor. Sequence 233 adds Bolter, Sidewinder and Cordite flight/contact
-policies, explosion sprites and projectile saves. Focused checks pass on both
-renderers; Cordite detonates on an authored guard before its fuse expires. Nine
-combat policies are connected at sequence 233. Sequence 234 implements Silverclaw
-and Daikatana timed strikes, save continuation and kill/sword experience. Authored
-worker kills and saved reward totals pass focused scenarios on both renderers;
-the repaired restored attack pose also passes on both renderers. Eleven combat policies
-are connected at sequence 234. Sequence 235 adds Gas Hands, Venomous and Kineticore,
-including saved poison/freeze effects, delayed releases, poison pools and sprite
-projectiles. Focused authored damage/status/save scenarios pass on both renderers;
-the complete water/trail/art comparison remains open. Fourteen combat policies
-are connected; the remaining 14 still need native combat. Schema-5 migration,
-companion/cinematic exits, multiplayer screens and complete menu parity remain open.
-See [runtime progress](runtime-zig.md).
+**Assessment: 20 October 2026 · game-state-427.** The native rewrite was merged into
+`main` as PR #1 on 19 October (`25a8d07`). Main now contains the Zig game/client/UI
+runtime. The separate preserved installation and its saves remain local and untouched.
 
-The preserved installed game and saves are untouched. The results below describe
-historical runtime versions and do not establish acceptance of the new runtime.
+**dk3 is a playable development build. The complete game is not accepted.**
+The source covers campaign systems and multiplayer, with substantial focused scenario
+evidence. No complete episode or full four-episode campaign has passed end-to-end
+acceptance. There is no defensible overall completion percentage.
 
-Sequence 203 is implementing the accepted [Zig multiplayer/Internet-room scope](multiplayer-zig.md).
-The one-host IP deployment passes explicit-CA HTTPS verification and focused real
-Internet scenarios: three encrypted clients, readiness, browser ping, reconnect,
-vote bans, operator removal, coordinator outage continuity and worker restart.
-SQLite backup/isolated restore and loss/reordering/tampering probes also passed.
-The Zig message codec passed differential checks and the Internet lifecycle replay.
-Focused captures demonstrate three character/color combinations and distinct music
-through e1dm1, e2dm1, e3dm1 and e4dm1 transitions. The full appearance, music and
-equipped-weapon matrix remains open. Sequence 209 adds configurable permanent
-server-owned rooms: 16 total players by default, replaceable bots and ten-minute
-map rotation. The unchanged sequence-208 RPM discovered and joined the live room
-through its menu; bot replacement/refill and a full live rotation cycle passed.
-See [hosting configuration](online-operations.md#permanent-rooms).
-The complete migration and all-map/mode acceptance remain open. The broader
-campaign/weapon snapshot below remains sequence 200.
+## Assessment basis
 
-Sequence 211 repairs called-lift dwell, mouse save selection, duplicate difficulty
-options, Glock muzzle blending, configurable weapon shine, ion terminal audio,
-actor timing and civilian witness alerts. Focused lift/UI/effect scenarios and
-native timing/alert regressions pass; all-map and original-renderer parity remain
-open. See the sequence-211 run log for evidence and limits.
+This review checked the merged source, class registries, the latest
+[native acceptance ledger](native-acceptance.md), class review sheets and available
+local report results through sequence 426. It also checked the merged branch's
+[successful component CI](https://github.com/dmytrogajewski/dk3/actions/runs/39318618327)
+and prepared a new isolated installation from current code and existing local assets.
+The component suite passed 542 Zig tests and 350 Python tests before this documentation
+pass. Those checks establish build/regression health, not campaign completion.
 
-Sequence 212 corrects the lift repair after reviewing Gold: waits belong to the
-departure corner and apply after arrival. The owner's e1m3a lift therefore uses its
-authored ten-second upper dwell, superseding sequence 211's three-second fallback.
+The source inspection and recorded scenarios below have different evidentiary weight.
+A feature being present, a map loading or a historical scenario passing does not
+establish acceptance of every path in the current game.
 
-Sequence 213 updates the normal `dk3` launcher's local installation to these fixes,
-retaining its existing saves/settings and appearance overlay. Live multiplayer
-servers still need matching gameplay rules.
+## System assessment
 
-Sequence 214 restores Gold crouch clearance and loads menu saves directly into
-their saved map. The owner’s e1m3a triangular passage, mouse-only loading, corrupt
-save rejection, previous-save recovery and visited-world preservation pass. Normal
-`dk3` uses the updated build; its saves/settings remain unchanged.
+| Area | Current implementation and recorded evidence | Remaining acceptance |
+| --- | --- | --- |
+| Engine and architecture | Bundled ioquake3/BSPC, Linux x86-64 client/server, Zig 0.16 native modules, ECS/jobs and checked class hooks. Ownership baseline: zero violations. Source lives in `src/engine`, `core`, `mechanics`, `game` and `classes`. | Final source/provenance review and fresh public clone → build → legally supplied assets → play acceptance. No legacy game runtime or required QVM backend is maintained. |
+| Campaign and navigation | Four-episode content admission and campaign machinery exist. Sequence 340 records 84 map admissions and two continuous Ronin driver routes from New Game/intro to e1m3b with candidate navigation. | The candidate route is historical, scoped evidence. It is not a fresh run of this assessment or a complete Episode 1. Continue from e1m3b and verify all episodes, bosses, puzzles, cinematics and endings. |
+| Weapons and progression | All 28 weapon classes have native policies, firing/controller integration and saved action state, including the intentional Flashlight extension. Focused firing, damage, status and restoration checks are recorded. | Full per-weapon campaign/multiplayer interactions, timing/audio/effect comparisons and progression branches. HD weapon art is a separate pipeline: no HD replacement is enabled by default and its Glock pilot remains visually unaccepted. |
+| Actors | Class-owned adapters and 57 review sheets cover episode actors. Correction passes 402–413 and later Crox/rat fixtures provide scoped behavior evidence. | Many review sheets still explicitly lack in-game acceptance for some changes. Per-class implementation and review are not all-encounter or campaign coverage. |
+| Companions | Orders/HUD, stop/teleport nodes, breathing, careful footing, treading water and out-of-view catch-up are connected. Seven sequence-426 fixtures have passing result files. | These use diagnostic setup, high health and/or enemy removal. Liquid samples are one second apart. Slick-floor braking, liquid self-escape, full encounter behavior and cross-world/campaign party availability remain open. An unexplained five-point dry-floor health loss is retained in the nitro-map record. |
+| Saves, menus and difficulty | Validated native saves, resident/visited world archives, copied-save migration, save dates/previews and live difficulty rescaling exist. The recorded guard changes from 50 health to 63 on Shogun and 38 on Ronin. | Complete mid-action, party, cinematic, cross-episode and development-save matrix. The second GL1 preview capture still shows HUD; Vulkan save-preview acceptance is open. Original Daikatana saves are not imported. |
+| Streaming and transitions | Resident-world admission and documented asynchronous image/preview/checkpoint optimizations are implemented. The ledger records GPU transition timing improvements. | Those timing claims are recorded measurements; the named timing directories were not found during this artifact review and were not remeasured here. Remaining autosave/RT admission stalls and all-region traversal require coverage. |
+| Rendering | Vulkan 1.3 is default; GL2 fallback and GL1 selection remain. HDR/materials, liquids, weather, RT, DDGI, optional path tracing, bundled FSR 3.1 and optional external DLSS are implemented. Later scoped GPU measurements supersede early smoke-only claims. | Overall owner visual acceptance, all-map/material/hardware comparisons and complete performance coverage remain open. Hardware-specific FPS samples are not general guarantees. |
+| Cinematics and generated characters | Source vertex cinematic models are the default; skeletal cinematics are opt-in. Playback, restoration and authored humanoid action work have focused evidence. Rejected motion candidates were withdrawn. | Complete cinematic recreation, acting/facial/body quality and matched-shot acceptance. The white-gi Hiro candidate failed owner review; structural metrics do not override that result. |
+| Multiplayer | Native DM, CTF, deathtag, bots, browser/lobby and online service code exist. Earlier scoped matches/network lifecycle tests are recorded. | Fresh complete mode/map/human-network coverage remains open. Sequence 340 deathtag carriers did not capture in its 600-second run. Historical online deployment success is not current-service or native-migration acceptance. Co-op multiplayer is outside scope. |
+| Assets and release | Explicit local conversion, content-addressed generations, isolated installs and local RPM tooling exist. Source builds need no proprietary assets or private reference code. | Retail-profile play acceptance, conversion-loss review, final publication/license review and complete installation-to-ending acceptance. Original/converted data, generated asset packages and saves remain local. |
 
-Sequence 215 repairs the first Superfly encounter against Gold: script-only
-companion spawning, authored spawn position, train attachment placement,
-cinematic trigger isolation and unique-ID script uses. Existing save2, the first
-conversation/rack crossing, keycard rescue and companion save/reload pass.
-Normal `dk3` uses the repaired build; saves/settings remain unchanged.
+## Fresh assessment probes
 
-Sequence 216 clears the stranded e1m3b laser damage field after all three beams
-are removed. The owner’s existing quicksave, crossings from both ends at beam
-height, fresh weapon-driven shutdown and save/reload pass. Normal `dk3` is updated
-and existing saves/settings are preserved.
+The assessment uses the isolated native development installation, temporary profiles,
+`dkguard --headless`, software OpenGL1 and existing legally supplied local assets.
+Both accepted runs used the synchronized scenario driver under `dkguard --headless`
+with an 8 GiB cap and a 180-second timeout. Their immutable installation/module/asset
+identity is `98392cd5628d6695e4acefd2a6f7c0361a750a438d4e71d4455fced1544547a1`.
+The first legacy movement/save attempts started during region admission and were
+invalid setup: movement diagnostics were incomplete and save correctly refused
+`RegionAdmissionInProgress`. Those attempts are retained, not counted as gameplay
+failures or accepted runs. The synchronized replay waits for admission and processed input.
 
-Sequence 217 begins the [native Zig replacement](runtime-zig.md): isolated native
-entrypoints, ECS/job/scheduler infrastructure, map metadata, collision probes,
-shared inventory rules and a save-record codec. **The replacement is not playable;
-full migration and cutover remain open.** See the run log for foundation checks.
-The normal launcher and owner saves remain on the existing runtime.
+These are diagnostic integration probes, not a new campaign playthrough or visual
+acceptance of the Vulkan renderer. Private logs/captures stay in
+`zig-out/reports/game-state-427/`.
 
-Sequence 218 continues native movement/prediction, shared input policies and tuning
-for all 28 weapons, build-identity checks, binary movers and target routing. Native
-client connection and focused movement/weapon/door checks have passed. Transactional
-rider pushing and authored target progression remain unverified; native combat,
-actors, persistence, presentation and UI are still unfinished. **Full migration and
-cutover remain open.** The ordinary launcher remains on the existing runtime.
+| Scenario | State | Scope |
+| --- | --- | --- |
+| Isolated `zig build play-install` | Passed | Current engine/native modules installed with completed local assets and optional overlays; preserved installation/saves untouched |
+| Processed movement and crouch input | Passed | After initial admission: position (1608, −2592, 561) → (1601.770, −2578.734, 552.125), forward release and crouch input observed |
+| Native save/load | Passed | Saved health 997, changed to 900, restored 997 with processed input on e1m1a |
+| Resident-region save/load and death recovery | Passed | Controlled e1m1a/e1m1b transfers preserve independently changed actor health, player identity and saved health 73; death recovery restores the same state |
 
-Sequence 219 adds train path/dwell transitions and attachment assemblies. The native
-e1m3a lift carries the rider, holds its ten-second upper dwell and returns to lower
-rest in the isolated replay. Compound obstruction, rotating riders and authored
-progression remain unverified. Native gameplay migration is still in progress.
+## Current technical identities
 
-Updated 2026-09-26, through **runtime-zig, sequence 219 (active)**.
+| Interface | Identity | Authority |
+| --- | --- | --- |
+| Wire protocol | 1351 | `engine/ioquake3/code/qcommon/qcommon.h`, `src/online/api.zig` |
+| Renderer export ABI | 13 | `engine/ioquake3/code/renderercommon/tr_public.h` |
+| Native gameplay save schema | 2, with schema-1 migration | `src/mechanics/domain/snapshot.zig` |
+| Portable save stream | Codec version 1, `DK3SAVE\0` | `src/core/domain/save_stream.zig` |
+| Only game/client/UI runtime | Zig 0.16 | `build/runtime.zig`, native module roots |
 
-**dk3 is a playable development build, not a completed Daikatana port.** Independent
-native systems exist across the game, but implementation and successful focused
-scenarios do not establish a complete campaign. No full episode has passed an
-end-to-end replay. There is no supported overall completion percentage.
+These identities describe different interfaces and must not be conflated. See
+[engine architecture](engine.md), [protocol](protocol.md) and [save format](save-format.md).
 
-This is the current summary. The [roadmap](rewrite-roadmap.md) defines the complete
-scope; the [run log](../specs/runs/RUN-dk3-independent-port.md) records individual
-inputs, failures, repairs and acceptance limits. An unverified path may already have
-code; remaining work includes both implementation repairs and gameplay verification.
+## Next acceptance work
 
-| Area | Implemented and demonstrated | Still required for completion |
-|---|---|---|
-| Engine and native build | Bundled ioquake3/BSPC, Linux client/server, both renderers, independent modules and Zig build. Earlier isolated native build/start passed without private reference files or existing caches; the latest integrated ReleaseSafe build passes. | Required toolchain qualification and final independence/provenance review. Native Zig weapons are not a qualified QVM target. |
-| Assets and installation | Private 1.3 profile converted/installed: 84 maps and 97 difficulty/mode navigation variants. Runtime installation and local HD overlay exercised. | Retail-profile verification, complete conversion-loss review and a fresh full clone/build/assets/play acceptance run. Converted map counts do not measure playable campaign completion. |
-| Campaign | Opening cinematic and bridge encounter exercised. Authored exits through e1m1b/e1m1c/e1m2a reached e1m2b; later recorded play there traversed pipes, combat and the submerged paddle/drain route. | Fresh continuous opening replay and the remainder of Episode 1; complete Episodes 2–4, bosses, puzzles, cinematics, timestream transitions and endings. The e1m2b evidence includes resumed development saves and is not a start-to-finish campaign run. |
-| Weapons, combat and progression | All 28 selectable weapons execute in native Zig. Gold comparison corrections cover timing, ammunition, damage, projectiles and effects. All 28 authoritative firing paths pass; representative damage, liquid, network and save scenarios pass. Earlier pickup, level/attribute and sword progression checks are recorded. | Every weapon interaction and progression branch in campaign/multiplayer, full animation/effect/audio comparison and final balance acceptance. Flashlight is an intentional dk3 extension. |
-| Actors, companions and navigation | Actor perception, attacks, abilities, gravity, animation events, routing and companion commands exist. Focused pod, rockgat, mosquito, frog, cambot, thunderskeet and companion-combat scenarios pass; navigation variants load. | All actor families and later-episode encounters; companion commands, blocked-route recovery, doorway yielding, pickups and campaign availability/transitions across the full game. |
-| Saves and transitions | Named, validated saves, atomic replacement, checkpoint death recovery and visited-world persistence exist. Focused corruption/recovery, air deadline, mover/cinematic and weapon restores pass. Sequence 200 verifies C4, Hammer, Nightmare and Metamaser, including delayed launch and rebased lock deadlines. | All mid-encounter/controller phases and cross-episode state, plus broader archived-development-save compatibility. Omitting the two new optional weapon fields was tested with a fixture; this is not verification of every older save. Original Daikatana save migration is outside scope. |
-| Multiplayer | DM, CTF, deathtag, bots and host/join flows exist. Recorded joins, deaths/respawns/reconnects and contested objectives pass. Latest delayed-network checks verify Shotcycler, Sidewinder, Trident, Ripgun and Kineticore. | Complete mode/map, team, bot, scoring, disconnect and protocol-error matrix. Focused successful matches do not certify all multiplayer behavior. Co-op is outside scope. |
-| Presentation and UI | Supplied artwork, menus/HUD, loading, cinematic/audio/effect systems and multiple renderer repairs exist. Selected rendered comparisons, menu flows and mixer dispatch pass. | Remaining options/panels, actor scale and matched cinematic shots, lightstyles, all weapon trails/fragments/view kick and full sound mix. OpenGL2 yellow saturation near the marsh pool remains a recorded defect. Physical display/speaker behavior is not established by headless checks. |
-| Release | Reviewed source and build/install documentation are published as development snapshots. Sequence 208 produced and verified a local asset-inclusive RPM with default Internet endpoint and CA. Sequence-209 broad checks passed: 44 Python tests and 138 Zig tests, after repairing a stale test-fixture declaration. | Complete V1–V12 acceptance, final source/license/publication review and verified new-game-to-ending installation path. RPM installation on the second physical machine is not verified here. A successful push is not a completed-game release. |
+1. Reconfirm a continuous current-build New Game/intro route, then continue authored
+   progression beyond e1m3b through Episode 1 and Episodes 2–4. Preserve encounter,
+   death, save/reload and transition evidence along that route.
+2. Close class/companion and cinematic visual gaps with scoped scenarios and owner
+   review. Keep failed/rejected candidates and unrun cases visible.
+3. Complete native multiplayer, retail/fresh-install, independence and release matrices.
+   Run broad component checks after connected implementation/repair work, without
+   duplicating `make lint`, `make test` and `zig build test`.
 
-## Latest verified weapon pass
-
-[Sequence 200](../specs/runs/RUN-dk3-independent-port.md#weapons-gold-review--sequence-200)
-records the per-weapon corrections and exact coverage. Verification found and repaired
-a missing Shotcycler decal shader, a nonexistent Ripgun spin-up pose, mover/controller
-reference confusion in saves, Metamaser table-column selection and lock deadlines
-that did not follow the restored simulation clock.
-
-The C contract fixtures now explicitly enable assertions even in optimized builds.
-The underwater runner verifies saved server water level, rather than inferring it
-from a screenshot. These checks supersede the corresponding weaker claims in
-sequence 199. The broad suite ran once after the affected scenario repairs; `make
-lint`, `make test` and `zig build test` invoke the same suite.
-
-Gold's Bolter water sound, `shared/bloop4.wav`, is absent from the supplied local
-profile. Its conditional binding remains unavailable without that asset. An
-intermittent empty-sound startup warning also remains recorded; the successful
-weapon runs do not establish its cause.
-
-Private captures, saves, logs and converted assets remain local under
-`zig-out/reports/weapons-gold-200`; the public run log summarizes their results.
-Latest verified local runtime generation:
-`6a4d5a4263029b67c6f5618cd107e7cfef5923d89d35daf21ab845a6e3cb36b4`.
-
-## Remaining acceptance order
-
-1. Complete the connected actor, companion, script and presentation repairs and
-   their scenario matrices, including the unresolved opening comparisons.
-2. Replay the opening continuously, resume authored Episode 1 progression, then
-   traverse Episodes 2–4 through their endings. Retain mid-action save/transition
-   coverage as each subsystem is exercised.
-3. Complete multiplayer and required-improvement coverage, then the retail/fresh
-   installation, independence, toolchain and release checks in V1–V12.
-
-Use the [implementation-first workflow](development-workflow.md): implement
-connected changes, exercise their scenarios, repair observed failures, then run
-the applicable broad checks once. Keep passing evidence until relevant inputs change.
+The [roadmap](rewrite-roadmap.md) defines the complete scope; the
+[workflow](development-workflow.md) defines implementation and verification cadence.
+The [acceptance ledger](native-acceptance.md) and
+[run journal](../specs/runs/RUN-dk3-independent-port.md) retain historical inputs and
+limits. Earlier journal coverage stops at sequence 423; results 424–426 are summarized in
+the acceptance ledger and local artifacts. This assessment adds the sequence-427 entry.

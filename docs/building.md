@@ -8,6 +8,7 @@ or game data for the engine build. The independent game runtime is still being i
 
 - Linux x86-64, Zig 0.16.x, Make.
 - SDL2 development package and pkg-config for the client and renderers.
+- SQLite3 development files for the online tools included in the default build.
 - Vulkan headers and loader pkg-config files (`vulkan-headers`, `vulkan-loader-devel`) and
   `glslc` (shaderc) for `renderer_vulkan.so`; the build fails with a named message without them.
 - Mesa lavapipe (`mesa-vulkan-drivers`) for headless Vulkan runs; `dkguard --headless`
@@ -20,6 +21,19 @@ or game data for the engine build. The independent game runtime is still being i
 - Xvfb and xauth for headless graphical runs.
 
 ## Commands
+
+On Ubuntu 24.04, install the build dependencies with:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y make pkg-config libsdl2-dev libsqlite3-dev libvulkan-dev glslc python3-venv xvfb xauth
+python3 -m venv .venv
+.venv/bin/python -m pip install -r dkq3/tools/requirements-test.txt
+```
+
+Put Zig 0.16.x on `PATH`. Activate the environment or pass
+`-Dpython=.venv/bin/python` when running component checks. The default code build
+does not need proprietary assets. The [engine reference](engine.md) explains each product.
 
 ```sh
 zig build
@@ -42,3 +56,6 @@ the completed `zig-out/assets` cache. `play-install` performs the same preparati
 without launching. Pass `-- +map e1m3b` to `play` for a specific map.
 Native menus and campaign systems are connected; see the [acceptance matrix](native-acceptance.md)
 for current verified outcomes and remaining defects.
+
+The engine documentation has its own lightweight build: `make docs-site` after
+installing `dkq3/tools/requirements-docs.txt`. See [site maintenance](site-maintenance.md).

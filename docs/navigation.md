@@ -232,5 +232,5 @@ run plays intro → e1m1a → … → e1m2b → e1m3a → e1m3b continuously wit
 (`coop/final7-newgame/`), e1m3a by its objective route; so does a chain from e1m1a
 (`coop/final7-chain/`). All 84 maps load and report coverage (`coverage/navcov-final/`).
 Multiplayer comparison and remaining limits are in
-[native acceptance](native-acceptance.md#sequence-340--generic-navigation--implemented-partially-verified)
+[native acceptance](native-acceptance.md#sequence-340-generic-navigation-implemented-partially-verified)
 and the RUN log.

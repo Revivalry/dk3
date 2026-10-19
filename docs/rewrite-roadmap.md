@@ -2,56 +2,25 @@
 
 ## Current completion state
 
-The current native outcome matrix is [native acceptance](native-acceptance.md).
-All 28 weapon policies are connected; interaction acceptance remains open. Prioritize the fresh continuous
-New Game → full intro → e1m1a → e1m1b bridge → e1m1c → e1m2a milestone.
-Historical pre-rewrite implementation/acceptance rows below are not transferred
-to the native runtime. This integration gate does not reduce the complete-port scope.
+The [20 October 2026 assessment](status.md) is the current completion summary;
+[native acceptance](native-acceptance.md) is the detailed scenario ledger. The native
+rewrite was merged into `main` on 19 October. The only game/client/UI runtime is Zig
+0.16, with the permanent ownership layout under `src/` established in sequence 409.
 
-Unfinished native work lives on `rewrite/native-zig-runtime`; `main` is restored to
-its pre-rewrite working tree. Sequence 225 establishes `src/runtime` as the permanent
-module root, enforces pure-layer boundaries and connects initial combat to authored
-civilian movement, death and witness panic. Main must not receive rewrite commits
-without an explicit merge/release request.
+All 28 weapon policies, episode actor adapters, companion systems, saves/resident
+worlds, menus and multiplayer mechanisms are connected. Vulkan is default, FSR 3.1
+is bundled, and optional external DLSS is supported. Implementation is broad;
+complete campaign, cinematic/visual and multiplayer acceptance remains open.
 
-Sequence 230 connects native save/load, staged validation and direct saved-map menu
-loading. Sequence 231 connects authored exits and saved visited-world archives, with
-an e1m3b/e1m3a round trip passing. Sequence 232 adds native pellet/rotary combat and
-class-owned impact presentation; sequence 233 adds three projectile classes and
-animated explosions. Sequence 234 connects timed melee actions and kill progression,
-including saved remaining strikes and resumed attack poses on both renderers.
-Sequence 235 adds poison/freezing, delayed projectile releases and three more
-weapon policies, with focused authored damage and native save evidence.
-Schema-5 migration, remaining combat/actors,
-companion/cinematic progression and multiplayer remain implementation work.
+Sequence 340 records continuous Ronin driver routes from New Game/intro to e1m3b
+with candidate navigation. Sequences 424–426 add focused play-feedback and companion
+hazard/water/catch-up evidence. No complete episode or full campaign is accepted.
+The next campaign gate is a current-build continuous replay and authored progression
+beyond e1m3b, followed by the remainder of all four episodes and the full release matrix.
 
-Sequence 217 begins the accepted [native Zig replacement runtime](runtime-zig.md):
-archetype ECS, parallel systems, separate native modules and an isolated installation.
-Sequences 218–221 connect native movement, shared weapon controllers, binary movers,
-train paths, attachment assemblies, secret doors, continuous rotation and core
-pickups/key locks with authored spawn filtering. The replacement remains incomplete.
-Sequence 223 removes the old runtime at the owner’s request. Only native Zig
-game/client/UI development continues; removal is not gameplay acceptance.
-This supersedes the historical C/QVM game-module guidance below.
-
-Sequence 209 adds [configurable permanent rooms](online-operations.md#permanent-rooms)
-entirely on the server, retaining compatibility with the already distributed RPM.
-Focused acceptance verifies 16-slot bot filling, human replacement/refill, local
-rotation with a connected human, and live Internet menu joins and timed rotation.
-This does not close the broader multiplayer migration or campaign acceptance.
-
-The active sequence 203 implements the accepted [native Zig multiplayer and Internet
-room plan](multiplayer-zig.md). This extends the multiplayer implementation scope;
-acceptance remains open. [Operations](online-operations.md) records the one-host IP
-HTTPS deployment and explicitly trusted test certificate.
-
-As of **sequence 200 (2026-09-25)**, this is a playable native development build;
-the full game is incomplete. All 28 weapons are implemented in Zig, the Gold
-correction pass has focused acceptance, and the latest build and broad suite pass.
-Recorded authored campaign traversal reaches partway into e1m2b; no complete
-episode has passed. V1–V12 below remain open as complete acceptance groups.
-See [current status](status.md) for the subsystem matrix, known defects and evidence
-limits. Historical scenario results below are not a fresh replay of the latest build.
+The scope and historical step tables below remain the complete-port plan. Historical
+C/QVM guidance and pre-native acceptance are superseded by the
+[native runtime decision](runtime-zig.md); they do not establish current acceptance.
 
 ## Outcome and decisions
 

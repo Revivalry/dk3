@@ -1,0 +1,3 @@
+# Public documentation only; no game data, GPU or asset-generation packages.
+mkdocs==1.6.1
+mkdocs-material==9.7.2

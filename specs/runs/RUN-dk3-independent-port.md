@@ -10003,3 +10003,30 @@ Five further experiments were measured and reverted because sheets or metrics go
 | `difficulty` (e1m3b) | Passed | A 50-health Samurai guard becomes 63 on Shogun and 38 on Ronin; Options shows the Difficulty choice |
 | Tests, lint | Passed | `zig build test`: Zig suite (Table.rescale, save info parsing), 348 Python tests, ownership lint |
 | Gameplay acceptance | Open | Needs the owner's view in play |
+
+
+## Sequence 427 — game-state-assessment — merged runtime and public engine manual
+
+20 October 2026. Reviewed merged `main` (`25a8d07`), actual registries/ABI/schema,
+class reviews and report results through426. Replaced the stale status/branch and
+protocol/save summaries; retained complete-game and artistic acceptance as open.
+Fresh isolated `zig build play-install` succeeded. Local assessment source and logs
+are under `zig-out/reports/game-state-427/`; no preserved installation or saves changed.
+
+The legacy player probe began movement/save before initial region admission committed.
+Those attempts are invalid setup, not accepted gameplay or demonstrated regressions.
+The save correctly refused RegionAdmissionInProgress. The state-synchronized replay
+uses `runtime_bugfix_probe.run`, NativeInput and `runtime_view_probe.admitted` under
+`dkguard --headless --screen 960x540 --mem 8G --timeout 180s`. Identity:
+98392cd5628d6695e4acefd2a6f7c0361a750a438d4e71d4455fced1544547a1.
+
+| Scenario | State | Evidence / limits |
+| --- | --- | --- |
+| Processed movement/crouch and native save/load | Passed | `guarded-input-save/passed.json`: actual forward displacement; health997 saved, changed900, loaded997. Diagnostic health setup, software GL1 |
+| Resident save/load and death recovery | Passed | `guarded-region-save/passed.json`: independently changed actors across e1m1a/e1m1b, stable player identity, health73 on load and death recovery. Controlled transfer/placement; no route acceptance |
+| Public manual | Passed locally | Strict MkDocs build, rendered HTML link/anchor/search validator, 1440px and390px Chrome layouts, real search results and mobile navigation; captures `/tmp/dk3-pages-qa/` |
+| Full campaign / multiplayer / Vulkan visual matrix | Unrun | Existing scoped evidence remains scoped; no episode completion claim |
+
+The website publishes checked-in docs only. Private packages, saves, original assets
+and reports remain local. Local code checks already passed542 Zig and350 Python tests;
+this documentation pass uses its separate lightweight build and CI.
