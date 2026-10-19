@@ -113,28 +113,8 @@ pub fn addProduct(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
         module.addIncludePath(b.path(b.pathJoin(&.{ source_root, directory })));
     for (config.productMacros(b.allocator, product, settings) catch @panic("OOM")) |macro|
         module.addCMacro(macro.name, macro.value);
-    for (config.productSystemLibraries(b.allocator, product, settings) catch @panic("OOM")) |library| {
-        const pkg_config = b.graph.environ_map.get("PKG_CONFIG") orelse "pkg-config";
-        var paths: [2][]const u8 = undefined;
-        var available = true;
-        for ([_][]const u8{ "includedir", "libdir" }, &paths) |variable, *path| {
-            var exit_code: u8 = undefined;
-            const output = b.runAllowFail(&.{ pkg_config, b.fmt("--variable={s}", .{variable}), library.package }, &exit_code, .ignore) catch |err| {
-                module.addCSourceFile(.{ .file = failSource(b, b.fmt("pkg-config package {s}: {t}; install its development package", .{ library.package, err })), .flags = &.{} });
-                available = false;
-                break;
-            };
-            path.* = config.pkgConfigDirectory(output) orelse {
-                module.addCSourceFile(.{ .file = failSource(b, b.fmt("pkg-config package {s} has no {s}; install its development package", .{ library.package, variable })), .flags = &.{} });
-                available = false;
-                break;
-            };
-        }
-        if (!available) continue;
-        module.addSystemIncludePath(.{ .cwd_relative = b.pathJoin(&.{ paths[0], library.include_subdir }) });
-        module.addLibraryPath(.{ .cwd_relative = paths[1] });
-        module.linkSystemLibrary(library.link_name, .{ .use_pkg_config = .no });
-    }
+    for (config.productSystemLibraries(b.allocator, product, settings) catch @panic("OOM")) |library|
+        @import("system_library.zig").add(b, module, target, library);
     for ([_][]const u8{ "dl", "m", "pthread" }) |library| module.linkSystemLibrary(library, .{});
     const artifact = switch (product) {
         .client, .server => b.addExecutable(.{ .name = name(product), .root_module = module }),

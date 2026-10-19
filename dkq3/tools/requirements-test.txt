@@ -1,0 +1,5 @@
+# CPU-only dependencies for zig build test, including synthetic asset fixtures.
+-r requirements.txt
+scipy==1.17.1
+pillow==12.3.0
+pyyaml==6.0.3

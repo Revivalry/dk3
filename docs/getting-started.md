@@ -11,8 +11,10 @@ the [campaign rewrite](rewrite-roadmap.md) is incomplete and gameplay verificati
 | Compiler | Zig 0.16.x, at least 0.16.0 |
 | Archive tools | Python 3.10 or newer; standard library only |
 | Asset conversion | NumPy from requirements.txt; ffmpeg 7 |
+| Component checks | Python 3.11+ with dkq3/tools/requirements-test.txt installed |
 | Convenience commands | Make |
 | Engine client/renderers | SDL2 development files and pkg-config |
+| Vulkan renderer build | Vulkan development files and glslc |
 | Memory limits | `prlimit` from util-linux, or a working systemd user session |
 | Optional headless graphics | `xvfb-run` and `xauth` |
 

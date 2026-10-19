@@ -12,7 +12,9 @@ or game data for the engine build. The independent game runtime is still being i
   `glslc` (shaderc) for `renderer_vulkan.so`; the build fails with a named message without them.
 - Mesa lavapipe (`mesa-vulkan-drivers`) for headless Vulkan runs; `dkguard --headless`
   restricts the Vulkan loader to it.
-- Python 3.10+ for the existing archive tools and their synthetic checks.
+- Python 3.11+ for the existing archive tools and their synthetic checks. Install
+  `dkq3/tools/requirements-test.txt` with the Python interpreter used by `zig build test`
+  (or select a virtual environment with `-Dpython=/path/to/venv/bin/python`).
 - Optional FreeType development package for `-DUSE_FREETYPE=true`.
 - util-linux `prlimit` or a working systemd user session for dkguard resource limits.
 - Xvfb and xauth for headless graphical runs.

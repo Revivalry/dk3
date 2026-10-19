@@ -53,31 +53,12 @@ pub fn addProduct(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
     module.addCMacro("renderer_vulkan_EXPORTS", "1");
     module.addCMacro("PRODUCT_VERSION", b.fmt("\"{s}\"", .{settings.product_version}));
     module.addCMacro("PRODUCT_DATE", b.fmt("\"{s}\"", .{settings.product_date}));
-    addSdl(b, module);
+    @import("system_library.zig").add(b, module, target, config.sdl2);
     module.addSystemIncludePath(vulkanHeaders(b));
     addShaders(b, module);
     for ([_][]const u8{ "dl", "m", "pthread" }) |library| module.linkSystemLibrary(library, .{});
     const artifact = b.addLibrary(.{ .name = "renderer_vulkan", .linkage = .dynamic, .root_module = module });
     return artifact;
-}
-
-fn addSdl(b: *std.Build, module: *std.Build.Module) void {
-    const pkg_config = b.graph.environ_map.get("PKG_CONFIG") orelse "pkg-config";
-    var paths: [2][]const u8 = undefined;
-    for ([_][]const u8{ "includedir", "libdir" }, &paths) |variable, *path| {
-        var exit_code: u8 = undefined;
-        const output = b.runAllowFail(&.{ pkg_config, b.fmt("--variable={s}", .{variable}), config.sdl2.package }, &exit_code, .ignore) catch |err| {
-            module.addCSourceFile(.{ .file = failSource(b, b.fmt("pkg-config package sdl2: {t}; install its development package", .{err})), .flags = &.{} });
-            return;
-        };
-        path.* = config.pkgConfigDirectory(output) orelse {
-            module.addCSourceFile(.{ .file = failSource(b, b.fmt("pkg-config package sdl2 has no {s}", .{variable})), .flags = &.{} });
-            return;
-        };
-    }
-    module.addSystemIncludePath(.{ .cwd_relative = b.pathJoin(&.{ paths[0], config.sdl2.include_subdir }) });
-    module.addLibraryPath(.{ .cwd_relative = paths[1] });
-    module.linkSystemLibrary(config.sdl2.link_name, .{ .use_pkg_config = .no });
 }
 
 /// Only `vulkan/` and `vk_video/` from the host include directory: adding the whole
