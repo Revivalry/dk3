@@ -13,7 +13,7 @@ the [campaign rewrite](rewrite-roadmap.md) is incomplete and gameplay verificati
 | Asset conversion | NumPy from requirements.txt; ffmpeg 7 |
 | Component checks | Python 3.11+ with dkq3/tools/requirements-test.txt installed |
 | Convenience commands | Make |
-| Engine client/renderers | SDL2 development files and pkg-config |
+| Engine client/renderers | SDL2 development files and pkg-config; SQLite3 development files for online tools |
 | Vulkan renderer build | Vulkan development files and glslc |
 | Memory limits | `prlimit` from util-linux, or a working systemd user session |
 | Optional headless graphics | `xvfb-run` and `xauth` |
@@ -33,7 +33,8 @@ make build
 You should see the Python version and `dkguard: finished status=0 (exited)`.
 The engine executables are `zig-out/native-dev/bin/dk3` and `zig-out/native-dev/bin/dk3ded`; the runner is
 `zig-out/native-dev/bin/dkguard`. Independent native modules are in `zig-out/native-dev/lib/dk3/`; campaign systems are incomplete.
-See [building](building.md) for the bundled engine and optional QVM tool targets.
+See [building](building.md) for dependencies and the [engine manual](engine.md) for
+architecture. The native rewrite is now on `main`; Zig is the only game/client/UI runtime.
 
 After [converting and installing your assets](assets.md), launch the checked
 current development code with the completed asset cache:

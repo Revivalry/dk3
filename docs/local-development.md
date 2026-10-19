@@ -1,4 +1,8 @@
-# The existing playable workspace
+# Historical private workspace
+
+> Historical reference only. These instructions describe the separate private workspace,
+> not the current public build. Start with [getting started](getting-started.md) and
+> [current engine architecture](engine.md).
 
 This guide describes the maintainer's separate, existing development workspace. These commands
 are **not available in the public component checkout**. Its root build graph, runtime adapters,

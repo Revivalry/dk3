@@ -11,7 +11,7 @@ software through `dkguard --headless`.
 | [Marsh](marsh.jpg) | Rain and waterfalls on e1m1a, using a positioned noclip camera. |
 | [Menu](menu.jpg) | Native UI showing difficulty selection with supplied menu artwork. |
 
-These frames illustrate the current development build. They do not establish
+These frames illustrate the historical 25 September runtime, before the native rewrite. They do not establish
 campaign completion or full visual parity; see [completion status](../status.md).
 The game data is supplied locally and is not bundled with this repository.
 Depicted artwork remains the property of its respective owners and is not

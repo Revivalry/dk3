@@ -9,8 +9,11 @@ is now the native Zig runtime in `src/`, built on the bundled ioquake3 engine. W
 movement, ECS world systems, movers, pickups, all 28 weapon controllers, episode
 actors, scripts, cinematics, companions, saves and multiplayer modes are connected.
 The consolidated native implementation still requires gameplay verification and
-repairs; no complete episode is accepted. Development stays on
-`rewrite/native-zig-runtime`; `main` preserves the working pre-rewrite game.
+repairs; no complete episode is accepted. The native rewrite was merged into
+`main` on 19 October 2026; the separate preserved installation and saves stay local.
+
+**[Engine field manual](https://dmytrogajewski.github.io/dk3/)** ·
+[Current game assessment](docs/status.md) · [Engine architecture](docs/engine.md)
 
 See the [native architecture and progress](docs/runtime-zig.md),
 [current acceptance](docs/native-acceptance.md), and [full roadmap](docs/rewrite-roadmap.md).
@@ -20,7 +23,8 @@ historical evidence, not acceptance of this runtime.
 ## Build the engine and tools
 
 You need Linux x86-64, Zig 0.16.x, Make, and SDL2 development files discoverable by
-pkg-config. Python 3.10+ is needed for archive tools and synthetic checks.
+pkg-config, Vulkan development files, `glslc`, and SQLite3 development files.
+Python 3.11+ with `dkq3/tools/requirements-test.txt` is needed for component checks.
 
 ```sh
 git clone https://github.com/dmytrogajewski/dk3.git
@@ -34,7 +38,7 @@ and build/install tools together. It is a development snapshot, not a completed 
 
 The client and server are `zig-out/native-dev/bin/dk3` and `zig-out/native-dev/bin/dk3ded`. The engine source
 is included under `engine/ioquake3`; no separate ioq3 or Gold checkout is required.
-See [building](docs/building.md) for products, optional QVM tools, and dependencies.
+See [building](docs/building.md) for build products and dependencies. Zig is the only game/client/UI runtime.
 
 `dkguard` runs commands with memory limits, timeouts, and optional headless graphics. For example:
 

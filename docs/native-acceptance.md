@@ -1,5 +1,40 @@
 # Native port acceptance
 
+The [current game assessment](status.md) reconciles this historical scenario ledger
+with the merged source as of 20 October 2026. Results below retain their original
+runtime, assets and limits. Implementation and focused passes do not establish
+complete episode/campaign or artistic acceptance.
+
+## Sequence 427 — game-state-assessment — focused input and persistence replay passed
+
+Assessed 20 October 2026, after PR #1 merged the native runtime into `main`.
+The [current game state](status.md) replaces the stale prototype-era summary.
+Current source identities are protocol 1351, renderer ABI 13, native save schema 2
+and portable save codec 1. A source/evidence review covered class registries, review
+sheets, local result artifacts and later renderer documentation.
+
+Fresh runs used an immutable `zig build play-install` generation with existing local
+assets/overlays. The accepted replays used `dkguard --headless --screen 960x540
+--mem 8G --timeout 180s`, software OpenGL1 and temporary profiles/saves.
+Installation/module/asset identity:
+`98392cd5628d6695e4acefd2a6f7c0361a750a438d4e71d4455fced1544547a1`.
+Private evidence: `zig-out/reports/game-state-427/`.
+
+| Scenario | State | Scope and limits |
+| --- | --- | --- |
+| Isolated current-code installation | Passed | Completed existing assets, current engine/modules, preserved installation/saves untouched |
+| Normal input after admission | Passed | Processed forward input moves the player more than eight units; release and crouch input acknowledged. Diagnostic health setup; no authored-route claim |
+| Save/load after admission | Passed | Save at health 997, change to 900, load restores 997 and normal processed input on e1m1a |
+| Resident region and death recovery | Passed | Controlled e1m1a/e1m1b transfers, independently changed actors, player identity, health 73, native save/load and actual death checkpoint restore. Diagnostic transfers/placement/health, not campaign traversal |
+| Legacy movement/save fixture startup | Invalid setup; retained | Started before region admission committed. Missing movement diagnostics and `RegionAdmissionInProgress` save refusal do not establish gameplay regressions. Replayed with the existing state-synchronized driver |
+| Full campaign, multiplayer matrix and Vulkan visual acceptance | Unrun in this assessment | Earlier focused evidence retains its original scope |
+
+The engine manual and public documentation site are built from reviewed Markdown,
+with search, class reviews and historical records. Site verification includes strict
+build, all rendered internal links/anchors, search indexing, desktop/mobile navigation
+and inspected browser captures. No proprietary packages or local report artifacts
+are included in the website.
+
 ## Sequence 426 — sidekick-hazards — implemented; focused scenarios passed
 
 **Change.** Sidekicks kept walking into lava, slime and liquid nitrogen and sank in water. Gold had the same weaknesses, so this is a recorded deviation. The shared pilot gains `careful_footing` and `tread_water` capabilities, which companions set. The brain no longer settles under water, in water the leader is not in, or below its spot. A new catch-up warp brings a stuck companion beside the leader out of the leader's sight. The route graph already classes nitrogen as lava (bspc `map_q3.c`, since commit c0448ef); that graph is in the asset generation of 11 October (`zig-out/assets/current`), not in the older `zig-out/play/current` installation.
@@ -14,7 +49,7 @@ Runs used the current engine built into `zig-out/engine-426` with that asset gen
 
 Unit tests: 399/399 runtime tests pass, including stopping reach, lethal liquid ahead, landings of hops, the nearest dry floor out of a pool, settling rules and catch-up timing. The class-ownership lint passes.
 
-## Sequence 375 — play-feedback-fixes — implemented; focused scenarios passed
+## Sequences 424–425 — play-feedback-fixes — implemented; focused scenarios passed
 
 Owner-reported defects from play. Evidence is in `zig-out/reports/runtime-zig-424/`, from installation
 `4b47f7…` (and later reinstalls with the same source plus timing prints). These runs are diagnostic
@@ -74,15 +109,13 @@ except the view weapon.
 | 373 | `vulkan-renderer-rain-realism` | Implemented: physical drops (1-3 mm, Gunn-Kinzer speeds, 1/30 s streaks, pixel-wide with coverage alpha), per-drop lighting with back-lit glints, distant rain as froxel fog under open sky, crown splashes, puddle-only ripples, porosity darkening, TAA motion mark. Also: crashes now write `crashlog.txt` with a backtrace (`crashtest/`); ion-blaster glow no longer floods the fog (`fire1/`) | `rain1/`, `rain2/` (RTX 5090) |
 | 371 | `vulkan-renderer-rain-occlusion` | Implemented from the owner's first in-game screenshots: rain occlusion map (`shadows.rainCamera`, lower half of the shadow atlas) hides drops, flakes and splashes under roofs and lands splashes on the stored surface; only exposed surfaces get wet or snowed on. Also: procedural bump off for model skins and faded under magnification (blocky faces), wider baked-light specular lobe and glossy rather than mirror-like wet walls (white speckles), sky column fogged at the authored `fog_skyend` coverage, liquids translucent from below, and a dangling draw-list slice in `renderView` that the new pass exposed (segfault) | `wx3/` (no validation layer was installed on the dev host at the time, so the `r_vkValidation 1` run there proves nothing) |
 
-Open:
-- Owner in-game inspection.
-- An RTX 5090 run of the ray-tracing tier and its performance.
-- Brightness tuning of path tracing against the radiosity (`r_vkPtLightScale`).
-- Alpha-tested foliage is outside the acceleration structures, so it neither
-  casts ray-traced shadows nor blocks path-traced light.
-- Skinned models are not in the acceleration structures: they get shadow-map
-  shadows and DDGI ambient light instead.
-- FSR 3.1 is not bundled; the in-house temporal upscaler covers render scaling.
+Historical open items at the end of that pass included first GPU qualification,
+alpha-tested geometry, skinned RT shadows and FSR integration. Later work supersedes
+those implementation gaps: scoped GPU measurements are recorded, alpha-tested world
+geometry and skinned character shadow rays are implemented, and MIT FSR 3.1 shaders
+are bundled (sequence 380). Optional DLSS remains user-supplied. See
+[Vulkan and remaster](vulkan-remaster.md). Overall artistic acceptance, complete
+hardware coverage and path-tracing brightness tuning remain open.
 
 ## Sequences 347–357 — vulkan-renderer — milestone 1 implemented; owner visual acceptance open
 
@@ -1257,6 +1290,9 @@ is inferred from class counts or test volume.
 
 ## Current outcome matrix
 
+> Historical matrix from the sequence-315 period. The current assessment is
+> [status.md](status.md); later sections above supersede individual implementation claims.
+
 Sequence 309 repairs the shared actor ground-departure check, camera mode
 transport and multiplayer weapon presentation lifetime, and adds worker fear,
 party-health autosaves and softer Cambot lights. Sequence 310 adds the installed-map
@@ -1275,12 +1311,12 @@ remaining admission stalls stay open. Supporting checks do not measure completio
 
 | Milestone | Implemented | Contract-tested | Running native engine / connected play | Reference comparison and remaining work |
 |---|---|---|---|---|
-| Seamless connected regions | Region admission/ordinary exits, qualified collision, actor/projectile transfer, specialized weapons, party ownership and authored script scope | 402 Zig, 82 Python and actual C owner/collision/inline-handle contracts pass | On `187506…`: eleven weapon contact cases, selected controller restores, real turret/frog contact, both renderer combat paths, enemy/companion/player crossing and region save/death restoration | One reviewed corridor and selected interactions. Broader navigation/party actions, multiple views, seam qualification, eviction/admission stalls and fresh route remain open. [Evidence](#sequence-305--specialized-weapons-across-seams). |
+| Seamless connected regions | Region admission/ordinary exits, qualified collision, actor/projectile transfer, specialized weapons, party ownership and authored script scope | 402 Zig, 82 Python and actual C owner/collision/inline-handle contracts pass | On `187506…`: eleven weapon contact cases, selected controller restores, real turret/frog contact, both renderer combat paths, enemy/companion/player crossing and region save/death restoration | One reviewed corridor and selected interactions. Broader navigation/party actions, multiple views, seam qualification, eviction/admission stalls and fresh route remain open. [Evidence](#sequence-305-specialized-weapons-across-seams). |
 | Ground actors and workers | Floor-departure and wet-floor routing repairs; worker retreat/cower and fear audio connected | Settled-motor/jump, capability exclusions and class roots pass through 312 | On `268649…`, Sludgeminion pursues from the unchanged user save; guard dry-ground pursuit/fire replays. Worker/Crox evidence retains its 309 identity | Private ground/water behavior inspected. Full ground-class/worker/campaign routes remain unverified; earlier affected route evidence requires revalidation |
 | Weapons | All 28 class-owned controllers connected; 305 extends spatial and persistent ownership | Class roots and ownership/slot/cancellation contracts execute at 305 | Eleven controlled specialized weapon contacts across A/B; Wyndrax, Nightmare, Metamaser and pending Zeus restore on `187506…`. Three actual Trident tips confirmed | Not all interactions: Trident merge/water, Ballista carried crossing/pin restoration, destruction variants, return/pickup and complete audiovisual comparison remain open |
 | Fresh opening gate | Intro, actors, authored controls, progression and saves connected | Applicable contract roots execute through 308 | **Not accepted:** fresh 305 and superseded 306 runs reach the bridge encounter and fail. A separate legitimate factory checkpoint reaches e1m2a alive | Full coherent New Game→M2 route still required; boss avoidance/firing-lane strategy remains a driver blocker. No modified inventory or assembled checkpoint chain qualifies. |
 | All four episodes | Additional hostile/ambient/boss controllers, scripts, cinematics, companions, world effects and ending connected | Coding-pass contract roots pass at 285; connected scenarios unrun | No complete episode accepted on native runtime | Broader ability/task audit, connected boss/puzzle/companion traversal and ending remain |
-| Saves and visited worlds | Region recovery, autosaves, bounded loading work, actual progress and owner-thread ZIP finalization | Runtime/party-health and actual concurrent ZIP/CRC/cancellation contracts pass at 312 | On `268649…`, user autosave/save2 restore via both menus and death recovery in both renderers with all 10/12 resident worlds; original files preserved | Full live-party autosave and fresh campaign restoration remain unverified. 309 autosave timing retains its identity; historical state stays mandatory. [Evidence](#sequence-312--native-restoration-wet-ground) |
+| Saves and visited worlds | Region recovery, autosaves, bounded loading work, actual progress and owner-thread ZIP finalization | Runtime/party-health and actual concurrent ZIP/CRC/cancellation contracts pass at 312 | On `268649…`, user autosave/save2 restore via both menus and death recovery in both renderers with all 10/12 resident worlds; original files preserved | Full live-party autosave and fresh campaign restoration remain unverified. 309 autosave timing retains its identity; historical state stays mandatory. [Evidence](#sequence-312-native-restoration-wet-ground) |
 | Multiplayer and bots | Native sessions/modes/bots; spawn-aware shared weapon presentation; protocol 1350 | Wire, counter-wrap and respawn contracts pass at 309 | Final 309: two actual UDP clients show advancing attack frames before/after respawn and pass spectate/rejoin/reconnect/restart | Every weapon interaction, full CTF/deathtag, public admission/authenticated rooms and full modes remain open. No service deployment |
 | World/effects | Authored controls, hazards, debris, lighting and sky connected; softer Cambot lights and default model silhouettes | Applicable aggregate contracts pass at 313 | Final 313: character floor/wall shadows and restoration in both backends; armor/ammunition shadows and resident combat in OpenGL2. Earlier Cambot/sky evidence retains its identity | Full material/terrain, foreign-view shadow generation, brush casting and performance remain open; Cambot enhancement is not a shadow-mapped spotlight |
 | Presentation and cinematic input | Menus/loading art, interpolation, cinematic input and all camera modes connected | Three-bit camera modes survive actual message encoding at 309 | Final 309: ordinary e1m1c button use, remote door view, release and finished-scene save/load. Earlier intro/menu evidence retains its recorded identity | Full fresh intro, all authored scenes, menu equivalence and audiovisual comparison remain unverified |

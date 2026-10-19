@@ -32,4 +32,6 @@ before spawning entities, resolve persistent IDs at use time, and call ioquake3 
 on its owning thread. Engine structs are projections, not authoritative game state.
 
 See [the runtime plan](../docs/runtime-zig.md) for full scope and implemented versus verified status.
-All development stays on `rewrite/native-zig-runtime`; `main` preserves the working game.
+The native rewrite reached `main` on 19 October 2026. Connected native work continues
+on `rewrite/native-zig-runtime` and reaches main through reviewed merges. The separate
+preserved installation and saves remain local.

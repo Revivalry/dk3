@@ -1,5 +1,10 @@
 # Internet room operations
 
+> Historical operator record. Host addresses, deployment paths and observations below
+> describe a particular local deployment, not an available public service or current
+> native-runtime acceptance. See [current status](status.md) and
+> [online architecture](multiplayer-zig.md).
+
 Sequence 203 remains in implementation. One provisioned Linux host runs Caddy, the
 coordinator and an enrolled worker as separate services. Explicit-CA IP HTTPS,
 public room creation/search, encrypted Internet joins, three human clients,

@@ -1,5 +1,12 @@
 # Vulkan remaster renderer
 
+> Current source summary (20 October 2026): Vulkan 1.3 is the default renderer with
+> OpenGL2 fallback. The raster remaster, optional RT/DDGI/path tracing, alpha-tested
+> world RT geometry, skinned character shadow rays and bundled MIT FSR 3.1 are
+> implemented. DLSS is an optional external module. Later scoped GPU measurements
+> supersede the early smoke-only starting state below. Overall owner visual acceptance
+> remains open. See [engine architecture](engine.md) and [current status](status.md).
+
 Status: milestone 1 (`renderer_vulkan.so`, sequences 347-357) and the remaster
 roadmap after it (sequences 358-373) are implemented. The owner directed the
 remaster roadmap to completion; it remains outside the V-gates in

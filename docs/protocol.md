@@ -1,175 +1,82 @@
-# dk3 protocol and native state
+# Protocol and native interfaces
 
-The in-progress standalone wire protocol is **1346**. Engine, server, game and client modules must
-be built together. Upstream foundation modules remain separate development targets;
-dk3 modules advertise game version `dk3-1`. Native gameplay state contains no Gold
-edict mirror, import/export table or function registry.
+**Current wire protocol: 1351.** The authoritative declarations are
+`engine/ioquake3/code/qcommon/qcommon.h` and `src/online/api.zig`. Clients, dedicated
+servers and native modules need matching compatibility identities. Stock Quake III,
+older dk3 protocols and incompatible demos cannot be treated as matching peers.
 
-The active engine message codec is now Zig: `src/network/message.zig` owns bounded
-bit/scalar reads and writes, user-command deltas and entity/player snapshots;
-`message_schema.zig` defines their ordered fields and widths. ABI offsets locate
-local fields but never serialize native structure memory. Compile-time checks catch
-missing entity fields, duplicate offsets and invalid scalar widths. Upstream Huffman
-compression remains a reviewed C dependency. `zig build test-codec` compares encoded
-bytes and decoded state against the licensed C reference, including signed timers,
-extensions and command changes; additional cases cover truncated buffers and bounds.
-The C message codec is compiled only for this differential check.
+## Distinct versioned boundaries
 
-The engine's standard model indices, entity frame, origins, trajectories, events and
-collision fields retain their meanings. A game entity owns additional campaign data
-inside `gentity_t.dk`. Its integer ID is map-local, allocated in spawn order, independent
-of a recycled engine entity slot. IDs, rather than memory addresses, identify delayed
-target owners and activators. Player IDs occupy 1 through MAX_CLIENTS.
+| Boundary | Current identity | Definition |
+| --- | --- | --- |
+| Client/server wire | 1351 | Engine `qcommon.h`; online `api.zig` |
+| Renderer exports | 13 | `engine/ioquake3/code/renderercommon/tr_public.h` |
+| Online control API | 1 | `src/online/api.zig` |
+| Native gameplay save schema | 2 | `src/mechanics/domain/snapshot.zig` |
+| Portable save codec | 1 | `src/core/domain/save_stream.zig` |
 
-Player state adds explicit delta-coded campaign fields: `dk3Inventory` (weapon bitset),
-`dk3Experience`, `dk3Level`, five `dk3Attributes`, `dk3SwordExperience`, `dk3Keys` and
-`dk3Status`. Inventory, experience and flag fields use 32 bits; level and attributes
-use 8. The existing ammunition array retains its ammunition meaning and grows to
-32 entries, with a 32-bit delta mask. Server and prediction share movement code.
+These identities describe different contracts. In particular, compatibility labels
+produced by `build/compatibility.zig` do not replace the native save schema declaration.
+[Save format](save-format.md) documents persistent records.
 
-These interfaces remain in development. Running native clients have joined a
-separate server, received snapshots and scores, respawned and reconnected. A
-controlled challenge with protocol 68 produces the matching-build error in the UI.
-Campaign saves have restored actor and script state; corruption and interrupted-write
-recovery have been exercised. The complete network and persistence matrix remains
-open in the roadmap.
+## Snapshot and message ownership
 
-The weapon state also carries save gems, attribute points, artifact expiry times,
-held attack state, burst count and charge. `ET_DK3_MISSILE` and `ET_DK3_ITEM` distinguish
-native dk3 presentation from the upstream weapon/item enumerations. Combat beam/blast
-notifications have explicit dk3 event identifiers.
+The Zig network layer owns bounded message fields, channel state and packet security.
+The engine projects native authoritative state into transport structs; it never sends
+ECS chunks, pointers or native structure padding. `src/network_engine.zig` connects
+engine calls to the Zig message codec. Reviewed upstream Huffman compression remains
+C. The upstream C message codec is retained for differential tests rather than as a
+second active wire implementation.
 
-Cinematic camera state has its own active flag, origin, angles, field of view and RGBA
-blend. The server uses that origin for snapshot visibility while retaining the player's
-physical location. The game freezes player movement and damage during playback; cgame
-renders the supplied camera track. Camera transforms are not hidden in unrelated fields.
+Entity/player field schemas state their widths explicitly. Local ABI offsets locate
+fields for encoding, not memory blocks to serialize. The component suite checks
+bounds, signed timers, extensions, command changes and truncated input against the
+licensed reference. `zig build test-codec` runs the focused codec comparison.
 
-Game imports 700 and 701 implement save storage service **version 1**. Write accepts a
-slot, a bounded buffer and length; read additionally selects current or previous. Slots
-contain lowercase letters, digits, underscores and hyphens. Data lives beneath the
-engine's private home-state game directory. Writes sync the pending file, preserve the
-old inode as the previous save, atomically replace the current path and sync the directory.
-A game module supplies and validates the versioned records; the engine does not know game
-rules. The Linux x86-64 target implements the filesystem durability operations directly.
+The extended engine supports 512 model bindings, 1,024 sound bindings, 4,096
+configstrings and 128 KiB of configstring text. Model indices, event parameters,
+region identities and native effects extend the stock protocol. Matching native
+modules are required. Source changes affecting these contracts must update both
+sides and the compatibility identity, with rejection paths tested.
 
-The [Zig multiplayer migration](multiplayer-zig.md) introduces managed-room tickets
-and directional ChaCha20-Poly1305 keys. Each protected datagram retains the channel
-sequence/qport/checksum header as authenticated associated data, followed by a
-little-endian 64-bit nonce counter, 16-byte authentication tag and encrypted payload.
-Counters start at one; a 64-packet replay window admits reordering. Authentication
-must succeed before replay, fragment or NAT mapping state changes. Offline channels
-remain separate from mandatory authenticated public-room admission. Protocol 1346
-acceptance is still unverified; older protocol evidence below is historical.
+## Native engine services
 
-Protocol 1342 uses 9-bit model indices, 10-bit looping sound indices and 16-bit event
-parameters. Models and sounds have separate limits of 512 and 1,024; configstrings have
-4,096 slots and 128 KiB of text. Gamestate messages carry no entity baselines. Both sides
-initialize them to zero, and new entities are encoded against zero in the first snapshot.
-The reassembled message limit is 256 KiB. Fragment offsets use 32 bits; fragment lengths
-remain bounded by the existing datagram fragment size. Earlier development builds
-and stock Quake III peers must reconnect with matching binaries.
+Game, client and UI modules are native Zig shared libraries loaded through ioquake3's
+module boundary. `src/engine` owns imported engine types and gateways. Gameplay
+objects remain ECS state; engine entities/player states are projections.
 
-Team objectives use explicit player fields `dk3Objective` (0, red object, blue object)
-and `dk3ObjectiveUntil` (simulation deadline). Entity `dk3Team` identifies objective
-presentation. `GT_DK3_DEATHTAG` is gametype 8. CTF remains gametype 4; deathmatch is 0.
-Both ordinary and external player event parameters carry 16-bit values.
+The renderer export boundary includes resident-world handles and native model/bone,
+fog, weather and capture services. Renderer handles, network world identities and
+persistent save namespaces have separate lifetimes and cannot be substituted for
+each other. See [architecture](engine.md) and [resident worlds](seamless-worlds.md).
 
-Entity fields `dk3Scale` and `dk3Alpha` preserve decoration scale and transparency
-without repurposing unrelated Quake III fields. Protocol 1342 includes both as floats.
+Storage services move bounded buffers between the game and private engine filesystem.
+The engine supplies durability/slot operations; the game validates snapshot records,
+resource bindings, map checksums and references. Original saves and asset packages
+are not accepted as native executable state.
 
-Player state carries five temporary attribute deadlines (`dk3BoostUntil`) and the current
-campaign episode (`dk3Episode`). Sprite orientation and additive blending use the two
-low bits of `dk3RenderFlags`.
+## Managed-room packet protection
 
-`ET_DK3_EFFECT` uses explicit effect kind/flags, simulation start/duration, emission rate,
-velocity magnitude, spread, radius, color, volume bounds, endpoint and acceleration.
-Game code owns activation, damage, earthquake impulses and target resolution; client code
-owns bounded visual particles and interpolation. Effect definitions are saved as typed
-entity fields. Protocol 1342 is a development interface; matching builds are required.
+The online API separates coordinator allocation/admission from game datagrams.
+Workers advertise compatible builds/maps and launch isolated dedicated servers.
+Guest challenges and signed identities authorize room admission; tickets provide
+separate directional ChaCha20-Poly1305 keys.
 
-Protocol 1342 carries 11-bit entity numbers (2,048 slots), with matching engine and
-client snapshot capacities. Supplied map data includes more than 1,000 entity records;
-transient gameplay objects need capacity beyond those records. This is separate from
-the removal of gamestate baselines. A mismatching standalone challenge fails with an
-instruction to install matching dk3 builds.
+Protected datagrams authenticate channel metadata and a monotonic nonce counter
+before changing replay, fragment or peer-mapping state. The security implementation
+admits bounded reordering and rejects replay/tampering. Offline local channels are
+a separate admission path. A reported content/rules hash is a compatibility claim,
+not trusted client or anti-cheat attestation.
 
-`dk3Quest` is a 16-bit player quest record; bit zero means the bottle bomb has been
-assembled from its four ingredients. `dk3Carrier` names a carried objective's player
-slot plus one. Zero means uncarried. Cgame attaches it to the supplied character tag.
+See [online architecture](multiplayer-zig.md) for room lifecycle, compatibility,
+worker reconciliation and outage behavior. Historical operator records describe
+specific earlier deployments and do not establish current public availability.
 
-Entity audio has explicit `dk3SoundVolume`, `dk3SoundMin`, `dk3SoundMax` and
-`dk3SoundFlags` fields. Cgame import 700 is `CG_DK3_SOUND_PARAMS_V1`: entity number,
-volume, full-volume distance, silent distance and flags. Maximum zero selects upstream
-attenuation; flag one removes directional panning while preserving attenuation. Both
-software and OpenAL mixers implement the authored gain curve. This import is in the
-cgame namespace and is separate from game-module save imports.
+## Verification scope
 
-The AAS mover contents field uses nine bits at shift 22 in both the bundled compiler
-and bot library; navigation packages must be generated with this dk3 BSPC. Protocol
-1342 adds explicit player sound-environment style (0–4), wet response and effect gain
-(0–1). Cgame import 701 applies these through sound-environment interface v1. Full
-saves preserve the values; map entry initializes a dry environment at full effect gain.
-
-Snapshot history uses a shared ring sized for 32 full single-player worlds or 128
-entities per client per history packet, whichever is larger. Large multiplayer views
-may expire old deltas earlier; the existing sender then emits a complete snapshot.
-This changes history retention, not the 2,048-entity snapshot limit. The standalone
-engine defaults to a 512 MiB hunk. Both renderers reserve 4,096 polygon slots and
-16,384 vertices for weather and beam quads alongside other scene geometry.
-
-Death events reserve cause values 129–156 for the native weapon IDs added to base
-128. Direct hits, splash and damaging status effects retain their weapon identity
-in server logs and client death messages. Existing environmental causes keep their
-ioquake3 values. This uses the existing event parameter without a wire layout change.
-
-Game imports 700/701 (save write/read) and 702 (local world hold) take an explicit
-version argument, currently 1, in both native and QVM call signatures. World hold
-requires exactly one loopback client. It stops simulation and user-command movement
-while still delivering the restored snapshot and reliable commands. Cgame acknowledges
-`dk3_restore_ready` when processing that snapshot; the game releases the hold. The
-engine discards loading-time catch-up, so restored deadlines remain unchanged until
-the client is ready. Map teardown clears the hold. This is a loading service; game
-rules and save validation remain in the module.
-
-Powerup slot 15 (`PW_DK3_GASHANDS`) carries the campaign Gas Hands expiry in
-simulation milliseconds. It uses the existing 16-entry powerup array; wire sizes
-and prior slots are unchanged. Zero denotes the untimed multiplayer weapon.
-Movement prediction and the server remove expired Gas Hands through the same
-weapon-state function. The server pauses its remaining lifetime during cameras.
-
-Protocol 1343 adds `dk3ModelScale[3]` and the actor animation start, first frame,
-last frame, rate and loop fields. The game publishes these from authored scale
-and saved logical animation state after each simulation frame. Clients evaluate
-animation time continuously, without interpolating between unrelated sequences.
-Actor position and facing use the native interpolated trajectories. Client and
-server must both use the new protocol; existing asset packages remain usable.
-These derived actor presentation fields require no new save records.
-
-Configstring 28 carries the authored loading-screen name. Slot 27 remains the
-upstream item-presence list; companion presentation uses slot 26. UI and cgame
-share the supplied loading tiles and progress artwork. Resource registration
-uses the existing cgame sound-update import so loading ticks reach the mixer.
-
-`DK_FX_SPOTLIGHT` carries a collision-clipped cone endpoint, radius and color.
-An ordinary cambot actor may publish that effect alongside its model; save
-validation permits that explicit combination. Its flare follows the supplied
-`hr_light` model tag. Other model entities cannot masquerade as world effects.
-
-Cloud shader stages share one sky mesh in both renderers. The earlier upstream
-loop appended unreferenced copies for every additional stage and could overflow
-the vertex array when a three-stage sky covered several cube faces. Each stage
-still applies its own texture transform and color/alpha waveform.
-
-Protocol 1344 adds `EV_DK3_IMPACT`: weapon identifies the attack, `origin2` is the
-contact normal, `otherEntityNum` is the contacted entity, and event parameter 0/1/2
-means surface/damageable body/liquid. `dk3RenderFlags` bit 8 reverses the explicit
-finite model animation range. Effect flags bits 8–10 identify CP1–CP4 atlas particles
-(0 selects the existing simple/smoke/bubble flags). Matching modules are required.
-
-Managed room compatibility is separate from binary identity. `rules.json` records
-protocol/schema and a conservative digest of admitted gameplay sources; build flags
-and ELF bytes do not participate. Installation adds a canonical hash of sorted,
-uncompressed base/map/data/navigation package entries. ZIP timestamps and compression
-do not participate. Cosmetic profile names distinguish stock and texture-only HD
-packages, which workers explicitly allow. This establishes compatibility claims;
-it cannot attest that a hostile client is executing an approved binary.
+Codec/security unit and differential tests pass in component CI. Historical focused
+runs cover separate-process connection, snapshots, respawn, reconnect and some
+managed-room lifecycle failures. The complete current native Internet/mode/map,
+team/objective, error and disconnect matrix remains open. Check [current state](status.md)
+and [native acceptance](native-acceptance.md) before treating an older protocol run as
+current acceptance.
