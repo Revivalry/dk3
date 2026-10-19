@@ -2,6 +2,38 @@
 
 ## Current completion state
 
+The current native outcome matrix is [native acceptance](native-acceptance.md).
+All 28 weapon policies are connected; interaction acceptance remains open. Prioritize the fresh continuous
+New Game → full intro → e1m1a → e1m1b bridge → e1m1c → e1m2a milestone.
+Historical pre-rewrite implementation/acceptance rows below are not transferred
+to the native runtime. This integration gate does not reduce the complete-port scope.
+
+Unfinished native work lives on `rewrite/native-zig-runtime`; `main` is restored to
+its pre-rewrite working tree. Sequence 225 establishes `src/runtime` as the permanent
+module root, enforces pure-layer boundaries and connects initial combat to authored
+civilian movement, death and witness panic. Main must not receive rewrite commits
+without an explicit merge/release request.
+
+Sequence 230 connects native save/load, staged validation and direct saved-map menu
+loading. Sequence 231 connects authored exits and saved visited-world archives, with
+an e1m3b/e1m3a round trip passing. Sequence 232 adds native pellet/rotary combat and
+class-owned impact presentation; sequence 233 adds three projectile classes and
+animated explosions. Sequence 234 connects timed melee actions and kill progression,
+including saved remaining strikes and resumed attack poses on both renderers.
+Sequence 235 adds poison/freezing, delayed projectile releases and three more
+weapon policies, with focused authored damage and native save evidence.
+Schema-5 migration, remaining combat/actors,
+companion/cinematic progression and multiplayer remain implementation work.
+
+Sequence 217 begins the accepted [native Zig replacement runtime](runtime-zig.md):
+archetype ECS, parallel systems, separate native modules and an isolated installation.
+Sequences 218–221 connect native movement, shared weapon controllers, binary movers,
+train paths, attachment assemblies, secret doors, continuous rotation and core
+pickups/key locks with authored spawn filtering. The replacement remains incomplete.
+Sequence 223 removes the old runtime at the owner’s request. Only native Zig
+game/client/UI development continues; removal is not gameplay acceptance.
+This supersedes the historical C/QVM game-module guidance below.
+
 Sequence 209 adds [configurable permanent rooms](online-operations.md#permanent-rooms)
 entirely on the server, retaining compatibility with the already distributed RPM.
 Focused acceptance verifies 16-slot bot filling, human replacement/refill, local
@@ -286,6 +318,18 @@ the run log. The rows remain open until their complete acceptance evidence exist
 - [ ] **V12 — Final checks/publication:** applicable broad checks once after scenarios pass;
   complete source/provenance/license review, private-data exclusions, preserved local saves,
   and verified README clone/build/assets/play path. Refresh only results invalidated by fixes.
+
+## Remaster renderer proposal
+
+[vulkan-remaster.md](vulkan-remaster.md) records the owner-requested Vulkan renderer:
+a third renderer, `renderer_vulkan.so`, written in Zig and now the default, with OpenGL2
+as the automatic fallback.
+Its milestone 1 (sequences 347-357) is accepted implementation scope. The owner then
+directed the remaster roadmap to completion: HDR/PBR, water, volumetrics, TAA, GPU
+weather, clustered lights, model shadows, material sidecars, ray-traced shadows and
+reflections, DDGI, directional lightmaps and a path-tracing mode (sequences 358-370).
+All of them are implemented and await owner visual acceptance. They stay outside
+V1–V12 and do not gate the parity acceptance above.
 
 ## Existing evidence and migration
 

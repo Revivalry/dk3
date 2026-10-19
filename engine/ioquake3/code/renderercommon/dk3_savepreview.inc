@@ -8,7 +8,8 @@ static qboolean R_SavePreviewJPEG( const byte *source, int width, int height, in
 	byte *preview, *dst;
 	int px, py, sx, sy, x0, x1, y0, y1, count, sum[3], stride = width * 3 + padlen;
 
-	if ( Q_strncmp( fileName, "screenshots/dk3-save-", 21 ) ||
+	/* Save pictures are named dk3save-<slot>-a|b; dk3-save- is the old name. */
+	if ( ( Q_strncmp( fileName, "screenshots/dk3save-", 20 ) && Q_strncmp( fileName, "screenshots/dk3-save-", 21 ) ) ||
 		width <= DK3_PREVIEW_WIDTH || height <= DK3_PREVIEW_HEIGHT ) {
 		return qfalse;
 	}

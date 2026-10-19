@@ -1,5 +1,50 @@
 # Game completion state
 
+Feature branch `rewrite/native-zig-runtime` contains the incomplete native runtime;
+`main` is restored to the working pre-rewrite tree. Sequence 225 replaces the temporary
+source root with `src/runtime` and enforces domain/engine dependency boundaries.
+Glock/Disruptor trace damage and Ion projectiles are connected. Four civilian classes
+have authored metadata, animation, movement, death and witness panic; the e1m2a
+worker scenario has passed with diagnostic positioning/equipment. Sequence 226 connects Mishima guard perception, retaliation, pistol/reload cycles
+and player damage, with an authored guard scenario passing. Most weapon combat,
+remaining actors, full navigation, scripts/cinematics, save restore/travel, full presentation
+and multiplayer integration remain open. Sequence 227 connects AAS pursuit/escape and authored
+destructible controls, event sequences, wall toggles and hurt volumes. Focused
+worker, occluded guard pursuit and laser shutdown scenarios pass; full navigation
+and world presentation remain open. Sequence 228 connects class-owned view-weapon
+animation/audio, additive Glock/Ion flashes, weapon shine, HUD and inventory.
+The three currently implemented combat weapons pass presentation transitions and
+inspected captures. Sequence 229 connects native menu navigation, supplied artwork,
+settings, conflict-aware rebinding, difficulty start and pause/resume. The mouse and
+keyboard scenario passes after repairing signed native ABI mouse arguments.
+Sequence 230 connects native staged save restoration and persistent mouse save-slot
+selection. Mid-lift load, previous-save recovery, corruption rejection and direct
+main-menu saved-map loading pass focused scenarios. Sequence 231 connects authored
+touch exits, named arrivals, incoming player state and visited-map archives. An
+e1m3b/e1m3a round trip and a full save recover the destroyed laser control without
+replacing the incoming player's health/equipment. Diagnostic positioning was used.
+Sequence 232 adds Shotcycler/Slugger pellet damage, Ripgun traces, saved spread RNG,
+shared recoil and native impact sound/decal/particle/light presentation. Focused normal
+attacks pass for five ranged weapons; Ion flesh hits choose explosion sounds and
+world hits choose spark sounds. Six weapon combat policies are now implemented,
+including Disruptor. Sequence 233 adds Bolter, Sidewinder and Cordite flight/contact
+policies, explosion sprites and projectile saves. Focused checks pass on both
+renderers; Cordite detonates on an authored guard before its fuse expires. Nine
+combat policies are connected at sequence 233. Sequence 234 implements Silverclaw
+and Daikatana timed strikes, save continuation and kill/sword experience. Authored
+worker kills and saved reward totals pass focused scenarios on both renderers;
+the repaired restored attack pose also passes on both renderers. Eleven combat policies
+are connected at sequence 234. Sequence 235 adds Gas Hands, Venomous and Kineticore,
+including saved poison/freeze effects, delayed releases, poison pools and sprite
+projectiles. Focused authored damage/status/save scenarios pass on both renderers;
+the complete water/trail/art comparison remains open. Fourteen combat policies
+are connected; the remaining 14 still need native combat. Schema-5 migration,
+companion/cinematic exits, multiplayer screens and complete menu parity remain open.
+See [runtime progress](runtime-zig.md).
+
+The preserved installed game and saves are untouched. The results below describe
+historical runtime versions and do not establish acceptance of the new runtime.
+
 Sequence 203 is implementing the accepted [Zig multiplayer/Internet-room scope](multiplayer-zig.md).
 The one-host IP deployment passes explicit-CA HTTPS verification and focused real
 Internet scenarios: three encrypted clients, readiness, browser ping, reconnect,
@@ -46,7 +91,25 @@ are removed. The owner’s existing quicksave, crossings from both ends at beam
 height, fresh weapon-driven shutdown and save/reload pass. Normal `dk3` is updated
 and existing saves/settings are preserved.
 
-Updated 2026-09-26, through **laser-shutdown, sequence 216**.
+Sequence 217 begins the [native Zig replacement](runtime-zig.md): isolated native
+entrypoints, ECS/job/scheduler infrastructure, map metadata, collision probes,
+shared inventory rules and a save-record codec. **The replacement is not playable;
+full migration and cutover remain open.** See the run log for foundation checks.
+The normal launcher and owner saves remain on the existing runtime.
+
+Sequence 218 continues native movement/prediction, shared input policies and tuning
+for all 28 weapons, build-identity checks, binary movers and target routing. Native
+client connection and focused movement/weapon/door checks have passed. Transactional
+rider pushing and authored target progression remain unverified; native combat,
+actors, persistence, presentation and UI are still unfinished. **Full migration and
+cutover remain open.** The ordinary launcher remains on the existing runtime.
+
+Sequence 219 adds train path/dwell transitions and attachment assemblies. The native
+e1m3a lift carries the rider, holds its ten-second upper dwell and returns to lower
+rest in the isolated replay. Compound obstruction, rotating riders and authored
+progression remain unverified. Native gameplay migration is still in progress.
+
+Updated 2026-09-26, through **runtime-zig, sequence 219 (active)**.
 
 **dk3 is a playable development build, not a completed Daikatana port.** Independent
 native systems exist across the game, but implementation and successful focused

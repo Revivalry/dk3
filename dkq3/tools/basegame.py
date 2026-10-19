@@ -22,9 +22,11 @@ DEFAULT_CFG_HEADER = "// dkq3 base game: default key bindings (dkq3/tools/basega
 BINDINGS = (("w", "+forward"), ("s", "+back"), ("a", "+moveleft"), ("d", "+moveright"), ("SPACE", "+moveup"),
             ("c", "+movedown"), ("MOUSE1", "+attack"), ("MOUSE2", "detonate"), ("SHIFT", "+speed"), ("F11", "screenshot"),
             ("e", "use"), ("i", "inventory"), ("MWHEELUP", "weapprev"), ("MWHEELDOWN", "weapnext"),
-            ("F5", "save quick"), ("F9", "load quick"), ("f", "companion follow"), ("h", "companion wait"),
-            ("g", "companion attack"), ("j", "companion pickup"), ("p", "attribute_next"),
-            ("o", "attribute_increase"), ("ENTER", "cin_skip"), ("TAB", "+scores"))
+            ("F5", "save quick"), ("F9", "load quick"), ("f", "companion follow"), ("h", "companion stay"),
+            ("g", "companion attack"), ("j", "companion get"), ("z", "sidekick_next"), ("x", "sidekick_apply"),
+            ("v", "sidekick_swap"), ("o", "hud_cycle"), ("k", "hud_prev"), ("l", "hud_next"), ("SEMICOLON", "hud_use"),
+            ("p", "attribute_next"), ("u", "attribute_increase"), ("ENTER", "cin_skip"),
+            ("TAB", "+scores"))
 
 # sound/feedback/hit.wav: the default sound effect (code/client/snd_openal.c:484, code/client/snd_dma.c:402), a short
 # square-wave click in 16-bit mono PCM (code/client/snd_codec_wav.c:131-176).

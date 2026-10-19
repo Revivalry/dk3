@@ -686,6 +686,7 @@ void SV_DropClient( client_t *drop, const char *reason ) {
 	if ( drop->state == CS_ZOMBIE ) {
 		return;		// already dropped
 	}
+	Com_Printf( "Client %s dropped: %s\n", drop->name, reason );
 
 	if ( !isBot ) {
 		// see if we already have a challenge for this ip
@@ -797,10 +798,10 @@ static void SV_SendClientGameState( client_t *client ) {
 
 	// write the configstrings
 	for ( start = 0 ; start < MAX_CONFIGSTRINGS ; start++ ) {
-		if (sv.configstrings[start][0]) {
+		if (sv.world->configstrings[start][0]) {
 			MSG_WriteByte( &msg, svc_configstring );
 			MSG_WriteShort( &msg, start );
-			MSG_WriteBigString( &msg, sv.configstrings[start] );
+			MSG_WriteBigString( &msg, sv.world->configstrings[start] );
 		}
 	}
 

@@ -77,12 +77,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #ifdef ROUTING_DEBUG
-int numareacacheupdates;
-int numportalcacheupdates;
+#define numareacacheupdates (aasworld.numareacacheupdates)
+#define numportalcacheupdates (aasworld.numportalcacheupdates)
 #endif //ROUTING_DEBUG
 
-int routingcachesize;
-int max_routingcachesize;
+#define routingcachesize (aasworld.routingcachesize)
+#define max_routingcachesize (aasworld.max_routingcachesize)
 
 //===========================================================================
 //
@@ -1510,6 +1510,9 @@ void AAS_UpdatePortalRoutingCache(aas_routingcache_t *portalcache)
 					portalcache->traveltimes[portalnum] > t)
 			{
 				portalcache->traveltimes[portalnum] = t;
+				// AAS_PredictRoute also consumes the selected first reachability.
+				// Keeping only its cost makes every portal choose exit zero.
+				portalcache->reachabilities[portalnum] = cache->reachabilities[clusterareanum];
 				nextupdate = &aasworld.portalupdate[portalnum];
 				if (portal->frontcluster == curupdate->cluster)
 				{
@@ -1710,6 +1713,7 @@ int AAS_AreaRouteToGoalArea(int areanum, vec3_t origin, int goalareanum, int tra
 	if (clusternum < 0)
 	{
 		*traveltime = portalcache->traveltimes[-clusternum];
+		if (!*traveltime) return qfalse;
 		*reachnum = aasworld.areasettings[areanum].firstreachablearea +
 						portalcache->reachabilities[-clusternum];
 		return qtrue;

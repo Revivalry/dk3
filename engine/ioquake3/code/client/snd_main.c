@@ -39,7 +39,7 @@ static entitySoundParams_t entitySoundParams[MAX_GENTITIES];
 static soundEnvironment_t soundEnvironment = {0, 0, 1, 1};
 
 void S_SetEnvironment(int style, float reverb, float gain) {
-    if (style < 0 || style > 4 || Q_isnan(reverb) || Q_isnan(gain) ||
+    if (style < 0 || style > 30 || Q_isnan(reverb) || Q_isnan(gain) ||
         reverb < 0 || reverb > 1 || gain < 0 || gain > 1)
         Com_Error(ERR_DROP, "dk3 sound environment v1: invalid parameters");
     if (soundEnvironment.style != style || soundEnvironment.reverb != reverb || soundEnvironment.gain != gain) {
@@ -79,6 +79,7 @@ static qboolean S_ValidSoundInterface( soundInterface_t *pSi )
 	if( !pSi->StopBackgroundTrack ) return qfalse;
 	if( !pSi->RawSamples ) return qfalse;
 	if( !pSi->StopAllSounds ) return qfalse;
+	if( !pSi->StopLocalSound ) return qfalse;
 	if( !pSi->ClearLoopingSounds ) return qfalse;
 	if( !pSi->AddLoopingSound ) return qfalse;
 	if( !pSi->AddRealLoopingSound ) return qfalse;
@@ -174,6 +175,10 @@ void S_StopAllSounds( void )
 	if( si.StopAllSounds ) {
 		si.StopAllSounds( );
 	}
+}
+
+void S_StopLocalSound( int channel ) {
+	if (si.StopLocalSound) si.StopLocalSound(channel);
 }
 
 /*

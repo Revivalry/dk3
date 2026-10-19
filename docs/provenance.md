@@ -12,6 +12,9 @@ the initial tools release with the bundled engines, runtime, converters and buil
 | QVM build orchestration | Retain independent tooling | `build/qvm.zig`; compiler code is bundled upstream, optional targets only |
 | Upstream LCC compiler | Preserve separate terms; qualification open | `engine/ioquake3/code/tools/lcc/COPYRIGHT` restricts sale; do not describe all bundled third-party code as GPL or declare the open-source-only release complete |
 | Published dkguard and PAK/WAL/PK3 tools | Retain | Initial reviewed tools publication; existing synthetic fixtures |
+| Bundled Lua 5.4.7 (`engine/lua`) | Admit unmodified, MIT notice retained | `engine/LUA-UPSTREAM.json` pins the lua.org archive SHA-256 and every file hash; only the core, auxiliary library and base/coroutine/string/table/math/utf8 libraries link into the server module for the scripted co-op bot ([coop-bot](coop-bot.md)); io/os/package/debug, `lua.c` and `luac.c` are not built |
+| FidelityFX SDK v1.1.4 FSR 3.1 upscaler shaders (`engine/fidelityfx`) | Admit unmodified subset, MIT notice retained | `engine/FIDELITYFX-UPSTREAM.json` pins the commit and every file hash with its upstream path; renderer_vulkan compiles seven GLSL passes (`build/renderer_vulkan.zig`); the SDK's C++ runtime and backends are not bundled; `src/renderer_vulkan/fsr.zig` is project-authored |
+| NVIDIA DLSS (NGX) | Not admitted; optional user-installed runtime | `src/renderer_vulkan/dlss.zig` loads the driver's `libnvidia-ngx.so.1` at run time and a user-supplied `libnvidia-ngx-dlss.so.*` (`r_vkDlssPath`); the DLSS SDK license forbids subjecting it to an open source license, so no NVIDIA binaries, headers or SDK code are in the tree or packages |
 | Offline asset converters and transitive imports | Admit reviewed format handling with replacements | `build/ASSET-SOURCES.json`; only Python/NumPy, local game data and ffmpeg inputs |
 | Renderer-derived conversion routines and embedded patterns | Replaced/removed on admission | Independent background-color propagation, shelf lightmap packing and iterative intersection; original checker/lightstyle samples; removed translated font-width routines |
 | Native dk3 world, menus, glyphs and build/install orchestration | Original implementation | `src/game`, `src/ui`, `src/cgame`, `src/shared`, `build/game.zig`, asset/install scripts; no Gold interfaces |
@@ -99,3 +102,388 @@ and supplied asset names. No Gold runtime, implementation, generated translation
 interface is a build input. The existing ioquake3 C interfaces supply entity,
 collision, damage, snapshot, renderer and audio services; original notices remain.
 The owner's explicit native-Zig scope supersedes the earlier C-only weapons guidance.
+
+Native-runtime sequences 244–248 independently implement opening cinematic execution,
+Protopod/Slaughterskeet/Froginator/Thunderskeet policies, supplied actor action programs,
+health trees, authored monster factories and death outputs. Private review established
+contracts and asset names; private source, headers, binaries and generated translations
+remain excluded. Trigger projection accounts for the reviewed difference between
+reference SOLID_TRIGGER bounds and ioquake's rotated bmodel bounds. Current acceptance
+is recorded separately in docs/native-acceptance.md; earlier runtime results above
+are historical and do not qualify the new native runtime.
+
+Sequence 249 Cambot behavior was established from optional private class contracts
+and supplied tuning/model metadata. Native policy, ECS state, collision services and
+client tag rendering are independently written. PVS alarm admission and direct
+crosshair dodge qualification are explicit narrower compatibility departures, not
+claimed reference equivalence. No private implementation is a project dependency.
+
+Sequence 250 independently implements Crox and Rockgat class contracts established
+from private behavior review and supplied authoring/model/event data. This includes
+water sampling/attack variants, height-band wandering, turret deployment and shot
+chains, and the class's extra pain deduction. Generic engine collision/navigation,
+typed snapshots and native ECS remain the implementation mechanisms. No reference
+source or runtime is admitted. Incomplete steering/effects and integer-versus-float
+damage parity are explicit acceptance gaps.
+
+Sequence 269 admits `CONTENTS_DK3_NITRO` at the unused native contents bit 0x0800
+and its converter mapping. The engine continues ordinary numeric brush-content queries;
+no private physics or implementation is imported. Authored nitro is separate from the
+swimming mask. The updated header digest is recorded in `engine/DEVELOPMENT.json`.
+Independent liquid/fall policies were written after reviewing private client/AI/artifact
+behavior; that source remains outside the checkout and is not a build input.
+
+## Sequence 275 — public default light animation samples
+
+Reviewed and admitted only the thirteen default light animation strings (styles 0–11
+and 63) from id Software's public GPL Quake II `game/g_spawn.c`. These replace the
+project's earlier approximations in the converter and native lightstyle policy.
+No private reference implementation or private patterns file is imported. The native
+switch/ramp controllers and transport are independently written.
+
+- Upstream: [id-Software/Quake-2, pinned g_spawn.c](https://raw.githubusercontent.com/id-Software/Quake-2/372afde46e7defc9dd2d719a1732b8ace1fa096e/game/g_spawn.c).
+- Commit: `372afde46e7defc9dd2d719a1732b8ace1fa096e`.
+- Source SHA-256: `4c401dfb37076aa1186bf1b321d4606a997a1324fd4c2c3afb933d0a045a0eff`.
+- Copyright (C) 1997-2001 Id Software, Inc.; GPL version 2 or later, as stated in
+  the source header. Copyright attribution accompanies both admitted tables; the
+  project's [GPL text](../LICENSE) remains distributed. The native table now lives in
+  `src/mechanics/domain/lightstyle_table.zig` (moved from `lightstyles.zig` when the transport was
+  separated from the light class), with its attribution header.
+- Review scope: the default strings only. No Quake II runtime, game assets, headers
+  or unrelated code was admitted. Public data matches the reviewed behavioral
+  pattern contract; rendered native/reference comparison is still pending.
+
+### Native authored lightning and hearing (sequence 277)
+
+The independent converter preserves supplied BSP PHS rows in a project-defined
+DKPH/DKPT extension; runtime lookup uses the bundled ioquake collision tree. No private
+implementation or new third-party code is admitted. Lightning/attractor timing, damage,
+media selection and mathematical presentation behavior were reviewed privately; Zig
+owners and the bounded transport/query integration were authored in this project.
+Existing ioquake and project GPL notices remain in force. Supplied rows and media stay
+local generated assets, excluded from publication.
+
+### Byte-direction data (sequence 279)
+
+`src/core/domain/direction_bytes.zig` admits only the 162 numerical direction vectors
+from already bundled `engine/ioquake3/code/qcommon/q_math.c`, whose SHA-256 at review is
+`f00e75f3ea0a59176d19b6328044b84e8dd5734af14a960e8ec10d79120a7cb3`.
+Copyright (C) 1999–2005 Id Software, Inc.; GPL-2.0-or-later, preserved in the new file
+and root LICENSE. Native lookup code is project-authored. This public data supplies
+the authored effect's existing byte-direction behavior; no private table/function is
+an input to generation, compilation or tests. Atlas coordinates and effect contracts
+were privately reviewed as behavior; original particle images remain local assets.
+
+Sequence 288 repairs the bundled GPL botlib portal cache: route prediction read
+a first-reachability index that the cache update never populated. The independent
+repair stores the selected existing area-cache index with its travel cost and rejects
+unavailable zero-cost portal routes. Six read-only e1ctf1 edge traversals retain two
+unaffected local routes; the defective engine cycles in the other four, while the
+repaired engine reaches all six goals. No private reference was needed or imported.
+Server disconnect reasons are also printed locally for failed native-run diagnosis.
+Original bundled notices remain unchanged.
+
+Sequence 289 reviews the private reference's cinematic unique-ID dispatch and
+missing-sound contract (`dlls/world/cin_playback.cpp`, `base/dk_/dk_cin_playback.cpp`,
+and `base/Audio/DkAudioEngine_Miles/S_Calls.cpp`). Supplied e1m2 authoring references
+`hiro1` under the misspelled `cien_hiro` label and requests absent media at
+`globa/a_speedwhoosh.wav`. Independent native preloading now uses the existing
+performer identity; failed audio registration logs the original path and leaves
+playback running. There is no asset-name substitution or copied private code.
+The small public test fixture is project-authored from the observed record contract.
+
+Sequence 290 reviews absent cinematic records/recipients in the private reference
+(`base/dk_/dk_gce_main.cpp`, `dlls/world/cin_playback.cpp`) and the missing-model
+registration behavior (`dlls/world/cine_entities.cpp`, `base/ref_gl/gl_model.cpp`,
+`base/ref_gl/gl_rmain.cpp`). Missing program files do not start playback, and commands
+for absent actors have no recipient. Native handling now preserves those contracts;
+empty, oversized and malformed supplied files remain errors. Unknown spawn classes
+are still rejected. Empty unique IDs cannot bind unrelated unnamed performers.
+
+The supplied credits program creates a timed door-use carrier whose computed model
+is absent from both the original local archives and converted packages. Native code
+permits missing media only when every task for the class is control/lifetime work
+and at least one task uses a target. It preserves the authored timing and removal.
+Intentional presentation correction: that control carrier is invisible rather than
+using the reference renderer's missing-model marker. Actual character performances
+still require their model metadata. No private implementation or asset is imported;
+public parser fixtures are independently authored.
+
+Sequence 291 reviews the bundled GPL engine's fast-restart contract in
+`code/game/ai_main.c` and `code/server/sv_ccmds.c`: VM restart preserves the
+engine hunk and navigation world. Native shutdown now retains botlib for that
+boundary, releases bot input owners and clears stale navigation projections
+before the next match. Full map admission still sets up and loads navigation.
+The new LAN and bot diagnostics are project-authored; no private implementation
+or assets are admitted. Lift approach routing uses actual collision and existing
+authored controls, without changes to map geometry, damage or mover timings.
+
+Sequence 292 compares supplied AAS reachability types and liquid contents with
+the bundled botlib travel flags and the native player's existing swim/ledge
+motor. Navigation now permits that supported water-jump operation; the existing
+slime-escape policy and actual liquid damage remain unchanged. Local graph
+reports and map geometry remain in ignored evidence, not public assets. Lift
+waiting uses the native mover's actual motion/return deadline rather than
+assuming a requested floor schedules movement. The contract fixtures are
+project-authored; no private implementation is imported.
+
+
+Sequence 293 examines the local supplied e1dt1 BSP/AAS and its native collision
+traces. The raised objective room leaves through its authored teleporter after a
+small supported step; three apparent direct exits are obstructed. The independent
+bot recovery uses existing trigger bounds, destination lookup, player hull traces
+and navigation. No private implementation, changed map data or synthetic passage
+is admitted. This recovery remains unaccepted because the controlled bot replay
+still fails to select the passage.
+
+Sequence 294 reviews private behavior only for Escape completion and sound
+lifetime (`base/client/keys.cpp`, `base/dk_/dk_gce_main.cpp`,
+`base/dk_/dk_cin_playback.cpp`, `dlls/world/cin_playback.cpp`), loading-art layout
+(`base/client/console.cpp`, `base/client/cl_scrn.cpp`) and menu controls
+(`base/dk_/dk_menu_newgame.cpp`, `base/dk_/dk_menu_controls.cpp`,
+`base/dk_/dk_menup.h`). Native implementations are project-authored. Original
+images, font metrics, cinematic programs and animation records remain in the
+local converted packages, excluded from publication.
+
+The native completion path releases performers/viewer control and executes the
+existing authored continuation. Camera cuts stop their loop and reset camera
+interpolation while retaining streamed dialogue. Streamed MP3 entries keep their
+authored replacement channel; ordinary WAV effects retain automatic concurrent
+channels. Completion stops only the cinematic stream channels. The bundled GPL
+engine adds that narrow local-channel stop in both its existing software and
+OpenAL backends, plus Escape dispatch before the pause menu. Original notices
+remain intact; changed engine hashes are recorded in `engine/DEVELOPMENT.json`.
+
+Actor, performer, scenery and remote-player presentation now consumes the
+project's existing wire animation timing fields. Authored sequence rates and
+snapshot positions drive independent render interpolation; physics, damage and
+script clocks are unchanged. Teleports, camera cuts, missing snapshots and saved
+world restoration delimit blending. No private renderer or animation code is
+an input to compilation, conversion or testing.
+
+The same sequence repairs an observed bundled OpenGL2 sky-buffer overflow.
+`RB_ClipSkyPolygons` consumes the source geometry to compute visible face bounds;
+subsequent generated sky faces now reuse that buffer rather than appending to
+its occupied batch. The existing GPL renderer is the only implementation source.
+The before/after native Marsh scenario preserves the failure and passing replay.
+
+A subsequent native e1m3a UI-save replay exposes a project-owned presentation
+tag collision between actor lasers and knight attacks. The knight class now owns
+an unused value; its server and client already share that policy constant. A
+catalog-wide uniqueness regression first fails on the real duplicate. This is
+an independent transport correction, with no authored behavior or private code
+changes. Native build identities continue rejecting mixed module installations.
+
+Sequence 295 reuses the HD image overlay already admitted locally in sequence
+183. Its 3564 texture PNGs remain outside Git; package SHA-256 is
+`d2e8d95bdbcb52de5529d932d8a3be378b46ac293fe2ec15849c7ac2d299c645`.
+Native play now discovers that shared cache by default, with the existing
+image-only admission check. No reference runtime, source or additional asset
+corpus is imported. The gameplay package identity is unchanged.
+
+Sequence 296 connects missing native effects and gameplay contracts using existing
+owned mechanisms. Main is read only: Ion electrical flight and camera searchlight
+parameters, checkpoint behavior and actor fragmentation eligibility are reviewed
+as independent-project reference. Private Gold inspection supplies behavior facts
+for pod hatch timing/placement and func_explosive material flags, authored tuning
+and fragment lifecycle; no source, headers, binary modules or new asset corpus are
+admitted from that workspace. In particular, native hatching retains origin +10
+rather than importing main's clearance workaround, and explosive flag 8 remains
+stone rather than main's generic metal mapping. Existing local sky/HD shaders and
+images are reused. The interpolation repair is based on captured native engine
+clock values, not private renderer code. Focused verification and remaining visual
+parity limits are recorded in sequence 296 and native acceptance.
+
+Sequence 297 begins resident-world preparation using the bundled GPL engine only.
+Collision allocation/selection, generation handles, independent background file
+streams and versioned native imports are project-authored changes; upstream
+notices remain intact and `engine/DEVELOPMENT.json` records source hashes.
+The independent connection inventory reads already-admitted converted BSPs and
+retains generated coordinates locally. No private source, new asset corpus or
+reference implementation is introduced. Actual engine collision tests use small
+project-authored synthetic BSPs, separately from the recorded four-map native
+diagnostic. This is not provenance or acceptance for unimplemented seamless
+rendering, navigation, cross-world gameplay or persistence.
+
+Sequence 298 continues from the bundled GPL ioquake3 renderer, server and botlib.
+World ownership, bounded surface batches, scoped registries and native preparation
+are project-authored adaptations; existing upstream notices remain. The short
+private authoring descriptions in `dlls/world/Epairs.h` and the changelevel
+intermission decision in `dlls/world/Triggers.cpp` were inspected read-only to
+establish flag behavior: a named landing retains direct single-player travel,
+whereas an intermission exit without one uses a cut. No reference implementation
+text or assets were copied into the project. The independent inventory expresses
+that observed contract and tests both cases. Nearby vertex comparisons use only
+the already-admitted converted map package and keep all generated geometry local.
+These observations do not establish full original presentation or seamless play.
+
+Sequence 299 implements resident admission and ownership transfer using this project's
+existing component, resource, snapshot, renderer and collision contracts. Bounded
+reliable configstring transport checks its digest and the supplied BSP checksum;
+player copying retains birth identity and complete component values. Protocol 1348
+adds the active map identity consistently to bundled-engine and independent Zig
+message codecs. This is original integration code over the admitted engine, with
+no additional private implementation consultation or import. Controlled A↔B transfer
+in both renderers is distinct from authored seam, cross-map combat and region-save
+acceptance; see `native-acceptance.md` for the exact build and local evidence.
+
+Sequence 300 extends the project's portable snapshot format to explicit resident
+members and world-qualified reference validation, with schema-1 reading preserved.
+Actual A/B save/death restoration and a sequence-296 schema-1 fixture are replayed
+on the exact build recorded in `native-acceptance.md`. The inactive-snapshot repair
+uses the public `SNAPFLAG_NOT_ACTIVE` contract and the existing bundled GPL
+`code/cgame/cg_snapshot.c` initialization behavior; no private implementation was
+consulted or imported. Generated save/geometry evidence remains local. Old visited
+archive conversion and fully connected traversal/combat remain separate open work.
+
+Sequence 301 derives local campaign admission metadata from supplied converted BSP
+entities. Exact opening BSP digests pin the prior geometry review; generated manifests
+remain local and are included in installation/evidence identity. Cinematic-controlled
+exits are classified from authored target relationships. No private reference
+implementation was consulted or copied for this sequence. New engine owned_memory.h
+is independent GPL-2.0-or-later code; reviewed renderer/navigation/server allocations
+retain their existing owners and explicit shutdowns. Engine file hashes and pinned
+upstream identities are recorded in engine/DEVELOPMENT.json.
+
+Sequence 302 independently maps native visited-save identities from the project’s
+existing typed components. No private implementation or original save codec was
+consulted or imported. Local sequence-294/301 native fixtures supply regression
+evidence and remain outside public sources. The renderer’s inline handle codec is
+independent GPL-2.0-or-later code. The reliable boundary repair follows the bundled
+engine’s CL_ParseGamestate and CL_InitCGame contracts; it preserves ordinary
+reliable handling. The doubled sound separator is verified against the supplied
+local sound package. Updated engine file identities are in engine/DEVELOPMENT.json.
+
+Sequence 307 reuses the bundled `engine/ioquake3/code/thirdparty/zlib-1.3.1/`
+in both renderer PNG loaders. Its six existing inflate/checksum/allocation source
+files and the notice in `zlib.h` were reviewed; no new external component is added.
+The existing GPL PNG decoder/filter/pixel conversion remains attributed. The new
+allocation bound and chunk handling are project changes. Invalid zlib headers or
+checksums now reject a PNG instead of being ignored; valid pixels remain covered
+by independent synthetic fixtures. No original game asset is part of those tests.
+
+Sequence 308 separates that existing decoder into a pure, bounded CPU entry point
+and its renderer adapter. Project-owned pthread preparation uses immutable input,
+owned pixels and atomic completion; engine filesystem/renderer calls stay on the
+owner thread. Existing material lookup and format preference remain authoritative.
+The worker contracts use independent synthetic PNGs; the corrupt-world scenario
+writes only a temporary profile override. No private implementation or additional
+third-party component is admitted. Updated renderer identities are recorded in
+`engine/DEVELOPMENT.json`.
+
+Sequence 309 uses local private reference behavior only for worker fear: the
+skinny-worker hide/cower callbacks, fat-worker callbacks and common cower dispatch.
+Recorded facts are the ten-second retreat/cower bounds, skinny model poses
+`gamba`/`gambc`, the 300-unit visible-threat retry, active-distance release, and
+class-specific probabilistic vocal choices. Native code is independently written;
+no private implementation or assets are copied into this repository. Existing
+native AAS/collision routing remains in use; original hide-node route equivalence
+is not claimed. Fat workers use their ambient fallback when retreat is blocked.
+
+The shared ground correction follows the already admitted ioquake3 slide/player
+contract (`bg_pmove.c` ground departure test): separating overclip residue is not
+a jump. The new regression exercises the native actor motor with a captured
+0.04 upward resting velocity; reinstating the defective strict sign check in a
+temporary source copy makes that regression fail. Camera modes and player event
+ordering use the project's own native transport. Autosave health rules and softer
+Cambot surface pools are owner-requested additions, not claims of reference parity.
+
+Sequence 311 uses the preserved main branch and admitted ioquake3 camera contract
+for first-person stair/duck presentation: 200/100 ms decay, accumulated steps
+bounded to 32 units, and no duplicate steps during prediction replay. The native
+implementation is independent Zig code; collision and movement rules are unchanged.
+Private reference inspection supplied only pickup behavior facts: ordinary armor,
+souls, save gems, wraith orbs and the bottle rotate; ammunition and health packs
+retain their placed angles; world weapons rotate in multiplayer. Default rotation
+is 100 degrees per second. Custom boost assemblies and authored rotation overrides
+are not claimed as covered by this correction.
+
+The reference's pickup glow and minimum model light informed the readability fix.
+Native pickups use a raised light sample and the existing RF_MINLIGHT flag; both
+bundled renderers now honor that flag with a 30-percent per-channel ambient floor.
+This is an intentional readability correction, not reproduction of the original
+pulsing glow. Enhanced weapon shine is a project-owned, neutral modulation of the
+lit skin rather than the former blue additive overlay; exact reference material
+equivalence is not claimed. No private implementation, texture or other asset was
+imported. Engine file hashes are recorded in `engine/DEVELOPMENT.json`.
+
+Sequence 312 inspects private Sludgeminion initialization and common ground/water
+movement only for behavioral facts: this authored robot is a ground mover with
+class-supplied bounds/speed, and ground actors can walk through shallow water.
+No private implementation or assets were copied. The native repair uses the
+bundled GPL AAS distinction between water area admission (`TFL_WATER`) and swim
+reachability (`TFL_SWIM`); unsupported swimming and hazardous liquids remain
+excluded. The supplied local AI table retains the Sludgeminion's 80-unit run speed
+and 68×68×95 hull. Read-only native traces establish safe ground and an actual
+route before accepting displacement. Full original route equivalence is unverified.
+
+The loader correction is project-owned Zig scheduling over the existing engine
+admission service, with resource-derived progress. Engine background ZIP cleanup
+is independently repaired from inspection of bundled minizip's zone allocations:
+only reading/inflation runs on the worker; joined finalization/CRC validation runs
+on the engine owner. A synthetic locally generated ZIP fixture exercises actual
+bundled minizip and the shared background-read implementation. Reinstating worker
+cleanup in a temporary source copy fails the thread-ownership assertion. Engine
+file hashes are recorded in `engine/DEVELOPMENT.json`.
+
+Sequence 315 reads five explicitly selected local neural experiment outputs as
+data: character GLBs, full-body IQM rigs and their animation manifests. No private
+Python implementation or runtime is imported. An independent Blender stage closes
+the neural shells and bakes their base color onto detailed game meshes; the IQMs
+supply rig weights and procedural clips. The independent NumPy converter
+uses the bundled IQM format and renderer contracts for skeletal storage and fits
+local authored cinematic data to the new skeletons. Generated models and textures
+remain excluded from publication. Their local source hashes and conversion losses
+are recorded inside the optional package. The original source package remains
+unchanged. See [skeletal character tooling](neural-assets.md).
+
+Sequence 316 supersedes those experimental weights and clips. Independent Python
+tooling places anatomically reviewed joints, smooths weights over mesh adjacency,
+and authors fixed-length IK motion. Quake III clip names are retained as a mapping
+convention; no private animation implementation is imported. Cinematic performances
+continue to derive from the selected, local authored model data. The gameplay
+sword handle offset is measured from equipped frame 4 of that local mesh.
+Hiro's repaired face projection was produced with the built-in image generation
+tool from an orthographic source render, then feathered and baked into the existing
+atlas. The local sequence-316 report retains the exact prompt, generated image,
+projection hash and original texture hash. Geometry and generated assets remain
+local; this change does not establish publication rights for them.
+
+Sequence 317 replaces the rejected 316 face projection using the selected local
+`hiro.png` identity reference. Built-in imagegen produced frontal and side edits
+and a skin-only frontal projection; exact prompts and hashes remain in the local
+317 report. The bake protects existing hair per texel and carries that mask into
+multiplayer color variants. Retexturing changes thirteen Hiro texture entries and
+package metadata; every skeletal model and animation entry is byte-identical to
+316. This does not add facial morphs or establish asset publication rights.
+
+Sequence 318 responds to rejected eye placement in 317. The selected original
+`up4x/skins/hiro_head_e1.png` is inspected read-only as a style reference alongside
+the modern Hiro concept. Two built-in imagegen edits supply orbital detail; only
+the eye/brow region of the second output is admitted to the texture bake. The
+independent bake lowers the eye projection and replaces old dark brow texels.
+Exact prompts, selected images, hashes and rejected intermediate previews remain
+in the local 318 report. Only thirteen Hiro textures and package metadata change;
+geometry, skeletons, animation and gameplay code are untouched.
+
+Sequence 319 repairs Mikiko, Superfly, Mishima and Usagi using their selected
+local concept references and orthographic mesh renders. Built-in imagegen supplies
+four frontal projections and one Superfly side projection. Exact prompts, selected
+images, bake hashes and intermediate failures are retained in the local 319 report.
+Hiro retains the accepted 318 texture. Independent Python tooling adds constrained
+leg fitting and newly authored attack/death poses; combined attack/locomotion grids
+contain those poses only. No Quake animation data, other commercial game motion,
+or third-party physics code is imported. Physics-library evaluation is not an
+admitted component or a claim of runtime ragdoll support.
+
+Sequence 340 (generic-navigation) changes only the bundled GPL BSPC and botlib and
+the project's own Zig, Lua and Python code; upstream notices remain intact. BSPC
+compiles with `dkq3/tools/dk3-aas.cfg` (botlib's Quake III defaults except the
+native crouched hull and step), seals a leak through space joined to the outside,
+compares riser edges within half a unit when none lies on the plane, links train
+lifts both ways and drops falls into their shafts; the changed files and hashes are
+in `engine/BSPC-CHANGES.json`. botlib's crouch presence box and the out-of-range
+`AAS_AreaInfo` report (now under `bot_developer`, as `AAS_EnableRoutingArea` already
+was) are recorded in `engine/DEVELOPMENT.json`. Navigation packages are regenerated
+locally from the supplied converted maps and stay local; nothing from the private
+reference workspace or other games is imported.

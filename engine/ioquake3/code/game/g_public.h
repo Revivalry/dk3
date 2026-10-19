@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // in entityStates (level eType), so the game must explicitly flag
 // special server behaviors
 #define	SVF_NOCLIENT			0x00000001	// don't send entity to clients, even if it has effects
+#define SVF_DK3_CONFIG_PENDING 0x00001000 // native resource definitions are still being published
 
 // TTimo
 // https://zerowing.idsoftware.com/bugzilla/show_bug.cgi?id=551
@@ -393,6 +394,23 @@ typedef enum {
     , G_DK3_SAVE_WRITE = 700
     , G_DK3_SAVE_READ = 701
     , G_DK3_HOLD_WORLD = 702
+    , G_DK3_IN_PHS = 703
+    , G_DK3_WORLD_REQUEST_V1 = 704
+    , G_DK3_WORLD_POLL_V1 = 705
+    , G_DK3_WORLD_RELEASE_V1 = 706
+    , G_DK3_WORLD_TRACE_V1 = 707
+    , G_DK3_WORLD_ENTITIES_V1 = 708
+    , G_DK3_WORLD_BYTES_V1 = 709
+    , G_DK3_WORLD_ATTACH_V1 = 710
+    , G_DK3_WORLD_SELECT_V1 = 711
+    , G_DK3_WORLD_CURRENT_V1 = 712
+    , G_DK3_NAV_BIND_V1 = 713
+    , G_DK3_NAV_LOAD_V1 = 714
+    , G_DK3_WORLD_NAME_V1 = 715
+    , G_DK3_WORLD_CHECKSUM_V1 = 716
+    , G_DK3_WORLD_ACTIVATE_V1 = 717
+    , G_DK3_WORLD_CONFIGSTRING_V1 = 718
+    , G_DK3_SAVE_LINK_V1 = 719
 } gameImport_t;
 
 

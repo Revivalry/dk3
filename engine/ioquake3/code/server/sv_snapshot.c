@@ -96,7 +96,7 @@ static void SV_EmitPacketEntities( clientSnapshot_t *from, clientSnapshot_t *to,
 
 		if ( newnum < oldnum ) {
 			// this is a new entity, send it from the baseline
-			MSG_WriteDeltaEntity (msg, &sv.svEntities[newnum].baseline, newent, qtrue );
+			MSG_WriteDeltaEntity (msg, &sv.world->svEntities[newnum].baseline, newent, qtrue );
 			newindex++;
 			continue;
 		}
@@ -225,6 +225,12 @@ static void SV_WriteSnapshotToClient( client_t *client, msg_t *msg ) {
 		}
 	}
 
+	/* Local entity numbers only have meaning in their owning world. Never
+	 * delta against another world's entities, including after packet loss. */
+	if (oldframe && oldframe->ps.dk3World != frame->ps.dk3World) {
+		oldframe = NULL;
+		lastframe = 0;
+	}
 	MSG_WriteByte (msg, svc_snapshot);
 
 	// NOTE, MRE: now sent at the start of every message from server to client
@@ -395,7 +401,7 @@ static void SV_AddEntitiesVisibleFromPoint( vec3_t origin, clientSnapshot_t *fra
 
 	clientpvs = CM_ClusterPVS (clientcluster);
 
-	for ( e = 0 ; e < sv.num_entities ; e++ ) {
+	for ( e = 0 ; e < sv.world->num_entities ; e++ ) {
 		ent = SV_GentityNum(e);
 
 		// never send entities that aren't linked in
@@ -409,7 +415,7 @@ static void SV_AddEntitiesVisibleFromPoint( vec3_t origin, clientSnapshot_t *fra
 		}
 
 		// entities can be flagged to explicitly not be sent to the client
-		if ( ent->r.svFlags & SVF_NOCLIENT ) {
+		if ( ent->r.svFlags & ( SVF_NOCLIENT | SVF_DK3_CONFIG_PENDING ) ) {
 			continue;
 		}
 
@@ -558,7 +564,7 @@ static void SV_BuildClientSnapshot( client_t *client ) {
 	if ( clientNum < 0 || clientNum >= MAX_GENTITIES ) {
 		Com_Error( ERR_DROP, "SV_SvEntityForGentity: bad gEnt" );
 	}
-	svEnt = &sv.svEntities[ clientNum ];
+	svEnt = &sv.world->svEntities[ clientNum ];
 
 	svEnt->snapshotCounter = sv.snapshotCounter;
 

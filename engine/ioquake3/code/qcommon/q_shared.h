@@ -1205,6 +1205,7 @@ typedef struct playerState_s {
     int dk3Attributes[5];
     int dk3BoostUntil[5];
     int dk3Episode;
+    int dk3World; // snapshot/resource namespace; zero is the connection's first world
     int dk3SwordExperience;
     int dk3Keys;
     int dk3Quest;
@@ -1332,6 +1333,13 @@ typedef struct entityState_s {
 	int		constantLight;	// r + (g<<8) + (b<<16) + (intensity<<24)
 	int		loopSound;		// constantly loop this sound
 
+    int dk3World; /* resource/collision owner of this entity */
+    int dk3Identity; /* persistent identity; transport numbers can be reused */
+    int dk3ParentIdentity; /* attachment parent in the same world, zero if free */
+    vec3_t dk3BodyImpulse, dk3BodyImpulsePoint; /* cumulative velocity change */
+    int dk3BodyImpulseSerial;
+    int dk3BodyFlags; /* bit 0: body fragmented */
+    int dk3BodyAppearance; /* retained player corpse appearance plus one */
 	int		dk3Team;
     int dk3Carrier; /* Player entity number plus one, zero while an objective is uncarried. */
     float dk3SoundVolume, dk3SoundMin, dk3SoundMax;

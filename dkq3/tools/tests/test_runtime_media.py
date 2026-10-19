@@ -2,6 +2,7 @@
 import contextlib
 import io
 import json
+import struct
 from pathlib import Path
 import tempfile
 import unittest
@@ -22,6 +23,10 @@ class RuntimeMediaTest(unittest.TestCase):
             for name in play.PACKAGES:
                 with zipfile.ZipFile(generation / 'packages' / f'dk3-{name}.pk3', 'w') as archive:
                     archive.writestr(f'{name}/fixture.cfg', 'synthetic package')
+                    if name == 'maps':
+                        bsp = bytearray(144)
+                        struct.pack_into('<4si', bsp, 0, b'IBSP', 46)
+                        archive.writestr('maps/e1m1a.bsp', bsp)
             for name in play.BINARIES:
                 target = prefix / 'bin' / name
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -36,6 +41,7 @@ class RuntimeMediaTest(unittest.TestCase):
                 target.write_text('{}' if name == 'rules.json' else '// synthetic presentation v1\n')
             target = prefix / 'share/dk3' / play.LEGACY_RUNTIME_MEDIA[0]
             manifest = dict(format=1, key='unchanged-gameplay', profile='retail')
+            (generation / 'manifest.json').write_text(json.dumps(manifest))
             with patch('play.checked_assets', return_value=manifest), contextlib.redirect_stdout(io.StringIO()):
                 play.install(prefix, assets)
                 first = (prefix / 'play/current').resolve()

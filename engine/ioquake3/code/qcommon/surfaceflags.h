@@ -31,6 +31,15 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define	CONTENTS_LAVA			8
 #define	CONTENTS_SLIME			16
 #define	CONTENTS_WATER			32
+#define CONTENTS_DK3_NITRO       0x0800  // authored lethal cold volume; not swimming water
+// Authored Daikatana currents at the unused native contents bits: they push
+// swimmers inside the volume and walkers standing on it (conveyor belts).
+#define CONTENTS_DK3_CURRENT_0    0x0002
+#define CONTENTS_DK3_CURRENT_90   0x0004
+#define CONTENTS_DK3_CURRENT_180  0x0400
+#define CONTENTS_DK3_CURRENT_270  0x1000
+#define CONTENTS_DK3_CURRENT_UP   0x2000
+#define CONTENTS_DK3_CURRENT_DOWN 0x4000
 #define	CONTENTS_FOG			64
 
 #define CONTENTS_NOTTEAM1		0x0080

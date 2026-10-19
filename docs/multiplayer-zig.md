@@ -15,7 +15,10 @@ Migrate modes, bots, sessions, admission, teams, spawning, scores, objectives,
 match lifecycle, voting, client browser/lobby behavior and presentation. Migrate
 engine socket/connection handling, channels, commands, snapshots, codecs,
 prediction integration and replay files. Preserve authoritative combat timing.
-Use protocol 1346 with explicit bounded schemas; reject old clients/demos clearly.
+Use protocol 1347 with explicit bounded schemas; reject old clients/demos clearly.
+Native entity effect tags and persistent identities retain all 32 bits of `generic1`.
+Sequence 287 replaces the 8-bit field in protocol 1346; installations and the live
+service using that prior protocol are preserved and are not compatible with this build.
 Preserve campaign saves and stable gameplay IDs, never native-memory serialization.
 
 ## Product
@@ -61,6 +64,9 @@ can be replaced, so permanent exclusion is not guaranteed.
   in the room. Operators have authenticated audited moderation; no owner immunity.
 - One validated character/skin catalog serves humans, bots and rendering. Rotate
   bots across available combinations; preserve appearance through respawn/reconnect.
+- Bots play on one ten-level skill ladder selected while hosting a LAN or Internet
+  room, and perceive only what is inside their own view cone. Sequence 322 implements
+  this; it is unverified. See [bot skill and sight](bots-zig.md).
 - Separate pickup and equipped weapon models. Gold omits the ordinary Disruptor
   attachment; remove the pickup-model attachment. Review related melee and sword
   presentation, attachment transforms and authored equipped frames.

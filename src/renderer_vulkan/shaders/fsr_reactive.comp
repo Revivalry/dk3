@@ -1,0 +1,16 @@
+#version 460
+// SPDX-License-Identifier: GPL-2.0-or-later
+// FidelityFX reactive mask (fsr.zig): how much the upscaler should trust this frame over its
+// history. The HDR alpha falls below 1 under weather particles (scene.zig mark_motion) and on
+// models new this frame (FLAG_DYNAMIC), the pixels the motion vectors do not describe.
+#extension GL_EXT_samplerless_texture_functions : require
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(set = 0, binding = 0) uniform texture2D hdr;
+layout(set = 0, binding = 1, r8) uniform writeonly image2D reactive;
+
+void main() {
+    ivec2 id = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(id, imageSize(reactive)))) return;
+    float alpha = texelFetch(hdr, id, 0).a;
+    imageStore(reactive, id, vec4(min((1.0 - alpha) * 3.0, 0.9)));
+}

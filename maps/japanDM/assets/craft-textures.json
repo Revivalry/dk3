@@ -1,0 +1,1764 @@
+{
+  "derivation": {
+    "licences": {
+      "avoided": "FLUX.1-dev is licensed for research/non-commercial use only, so it is not used for anything shipped with this map",
+      "derivation": "structure drawn per material by craft_textures.py; height/normal from the painted periodic height field; specular from albedo luminance plus the painter's per-texel weight; glow from the painter's own light image; sky cube faces reprojected from an elevation-authored panorama",
+      "generator": "Stable Diffusion XL base 1.0 (CreativeML Open RAIL++-M) and xinsir controlnet-tile-sdxl-1.0 (same licence), both loaded from ~/dk_models; madebyollin sdxl-vae-fp16-fix (MIT) for decoding",
+      "generator_2": "ComfyUI 0.38 + ComfyUI-GGUF driving abenzerps/Qwen-Image-2.1-Uncensored-GGUF (Q8_0 single-file diffusion model, Qwen3-VL-8B int8 text encoder, bf16 VAE), sampled euler/simple at cfg 1 -- the uncensored variant is the owner's personal copy, used for personal work on the owner's instruction; the base model is Apache-2.0, and no weight is shipped with the map",
+      "machine": "RTX 5090, python3.14, numpy 1.26 / scipy / PIL 11.3; ComfyUI 0.38 venv",
+      "role_2": "renders detail plates and the ad-board artwork only; every albedo LEVEL is still set by craft_textures.grade(), and structural materials take only the plate's relative microstructure"
+    },
+    "normal": "tangent space, Fourier derivatives of the painted height field",
+    "specular": "albedo luminance plus the painter's per-texel wetness/scratch weight",
+    "structure": "drawn per material by dkq3/tools/craft_textures.py"
+  },
+  "images": {
+    "japandm/ad_board": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": 0.0,
+      "paint": "ad_board",
+      "seam": {
+        "_g": 0.027,
+        "diffuse": 0.087
+      },
+      "sha256": {
+        "_g": "9818f1ca7785e370",
+        "diffuse": "85420137b5107d55"
+      },
+      "size": 1024,
+      "spec": false
+    },
+    "japandm/ad_board_b": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": null,
+      "paint": "ad_board",
+      "seam": {
+        "_g": 0.064,
+        "diffuse": 0.145
+      },
+      "sha256": {
+        "_g": "af61c9d521017d07",
+        "diffuse": "ff3f3f3c3c6a30a0"
+      },
+      "size": 1024,
+      "spec": false
+    },
+    "japandm/asphalt": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.19
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.0,
+      "paint": "asphalt",
+      "seam": {
+        "_n": 1.035,
+        "_s": 2.667,
+        "diffuse": 1.016
+      },
+      "sha256": {
+        "_n": "8b2a9ec495fcf8ca",
+        "_s": "f5c73cf17f692a81",
+        "diffuse": "82afe440283006e7"
+      },
+      "size": 1024,
+      "spec": true
+    },
+    "japandm/asphalt_wet": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.135
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.1,
+      "paint": "asphalt",
+      "seam": {
+        "_n": 1.037,
+        "_s": 0.0,
+        "diffuse": 1.014
+      },
+      "sha256": {
+        "_n": "e4072e09b5896703",
+        "_s": "bbd05cf6097ac9b1",
+        "diffuse": "3f10e1717ac3466c"
+      },
+      "size": 1024,
+      "spec": true
+    },
+    "japandm/banner_red": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": null,
+      "paint": "sign",
+      "seam": {
+        "_g": 0.0,
+        "diffuse": 0.434
+      },
+      "sha256": {
+        "_g": "a9bd7c59e705a092",
+        "diffuse": "895183c79fe1280f"
+      },
+      "size": 512,
+      "spec": false
+    },
+    "japandm/banner_white": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": null,
+      "paint": "sign",
+      "seam": {
+        "_g": 0.0,
+        "diffuse": 1.201
+      },
+      "sha256": {
+        "_g": "ad11bf281373fcbc",
+        "diffuse": "eaec381912006135"
+      },
+      "size": 512,
+      "spec": false
+    },
+    "japandm/brick_deep": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.205
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.6,
+      "paint": "tile",
+      "seam": {
+        "_n": 1.201,
+        "_s": 3.446,
+        "diffuse": 7.061
+      },
+      "sha256": {
+        "_n": "d085624e60610021",
+        "_s": "9370c3cf0faac9e0",
+        "diffuse": "74862dc48313b376"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/cloth": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.165
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.5,
+      "paint": "cloth",
+      "seam": {
+        "_n": 1.0,
+        "_s": 1.076,
+        "diffuse": 0.789
+      },
+      "sha256": {
+        "_n": "5946076068981423",
+        "_s": "2353fb533d75e741",
+        "diffuse": "fccf8ad27ddcd700"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/concrete_panel": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.25
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.4,
+      "paint": "concrete_panel",
+      "seam": {
+        "_n": 0.863,
+        "_s": 2.11,
+        "diffuse": 2.145
+      },
+      "sha256": {
+        "_n": "c357a76a556c53d0",
+        "_s": "5bb31fa7b59b26cc",
+        "diffuse": "cb2c3bae01e7ca48"
+      },
+      "size": 1024,
+      "spec": true
+    },
+    "japandm/concrete_rough": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.215
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.7,
+      "paint": "concrete_panel",
+      "seam": {
+        "_n": 0.985,
+        "_s": 1.288,
+        "diffuse": 1.278
+      },
+      "sha256": {
+        "_n": "82bd3834ff1a4e04",
+        "_s": "720d3a33ff5adc32",
+        "diffuse": "bba5faba2f21ec30"
+      },
+      "size": 1024,
+      "spec": true
+    },
+    "japandm/corrugated_rust": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.205
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.3,
+      "paint": "shutter",
+      "seam": {
+        "_n": 0.641,
+        "_s": 2.982,
+        "diffuse": 2.352
+      },
+      "sha256": {
+        "_n": "397b877d5676ca2b",
+        "_s": "f7d2d2443753f1b3",
+        "diffuse": "259b793f7443a3a8"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/crate": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.245
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.7,
+      "paint": "crate",
+      "seam": {
+        "_n": 1.063,
+        "_s": 0.96,
+        "diffuse": 1.026
+      },
+      "sha256": {
+        "_n": "7614aec1d641afe3",
+        "_s": "809c9a6f12cd9c47",
+        "diffuse": "ddad3ee1fc0b2040"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/deck_timber": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.225
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.5,
+      "paint": "slat",
+      "seam": {
+        "_n": 0.884,
+        "_s": 1.153,
+        "diffuse": 1.208
+      },
+      "sha256": {
+        "_n": "ef1644298b01ced1",
+        "_s": "f375610d2842bd2a",
+        "diffuse": "624b4908c7d7144c"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/foliage": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.215
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.8,
+      "paint": "plant",
+      "seam": {
+        "_n": 0.939,
+        "_s": 0.816,
+        "diffuse": 0.786
+      },
+      "sha256": {
+        "_n": "269fdc42f3f84d27",
+        "_s": "47bff6a8437afd8e",
+        "diffuse": "8139794b4f5a68b9"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/glass": {
+      "alpha": true,
+      "glow": false,
+      "grade": [
+        0.09
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 0.4,
+      "paint": "glass",
+      "seam": {
+        "_n": 0.927,
+        "_s": 1.128,
+        "diffuse": 1.017
+      },
+      "sha256": {
+        "_n": "b1dbf1c5f5d9e6f9",
+        "_s": "34cb14263d74f91d",
+        "diffuse": "1a8ec6664f90f802"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/grate": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.255
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 0.4,
+      "paint": "grate",
+      "seam": {
+        "_n": 1.064,
+        "_s": 0.917,
+        "diffuse": 0.904
+      },
+      "sha256": {
+        "_n": "7f8adae3924ea015",
+        "_s": "120da192e48ae903",
+        "diffuse": "746a98e824429033"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/grate_drain": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.235
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.2,
+      "paint": "grate",
+      "seam": {
+        "_n": 1.129,
+        "_s": 0.921,
+        "diffuse": 0.913
+      },
+      "sha256": {
+        "_n": "14d2669c38c6836a",
+        "_s": "9c769b794c6dd14e",
+        "diffuse": "6174c17a01fae350"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/holo_pool": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": 0.0,
+      "paint": "holo_pool",
+      "seam": {
+        "_g": 0.931,
+        "diffuse": 0.947
+      },
+      "sha256": {
+        "_g": "957766d2a9d8405f",
+        "diffuse": "3df573c00b78789f"
+      },
+      "size": 1024,
+      "spec": false
+    },
+    "japandm/kerb_granite": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.255
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.4,
+      "paint": "plaza_stone",
+      "seam": {
+        "_n": 0.951,
+        "_s": 1.152,
+        "diffuse": 1.262
+      },
+      "sha256": {
+        "_n": "bae9ea48324c7c96",
+        "_s": "982fb8046d824f61",
+        "diffuse": "f555ab033876ec49"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/lacquer_red": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.2
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.2,
+      "paint": "lacquer_red",
+      "seam": {
+        "_n": 1.074,
+        "_s": 1.038,
+        "diffuse": 0.871
+      },
+      "sha256": {
+        "_n": "52d3de7545fcfa9b",
+        "_s": "0dc93c5334a99d05",
+        "diffuse": "f28ed1ff49e4d396"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/light_strip": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": 0.0,
+      "paint": "light_strip",
+      "seam": {
+        "_g": 0.543,
+        "diffuse": 0.41
+      },
+      "sha256": {
+        "_g": "2bf789aee2d3f73f",
+        "diffuse": "7540bad8675dd4ab"
+      },
+      "size": 256,
+      "spec": false
+    },
+    "japandm/light_strip_cyan": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": null,
+      "paint": "light_strip",
+      "seam": {
+        "_g": 0.512,
+        "diffuse": 0.417
+      },
+      "sha256": {
+        "_g": "b8fa6dab5b1c048a",
+        "diffuse": "dcdb2bcb710a86a6"
+      },
+      "size": 256,
+      "spec": false
+    },
+    "japandm/light_strip_warm": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": null,
+      "paint": "light_strip",
+      "seam": {
+        "_g": 0.53,
+        "diffuse": 0.466
+      },
+      "sha256": {
+        "_g": "e2aed6fb5836c11b",
+        "diffuse": "98a4b7551a1fdcaf"
+      },
+      "size": 256,
+      "spec": false
+    },
+    "japandm/metal_brass": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.32
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 0.6,
+      "paint": "metal_column",
+      "seam": {
+        "_n": 1.081,
+        "_s": 1.002,
+        "diffuse": 1.077
+      },
+      "sha256": {
+        "_n": "b3568e1f59bab512",
+        "_s": "8af3d58ea6206f8f",
+        "diffuse": "be2e895ff1e0cb95"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/metal_column": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.3
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 0.55,
+      "paint": "metal_column",
+      "seam": {
+        "_n": 1.127,
+        "_s": 1.011,
+        "diffuse": 1.069
+      },
+      "sha256": {
+        "_n": "368063b5d735ed3b",
+        "_s": "2adabd01f95c734b",
+        "diffuse": "2fc608c724fdd4dd"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/metal_deck": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.25
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 0.7,
+      "paint": "metal_deck",
+      "seam": {
+        "_n": 1.402,
+        "_s": 0.979,
+        "diffuse": 1.011
+      },
+      "sha256": {
+        "_n": "c1f5628e0a5328a3",
+        "_s": "2e84ea997adecc44",
+        "diffuse": "83207544e8b2bd0e"
+      },
+      "size": 1024,
+      "spec": true
+    },
+    "japandm/neon_a": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": 0.0,
+      "paint": "neon",
+      "seam": {
+        "_g": 0.017,
+        "diffuse": 0.155
+      },
+      "sha256": {
+        "_g": "c683f08dddcb6bc8",
+        "diffuse": "ac8cb8d166c268d6"
+      },
+      "size": 512,
+      "spec": false
+    },
+    "japandm/neon_b": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": 0.0,
+      "paint": "neon",
+      "seam": {
+        "_g": 0.029,
+        "diffuse": 0.168
+      },
+      "sha256": {
+        "_g": "def3c577706ae0a2",
+        "diffuse": "f39f4d61c7a8ecaa"
+      },
+      "size": 512,
+      "spec": false
+    },
+    "japandm/neon_c": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": null,
+      "paint": "neon",
+      "seam": {
+        "_g": 0.0,
+        "diffuse": 0.12
+      },
+      "sha256": {
+        "_g": "c6bba1878574c022",
+        "diffuse": "4a72dddacc0fc81e"
+      },
+      "size": 512,
+      "spec": false
+    },
+    "japandm/noren_strip": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": null,
+      "paint": "sign",
+      "seam": {
+        "_g": 0.0,
+        "diffuse": 0.519
+      },
+      "sha256": {
+        "_g": "d8d2e682c1a828a1",
+        "diffuse": "66c5f791af9d0ad6"
+      },
+      "size": 512,
+      "spec": false
+    },
+    "japandm/paint_line_white": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.395
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 0.9,
+      "paint": "road_paint",
+      "seam": {
+        "_n": 1.019,
+        "_s": 0.669,
+        "diffuse": 0.631
+      },
+      "sha256": {
+        "_n": "78523cb14ea66e7e",
+        "_s": "cd182ad6dee4a93c",
+        "diffuse": "f99eb1462ed34505"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/paint_line_yellow": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.375
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 0.9,
+      "paint": "road_paint",
+      "seam": {
+        "_n": 1.014,
+        "_s": 0.801,
+        "diffuse": 0.833
+      },
+      "sha256": {
+        "_n": "03a16ec621638103",
+        "_s": "8ec9d4f9fc8930b9",
+        "diffuse": "37bb555f6b6613fa"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/panel_blue": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.27
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 0.7,
+      "paint": "metal_column",
+      "seam": {
+        "_n": 1.118,
+        "_s": 1.002,
+        "diffuse": 1.073
+      },
+      "sha256": {
+        "_n": "ddbbf504b3c21cc4",
+        "_s": "c4134bf4f5f1de68",
+        "diffuse": "e4beea70777af2f6"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/paving_court": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.235
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.5,
+      "paint": "sett",
+      "seam": {
+        "_n": 1.487,
+        "_s": 0.35,
+        "diffuse": 0.586
+      },
+      "sha256": {
+        "_n": "9545c530a66eecf0",
+        "_s": "fe56ac841b9e00af",
+        "diffuse": "1b57ac374b59d9f5"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/paving_lane": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.185
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.5,
+      "paint": "sett",
+      "seam": {
+        "_n": 1.969,
+        "_s": 0.416,
+        "diffuse": 0.947
+      },
+      "sha256": {
+        "_n": "148ecb354da996bc",
+        "_s": "7144867535537331",
+        "diffuse": "f31e7ff1795d80be"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/plant": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.185
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.8,
+      "paint": "plant",
+      "seam": {
+        "_n": 0.939,
+        "_s": 0.773,
+        "diffuse": 0.789
+      },
+      "sha256": {
+        "_n": "269fdc42f3f84d27",
+        "_s": "cc831f3346dee9a5",
+        "diffuse": "c1507fd0ba021698"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/plaster_slate": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.225
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.5,
+      "paint": "plaster",
+      "seam": {
+        "_n": 0.952,
+        "_s": 1.044,
+        "diffuse": 1.073
+      },
+      "sha256": {
+        "_n": "771b28aec96665da",
+        "_s": "c70568cc76494f49",
+        "diffuse": "d6461c534456ac38"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/plaster_warm": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.255
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.5,
+      "paint": "plaster",
+      "seam": {
+        "_n": 0.939,
+        "_s": 1.028,
+        "diffuse": 1.07
+      },
+      "sha256": {
+        "_n": "bfe1e6192f645b9d",
+        "_s": "3480ec77805f0d3f",
+        "diffuse": "949559d1059551e0"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/plaza_stone": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.25
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.7,
+      "paint": "plaza_stone",
+      "seam": {
+        "_n": 0.952,
+        "_s": 1.164,
+        "diffuse": 1.304
+      },
+      "sha256": {
+        "_n": "80b00c0affb0c5e2",
+        "_s": "6be3efce2cab46da",
+        "diffuse": "f4a353c2235b425e"
+      },
+      "size": 1024,
+      "spec": true
+    },
+    "japandm/poster_wall": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.215
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.4,
+      "paint": "poster",
+      "seam": {
+        "_n": 1.019,
+        "_s": 0.941,
+        "diffuse": 0.861
+      },
+      "sha256": {
+        "_n": "a7c24499d6d2bece",
+        "_s": "77ea20e803853f14",
+        "diffuse": "4669d75bd97b8871"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/prop_canvas": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.4
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.4,
+      "paint": "cloth",
+      "seam": {
+        "_n": 1.0,
+        "_s": 0.971,
+        "diffuse": 1.001
+      },
+      "sha256": {
+        "_n": "2a40e0bc69bb4b38",
+        "_s": "ae4aece4f4d940e8",
+        "diffuse": "4325d3ad8a6414dd"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/prop_concrete": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.44
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.2,
+      "paint": "concrete_panel",
+      "seam": {
+        "_n": 1.013,
+        "_s": 0.984,
+        "diffuse": 1.077
+      },
+      "sha256": {
+        "_n": "e026ec754e8ea3b8",
+        "_s": "416add397125958a",
+        "diffuse": "18a433621fbb929e"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/prop_paint_cyan": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.42
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.1,
+      "paint": "lacquer_red",
+      "seam": {
+        "_n": 1.075,
+        "_s": 1.147,
+        "diffuse": 0.963
+      },
+      "sha256": {
+        "_n": "1ddd688343f4e1d8",
+        "_s": "c7563333973bc233",
+        "diffuse": "d9d17c8d1eae08ab"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/prop_paint_green": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.4
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.0,
+      "paint": "lacquer_red",
+      "seam": {
+        "_n": 1.075,
+        "_s": 1.122,
+        "diffuse": 0.954
+      },
+      "sha256": {
+        "_n": "d967c55537bad5f3",
+        "_s": "a0c870bd4763fff3",
+        "diffuse": "ae7dad00f574254c"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/prop_paint_red": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.44
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.1,
+      "paint": "lacquer_red",
+      "seam": {
+        "_n": 1.075,
+        "_s": 1.18,
+        "diffuse": 1.145
+      },
+      "sha256": {
+        "_n": "1ddd688343f4e1d8",
+        "_s": "d2619b9fd85e5948",
+        "diffuse": "7f98462371f92adf"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/prop_paint_yellow": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.46
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.0,
+      "paint": "lacquer_red",
+      "seam": {
+        "_n": 1.075,
+        "_s": 1.156,
+        "diffuse": 0.992
+      },
+      "sha256": {
+        "_n": "d967c55537bad5f3",
+        "_s": "f8030cb815483717",
+        "diffuse": "efdb91f85bb442a9"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/prop_rubber": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.2
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 0.9,
+      "paint": "asphalt",
+      "seam": {
+        "_n": 0.992,
+        "_s": 0.888,
+        "diffuse": 0.925
+      },
+      "sha256": {
+        "_n": "ea43a44b991a7e0a",
+        "_s": "61fefe6affece173",
+        "diffuse": "77b57acd94c08837"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/prop_steel": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.46
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 0.8,
+      "paint": "metal_column",
+      "seam": {
+        "_n": 1.115,
+        "_s": 1.006,
+        "diffuse": 1.072
+      },
+      "sha256": {
+        "_n": "084741daf3609d9c",
+        "_s": "14e640a86d7a302f",
+        "diffuse": "cff541f111e87e65"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/prop_wood": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.38
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.6,
+      "paint": "crate",
+      "seam": {
+        "_n": 1.064,
+        "_s": 1.003,
+        "diffuse": 1.009
+      },
+      "sha256": {
+        "_n": "79f62d57dc8d8761",
+        "_s": "e46e4fae8eb56b5c",
+        "diffuse": "a084c646a6cb6c0e"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/roof_gravel": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.225
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.5,
+      "paint": "roof_gravel",
+      "seam": {
+        "_n": 0.975,
+        "_s": 0.822,
+        "diffuse": 0.809
+      },
+      "sha256": {
+        "_n": "196771446cf900ec",
+        "_s": "497e03ec7bfd014e",
+        "diffuse": "5882f25222b94d5c"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/roof_membrane": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.175
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 0.9,
+      "paint": "plaza_stone",
+      "seam": {
+        "_n": 0.972,
+        "_s": 1.132,
+        "diffuse": 1.266
+      },
+      "sha256": {
+        "_n": "946bf3df29c6319c",
+        "_s": "59ec49324e8c7d03",
+        "diffuse": "921472a0948e5c3a"
+      },
+      "size": 1024,
+      "spec": true
+    },
+    "japandm/shutter_green": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.215
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.1,
+      "paint": "shutter",
+      "seam": {
+        "_n": 0.931,
+        "_s": 2.469,
+        "diffuse": 1.831
+      },
+      "sha256": {
+        "_n": "180df20ad145fb25",
+        "_s": "576a07390badd8ab",
+        "diffuse": "2d2053de36275161"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/shutter_steel": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.255
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.1,
+      "paint": "shutter",
+      "seam": {
+        "_n": 0.948,
+        "_s": 2.582,
+        "diffuse": 1.861
+      },
+      "sha256": {
+        "_n": "d4218bc80589e384",
+        "_s": "fad1a002420d6b03",
+        "diffuse": "161fd8d2b4c81632"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/sign_band_a": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": null,
+      "paint": "sign",
+      "seam": {
+        "_g": 0.0,
+        "diffuse": 0.195
+      },
+      "sha256": {
+        "_g": "31a97bc0e5d0dac4",
+        "diffuse": "1cbb881d889ada5b"
+      },
+      "size": 512,
+      "spec": false
+    },
+    "japandm/sign_band_b": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": null,
+      "paint": "sign",
+      "seam": {
+        "_g": 0.0,
+        "diffuse": 0.16
+      },
+      "sha256": {
+        "_g": "56e787abb0307b5b",
+        "diffuse": "ef926b3022a65fb6"
+      },
+      "size": 512,
+      "spec": false
+    },
+    "japandm/sign_menu": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": null,
+      "paint": "sign",
+      "seam": {
+        "_g": 0.0,
+        "diffuse": 0.217
+      },
+      "sha256": {
+        "_g": "d05a6cec6536855f",
+        "diffuse": "97b1ba53a2078994"
+      },
+      "size": 512,
+      "spec": false
+    },
+    "japandm/sign_vertical": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": null,
+      "paint": "sign",
+      "seam": {
+        "_g": 0.0,
+        "diffuse": 0.255
+      },
+      "sha256": {
+        "_g": "fbb8b60f0d3d499c",
+        "diffuse": "70db043d1a0463a9"
+      },
+      "size": 512,
+      "spec": false
+    },
+    "japandm/sign_vertical_b": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": null,
+      "paint": "sign",
+      "seam": {
+        "_g": 0.0,
+        "diffuse": 0.316
+      },
+      "sha256": {
+        "_g": "a45c629233f8d2e7",
+        "diffuse": "a31c66c7bf4f605f"
+      },
+      "size": 512,
+      "spec": false
+    },
+    "japandm/slat_dark": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.185
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.5,
+      "paint": "slat",
+      "seam": {
+        "_n": 0.987,
+        "_s": 0.805,
+        "diffuse": 0.866
+      },
+      "sha256": {
+        "_n": "d43ccfe0a227e5a4",
+        "_s": "e5e2c9d5dc592c68",
+        "diffuse": "4a271103a97afd73"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/slat_timber": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.24
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.5,
+      "paint": "slat",
+      "seam": {
+        "_n": 0.937,
+        "_s": 0.96,
+        "diffuse": 0.998
+      },
+      "sha256": {
+        "_n": "d5e37733eaeb8455",
+        "_s": "bb390641e7c4e93a",
+        "diffuse": "af0a54fe9b99edc8"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/stucco_pale": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.3
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.3,
+      "paint": "plaster",
+      "seam": {
+        "_n": 0.947,
+        "_s": 1.068,
+        "diffuse": 1.097
+      },
+      "sha256": {
+        "_n": "5735c5f10434c0e8",
+        "_s": "51af7b6a1c123845",
+        "diffuse": "4056b47b5f90bc3d"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/tactile_yellow": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.33
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.5,
+      "paint": "sett",
+      "seam": {
+        "_n": 1.377,
+        "_s": 0.459,
+        "diffuse": 0.783
+      },
+      "sha256": {
+        "_n": "1f16293da6630df5",
+        "_s": "925bb342ced1c581",
+        "diffuse": "5fba90bda8ada217"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/tile_cream": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.3
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.2,
+      "paint": "tile",
+      "seam": {
+        "_n": 1.465,
+        "_s": 8.003,
+        "diffuse": 7.016
+      },
+      "sha256": {
+        "_n": "03b411647cc6e832",
+        "_s": "01ece022c9d1c57f",
+        "diffuse": "25481304ad978bc2"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/tile_dark": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.215
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.2,
+      "paint": "tile",
+      "seam": {
+        "_n": 0.959,
+        "_s": 7.843,
+        "diffuse": 7.235
+      },
+      "sha256": {
+        "_n": "f7dc0385fff15092",
+        "_s": "3feeebbb2f610286",
+        "diffuse": "a574d9eb0510f5c9"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/tile_sage": {
+      "alpha": false,
+      "glow": false,
+      "grade": [
+        0.245
+      ],
+      "maps": [
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.2,
+      "paint": "tile",
+      "seam": {
+        "_n": 1.41,
+        "_s": 8.106,
+        "diffuse": 7.659
+      },
+      "sha256": {
+        "_n": "64ecc2ec5cc9f2a4",
+        "_s": "3ab6e2e47200240f",
+        "diffuse": "6b8fde5d15d4b97c"
+      },
+      "size": 512,
+      "spec": true
+    },
+    "japandm/tower_front": {
+      "alpha": false,
+      "glow": true,
+      "grade": [
+        0.17
+      ],
+      "maps": [
+        "_g",
+        "_n",
+        "_s",
+        "diffuse"
+      ],
+      "normal": 1.3,
+      "paint": "tower_front",
+      "seam": {
+        "_g": 0.002,
+        "_n": 0.111,
+        "_s": 1.834,
+        "diffuse": 1.693
+      },
+      "sha256": {
+        "_g": "3e76e8e656fd035a",
+        "_n": "69065935c117a17b",
+        "_s": "30ad8a129f71f91a",
+        "diffuse": "70f286d88b62ed42"
+      },
+      "size": 1024,
+      "spec": true
+    },
+    "japandm/vend_face": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": null,
+      "paint": "vend_face",
+      "seam": {
+        "_g": 0.0,
+        "diffuse": 0.345
+      },
+      "sha256": {
+        "_g": "88e8febdd68ad200",
+        "diffuse": "539208372189feec"
+      },
+      "size": 512,
+      "spec": false
+    },
+    "japandm/vend_face_b": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": null,
+      "paint": "vend_face",
+      "seam": {
+        "_g": 0.0,
+        "diffuse": 0.38
+      },
+      "sha256": {
+        "_g": "b6429dc668f54c1c",
+        "diffuse": "05237ca36a8fa962"
+      },
+      "size": 512,
+      "spec": false
+    },
+    "japandm/vend_face_c": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": null,
+      "paint": "vend_face",
+      "seam": {
+        "_g": 0.0,
+        "diffuse": 0.391
+      },
+      "sha256": {
+        "_g": "6e70cf266bf476d6",
+        "diffuse": "0bac8f6595b63a68"
+      },
+      "size": 512,
+      "spec": false
+    },
+    "japandm/wayfinding_blue": {
+      "alpha": false,
+      "glow": true,
+      "grade": null,
+      "maps": [
+        "_g",
+        "diffuse"
+      ],
+      "normal": null,
+      "paint": "sign",
+      "seam": {
+        "_g": 0.0,
+        "diffuse": 0.465
+      },
+      "sha256": {
+        "_g": "767f21ad944e48c2",
+        "diffuse": "7913d8c39348f6ba"
+      },
+      "size": 512,
+      "spec": false
+    }
+  },
+  "sky": {
+    "ambient": [
+      0.0587,
+      0.0569,
+      0.0894
+    ],
+    "panorama": [
+      4096,
+      2048
+    ],
+    "sha256": {
+      "bk": "762e16f7f541a800",
+      "dn": "7b158c1bf47acef3",
+      "ft": "fa656736ffb31c01",
+      "lf": "44ce055ae5d5f048",
+      "rt": "25e3d4151f2300e4",
+      "up": "7fbf3f47e7aed689"
+    },
+    "sides": [
+      "rt",
+      "bk",
+      "lf",
+      "ft",
+      "up",
+      "dn"
+    ],
+    "size": 1024,
+    "sky_light_hint": 16.77
+  }
+}

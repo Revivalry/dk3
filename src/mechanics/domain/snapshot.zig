@@ -1,0 +1,1146 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+//! Shared mechanism: Native schema 2, with schema-1 migration. Named portable records contain typed JSON values, never memory
+//! layouts, pointers, archetype rows or jobs. Decode into an isolated world first.
+const std = @import("std");
+const data = @import("../../game/domain/components.zig");
+const ecs = @import("../../core/ecs/world.zig");
+const stream = @import("../../core/domain/save_stream.zig");
+pub const schema = 2;
+pub const maximum = @import("../../core/domain/save_stream.zig").maximum;
+pub const model_limit = 512;
+pub const sound_limit = 1024;
+pub const archive_limit = 128;
+pub const world_limit = 8 * 1024 * 1024;
+pub const Archive = struct { map: []const u8, bytes: []const u8 };
+pub const Resources = struct { models: []const []const u8 = &.{}, sounds: []const []const u8 = &.{} };
+pub const Header = struct {
+    at_ms: i64,
+    next_id: u32,
+    player_id: u32,
+    episode: u8,
+    namespace: ?u7 = null,
+    asset_crc: u32 = 0,
+    activated: bool = true,
+    resources: Resources = .{},
+    pending: @import("target_actions.zig").Queue = @splat(null),
+    journey: ?@import("travel.zig").Journey = null,
+};
+pub const Loaded = struct {
+    arena: *std.heap.ArenaAllocator,
+    world: data.World,
+    header: Header,
+    map: []const u8,
+    skill: u8,
+    visited: []const Archive = &.{},
+    residents: []Loaded = &.{},
+    region_member: bool = false,
+    ownership_transferred: bool = false,
+    pub fn deinit(self: *Loaded, allocator: std.mem.Allocator) void {
+        if (self.ownership_transferred) return;
+        for (self.residents) |*member| member.deinit(allocator);
+        self.world.deinit();
+        self.arena.deinit();
+        allocator.destroy(self.arena);
+        self.* = undefined;
+    }
+    pub fn rebase(self: *Loaded, now: i64) !void {
+        const delta = try std.math.sub(i64, now, self.header.at_ms);
+        var query = self.world.queryAccess(0, 0, 0);
+        defer query.deinit();
+        while (query.next()) |view| for (view.entities()) |entity| {
+            inline for (std.meta.fields(data.Component)) |field| if (self.world.get(entity, field.type) catch null) |value| {
+                try @import("snapshot_time.zig").rebase(@field(data.ComponentId, field.name), value, delta);
+                try bounded(value.*);
+            };
+        };
+        for (&self.header.pending) |*entry| if (entry.*) |*action| {
+            action.due_ms = try std.math.add(i64, action.due_ms, delta);
+        };
+        self.header.at_ms = now;
+        try bounded(self.header);
+    }
+};
+pub const validName = @import("../../core/domain/save_stream.zig").validName;
+fn json(writer: *stream.Writer, allocator: std.mem.Allocator, name: []const u8, value: anytype) !void {
+    try bounded(value);
+    const bytes = try std.json.Stringify.valueAlloc(allocator, value, .{});
+    defer allocator.free(bytes);
+    try writer.raw(.{ .name = name, .kind = .bytes, .count = bytes.len, .data = bytes });
+}
+pub fn capture(allocator: std.mem.Allocator, storage: []u8, world: *data.World, map: []const u8, skill: u8, header: Header) ![]const u8 {
+    return captureCampaign(allocator, storage, world, map, skill, header, &.{});
+}
+pub fn captureCampaign(allocator: std.mem.Allocator, storage: []u8, world: *data.World, map: []const u8, skill: u8, header: Header, visited: []const Archive) ![]const u8 {
+    return captureRegion(allocator, storage, world, map, skill, header, visited, &.{});
+}
+pub fn captureRegion(allocator: std.mem.Allocator, storage: []u8, world: *data.World, map: []const u8, skill: u8, header: Header, visited: []const Archive, residents: []const Archive) ![]const u8 {
+    if (!validName(map) or skill < 1 or skill > 5 or world.query_depth != 0) return error.InvalidSnapshotContext;
+    var writer = try stream.Writer.init(storage);
+    try writer.record("campaign", 0);
+    try writer.raw(.{ .name = "map", .kind = .text, .count = map.len, .data = map });
+    try writer.integers("skill", &.{skill});
+    try writer.integers("native_schema", &.{schema});
+    try json(&writer, allocator, "state", header);
+    // Stable persistent-ID ordering, independent of archetype relocation.
+    var ids: [ecs.max_entities]u32 = undefined;
+    var count: usize = 0;
+    {
+        var query = world.queryAccess(0, data.World.mask(.{ data.SoundEvent, data.ImpactEvent }), 0);
+        defer query.deinit();
+        while (query.next()) |view| for (view.entities()) |entity| {
+            ids[count] = try world.persistentId(entity);
+            count += 1;
+        };
+    }
+    std.mem.sort(u32, ids[0..count], {}, std.sort.asc(u32));
+    for (ids[0..count]) |id| {
+        const entity = world.find(id).?;
+        try writer.record("native_entity", id);
+        inline for (std.meta.fields(data.Component)) |field| if (world.get(entity, field.type) catch null) |value| {
+            try json(&writer, allocator, field.name, value.*);
+        };
+    }
+    if (residents.len >= archive_limit or visited.len > archive_limit) return error.ArchiveCapacity;
+    for (residents, 1..) |member, id| {
+        if (!validName(member.map) or std.mem.eql(u8, member.map, map) or member.bytes.len > world_limit) return error.InvalidResident;
+        try writer.record("resident_level", @intCast(id));
+        try writer.raw(.{ .name = "map", .kind = .text, .count = member.map.len, .data = member.map });
+        try writer.raw(.{ .name = "snapshot", .kind = .bytes, .count = member.bytes.len, .data = member.bytes });
+    }
+    for (visited, 1..) |archive, id| {
+        if (!validName(archive.map) or std.mem.eql(u8, archive.map, map) or archive.bytes.len > world_limit) return error.InvalidArchive;
+        try writer.record("visited_level", @intCast(id));
+        try writer.raw(.{ .name = "map", .kind = .text, .count = archive.map.len, .data = archive.map });
+        try writer.raw(.{ .name = "snapshot", .kind = .bytes, .count = archive.bytes.len, .data = archive.bytes });
+    }
+    return writer.finish();
+}
+fn parse(comptime T: type, allocator: std.mem.Allocator, field: stream.Field) !T {
+    if (field.kind != .bytes or field.data.len > 1024 * 1024) return error.InvalidSnapshotField;
+    const result = try std.json.parseFromSliceLeaky(T, allocator, field.data, .{ .allocate = .alloc_always, .max_value_len = 65536 });
+    try bounded(result);
+    return result;
+}
+pub fn decode(allocator: std.mem.Allocator, bytes: []const u8) !Loaded {
+    return decodeWorld(allocator, bytes, true, false);
+}
+/// One resident member's own record (as a region save nests it): its world in
+/// its own namespace, no player, no nested members. A dormant resident is kept
+/// in this form until its map is wanted again.
+pub fn decodeResident(allocator: std.mem.Allocator, bytes: []const u8) !Loaded {
+    return decodeWorld(allocator, bytes, false, true);
+}
+/// Admit one old flat visited archive into a distinct resident namespace. Keep
+/// the original archive cold until requested; no engine or asset work occurs here.
+/// The archived player is a stale copy of the current traveler, not another actor.
+pub fn migrateVisited(allocator: std.mem.Allocator, bytes: []const u8, namespace: u7, player_id: u32) !Loaded {
+    var saved = try decode(allocator, bytes);
+    errdefer saved.deinit(allocator);
+    if (saved.header.namespace != 0 or saved.residents.len != 0 or saved.visited.len != 0 or saved.header.journey != null or saved.header.player_id == 0 or player_id == 0 or namespace == player_id >> 24) return error.InvalidLegacyArchive;
+    const mapping: @import("snapshot_ids.zig").Mapping = .{ .namespace = namespace, .from = saved.header.player_id, .to = player_id };
+    var mapped = data.World.initNamespaced(allocator, 1024, namespace);
+    errdefer mapped.deinit();
+    {
+        var query = saved.world.queryAccess(0, 0, 0);
+        defer query.deinit();
+        while (query.next()) |view| for (view.entities()) |source| {
+            const id = try saved.world.persistentId(source);
+            if (id == saved.header.player_id) continue;
+            const entity = try saved.world.cloneIntoAs(source, &mapped, try mapping.id(id));
+            inline for (std.meta.fields(data.Component)) |field| if (mapped.get(entity, field.type) catch null) |value| {
+                try @import("snapshot_ids.zig").remap(@field(data.ComponentId, field.name), value, mapping);
+            };
+        };
+    }
+    for (&saved.header.pending) |*entry| if (entry.*) |*action| {
+        action.source = try mapping.id(action.source);
+        action.activator = try mapping.id(action.activator);
+    };
+    // The next local ID is an allocation boundary, never an entity reference.
+    if (saved.header.next_id > 0x1000000) return error.InvalidLegacyIdentity;
+    mapped.next_id = (@as(u32, namespace) << 24) + saved.header.next_id;
+    saved.header.next_id = mapped.next_id;
+    saved.header.namespace = namespace;
+    saved.header.player_id = 0;
+    saved.header.activated = true;
+    saved.region_member = true;
+    saved.world.deinit();
+    saved.world = mapped;
+    return saved;
+}
+fn decodeWorld(allocator: std.mem.Allocator, bytes: []const u8, allow_visited: bool, region_member: bool) anyerror!Loaded {
+    if (bytes.len > maximum) return error.SnapshotCapacity;
+    var reader = try stream.Reader.init(bytes);
+    const campaign = (try reader.nextRecord()) orelse return error.MissingCampaign;
+    if (!std.mem.eql(u8, campaign.name, "campaign") or campaign.id != 0) return error.MissingCampaign;
+    const arena = try allocator.create(std.heap.ArenaAllocator);
+    errdefer allocator.destroy(arena);
+    arena.* = std.heap.ArenaAllocator.init(allocator);
+    errdefer arena.deinit();
+    const strings = arena.allocator();
+    var map: ?[]const u8 = null;
+    var skill: ?u8 = null;
+    var version: ?i32 = null;
+    var header: ?Header = null;
+    while (try reader.nextField()) |field| {
+        if (std.mem.eql(u8, field.name, "map")) {
+            if (field.kind != .text or !validName(field.data)) return error.InvalidSaveMap;
+            map = try strings.dupe(u8, field.data);
+        } else if (std.mem.eql(u8, field.name, "skill")) {
+            const value = try field.integer(0);
+            if (field.count != 1 or value < 1 or value > 5) return error.InvalidSaveSkill;
+            skill = @intCast(value);
+        } else if (std.mem.eql(u8, field.name, "native_schema")) {
+            if (field.count != 1) return error.InvalidSnapshotSchema;
+            version = try field.integer(0);
+        } else if (std.mem.eql(u8, field.name, "state")) header = try parse(Header, strings, field) else return error.UnsupportedSnapshotField;
+    }
+    if (version == null or (version.? != 1 and version.? != schema)) return error.UnsupportedSnapshotSchema;
+    var state = header orelse return error.MissingSnapshotState;
+    if (region_member and (version.? < 2 or state.namespace == null)) return error.InvalidResident;
+    if (version.? == 1 and state.namespace != null) return error.UnsupportedSnapshotSchema;
+    if (state.namespace == null) state.namespace = 0;
+    var world = data.World.initNamespaced(allocator, 1024, state.namespace.?);
+    errdefer world.deinit();
+    var archives: std.ArrayList(Archive) = .empty;
+    var residents: std.ArrayList(Loaded) = .empty;
+    errdefer for (residents.items) |*member| member.deinit(allocator);
+    while (try reader.nextRecord()) |record| {
+        if (std.mem.eql(u8, record.name, "resident_level")) {
+            if (!allow_visited or region_member or residents.items.len >= archive_limit - 1 or record.id != residents.items.len + 1 or version.? < 2 or state.namespace == null) return error.InvalidResident;
+            const name_field = (try reader.nextField()) orelse return error.InvalidResident;
+            const content = (try reader.nextField()) orelse return error.InvalidResident;
+            if (!std.mem.eql(u8, name_field.name, "map") or name_field.kind != .text or !validName(name_field.data) or !std.mem.eql(u8, content.name, "snapshot") or content.kind != .bytes or content.data.len > world_limit or try reader.nextField() != null) return error.InvalidResident;
+            if (std.mem.eql(u8, name_field.data, map orelse return error.InvalidSaveMap)) return error.InvalidResident;
+            for (residents.items) |member| if (std.mem.eql(u8, member.map, name_field.data)) return error.DuplicateResident;
+            var nested = try decodeWorld(allocator, content.data, false, true);
+            errdefer nested.deinit(allocator);
+            if (nested.header.journey != null or nested.header.player_id != 0 or !std.mem.eql(u8, nested.map, name_field.data) or nested.header.namespace == state.namespace) return error.InvalidResident;
+            for (residents.items) |member| if (member.header.namespace == nested.header.namespace) return error.DuplicateWorldNamespace;
+            try residents.append(strings, nested);
+            continue;
+        }
+        if (std.mem.eql(u8, record.name, "visited_level")) {
+            if (!allow_visited or archives.items.len >= archive_limit or record.id != archives.items.len + 1) return error.InvalidArchive;
+            const name_field = (try reader.nextField()) orelse return error.InvalidArchive;
+            const content = (try reader.nextField()) orelse return error.InvalidArchive;
+            if (!std.mem.eql(u8, name_field.name, "map") or name_field.kind != .text or !validName(name_field.data) or !std.mem.eql(u8, content.name, "snapshot") or content.kind != .bytes or content.data.len > world_limit or try reader.nextField() != null) return error.InvalidArchive;
+            if (std.mem.eql(u8, name_field.data, map orelse return error.InvalidSaveMap)) return error.InvalidArchive;
+            for (archives.items) |prior| if (std.mem.eql(u8, prior.map, name_field.data)) return error.DuplicateArchive;
+            var nested = try decodeWorld(allocator, content.data, false, false);
+            defer nested.deinit(allocator);
+            if (nested.header.journey != null or !std.mem.eql(u8, nested.map, name_field.data)) return error.InvalidArchive;
+            try archives.append(strings, .{ .map = try strings.dupe(u8, name_field.data), .bytes = try strings.dupe(u8, content.data) });
+            continue;
+        }
+        if (archives.items.len != 0 or residents.items.len != 0) return error.InvalidSnapshotRecord;
+        if (!std.mem.eql(u8, record.name, "native_entity") or record.id == 0) return error.InvalidSnapshotRecord;
+        if (version.? == 1 and record.id > world.id_last) return error.InvalidLegacyIdentity;
+        const entity = try world.create(record.id, .{});
+        while (try reader.nextField()) |field| {
+            var known = false;
+            inline for (std.meta.fields(data.Component)) |component| if (std.mem.eql(u8, field.name, component.name)) {
+                if (known) return error.DuplicateComponent;
+                try world.put(entity, try parse(component.type, strings, field));
+                known = true;
+            };
+            if (!known) return error.UnsupportedSnapshotComponent;
+        }
+    }
+    if (state.next_id < world.next_id or state.next_id == std.math.maxInt(u32)) return error.InvalidNextIdentity;
+    world.next_id = state.next_id;
+    if (state.namespace != null and state.next_id > world.id_last + 1) return error.InvalidNextIdentity;
+    var result: Loaded = .{ .arena = arena, .world = world, .header = state, .map = map orelse return error.InvalidSaveMap, .skill = skill orelse return error.InvalidSaveSkill, .visited = archives.items, .residents = residents.items, .region_member = region_member };
+    if (!region_member) try validateRegion(allocator, &result);
+    return result;
+}
+// Reject non-finite/unbounded data before it can reach physics or renderer casts.
+fn bounded(value: anytype) anyerror!void {
+    switch (@typeInfo(@TypeOf(value))) {
+        .float => if (!std.math.isFinite(value) or @abs(value) > 100000000) {
+            return error.InvalidSnapshotNumber;
+        },
+        .int => |info| if (info.bits > 32 and (value < @as(i128, std.math.minInt(i32)) or value > std.math.maxInt(i32))) {
+            return error.InvalidSnapshotNumber;
+        },
+        .array => for (value) |element| try bounded(element),
+        .pointer => |info| {
+            if (info.size != .slice) @compileError("snapshot pointer is not an owned slice");
+            if (value.len > (if (info.child == u8) @as(usize, 65536) else 4096)) return error.SnapshotSliceLimit;
+            if (info.child == u8) {
+                if (std.mem.indexOfScalar(u8, value, 0) != null) return error.InvalidSnapshotString;
+            } else for (value) |element| try bounded(element);
+        },
+        .@"struct" => |info| inline for (info.fields) |field| try bounded(@field(value, field.name)),
+        .@"union" => switch (value) {
+            inline else => |payload| try bounded(payload),
+        },
+        .optional => if (value) |present| {
+            try bounded(present);
+        },
+        .@"enum", .bool, .void => {},
+        else => @compileError("unsupported snapshot value"),
+    }
+}
+pub fn requireComponents(world: *data.World, entity: ecs.Entity, comptime types: anytype) !void {
+    return require(world, entity, types);
+}
+fn require(world: *data.World, entity: ecs.Entity, comptime types: anytype) !void {
+    inline for (types) |T| _ = try world.get(entity, T);
+}
+fn validLiquid(state: @import("environment.zig").State) !void {
+    if (!std.math.isFinite(state.fraction) or state.fraction < 0 or state.fraction >= 1 or (state.nitro_ms != null and !state.initialized)) return error.InvalidSavedEnvironment;
+}
+pub fn validate(snapshot: *Loaded) !void {
+    try validateRegion(snapshot.world.allocator, snapshot);
+}
+pub fn validateRegion(allocator: std.mem.Allocator, snapshot: *Loaded) !void {
+    if (snapshot.residents.len >= archive_limit or snapshot.region_member or snapshot.header.player_id == 0) return error.InvalidRegion;
+    var owners: [archive_limit]*data.World = undefined;
+    owners[0] = &snapshot.world;
+    for (snapshot.residents, 1..) |*member, i| {
+        if (member.residents.len != 0 or member.visited.len != 0 or !member.region_member or member.header.player_id != 0 or member.skill != snapshot.skill) return error.InvalidResident;
+        owners[i] = &member.world;
+    }
+    const references: @import("world_references.zig").Worlds = .{ .entries = owners[0 .. snapshot.residents.len + 1] };
+    try references.validate(allocator);
+    try validateWorld(snapshot, references);
+    for (snapshot.residents) |*member| try validateWorld(member, references);
+}
+/// The kinds whose policy owns a class state type (empty for shared mechanism states).
+fn ownerKinds(comptime State: type) []const @import("actor_catalog").Kind {
+    comptime {
+        @setEvalBranchQuota(100_000);
+        var kinds: []const @import("actor_catalog").Kind = &.{};
+        for (@import("actor_catalog").policies) |policy| if (@hasDecl(policy, "State") and policy.State == State) {
+            for (policy.classes) |class| kinds = kinds ++ .{class.kind};
+        };
+        return kinds;
+    }
+}
+/// Restored actor kinds by persistent id, for class state validation.
+const ActorKinds = struct {
+    fn of(context: *const anyopaque, id: u32) error{NotAnActor}!?@import("actor_catalog").Kind {
+        const references: *const @import("world_references.zig").Worlds = @ptrCast(@alignCast(context));
+        const found = references.find(id) orelse return null;
+        const actor = found.get(data.Actor) catch return error.NotAnActor;
+        return @import("actor_catalog").entries[actor.definition].kind;
+    }
+};
+/// What a class's saved-state validator may ask about one restored entity.
+pub const Saved = struct {
+    world: *data.World,
+    entity: ecs.Entity,
+    references: @import("world_references.zig").Worlds,
+    header: *const Header,
+    pub fn require(self: *const Saved, comptime types: anytype) !void {
+        return @import("snapshot.zig").requireComponents(self.world, self.entity, types);
+    }
+    pub fn classname(self: *const Saved) ![]const u8 {
+        return (try self.world.get(self.entity, data.MapObject)).classname;
+    }
+    /// The number of sounds in the saved resource table.
+    pub fn sounds(self: *const Saved) usize {
+        return self.header.resources.sounds.len;
+    }
+    pub fn find(self: *const Saved, id: u32) ?@import("world_references.zig").Ref {
+        return self.references.find(id);
+    }
+};
+/// Class validators, supplied by the game module's root as `saved_classes` (dependency
+/// inversion: this module names no class). Without them (client and UI modules) only the shared
+/// checks run.
+const class_validators = if (@hasDecl(@import("root"), "saved_classes")) @import("root").saved_classes else struct {};
+/// Whether the entity's class declares a component's trait; true without class validators.
+fn classTrait(world: *data.World, entity: ecs.Entity, references: @import("world_references.zig").Worlds, snapshot: *Loaded, comptime trait: []const u8) !bool {
+    if (!@hasDecl(class_validators, "hasTrait")) return true;
+    const saved: Saved = .{ .world = world, .entity = entity, .references = references, .header = &snapshot.header };
+    return class_validators.hasTrait(&saved, trait);
+}
+/// What a component's `validateSaved(self, *const Check) !void` may ask about the restored world.
+/// Components are named as in components.zig (`"Binding"`), so class modules outside this module
+/// can ask too.
+pub const Check = struct {
+    world: *data.World,
+    entity: ecs.Entity,
+    references: @import("world_references.zig").Worlds,
+    snapshot: *Loaded,
+    /// Another restored entity, found by persistent id.
+    pub const Other = struct {
+        ref: @import("world_references.zig").Ref,
+        pub fn require(self: Other, comptime names: anytype) !void {
+            inline for (names) |name| _ = try self.ref.get(@field(data, name));
+        }
+        pub fn get(self: Other, comptime name: []const u8) !*@field(data, name) {
+            return self.ref.get(@field(data, name));
+        }
+    };
+    pub fn require(self: *const Check, comptime names: anytype) !void {
+        inline for (names) |name| _ = try self.world.get(self.entity, @field(data, name));
+    }
+    pub fn has(self: *const Check, comptime name: []const u8) bool {
+        return (self.world.get(self.entity, @field(data, name)) catch null) != null;
+    }
+    pub fn get(self: *const Check, comptime name: []const u8) !*@field(data, name) {
+        return self.world.get(self.entity, @field(data, name));
+    }
+    /// The checked entity's persistent id.
+    pub fn id(self: *const Check) !u32 {
+        return self.world.persistentId(self.entity);
+    }
+    pub fn find(self: *const Check, identity: u32) ?Other {
+        return .{ .ref = self.references.find(identity) orelse return null };
+    }
+    /// Whether the entity's class declares a trait (entity_classes `Traits`).
+    pub fn trait(self: *const Check, comptime name: []const u8) !bool {
+        return classTrait(self.world, self.entity, self.references, self.snapshot, name);
+    }
+    /// The simulation time the save was taken at.
+    pub fn savedAt(self: *const Check) i64 {
+        return self.snapshot.header.at_ms;
+    }
+};
+/// Whether a component of the entity declares that it may be saved holding no weapon.
+fn mayBeUnarmed(world: *data.World, entity: ecs.Entity) bool {
+    inline for (std.meta.fields(data.Component)) |field| if (comptime declares(field.type, "saved_unarmed")) {
+        if ((world.get(entity, field.type) catch null) != null) return true;
+    };
+    return false;
+}
+/// Whether a class state of `owner` (a component, an actor attack's payload or a projectile's
+/// flight) declares that it holds `victim`'s motion (`holdsSaved`).
+fn heldBy(owner: @import("world_references.zig").Ref, victim: u32) !bool {
+    inline for (std.meta.fields(data.Component)) |field| if (comptime declares(field.type, "holdsSaved")) {
+        if (owner.get(field.type) catch null) |state| return state.holdsSaved(victim);
+    };
+    if (owner.get(data.ActorAttack) catch null) |attack| return switch (attack.attack) {
+        inline else => |*payload| if (comptime declares(@TypeOf(payload.*), "holdsSaved")) payload.holdsSaved(victim) else false,
+    };
+    const projectile = owner.get(data.Projectile) catch return error.InvalidSavedMotionOwner;
+    return switch (projectile.flight) {
+        inline else => |*flight| if (comptime declares(@TypeOf(flight.*), "holdsSaved")) flight.holdsSaved(victim) else false,
+    };
+}
+/// Whether an entity publishes its own projection without a Body: its world control's state, or a
+/// component, declares `saved_bodiless` (a bool) or `savedBodiless(self) bool`.
+fn bodiless(world: *data.World, entity: ecs.Entity) bool {
+    if ((world.get(entity, data.Projectile) catch null) != null) return true;
+    if (world.get(entity, data.WorldControl) catch null) |control| switch (control.action) {
+        inline else => |state| if (declaresBodiless(state)) return true,
+    };
+    inline for (std.meta.fields(data.Component)) |field| if (comptime declares(field.type, "saved_bodiless") or declares(field.type, "savedBodiless")) {
+        if (world.get(entity, field.type) catch null) |value| if (declaresBodiless(value.*)) return true;
+    };
+    return false;
+}
+fn declaresBodiless(value: anytype) bool {
+    const T = @TypeOf(value);
+    if (comptime declares(T, "saved_bodiless")) return T.saved_bodiless;
+    if (comptime declares(T, "savedBodiless")) return value.savedBodiless();
+    return false;
+}
+fn declares(comptime T: type, comptime name: []const u8) bool {
+    return @import("snapshot_time.zig").classState(T, name);
+}
+fn validateWorld(snapshot: *Loaded, references: @import("world_references.zig").Worlds) !void {
+    const world = &snapshot.world;
+    if (snapshot.header.episode < 1 or snapshot.header.episode > 4 or snapshot.header.at_ms < 0) return error.InvalidCampaignState;
+    if (snapshot.header.journey) |journey| {
+        if (!validName(journey.destination) or std.mem.eql(u8, snapshot.map, journey.destination) or journey.spawn.len >= 64 or @import("travel.zig").kind(snapshot.map, journey.destination) != journey.kind) return error.InvalidJourney;
+        for (journey.spawn) |char| if (char < 32 or char == '"' or char == '\\') return error.InvalidJourney;
+        for (journey.offset) |axis| if (@abs(axis) > 8192) return error.InvalidJourney;
+    }
+    if (snapshot.header.resources.models.len >= model_limit or snapshot.header.resources.sounds.len >= sound_limit) return error.InvalidResources;
+    inline for (.{ snapshot.header.resources.models, snapshot.header.resources.sounds }) |names| for (names, 0..) |name, i| {
+        if (name.len == 0 or name.len >= 64 or std.mem.indexOf(u8, name, "..") != null or name[0] == '/') return error.InvalidResources;
+        for (names[0..i]) |prior| if (std.ascii.eqlIgnoreCase(prior, name)) return error.DuplicateSavedResource;
+    };
+    if (snapshot.header.player_id != 0) {
+        const player = world.find(snapshot.header.player_id) orelse return error.MissingSavedPlayer;
+        try require(world, player, .{ data.Transform, data.Velocity, data.Player, data.Body, data.Binding, data.Health, data.Weapons, data.Character, data.Ailments, data.Keys, data.Hurt });
+        if ((try world.get(player, data.Binding)).slot != 0) return error.InvalidSavedPlayerSlot;
+    } else if (!snapshot.region_member) return error.MissingSavedPlayer;
+    var occupied: [ecs.max_entities]bool = @splat(false);
+    var players: usize = 0;
+    var query = world.queryAccess(0, 0, 0);
+    defer query.deinit();
+    while (query.next()) |view| for (view.entities()) |entity| {
+        if ((world.get(entity, data.SoundEvent) catch null) != null or (world.get(entity, data.ImpactEvent) catch null) != null) return error.SavedTransientEvent;
+        _ = try world.get(entity, data.Transform);
+        if (world.get(entity, data.Binding) catch null) |binding| {
+            if (binding.slot >= occupied.len or occupied[binding.slot] or (binding.slot > 0 and binding.slot < 64)) return error.InvalidSavedBinding;
+            occupied[binding.slot] = true;
+            // A network slot does not imply physical collision. These controllers
+            // publish their own non-solid projections and restore without Body.
+            if (!bodiless(world, entity)) try require(world, entity, .{data.Body});
+        }
+        if (world.get(entity, data.Objective) catch null) |objective| {
+            try require(world, entity, .{ data.Body, data.Binding, data.MapObject });
+            if ((objective.team != .red and objective.team != .blue) or objective.color > 8 or ((objective.phase == .carried) != (objective.carrier != null)) or (objective.phase == .carried and objective.airborne) or (objective.phase == .home and objective.deadline != null)) return error.InvalidSavedObjective;
+            if (objective.carrier) |id| {
+                const carrier = references.find(id) orelse return error.InvalidSavedObjective;
+                try carrier.require(.{ data.Player, data.Session, data.Binding, data.Health });
+            }
+            for (objective.home ++ objective.angles ++ objective.velocity) |axis| if (!std.math.isFinite(axis)) return error.InvalidSavedObjective;
+        }
+        if (world.get(entity, data.Exit) catch null) |exit| {
+            if (exit.ending_started != null) {
+                const viewer = references.find(exit.ending_player) orelse return error.InvalidSavedEnding;
+                if ((try viewer.get(data.Body)).motion_owner != try world.persistentId(entity) or (try viewer.get(data.Player)).mode != .frozen) return error.InvalidSavedEnding;
+            } else if (exit.ending_player != 0) return error.InvalidSavedEnding;
+        }
+        if (world.get(entity, data.Body) catch null) |body| {
+            if (body.mass <= 0 or body.mass > 100000) return error.InvalidSavedMass;
+            for (body.mins, body.maxs) |low, high| if (low > high or @abs(low) > 8192 or @abs(high) > 8192) return error.InvalidSavedBounds;
+            if (body.motion_owner) |owner_id| {
+                const owner = references.find(owner_id) orelse return error.InvalidSavedMotionOwner;
+                if (owner.get(data.Cinematic) catch null) |cinematic| {
+                    if (!cinematic.active or cinematic.viewer != try world.persistentId(entity)) return error.InvalidSavedMotionOwner;
+                } else if (owner.get(data.Exit) catch null) |exit| {
+                    if (exit.ending_started == null or exit.ending_player != try world.persistentId(entity)) return error.InvalidSavedMotionOwner;
+                } else if (!try heldBy(owner, try world.persistentId(entity))) return error.InvalidSavedMotionOwner;
+            }
+        }
+        if ((world.get(entity, data.Exit) catch null) != null) {
+            try require(world, entity, .{ data.MapObject, data.Binding, data.Body });
+            if (!try classTrait(world, entity, references, snapshot, "level_exit")) return error.InvalidSavedExit;
+        }
+        if (world.get(entity, data.Script) catch null) |script| {
+            if (script.name.len == 0 or script.name.len > 64 or script.remaining < -1 or script.remaining > 10000 or script.depth > script.stack.len) return error.InvalidSavedScript;
+        }
+        if (world.get(entity, data.Scenery) catch null) |scenery| {
+            try require(world, entity, .{ data.Transform, data.Velocity, data.Body, data.Binding });
+            if (scenery.model.len == 0 or scenery.model.len >= 64 or scenery.sequence.last < scenery.sequence.first or scenery.sequence.fps == 0 or scenery.sequence.fps > 240 or scenery.alpha < 0 or scenery.alpha > 1 or scenery.damage < 0 or scenery.damage > 1000000) return error.InvalidSavedScenery;
+            for (scenery.scale) |scale| if (scale <= 0 or scale > 10000) return error.InvalidSavedScenery;
+            if (scenery.corpse) |corpse| {
+                try require(world, entity, .{ data.Health, data.Hurt, data.Random });
+                if (corpse.appearance >= @import("appearance_catalog").entries.len or scenery.movement != .toss or scenery.expires_ms == null or scenery.breakable or scenery.fragment or scenery.explosion or scenery.broken or scenery.gib != null or (try world.get(entity, data.Health)).current > 0 or !(try world.get(entity, data.Hurt)).feedback.death_handled or (world.get(entity, data.Player) catch null) != null or (world.get(entity, data.Session) catch null) != null) return error.InvalidSavedScenery;
+            } else if (!scenery.fragment and !scenery.explosion) {
+                try require(world, entity, .{ data.MapObject, data.Random });
+                if (!try classTrait(world, entity, references, snapshot, "decoration")) return error.InvalidSavedScenery;
+            } else if (scenery.breakable or (scenery.expires_ms == null and scenery.gib == null)) return error.InvalidSavedScenery;
+            if (scenery.gib != null) {
+                try require(world, entity, .{data.Random});
+                if (!scenery.fragment or scenery.breakable or scenery.explosion or scenery.movement != .bounce) return error.InvalidSavedScenery;
+                const skin = scenery.gib.?.skin_model;
+                if ((!scenery.gib.?.robotic and skin.len > 0) or skin.len >= 64 or (skin.len > 0 and (!std.mem.startsWith(u8, skin, "models/") or std.mem.indexOf(u8, skin, "..") != null))) return error.InvalidSavedScenery;
+            }
+            if (scenery.breakable) try require(world, entity, .{ data.Health, data.Hurt });
+            if (scenery.broken and (!scenery.breakable or (try world.get(entity, data.Health)).current > 0 or (try world.get(entity, data.Body)).contents != 0)) return error.InvalidSavedScenery;
+        }
+        if (world.get(entity, data.ActorAttack) catch null) |attack| {
+            try require(world, entity, .{ data.Transform, data.Velocity, data.Body, data.Binding });
+            if (!attack.validSaved()) return error.InvalidSavedActorAttack;
+            switch (attack.attack) {
+                inline else => |_, tag| inline for (comptime data.ActorAttack.savedComponents(@FieldType(@TypeOf(attack.attack), @tagName(tag)))) |name| {
+                    _ = world.get(entity, @field(data, name)) catch return error.InvalidSavedActorAttack;
+                },
+            }
+            // Its class checks relations to other entities.
+            if (@hasDecl(class_validators, "actorAttack")) {
+                const saved: Saved = .{ .world = world, .entity = entity, .references = references, .header = &snapshot.header };
+                try class_validators.actorAttack(&saved, attack.*);
+            }
+        }
+        if (world.get(entity, data.Cinematic) catch null) |playback| {
+            if (!validName(playback.name) or (playback.active and playback.finished)) return error.InvalidSavedCinematic;
+            try require(world, entity, .{data.MapObject});
+        }
+        if (world.get(entity, data.Performer) catch null) |performer| {
+            try require(world, entity, .{ data.Binding, data.Body });
+            if (performer.ground_entity > 2047 or performer.count > performer.queue.len or performer.unique.len == 0 or performer.unique.len > 32 or performer.walk_speed < 0 or performer.walk_speed > 2000 or performer.run_speed < 0 or performer.run_speed > 2000 or performer.yaw_speed < 0 or performer.yaw_speed > 360) return error.InvalidSavedPerformer;
+            inline for (.{ "animation", "idle", "movement" }) |field| {
+                const sequence = @field(performer, field);
+                if (sequence.last < sequence.first or sequence.fps == 0 or sequence.fps > 240) return error.InvalidSavedPerformerAnimation;
+            }
+        }
+        if (world.get(entity, data.Character) catch null) |character| if (character.sound_environment > 26) return error.InvalidSavedRoom;
+        if (world.get(entity, data.Health) catch null) |health| if (health.current < -1000000 or health.current > 1000000 or health.maximum < 1 or health.maximum > 1000000 or health.armor < 0 or health.armor > 1000000) return error.InvalidSavedHealth;
+        if (world.get(entity, data.Player) catch null) |state| {
+            players += 1;
+            if (try world.persistentId(entity) != snapshot.header.player_id or state.timer_ms > 2147483647 or state.view_height < -64 or state.view_height > 128 or state.ground_entity > 2047) return error.InvalidSavedPlayer;
+        }
+        if (world.get(entity, data.Weapons) catch null) |weapons| {
+            const unarmed = mayBeUnarmed(world, entity) and weapons.weapon == 0 and weapons.dk3Inventory == 0;
+            if ((!unarmed and weapons.weapon < 1) or weapons.weapon > @import("weapon_catalog").count or weapons.weaponstate < 0 or weapons.weaponstate > 3 or weapons.dk3GlockClip < 0 or weapons.dk3GlockClip > 10 or weapons.dk3SwordExperience < 0) return error.InvalidSavedWeapons;
+            for (weapons.ammo) |amount| if (amount < 0 or amount > 1000000) return error.InvalidSavedWeapons;
+            if (weapons.last_fire_ms) |at| if (at > snapshot.header.at_ms + 200) return error.InvalidSavedWeapons;
+        }
+        if (world.get(entity, data.Actor) catch null) |actor| {
+            if (actor.definition >= @import("actor_catalog").entries.len) return error.InvalidSavedActor;
+            if ((actor.idle_pose == null) != (actor.idle_started_ms == null)) return error.InvalidSavedActorIdle;
+            if (actor.idle_pose) |pose| if (pose.last < pose.first or pose.fps == 0 or pose.fps > 240) return error.InvalidSavedActorIdle;
+            if (actor.audio.cue) |cue| if (cue >= 256) return error.InvalidSavedActorAudio;
+            try require(world, entity, .{ data.Velocity, data.Body, data.Health, data.Hurt, data.Binding, data.MapObject });
+            // Each class state rejects values its class could never hold.
+            const kind = @import("actor_catalog").entries[actor.definition].kind;
+            inline for (@typeInfo(data.Actor).@"struct".fields) |field| if (comptime @import("snapshot_time.zig").classState(field.type, "validate")) {
+                const owned = comptime ownerKinds(field.type);
+                try @field(actor, field.name).validate(.{ .owned = std.mem.indexOfScalar(@import("actor_catalog").Kind, owned, kind) != null, .context = &references, .kind_of = ActorKinds.of });
+            };
+            if (actor.gibbed and ((try world.get(entity, data.Health)).current > 0 or (try world.get(entity, data.Body)).contents != 0 or actor.mode != .dead)) return error.InvalidSavedActor;
+            try validLiquid(actor.liquid);
+            if (@import("actor_catalog").find((try world.get(entity, data.MapObject)).classname) != actor.definition) return error.InvalidSavedActorClass;
+        }
+        var check: Check = .{ .world = world, .entity = entity, .references = references, .snapshot = snapshot };
+        if (world.get(entity, data.Destructible) catch null) |state| if (state.wall_explode) |*wall| try wall.validateSaved(&check, state.broken);
+        if (world.get(entity, data.WorldControl) catch null) |control| {
+            try require(world, entity, .{ data.MapObject, data.Transform });
+            // Its class checks the control's classname and invariants.
+            if (@hasDecl(class_validators, "control")) {
+                const saved: Saved = .{ .world = world, .entity = entity, .references = references, .header = &snapshot.header };
+                try class_validators.control(&saved, control.*);
+            }
+        }
+        if (world.get(entity, data.Projectile) catch null) |projectile| {
+            if (projectile.lifetime_ms < 0 or projectile.lifetime_ms > 3600000 or projectile.speed < 0 or projectile.speed > 100000) return error.InvalidSavedProjectile;
+            const flight = @import("weapon_catalog").flightState(projectile.weapon) catch return error.InvalidSavedProjectile;
+            if (std.meta.activeTag(projectile.flight) != std.meta.activeTag(flight) or projectile.damage < 0 or projectile.damage > 1000000) return error.InvalidSavedProjectile;
+            try require(world, entity, .{ data.Binding, data.Velocity });
+            if (!@import("weapon_catalog").ballistics.isStateless(flight)) try require(world, entity, .{data.Lifetime});
+            // Each weapon's flight state checks itself.
+            switch (projectile.flight) {
+                inline else => |*state| if (comptime @import("snapshot_time.zig").classState(@TypeOf(state.*), "validateSaved")) try state.validateSaved(&check, projectile.owner),
+            }
+        }
+        if (world.get(entity, data.Melee) catch null) |melee| {
+            const plan = melee.plan() catch return error.InvalidSavedMelee;
+            if (melee.next_hit >= plan.hits or melee.damage < 0 or melee.damage > 1000000 or melee.experience < 0 or melee.timing_factor < 1 or melee.timing_factor > 3) return error.InvalidSavedMelee;
+            const owner = references.find(melee.owner) orelse return error.InvalidSavedMeleeOwner;
+            try owner.require(.{ data.Player, data.Weapons, data.Binding, data.Health });
+            if ((world.get(entity, data.Binding) catch null) != null) return error.InvalidSavedMelee;
+        }
+        if (world.get(entity, data.WeaponLaunch) catch null) |launch| {
+            const class = @import("weapon_catalog").find(launch.weapon) orelse return error.InvalidSavedLaunch;
+            const policy = @import("weapon_catalog").combatFor(launch.weapon, launch.sequence);
+            if ((policy != .projectile and policy != .flown) or class.spec.projectile.action_delay_ms == 0 or (world.get(entity, data.Binding) catch null) != null) return error.InvalidSavedLaunch;
+            const owner = references.find(launch.owner) orelse return error.InvalidSavedLaunch;
+            try owner.require(.{ data.Player, data.Weapons, data.Health, data.Binding });
+        }
+        if (world.get(entity, data.Pickup) catch null) |pickup| {
+            try require(world, entity, .{ data.Binding, data.Body, data.ItemMotion, data.MapObject });
+            if ((pickup.dropped and (pickup.respawn_ms != null or pickup.kind != .weapon or pickup.amount <= 0)) or (!pickup.dropped and pickup.expires_ms != null)) return error.InvalidSavedPickup;
+            switch (pickup.kind) {
+                .weapon, .ammunition => |id| if (id == 0 or id > @import("weapon_catalog").count) {
+                    return error.InvalidSavedPickup;
+                },
+                .key => |id| if (id >= @import("item_catalog").keys.len) {
+                    return error.InvalidSavedPickup;
+                },
+                else => {},
+            }
+        }
+        if (world.get(entity, data.TargetSequence) catch null) |sequence| {
+            if (sequence.events.len > 128 or sequence.cursor > sequence.events.len) return error.InvalidSavedSequence;
+            for (sequence.events) |event| if (event.delay_ms < 0 or event.delay_ms > 3600000) return error.InvalidSavedSequence;
+        }
+        if (world.get(entity, data.Character) catch null) |character| {
+            for (character.attributes) |attribute| if (attribute < 0 or attribute > 5) return error.InvalidSavedCharacter;
+            if (character.environment_charge_ms < 0 or character.environment_charge_ms > 40000) return error.InvalidSavedEnvironment;
+            try validLiquid(character.liquid);
+            if (character.level < 1 or character.level > 25 or character.points < 0 or character.experience < 0 or character.save_gems < 0) return error.InvalidSavedCharacter;
+        }
+        if (world.get(entity, data.Session) catch null) |session| if (session.advancement) |advancement| if (!advancement.valid()) return error.InvalidSavedCharacter;
+        if (world.get(entity, data.Hurt) catch null) |hurt| {
+            for (hurt.impulse ++ hurt.impulse_point ++ hurt.revision_impulse) |axis| if (!std.math.isFinite(axis)) return error.InvalidSavedDamage;
+            if (!std.math.isFinite(hurt.feedback.flash_alpha) or hurt.feedback.flash_alpha < 0 or hurt.feedback.flash_alpha > 0.75) return error.InvalidSavedDamage;
+        }
+        if (world.get(entity, data.Ailments) catch null) |ailments| {
+            try require(world, entity, .{data.Health});
+            if (ailments.warp) |warp| {
+                try require(world, entity, .{data.Player});
+                if (warp.source == 0 or warp.next_ms > warp.until_ms or warp.next_ms < warp.until_ms - 7900) return error.InvalidSavedAilment;
+            }
+            if (ailments.petrified_frame != null and !ailments.stone) return error.InvalidSavedAilment;
+            if (ailments.freeze_level < 0 or ailments.freeze_level > 1) return error.InvalidSavedAilment;
+            if (ailments.poison) |poison| if (poison.damage <= 0 or poison.damage > 1000000 or poison.interval_ms < 100 or poison.interval_ms > 3600000 or poison.weapon > @import("weapon_catalog").count or poison.next_ms > poison.until_ms + poison.interval_ms) return error.InvalidSavedAilment;
+        }
+        // Every other component checks its own saved values (`validateSaved`).
+        inline for (std.meta.fields(data.Component)) |field| if (comptime @import("snapshot_time.zig").classState(field.type, "validateSaved")) {
+            if (world.get(entity, field.type) catch null) |value| try value.validateSaved(&check);
+        };
+    };
+    if (players != @intFromBool(snapshot.header.player_id != 0)) return error.InvalidSavedPlayer;
+}
+
+test "campaign saves own flat archives and validate nested worlds before admission" {
+    const memory = std.testing.allocator;
+    var world = data.World.init(memory, 16);
+    defer world.deinit();
+    _ = try world.create(7, .{ data.Transform{}, data.Velocity{}, data.Player{}, data.Body{}, data.Binding{ .slot = 0 }, data.Health{}, data.Hurt{}, data.Weapons{ .weapon = 1 }, data.Character{}, data.Ailments{}, data.Keys{} });
+    const header: Header = .{ .at_ms = 1000, .episode = 1, .player_id = 7, .next_id = world.next_id };
+    var child_buffer: [32768]u8 = undefined;
+    var parent_buffer: [65536]u8 = undefined;
+    var outer_buffer: [98304]u8 = undefined;
+    const child = try capture(memory, &child_buffer, &world, "e1m3a", 3, header);
+    const parent = try captureCampaign(memory, &parent_buffer, &world, "e1m3b", 3, header, &.{.{ .map = "e1m3a", .bytes = child }});
+    var loaded = try decode(memory, parent);
+    defer loaded.deinit(memory);
+    const outer = try captureCampaign(memory, &outer_buffer, &world, "e1m4a", 3, header, &.{.{ .map = "e1m3b", .bytes = parent }});
+    try std.testing.expectError(error.InvalidArchive, decode(memory, outer));
+    child_buffer[child.len - 1] ^= 1;
+    const corrupt = try captureCampaign(memory, &parent_buffer, &world, "e1m3b", 3, header, &.{.{ .map = "e1m3a", .bytes = child }});
+    try std.testing.expectError(error.Checksum, decode(memory, corrupt));
+    try std.testing.expectEqual(@as(usize, 1), loaded.visited.len);
+    try std.testing.expectEqualStrings("e1m3a", loaded.visited[0].map);
+    var retained = try decode(memory, loaded.visited[0].bytes);
+    defer retained.deinit(memory);
+    try std.testing.expectEqual(@as(i32, 100), (try retained.world.get(retained.world.find(7).?, data.Health)).current);
+}
+
+test "portable native snapshots own strings and preserve IDs before rebasing" {
+    const allocator = std.testing.allocator;
+    var world = data.World.init(allocator, 64);
+    defer world.deinit();
+    const player = try world.create(7, .{ data.Transform{}, data.Velocity{}, data.Player{}, data.Body{}, data.Binding{ .slot = 0 }, data.Health{}, data.Hurt{}, data.Weapons{ .weapon = 1 }, data.Character{ .boost_until = .{ 0, 1300, 0, 0, 0 } }, data.Ailments{}, data.Keys{} });
+    var random: data.Random = .{ .state = 92817 };
+    _ = random.next();
+    try world.put(player, random);
+    (try world.get(player, data.Weapons)).last_fire_ms = 700;
+    _ = (try world.get(player, data.Ailments)).apply(.{ .poison = .{ .damage = 3, .duration_ms = 5000 } }, 7, 11, 700);
+    _ = try world.create(43, .{ data.Transform{}, data.ImpactEvent{ .weapon = 4, .kind = .world, .normal = .{ 0, 0, 1 } }, data.Lifetime{ .expires_ms = 1200 } });
+    _ = try world.create(44, .{ data.Transform{}, data.Binding{ .slot = 65 }, data.Velocity{}, data.Projectile{ .owner = 7, .weapon = 5, .damage = 50, .born_ms = 900, .stepped_ms = 1000, .flight = .{ .sidewinder = .{ .accelerated = true } } }, data.Lifetime{ .expires_ms = 5000 } });
+    _ = try world.create(45, .{ data.Transform{}, data.Melee{ .owner = 7, .weapon = 8, .sequence = 9, .experience = 0, .damage = 40, .started_ms = 700, .next_hit = 1 } });
+    _ = try world.create(46, .{ data.Transform{}, data.WeaponLaunch{ .owner = 7, .weapon = 11, .sequence = 0, .charge = 0, .execute_ms = 1100 } });
+    _ = try world.create(47, .{ data.Transform{}, data.Binding{ .slot = 66 }, data.Velocity{}, data.Body{}, data.Health{ .current = 5, .maximum = 5 }, data.Random{ .state = 77 }, data.Charge{ .owner = 7, .damage = 100, .born_ms = 800, .stepped_ms = 1000, .next_ms = 1800, .expires_ms = 20000, .detonate_ms = 1200, .beep_ms = 900, .attached = true } });
+    _ = try world.create(48, .{ data.Transform{}, data.Hammer{ .owner = 7, .damage = 100, .range = 128, .charge_ms = 1800, .next_ms = 1100 }, data.Random{ .state = 78 } });
+    _ = try world.create(49, .{ data.Transform{}, data.Binding{ .slot = 67 }, data.Hammer{ .owner = 7, .damage = 100, .range = 128, .charge_ms = 1800, .next_ms = 1100, .quake_until_ms = 6100 }, data.Random{ .state = 79 } });
+    var wave = data.Shockwave.init(7, 150, 400);
+    _ = wave.advance(900);
+    _ = try world.create(50, .{ data.Transform{}, data.Binding{ .slot = 68 }, wave, data.Random{ .state = 80 } });
+    _ = try world.create(51, .{ data.Transform{}, data.WeaponLaunch{ .owner = 7, .weapon = 6, .sequence = 0, .charge = 0, .execute_ms = 1600 } });
+    _ = try world.create(52, .{ data.Transform{}, data.Binding{ .slot = 69 }, data.Velocity{}, data.Projectile{ .owner = 7, .weapon = 6, .damage = 150, .born_ms = 900, .stepped_ms = 1000, .flight = .{ .shockwave = .{ .next_ms = 200, .last_ring = .{ 100, 200, 300 }, .rings = 1, .touched_water = true } } }, data.Lifetime{ .expires_ms = 5000 } });
+    _ = try world.create(53, .{ data.Transform{}, data.Binding{ .slot = 70 }, data.Velocity{}, data.Projectile{ .owner = 7, .weapon = 13, .damage = 30, .born_ms = 900, .stepped_ms = 1000, .flight = .{ .trident = .{ .left = 54, .next_ms = 200 } } }, data.Lifetime{ .expires_ms = 5000 } });
+    _ = try world.create(54, .{ data.Transform{}, data.Binding{ .slot = 71 }, data.Velocity{}, data.Projectile{ .owner = 7, .weapon = 13, .damage = 30, .born_ms = 900, .stepped_ms = 1000, .flight = .{ .trident = .{ .kind = .left, .leader = 53, .reversed = true } } }, data.Lifetime{ .expires_ms = 5000 } });
+    _ = try world.create(55, .{ data.Transform{}, data.Binding{ .slot = 72 }, data.Velocity{}, data.Projectile{ .owner = 7, .weapon = 18, .damage = 80, .born_ms = 900, .stepped_ms = 1000, .stuck = true, .flight = .{ .ballista = .{ .victim = 7, .last_victim = 7, .release_ms = 2100 } } }, data.Lifetime{ .expires_ms = 3000 } });
+    (try world.get(player, data.Body)).motion_owner = 55;
+    var nova = data.Nova.init(7, .{ .damage = 250, .ammoCost = 2, .lifetime = 2 }, 0, 500);
+    _ = nova.advance(800, 100);
+    _ = try world.create(56, .{ data.Transform{}, data.Binding{ .slot = 73 }, nova });
+    _ = try world.create(57, .{ data.Transform{}, data.Binding{ .slot = 74 }, data.Flashlight{ .owner = 7, .expires_ms = 1150, .strength = 0.75 } });
+    _ = try world.create(58, .{ data.Transform{}, data.Binding{ .slot = 75 }, data.Velocity{}, data.Random{ .state = 17 }, data.Projectile{ .owner = 7, .weapon = 9, .damage = 35, .born_ms = 500, .stepped_ms = 1000, .flight = .{ .discus = .{ .target = 7, .reflected = true, .next_ms = 600, .speed = 750 } } }, data.Lifetime{ .expires_ms = 60500 } });
+    _ = try world.create(59, .{ data.Transform{}, data.Binding{ .slot = 76 }, data.Velocity{}, data.Random{ .state = 23 }, data.Projectile{ .owner = 7, .weapon = 10, .damage = 4, .born_ms = 500, .stepped_ms = 1000, .flight = .{ .sunflare = .{ .phase = .burning, .burn_ms = 400, .next_ms = 800, .flames = 7, .floating = true } } }, data.Lifetime{ .expires_ms = 10900 } });
+    _ = try world.create(60, .{ data.Transform{}, data.Binding{ .slot = 77 }, data.Velocity{}, data.Random{ .state = 25 }, data.Projectile{ .owner = 7, .weapon = 17, .damage = 100, .born_ms = 900, .stepped_ms = 1000, .flight = .{ .stavros = .{ .next_ms = 200, .scale = @splat(0.3), .maximum_speed = 525 } } }, data.Lifetime{ .expires_ms = 12900 } });
+    _ = try world.create(61, .{ data.Transform{}, data.Binding{ .slot = 78 }, data.Velocity{}, data.Projectile{ .owner = 7, .weapon = 17, .damage = 50, .born_ms = 900, .stepped_ms = 1000, .bounces = 1, .flight = .{ .stavros = .{ .fragment = true, .radius = 100, .scale = .{ 0.4, 0.5, 0.6 } } } }, data.Lifetime{ .expires_ms = 6900 } });
+    var chain: data.Zeus = .{ .owner = 7, .damage = 300, .range = 1500, .ammo_cost = 1, .ready_ms = 800, .expires_ms = 6300, .phase = .active };
+    _ = chain.reserve(47);
+    _ = try world.create(62, .{ data.Transform{}, data.Binding{ .slot = 79 }, data.Random{ .state = 26 }, chain });
+    _ = try world.create(63, .{ data.Transform{}, data.Binding{ .slot = 80 }, data.ZeusBolt{ .owner = 7, .chain = 62, .source = 7, .target = 47, .born_ms = 800, .next_ms = 1100, .phase = .zapping } });
+    _ = try world.create(64, .{ data.Transform{}, data.Binding{ .slot = 81 }, data.Random{ .state = 27 }, data.Zeus{ .owner = 7, .damage = 300, .range = 1500, .ammo_cost = 1, .ready_ms = 1800, .expires_ms = 7300 } });
+    _ = try world.create(65, .{ data.Transform{}, data.Binding{ .slot = 82 }, data.Velocity{}, data.Random{ .state = 28 }, data.Projectile{ .owner = 7, .weapon = 19, .damage = 3, .born_ms = 700, .stepped_ms = 1000, .lifetime_ms = 5000, .flight = .{ .wyndrax = .{ .enemy = 47, .targets = .{ 47, 0, 0, 0 }, .next_ms = 400, .sine_ms = 450, .sound_ms = 500, .sine = 4, .personality = 0.75 } } }, data.Lifetime{ .expires_ms = 7800 } });
+    _ = try world.create(66, .{ data.Transform{}, data.Binding{ .slot = 83 }, data.Nightmare{ .owner = 7, .damage = 300, .range = 2000, .born_ms = 100, .phase_ms = 700, .next_ms = 4900, .phase = .reaping, .targets = .{ 47, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, .count = 1, .cursor = 1, .victim = 47 } });
+    (try world.get(world.find(47).?, data.Body)).motion_owner = 66;
+    var cube: @import("weapon_catalog").classes.metamaser.BallisticState = .{ .phase = .tracking, .settled = true, .next_ms = 4000, .end_ms = 19000, .charges = 5 };
+    _ = cube.include(7, 3500);
+    _ = cube.lock(7, 3800, 0.5);
+    _ = try world.create(67, .{ data.Transform{}, data.Binding{ .slot = 84 }, data.Velocity{}, data.Body{}, data.Health{ .current = 300, .maximum = 300 }, data.Hurt{}, data.Random{ .state = 29 }, data.Projectile{ .owner = 7, .weapon = 26, .damage = 40, .born_ms = -3000, .stepped_ms = 1000, .lifetime_ms = 19000, .flight = .{ .metamaser = cube } }, data.Lifetime{ .expires_ms = 16000 } });
+    _ = try world.create(68, .{ data.Transform{}, data.Binding{ .slot = 85 }, data.MetaRing{ .owner = 7, .cube = 67, .damage = 40, .born_ms = 900, .next_ms = 1050 } });
+    _ = try world.create(69, .{ data.Transform{}, data.Binding{ .slot = 86 }, data.Random{ .state = 30 }, data.MetaLaser{ .owner = 7, .cube = 67, .damage = 40, .next_ms = 1100, .expires_ms = 5900 } });
+    _ = try world.create(73, .{ data.Transform{}, data.MapObject{ .classname = "info_aiscript" }, data.Script{ .name = "Skeet1Path", .active = true, .index = 2, .due_ms = 1800, .next_ms = 1050, .revision = 4 } });
+    _ = try world.create(76, .{ data.Transform{}, data.MapObject{ .classname = "monster_crox" }, data.Actor{ .definition = @import("actor_catalog").find("monster_crox").?, .crox = .{ .swimming = true, .water = 3, .attacking = true, .pose = 1, .started_ms = 500, .cycle_ms = 1800, .wander_until_ms = 3000, .destination = .{ 10, 20, 30 } } }, data.Body{}, data.Binding{ .slot = 91, .model = 1 }, data.Velocity{}, data.Health{}, data.Hurt{}, data.Random{ .state = 3 } });
+    var gun: @import("actor_catalog").rockgat.State = .{ .phase = .scanning, .raised = true, .pose_ms = 700, .next_attack_ms = 1150, .next_sound_ms = 1200 };
+    try gun.startBurst(950);
+    gun.bursts[0].?.remaining = 3;
+    _ = try world.create(77, .{ data.Transform{}, data.MapObject{ .classname = "monster_rockgat" }, data.Actor{ .definition = @import("actor_catalog").find("monster_rockgat").?, .rockgat = gun }, data.Body{}, data.Binding{ .slot = 92, .model = 1 }, data.Velocity{}, data.Health{}, data.Hurt{}, data.Random{ .state = 4 } });
+    _ = try world.create(75, .{ data.Transform{}, data.Body{ .mins = @splat(-1), .maxs = @splat(1) }, data.Binding{ .slot = 90, .model = 1 }, data.Velocity{ .linear = .{ 180, 0, 0 } }, data.Lifetime{ .expires_ms = 15500 }, data.ThunderSpray{ .owner = 7, .alternate = true, .born_ms = 500, .stepped_ms = 950, .next_ms = 1000, .phase = 11, .scale = 0.4, .delta = 0.25 } });
+    _ = try world.create(74, .{ data.Transform{}, data.MapObject{ .classname = "misc_healthtree" }, data.Body{}, data.Binding{ .slot = 89, .model = 1 }, data.Velocity{}, data.Health{ .current = 100, .maximum = 100 }, data.Random{ .state = 8 }, data.HealthTree{ .fruit = 2, .previous = 3, .ready_ms = 1800, .changed_ms = 800 } });
+    _ = try world.create(72, .{ data.Transform{}, data.Body{ .mins = @splat(-3), .maxs = @splat(3) }, data.Binding{ .slot = 88, .model = 1 }, data.Velocity{ .linear = .{ 400, 0, 0 } }, data.Lifetime{ .expires_ms = 5500 }, data.FrogSpit{ .owner = 7, .damage = 7, .born_ms = 500, .stepped_ms = 950 } });
+    _ = try world.create(70, .{ data.Transform{}, data.MapObject{ .classname = "worldspawn" }, data.Cinematic{ .name = "intro", .shot = 20, .started_ms = 500, .active = true, .sounds = 2, .queued = .{3} ++ @as([127]u16, @splat(0)) } });
+    _ = try world.create(71, .{ data.Transform{}, data.Body{}, data.Binding{ .slot = 87, .model = 1 }, data.Performer{ .unique = "oka1", .classname = "cine_osaka", .model = "models/cinematic/c_osaka_intr.dkm", .animation = .{ .first = 10, .last = 20 }, .animation_ms = 800, .next_ms = 1050, .queue = .{42} ++ @as([127]u16, @splat(0)), .count = 1, .started = true, .due_ms = 1900 } });
+
+    const mover = try world.create(42, .{ data.Transform{}, data.MapObject{ .classname = "func_train", .target = "next" }, data.Train{ .phase = .dwelling, .action = .{ .at_ms = 2000 }, .next_target = "next" } });
+    _ = mover;
+    world.next_id = 100;
+    var bytes: [65536]u8 = undefined;
+    const saved = try capture(allocator, &bytes, &world, "e1m3a", 3, .{ .at_ms = 1000, .episode = 1, .player_id = 7, .next_id = 100 });
+    var loaded = try decode(allocator, saved);
+    defer loaded.deinit(allocator);
+    @memset(&bytes, 0);
+    try std.testing.expectEqual(@as(u32, 100), loaded.world.next_id);
+    try std.testing.expect(loaded.world.find(43) == null);
+    try std.testing.expectEqual(random.next(), (try loaded.world.get(loaded.world.find(7).?, data.Random)).next());
+    try std.testing.expectEqualStrings("next", (try loaded.world.get(loaded.world.find(42).?, data.Train)).next_target);
+    try loaded.rebase(9000);
+    const charge = (try loaded.world.get(loaded.world.find(47).?, data.Charge)).*;
+    try std.testing.expectEqual(@as(?i64, 9200), charge.detonate_ms);
+    try std.testing.expectEqual(@as(?i64, 8900), charge.beep_ms);
+    try std.testing.expectEqual(@as(i64, 28000), charge.expires_ms);
+    try std.testing.expect(charge.attached);
+    try std.testing.expectEqual(@as(i64, 9100), (try loaded.world.get(loaded.world.find(48).?, data.Hammer)).next_ms);
+    try std.testing.expectEqual(@as(?i64, 14100), (try loaded.world.get(loaded.world.find(49).?, data.Hammer)).quake_until_ms);
+    const saved_wave = (try loaded.world.get(loaded.world.find(50).?, data.Shockwave)).*;
+    try std.testing.expectEqual(@as(u8, 2), saved_wave.count);
+    try std.testing.expectEqual(@as(i64, 8400), saved_wave.born_ms);
+    try std.testing.expectEqual(@as(i64, 8900), saved_wave.rings[1].start_ms);
+    try std.testing.expectEqual(@as(i64, 8950), saved_wave.next_ms);
+    try std.testing.expectEqual(wave.rings[0].inner, saved_wave.rings[0].inner);
+    try std.testing.expectEqual(@as(i64, 9600), (try loaded.world.get(loaded.world.find(51).?, data.WeaponLaunch)).execute_ms);
+    try std.testing.expectEqual(@as(i64, 200), (try loaded.world.get(loaded.world.find(52).?, data.Projectile)).flight.shockwave.next_ms);
+    try std.testing.expectEqual(@as(u32, 54), (try loaded.world.get(loaded.world.find(53).?, data.Projectile)).flight.trident.left);
+    try std.testing.expect((try loaded.world.get(loaded.world.find(54).?, data.Projectile)).flight.trident.reversed);
+    try std.testing.expectEqual(@as(i64, 2100), (try loaded.world.get(loaded.world.find(55).?, data.Projectile)).flight.ballista.release_ms);
+    try std.testing.expectEqual(@as(?u32, 55), (try loaded.world.get(loaded.world.find(7).?, data.Body)).motion_owner);
+    const saved_nova = (try loaded.world.get(loaded.world.find(56).?, data.Nova)).*;
+    try std.testing.expectEqual(@as(f32, 200), saved_nova.remaining_damage);
+    try std.testing.expectEqual(@as(i64, 8900), saved_nova.next_ms);
+    try std.testing.expectEqual(@as(i64, 10700), saved_nova.expires_ms);
+    try std.testing.expectEqual(@as(i64, 9150), (try loaded.world.get(loaded.world.find(57).?, data.Flashlight)).expires_ms);
+    const saved_disc = (try loaded.world.get(loaded.world.find(58).?, data.Projectile)).*;
+    try std.testing.expectEqual(@as(i64, 8500), saved_disc.born_ms);
+    try std.testing.expectEqual(@as(i64, 600), saved_disc.flight.discus.next_ms);
+    try std.testing.expectEqual(@as(?u32, 7), saved_disc.flight.discus.target);
+    const saved_flare = (try loaded.world.get(loaded.world.find(59).?, data.Projectile)).flight.sunflare;
+    try std.testing.expect(saved_flare.floating and saved_flare.phase == .burning);
+    try std.testing.expectEqual(@as(i64, 800), saved_flare.next_ms);
+    try std.testing.expectEqual(@as(i64, 18900), (try loaded.world.get(loaded.world.find(59).?, data.Lifetime)).expires_ms);
+    try std.testing.expectEqual(@as(i64, 200), (try loaded.world.get(loaded.world.find(60).?, data.Projectile)).flight.stavros.next_ms);
+    const saved_fragment = (try loaded.world.get(loaded.world.find(61).?, data.Projectile)).*;
+    try std.testing.expect(saved_fragment.flight.stavros.fragment);
+    try std.testing.expectEqual(@as(u8, 1), saved_fragment.bounces);
+    try std.testing.expectEqual([3]f32{ 0.4, 0.5, 0.6 }, saved_fragment.flight.stavros.scale);
+    const saved_chain = (try loaded.world.get(loaded.world.find(62).?, data.Zeus)).*;
+    try std.testing.expect(saved_chain.contains(47));
+    try std.testing.expectEqual(@as(u8, 1), saved_chain.active);
+    try std.testing.expectEqual(@as(u8, 0), saved_chain.zaps);
+    const saved_bolt = (try loaded.world.get(loaded.world.find(63).?, data.ZeusBolt)).*;
+    try std.testing.expect(saved_bolt.phase == .zapping);
+    try std.testing.expectEqual(@as(i64, 9100), saved_bolt.next_ms);
+    try std.testing.expectEqual(@as(u32, 62), saved_bolt.chain);
+    try std.testing.expectEqual(@as(i64, 9800), (try loaded.world.get(loaded.world.find(64).?, data.Zeus)).ready_ms);
+    const script = (try loaded.world.get(loaded.world.find(73).?, data.Script)).*;
+    try std.testing.expectEqual(@as(u16, 2), script.index);
+    try std.testing.expectEqual(@as(i64, 9800), script.due_ms);
+    try std.testing.expectEqual(@as(i64, 9050), script.next_ms);
+    const crox = (try loaded.world.get(loaded.world.find(76).?, data.Actor)).crox;
+    try std.testing.expect(crox.swimming and crox.attacking and crox.water == 3 and crox.pose == 1);
+    try std.testing.expectEqual(@as(i64, 8500), crox.started_ms);
+    try std.testing.expectEqual(@as(i64, 9800), crox.cycle_ms);
+    try std.testing.expectEqual(@as(i64, 11000), crox.wander_until_ms);
+    try std.testing.expectEqual([3]f32{ 10, 20, 30 }, crox.destination.?);
+    const turret = (try loaded.world.get(loaded.world.find(77).?, data.Actor)).rockgat;
+    try std.testing.expectEqual(@as(i64, 8960), turret.bursts[0].?.next_ms);
+    try std.testing.expectEqual(@as(u3, 3), turret.bursts[0].?.remaining);
+    try std.testing.expectEqual(@as(i64, 9150), turret.next_attack_ms);
+    try std.testing.expectEqual(@as(i64, 9200), turret.next_sound_ms);
+    try std.testing.expectEqual(@as(i64, 8700), turret.pose_ms);
+    const spray = (try loaded.world.get(loaded.world.find(75).?, data.ThunderSpray)).*;
+    try std.testing.expectEqual(@as(i64, 8500), spray.born_ms);
+    try std.testing.expectEqual(@as(i64, 8950), spray.stepped_ms);
+    try std.testing.expectEqual(@as(i64, 9000), spray.next_ms);
+    try std.testing.expectEqual(@as(u4, 11), spray.phase);
+    const tree = (try loaded.world.get(loaded.world.find(74).?, data.HealthTree)).*;
+    try std.testing.expectEqual(@as(u3, 2), tree.fruit);
+    try std.testing.expectEqual(@as(i64, 9800), tree.ready_ms);
+    const spit = (try loaded.world.get(loaded.world.find(72).?, data.FrogSpit)).*;
+    try std.testing.expectEqual(@as(i64, 8500), spit.born_ms);
+    try std.testing.expectEqual(@as(i64, 8950), spit.stepped_ms);
+    try std.testing.expectEqual(@as(f32, 7), spit.damage);
+    const saved_cinematic = (try loaded.world.get(loaded.world.find(70).?, data.Cinematic)).*;
+    try std.testing.expectEqual(@as(i64, 8500), saved_cinematic.started_ms);
+    try std.testing.expectEqual(@as(u16, 20), saved_cinematic.shot);
+    try std.testing.expectEqual(@as(u16, 3), saved_cinematic.queued[0]);
+    const performer = (try loaded.world.get(loaded.world.find(71).?, data.Performer)).*;
+    try std.testing.expectEqual(@as(i64, 8800), performer.animation_ms);
+    try std.testing.expectEqual(@as(i64, 9900), performer.due_ms);
+    try std.testing.expectEqual(@as(u16, 42), performer.queue[0]);
+    const saved_wisp = (try loaded.world.get(loaded.world.find(65).?, data.Projectile)).*;
+    try std.testing.expectEqual(@as(i64, 8700), saved_wisp.born_ms);
+    try std.testing.expectEqual(@as(i64, 400), saved_wisp.flight.wyndrax.next_ms);
+    try std.testing.expectEqual(@as(i64, 450), saved_wisp.flight.wyndrax.sine_ms);
+    try std.testing.expectEqual(@as(?u32, 47), saved_wisp.flight.wyndrax.enemy);
+    try std.testing.expectEqual([4]u32{ 47, 0, 0, 0 }, saved_wisp.flight.wyndrax.targets);
+    const saved_ritual = (try loaded.world.get(loaded.world.find(66).?, data.Nightmare)).*;
+    try std.testing.expectEqual(@as(i64, 12900), saved_ritual.next_ms);
+    try std.testing.expectEqual(@as(?u32, 47), saved_ritual.victim);
+    try std.testing.expectEqual(@as(?u32, 66), (try loaded.world.get(loaded.world.find(47).?, data.Body)).motion_owner);
+    const saved_cube = (try loaded.world.get(loaded.world.find(67).?, data.Projectile)).flight.metamaser;
+    try std.testing.expectEqual(@as(i64, 4550), saved_cube.acquired[0].until_ms);
+    try std.testing.expectEqual(@as(i32, 5), saved_cube.charges);
+    try std.testing.expectEqual(@as(i64, 9050), (try loaded.world.get(loaded.world.find(68).?, data.MetaRing)).next_ms);
+    try std.testing.expectEqual(@as(i64, 9100), (try loaded.world.get(loaded.world.find(69).?, data.MetaLaser)).next_ms);
+    const melee = (try loaded.world.get(loaded.world.find(45).?, data.Melee)).*;
+    try std.testing.expectEqual(@as(?i64, 8700), (try loaded.world.get(loaded.world.find(7).?, data.Weapons)).last_fire_ms);
+    const poison = (try loaded.world.get(loaded.world.find(7).?, data.Ailments)).poison.?;
+    try std.testing.expectEqual(@as(i64, 9100), (try loaded.world.get(loaded.world.find(46).?, data.WeaponLaunch)).execute_ms);
+    try std.testing.expectEqual(@as(i64, 9700), poison.next_ms);
+    try std.testing.expectEqual(@as(i64, 13700), poison.until_ms);
+    try std.testing.expectEqual(@as(u8, 1), melee.next_hit);
+    try std.testing.expect(!try melee.due(9347));
+    try std.testing.expect(try melee.due(9348));
+    try std.testing.expect((try loaded.world.get(loaded.world.find(44).?, data.Projectile)).flight.sidewinder.accelerated);
+    try std.testing.expectEqual(@as(i64, 13000), (try loaded.world.get(loaded.world.find(44).?, data.Lifetime)).expires_ms);
+    try std.testing.expectEqual(@as(?i64, 10000), (try loaded.world.get(loaded.world.find(42).?, data.Train)).action.at_ms);
+    try std.testing.expectEqual(@as(i64, 9300), (try loaded.world.get(loaded.world.find(7).?, data.Character)).boost_until[1]);
+    try std.testing.expectEqual(@as(i64, 1300), (try world.get(world.find(7).?, data.Character)).boost_until[1]);
+    (try world.get(world.find(47).?, data.Charge)).born_ms = std.math.minInt(i64);
+    try std.testing.expectError(error.InvalidSnapshotNumber, capture(allocator, &bytes, &world, "e1m3a", 3, .{ .at_ms = 1000, .episode = 1, .player_id = 7, .next_id = 100 }));
+    (try world.get(world.find(47).?, data.Charge)).born_ms = 800;
+    (try world.get(world.find(47).?, data.Charge)).expires_ms = 3600801;
+    const bad_lifetime = try capture(allocator, &bytes, &world, "e1m3a", 3, .{ .at_ms = 1000, .episode = 1, .player_id = 7, .next_id = 100 });
+    try std.testing.expectError(error.InvalidSavedCharge, decode(allocator, bad_lifetime));
+    (try world.get(world.find(47).?, data.Charge)).expires_ms = 20000;
+    try world.put(world.find(42).?, data.Binding{ .slot = 0 });
+    try world.put(world.find(42).?, data.Body{});
+    const duplicate_slot = try capture(allocator, &bytes, &world, "e1m3a", 3, .{ .at_ms = 1000, .episode = 1, .player_id = 7, .next_id = 100 });
+    try std.testing.expectError(error.InvalidSavedBinding, decode(allocator, duplicate_slot));
+    try std.testing.expectEqual(@as(i32, 100), (try world.get(world.find(7).?, data.Health)).current);
+}
+
+test "monitor restoration retains camera and remaining duration and rejects detached ownership" {
+    const memory = std.testing.allocator;
+    var world = data.World.init(memory, 8);
+    defer world.deinit();
+    _ = try world.create(1, .{ data.Transform{ .angles = .{ 0, 45, 0 } }, data.Velocity{}, data.Player{ .mode = .frozen }, data.Body{ .motion_owner = 2 }, data.Binding{ .slot = 0 }, data.Health{}, data.Hurt{}, data.Weapons{ .weapon = 1 }, data.Character{}, data.Ailments{}, data.Keys{} });
+    _ = try world.create(2, .{ data.Transform{}, data.Body{}, data.Binding{ .slot = 64 }, data.MapObject{ .classname = "func_monitor" }, data.Monitor{ .duration_ms = 8000, .viewer = 1, .until_ms = 8500, .camera = 3, .target = 4, .origin = .{ 1824, 832, 520 }, .angles = .{ 20, 180, 0 } } });
+    _ = try world.create(3, .{ data.Transform{}, data.MapObject{ .classname = "info_camera" } });
+    _ = try world.create(4, .{ data.Transform{}, data.MapObject{ .classname = "info_notnull" } });
+    var buffer: [32768]u8 = undefined;
+    const bytes = try capture(memory, &buffer, &world, "e1m1c", 3, .{ .at_ms = 1000, .next_id = world.next_id, .player_id = 1, .episode = 1 });
+    var loaded = try decode(memory, bytes);
+    defer loaded.deinit(memory);
+    try loaded.rebase(10000);
+    const monitor = try loaded.world.get(loaded.world.find(2).?, data.Monitor);
+    try std.testing.expectEqual(@as(?i64, 17500), monitor.until_ms);
+    try std.testing.expectEqual(@as(i32, 8000), monitor.duration_ms);
+    try std.testing.expectEqual(data.Vec3{ 1824, 832, 520 }, monitor.origin);
+    try std.testing.expectEqual(data.Vec3{ 0, 45, 0 }, (try loaded.world.get(loaded.world.find(1).?, data.Transform)).angles);
+    (try loaded.world.get(loaded.world.find(1).?, data.Body)).motion_owner = null;
+    try std.testing.expectError(error.InvalidSavedMonitor, validate(&loaded));
+}
+
+test "Kage interrupted smoke, Ghost wake and summon effects restore against one clock" {
+    const t = std.testing;
+    const catalog = @import("actor_catalog");
+    var world = data.World.init(t.allocator, 8);
+    defer world.deinit();
+    _ = try world.create(1, .{ data.Transform{}, data.Velocity{}, data.Player{}, data.Body{}, data.Binding{ .slot = 0 }, data.Health{}, data.Hurt{}, data.Weapons{ .weapon = 1 }, data.Character{}, data.Ailments{}, data.Keys{} });
+    var kage = catalog.kage.initialize(1200, 2);
+    kage.phase = .charging;
+    kage.suspended = .hidden;
+    kage.suspended_next_ms = 5500;
+    kage.protectors = 12;
+    kage.next_ms = 1100;
+    kage.alpha = 0;
+    _ = try world.create(2, .{ data.Transform{}, data.Velocity{}, data.Body{}, data.Health{ .current = 250, .maximum = 1200 }, data.Hurt{}, data.Random{ .state = 2 }, data.Binding{ .slot = 64 }, data.MapObject{ .classname = "monster_kage" }, data.Actor{ .definition = catalog.find("monster_kage").?, .kage = kage, .threat = 1, .ignore_player = true } });
+    _ = try world.create(3, .{ data.Transform{}, data.Velocity{}, data.Body{}, data.Health{ .current = 50, .maximum = 50 }, data.Hurt{}, data.Random{ .state = 3 }, data.Binding{ .slot = 65 }, data.MapObject{ .classname = "monster_ghost" }, data.Actor{ .definition = catalog.find("monster_ghost").?, .ghost = .{ .phase = .waking, .started_ms = 0, .owner = 2, .alpha = 0.2 }, .threat = 1 } });
+    _ = try world.create(4, .{ data.Transform{}, data.Velocity{}, data.Body{}, data.Binding{ .slot = 66 }, data.ActorAttack{ .owner = 3, .born_ms = 900, .stepped_ms = 1000, .attack = .{ .summon_effect = .{ .kind = .red, .next_ms = 1100, .expires_ms = 2400, .scale = .{ 0.75, 5, 10 } } } } });
+    var bytes: [65536]u8 = undefined;
+    const encoded = try capture(t.allocator, &bytes, &world, "e4m6c", 2, .{ .at_ms = 1000, .episode = 4, .player_id = 1, .next_id = world.next_id });
+    var loaded = try decode(t.allocator, encoded);
+    defer loaded.deinit(t.allocator);
+    try loaded.rebase(9000);
+    const saved_boss = (try loaded.world.get(loaded.world.find(2).?, data.Actor)).kage;
+    try t.expect(saved_boss.recharging() and saved_boss.invulnerable());
+    try t.expectEqual(@as(i64, 9100), saved_boss.next_ms);
+    try t.expectEqual(@as(i64, 13500), saved_boss.suspended_next_ms);
+    const ghost = (try loaded.world.get(loaded.world.find(3).?, data.Actor)).ghost;
+    try t.expectEqual(@as(i64, 8000), ghost.started_ms);
+    try t.expectEqual(@as(u32, 2), ghost.owner);
+    const flare = (try loaded.world.get(loaded.world.find(4).?, data.ActorAttack)).attack.summon_effect;
+    try t.expectEqual(@as(i64, 9100), flare.next_ms);
+    try t.expectEqual(@as(i64, 10400), flare.expires_ms);
+    (try loaded.world.get(loaded.world.find(3).?, data.Actor)).ghost.owner = 1;
+    try t.expectError(error.InvalidSavedActor, validate(&loaded));
+}
+
+test "Nharre reaper restores the actual freeze owner and appearance boundary" {
+    const t = std.testing;
+    const catalog = @import("actor_catalog");
+    var world = data.World.init(t.allocator, 8);
+    defer world.deinit();
+    _ = try world.create(1, .{ data.Transform{}, data.Velocity{}, data.Player{ .mode = .frozen }, data.Body{ .motion_owner = 3 }, data.Binding{ .slot = 0 }, data.Health{}, data.Hurt{}, data.Weapons{ .weapon = 1 }, data.Character{}, data.Ailments{}, data.Keys{} });
+    _ = try world.create(2, .{ data.Transform{}, data.Velocity{}, data.Body{}, data.Health{ .current = 1000, .maximum = 1000 }, data.Hurt{}, data.Random{ .state = 2 }, data.Binding{ .slot = 64 }, data.MapObject{ .classname = "monster_nharre" }, data.Actor{ .definition = catalog.find("monster_nharre").?, .threat = 1 } });
+    _ = try world.create(3, .{ data.Transform{}, data.Velocity{}, data.Body{}, data.Random{ .state = 3 }, data.Binding{ .slot = 65 }, data.ActorAttack{ .owner = 2, .born_ms = 500, .stepped_ms = 1200, .attack = .{ .nharre_reaper = .{ .target = 1, .next_ms = 1300, .appeared_ms = 1000, .flame_next_ms = 1300, .previous_view_height = -2, .previous_mask = 1, .look_angles = .{ -25, 90, 0 } } } } });
+    var bytes: [65536]u8 = undefined;
+    const encoded = try capture(t.allocator, &bytes, &world, "e3m4c", 2, .{ .at_ms = 1200, .episode = 3, .player_id = 1, .next_id = world.next_id });
+    var loaded = try decode(t.allocator, encoded);
+    defer loaded.deinit(t.allocator);
+    try loaded.rebase(9000);
+    const reaper = (try loaded.world.get(loaded.world.find(3).?, data.ActorAttack)).attack.nharre_reaper;
+    try t.expectEqual(@as(?i64, 8800), reaper.appeared_ms);
+    try t.expectEqual(@as(i64, 9100), reaper.next_ms);
+    try t.expectEqual(@as(i64, 9100), reaper.flame_next_ms);
+    try t.expectEqual(@as(f32, -2), reaper.previous_view_height);
+    try t.expectEqual(@as(?u32, 3), (try loaded.world.get(loaded.world.find(1).?, data.Body)).motion_owner);
+    // The held victim is checked by the class (server/actor_classes/nharre.zig).
+}
+
+test "non-solid world effects save without Body while physical entities still require it" {
+    const t = std.testing;
+    var world = data.World.init(t.allocator, 8);
+    defer world.deinit();
+    _ = try world.create(1, .{ data.Transform{}, data.Velocity{}, data.Player{}, data.Body{}, data.Binding{ .slot = 0 }, data.Health{}, data.Hurt{}, data.Weapons{ .weapon = 1 }, data.Character{}, data.Ailments{}, data.Keys{} });
+    _ = try world.create(2, .{ data.Transform{}, data.Binding{ .slot = 64 }, data.MapObject{ .classname = "target_effect" }, data.Random{ .state = 2 }, data.WorldControl{ .action = .{ .target_effect = .{ .flags = 1, .next_ms = 1500 } } } });
+    _ = try world.create(3, .{ data.Transform{}, data.Binding{ .slot = 65 }, data.MapObject{ .classname = "light_flare" }, data.WorldControl{ .action = .{ .light = .{ .kind = .flare, .revision = 3 } } } });
+    _ = try world.create(4, .{ data.Transform{}, data.Binding{ .slot = 66 }, data.MapObject{ .classname = "target_earthquake" }, data.Random{ .state = 4 }, data.WorldControl{ .action = .{ .earthquake = .{} } } });
+    var bytes: [65536]u8 = undefined;
+    const encoded = try capture(t.allocator, &bytes, &world, "e1m1a", 3, .{ .at_ms = 1000, .episode = 1, .player_id = 1, .next_id = world.next_id });
+    var loaded = try decode(t.allocator, encoded);
+    defer loaded.deinit(t.allocator);
+    try loaded.rebase(9000);
+    try t.expectEqual(@as(?i64, 9500), (try loaded.world.get(loaded.world.find(2).?, data.WorldControl)).action.target_effect.next_ms);
+    try t.expectError(error.MissingComponent, loaded.world.get(loaded.world.find(3).?, data.Body));
+    _ = try loaded.world.create(null, .{ data.Transform{}, data.Binding{ .slot = 67 }, data.MapObject{ .classname = "unclassified_physical_entity" } });
+    try t.expectError(error.MissingComponent, validate(&loaded));
+}
+
+test "region snapshots own all maps, validate foreign references and reject duplicate identities" {
+    const t = std.testing;
+    var first = data.World.initNamespaced(t.allocator, 16, 0);
+    defer first.deinit();
+    var second = data.World.initNamespaced(t.allocator, 16, 1);
+    defer second.deinit();
+    _ = try second.create(7, .{ data.Transform{}, data.Velocity{}, data.Player{}, data.Body{}, data.Binding{ .slot = 0 }, data.Health{ .current = 41 }, data.Hurt{}, data.Weapons{ .weapon = 1 }, data.Character{}, data.Ailments{}, data.Keys{} });
+    const lamp = try first.create(8, .{ data.Transform{}, data.Binding{ .slot = 64 }, data.Flashlight{ .owner = 7, .expires_ms = 1200, .strength = 0.75 } });
+    const primary: Header = .{ .at_ms = 1000, .episode = 1, .player_id = 7, .next_id = second.next_id, .namespace = 1, .asset_crc = 123 };
+    const member: Header = .{ .at_ms = 900, .episode = 1, .player_id = 0, .next_id = first.next_id, .namespace = 0, .asset_crc = 456, .activated = false };
+    var child_buffer: [32768]u8 = undefined;
+    var region_buffer: [65536]u8 = undefined;
+    var child = try capture(t.allocator, &child_buffer, &first, "e1m1a", 3, member);
+    var bytes = try captureRegion(t.allocator, &region_buffer, &second, "e1m1b", 3, primary, &.{}, &.{.{ .map = "e1m1a", .bytes = child }});
+    var loaded = try decode(t.allocator, bytes);
+    defer loaded.deinit(t.allocator);
+    try t.expectEqual(@as(usize, 1), loaded.residents.len);
+    try t.expectEqual(@as(i32, 41), (try loaded.world.get(loaded.world.find(7).?, data.Health)).current);
+    try t.expectEqual(@as(u32, 0x1000001), loaded.world.next_id);
+    try t.expectEqual(@as(u32, 9), loaded.residents[0].world.next_id);
+    try t.expect(!loaded.residents[0].header.activated);
+    try loaded.residents[0].rebase(2000);
+    const restored = &loaded.residents[0].world;
+    try t.expectEqual(@as(i64, 2300), (try restored.get(restored.find(8).?, data.Flashlight)).expires_ms);
+    _ = try first.create(7, .{data.Transform{}});
+    child = try capture(t.allocator, &child_buffer, &first, "e1m1a", 3, member);
+    bytes = try captureRegion(t.allocator, &region_buffer, &second, "e1m1b", 3, primary, &.{}, &.{.{ .map = "e1m1a", .bytes = child }});
+    try t.expectError(error.DuplicateRegionIdentity, decode(t.allocator, bytes));
+    try first.destroy(first.find(7).?);
+    (try first.get(lamp, data.Flashlight)).owner = 999;
+    child = try capture(t.allocator, &child_buffer, &first, "e1m1a", 3, member);
+    bytes = try captureRegion(t.allocator, &region_buffer, &second, "e1m1b", 3, primary, &.{}, &.{.{ .map = "e1m1a", .bytes = child }});
+    try t.expectError(error.InvalidSavedLight, decode(t.allocator, bytes));
+    try t.expectEqual(@as(u32, 7), (try restored.get(restored.find(8).?, data.Flashlight)).owner);
+}
+
+test "schema one migrates to an owned initial namespace without modifying saved player state" {
+    const t = std.testing;
+    var world = data.World.init(t.allocator, 16);
+    defer world.deinit();
+    _ = try world.create(7, .{ data.Transform{}, data.Velocity{}, data.Player{}, data.Body{}, data.Binding{ .slot = 0 }, data.Health{ .current = 63 }, data.Hurt{}, data.Weapons{ .weapon = 1 }, data.Character{}, data.Ailments{}, data.Keys{} });
+    var buffer: [32768]u8 = undefined;
+    const current = try capture(t.allocator, &buffer, &world, "e1m1a", 3, .{ .at_ms = 1000, .episode = 1, .player_id = 7, .next_id = 8 });
+    var old_buffer: [32768]u8 = undefined;
+    var writer = try stream.Writer.init(&old_buffer);
+    var reader = try stream.Reader.init(current);
+    while (try reader.nextRecord()) |record| {
+        try writer.record(record.name, record.id);
+        while (try reader.nextField()) |field| {
+            if (std.mem.eql(u8, field.name, "native_schema")) {
+                try writer.integers("native_schema", &.{1});
+            } else if (std.mem.eql(u8, field.name, "state")) {
+                try json(&writer, t.allocator, "state", .{ .at_ms = @as(i64, 1000), .episode = @as(u8, 1), .player_id = @as(u32, 7), .next_id = @as(u32, 8) });
+            } else try writer.raw(field);
+        }
+    }
+    var loaded = try decode(t.allocator, try writer.finish());
+    defer loaded.deinit(t.allocator);
+    try t.expectEqual(@as(?u7, 0), loaded.header.namespace);
+    try t.expectEqual(@as(u32, 0xffffff), loaded.world.id_last);
+    try t.expectEqual(@as(u32, 8), loaded.world.next_id);
+    try t.expectEqual(@as(i32, 63), (try loaded.world.get(loaded.world.find(7).?, data.Health)).current);
+}
+
+test "flat visited migration removes stale travelers and qualifies overlapping worlds and delayed actions" {
+    const t = std.testing;
+    var old = data.World.init(t.allocator, 16);
+    defer old.deinit();
+    _ = try old.create(7, .{ data.Transform{}, data.Velocity{}, data.Player{}, data.Body{}, data.Binding{ .slot = 0 }, data.Health{ .current = 12 }, data.Hurt{}, data.Weapons{ .weapon = 1 }, data.Character{}, data.Ailments{}, data.Keys{} });
+    _ = try old.create(8, .{ data.Transform{ .position = .{ 2, 3, 4 } }, data.Binding{ .slot = 64 }, data.Flashlight{ .owner = 7, .expires_ms = 1200, .strength = 0.75 } });
+    _ = try old.create(9, .{ data.Transform{}, data.MapObject{ .classname = "func_train", .target = "next" }, data.Train{ .destination = 10, .owner = 7, .phase = .dwelling, .action = .{ .at_ms = 2000 }, .next_target = "next" } });
+    _ = try old.create(10, .{ data.Transform{}, data.MapObject{ .classname = "path_corner", .targetname = "next" } });
+    var old_header: Header = .{ .at_ms = 1000, .episode = 1, .player_id = 7, .next_id = old.next_id };
+    old_header.pending[0] = .{ .source = 9, .activator = 7, .due_ms = 1800 };
+    var old_buffer: [32768]u8 = undefined;
+    const old_bytes = try capture(t.allocator, &old_buffer, &old, "e1m1a", 3, old_header);
+    const original_hash = std.hash.Wyhash.hash(0, old_bytes);
+    var first = try migrateVisited(t.allocator, old_bytes, 1, 17);
+    defer first.deinit(t.allocator);
+    var second = try migrateVisited(t.allocator, old_bytes, 2, 17);
+    defer second.deinit(t.allocator);
+    try t.expect(first.world.find(7) == null and first.world.find(0x1000007) == null);
+    try t.expectEqual(@as(u32, 0x100000b), first.world.next_id);
+    try t.expectEqual(@as(u32, 17), (try first.world.get(first.world.find(0x1000008).?, data.Flashlight)).owner);
+    try t.expectEqual(@as(u32, 0x100000a), (try first.world.get(first.world.find(0x1000009).?, data.Train)).destination);
+    try t.expectEqual(@as(u32, 0x2000009), second.header.pending[0].?.source);
+    try t.expectEqual(@as(u32, 17), second.header.pending[0].?.activator);
+    try t.expectEqual(@as(i64, 1800), second.header.pending[0].?.due_ms);
+    try t.expectEqual(@as(u32, 0), first.header.player_id);
+    try t.expectEqual(original_hash, std.hash.Wyhash.hash(0, old_bytes));
+    try t.expectEqual(@as(i32, 12), (try old.get(old.find(7).?, data.Health)).current);
+
+    var root = data.World.initNamespaced(t.allocator, 16, 0);
+    defer root.deinit();
+    _ = try root.create(17, .{ data.Transform{}, data.Velocity{}, data.Player{}, data.Body{}, data.Binding{ .slot = 0 }, data.Health{ .current = 63 }, data.Hurt{}, data.Weapons{ .weapon = 1 }, data.Character{}, data.Ailments{}, data.Keys{} });
+    const header: Header = .{ .at_ms = 2000, .episode = 1, .player_id = 17, .next_id = root.next_id, .namespace = 0 };
+    var first_buffer: [32768]u8 = undefined;
+    var second_buffer: [32768]u8 = undefined;
+    var region_buffer: [98304]u8 = undefined;
+    const first_bytes = try capture(t.allocator, &first_buffer, &first.world, "e1m1a", 3, first.header);
+    const second_bytes = try capture(t.allocator, &second_buffer, &second.world, "e1m1b", 3, second.header);
+    const bytes = try captureRegion(t.allocator, &region_buffer, &root, "e1m1c", 3, header, &.{}, &.{ .{ .map = "e1m1a", .bytes = first_bytes }, .{ .map = "e1m1b", .bytes = second_bytes } });
+    var loaded = try decode(t.allocator, bytes);
+    defer loaded.deinit(t.allocator);
+    try t.expectEqual(@as(usize, 2), loaded.residents.len);
+    try t.expectEqual(@as(i32, 63), (try loaded.world.get(loaded.world.find(17).?, data.Health)).current);
+    try t.expectError(error.InvalidLegacyArchive, migrateVisited(t.allocator, old_bytes, 0, 17));
+}
+
+test "mover archives written before authored audio keep silent defaults" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const older = try parse(data.Mover, arena.allocator(), .{ .name = "mover", .kind = .bytes, .count = 1, .data =
+        \\{"closed":[0,0,0],"opened":[0,0,120],"motion":{"base":[0,0,0],"end":[0,0,0],"start_ms":0,"duration_ms":1,"curve":"linear"},"state":"opening","speed":200,"wait_ms":1000,"group":19,"owner":7}
+    });
+    const t = std.testing;
+    try t.expectEqual(@as(u16, 0), older.use_sound);
+    try t.expectEqual(@as(u16, 0), older.return_sound);
+    try t.expectEqual(@as(u16, 0), older.opening_sound);
+    try t.expectEqual(@as(u16, 0), older.closing_sound);
+    try t.expectEqual(@as(u16, 0), older.opened_sound);
+    try t.expectEqual(@as(u16, 0), older.closed_sound);
+    try t.expect(!older.loop_sounds);
+    try t.expect(older.sound_parameters == null);
+    try t.expectEqual(@as(f32, 200), older.speed);
+    try t.expectEqual(@as(u32, 19), older.group);
+    try t.expectEqual(@import("../../core/domain/movers.zig").State.opening, older.state);
+
+    // An archive that does carry motion audio restores it, loops and authored distances included.
+    const loaded = try parse(data.Mover, arena.allocator(), .{ .name = "mover", .kind = .bytes, .count = 1, .data =
+        \\{"closed":[0,0,0],"opened":[0,0,120],"motion":{"base":[0,0,0],"end":[0,0,0],"start_ms":0,"duration_ms":1,"curve":"linear"},"state":"closed","speed":100,"wait_ms":3000,"group":4,"use_sound":3,"return_sound":0,"opening_sound":11,"closing_sound":12,"opened_sound":13,"closed_sound":14,"loop_sounds":true,"sound_parameters":{"volume":0.7,"minimum":300,"maximum":900,"nondirectional":false}}
+    });
+    try t.expectEqual(@as(u16, 11), loaded.opening_sound);
+    try t.expectEqual(@as(u16, 14), loaded.closed_sound);
+    try t.expect(loaded.loop_sounds);
+    try t.expectEqual(@as(f32, 0.7), (loaded.sound_parameters orelse return error.MissingSoundParameters).volume);
+    try t.expectEqual(@as(f32, 900), loaded.sound_parameters.?.maximum);
+    try t.expectEqual(@as(u16, 3), loaded.use_sound);
+}
+
+test "retained player bodies preserve damage impulses and identity across native save admission" {
+    const t = std.testing;
+    var world = data.World.init(t.allocator, 16);
+    defer world.deinit();
+    _ = try world.create(7, .{ data.Transform{}, data.Velocity{}, data.Player{}, data.Body{}, data.Binding{ .slot = 0 }, data.Health{}, data.Hurt{}, data.Weapons{ .weapon = 1 }, data.Character{}, data.Ailments{}, data.Keys{} });
+    _ = try world.create(8, .{ data.Transform{}, data.Velocity{}, data.Body{}, data.Binding{ .slot = 64 }, data.Health{ .current = -18 }, data.Random{ .state = 73 }, data.Hurt{ .weapon = 21, .impulse = .{ 31.5, 0, 36 }, .impulse_point = .{ 1, 2, 3 }, .impulse_serial = 2, .feedback = .{ .death_handled = true } }, data.Scenery{ .model = "models/global/m_hiro.dkm", .movement = .toss, .started_ms = 900, .expires_ms = 15900, .corpse = .{ .appearance = 0 } } });
+    var buffer: [32768]u8 = undefined;
+    const bytes = try capture(t.allocator, &buffer, &world, "e1dm1", 3, .{ .at_ms = 1000, .episode = 1, .player_id = 7, .next_id = world.next_id });
+    var restored = try decode(t.allocator, bytes);
+    defer restored.deinit(t.allocator);
+    const retained = restored.world.find(8).?;
+    try t.expectEqual(@as(u8, 0), (try restored.world.get(retained, data.Scenery)).corpse.?.appearance);
+    try t.expectEqual(@as(data.Vec3, .{ 31.5, 0, 36 }), (try restored.world.get(retained, data.Hurt)).impulse);
+    try t.expectEqual(@as(u32, 2), (try restored.world.get(retained, data.Hurt)).impulse_serial);
+    try t.expect((restored.world.get(retained, data.Session) catch null) == null);
+    try restored.rebase(5000);
+    try t.expectEqual(@as(?i64, 19900), (try restored.world.get(retained, data.Scenery)).expires_ms);
+    (try restored.world.get(retained, data.Health)).current = 1;
+    try t.expectError(error.InvalidSavedScenery, validate(&restored));
+}

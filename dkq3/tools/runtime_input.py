@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+"""Normal-input synchronization. Mutating fixtures require an explicit diagnostic driver."""
+import json
+from pathlib import Path
+import re
+import time
+
+from runtime_probe import runtime_files, send, wait
+
+
+def engine_failure(text):
+    """Include client and engine drops, which leave a live process at the menu."""
+    return next((line for line in reversed(text.splitlines()) if line.startswith("ERROR: ") or "fatal crashed:" in line
+                 or (line.startswith("Client ") and " dropped: " in line)), None)
+
+
+def cinematic_shots(text, inputs, map_name, program, count):
+    """Observed playback indices plus actual server shot-transition events.
+
+    A short shot can finish between observations. Transition events name the
+    entered shot using one-based indices; the completed cursor is not a shot.
+    The first shot requires an actual active-player observation.
+    """
+    sampled = {row["shot"] for entry in inputs if (row := entry.get("observed", {}))
+               and row.get("map") == map_name and row.get("cinematic")
+               and 0 <= row["shot"] < count}
+    entered = {int(shot) - 1 for shot, total, name in re.findall(
+        r"dk3 cinematic: shot=(\d+)/(\d+) name=(\S+)", text)
+        if name == program and int(total) == count and 1 < int(shot) <= count}
+    return sampled | entered
+
+
+class NativeInput:
+    def __init__(self, process, pipe, log, home, inputs, *, diagnostic=False):
+        if not __debug__:
+            raise RuntimeError("Native acceptance requires Python assertions enabled")
+        self.process, self.pipe, self.log, self.home = process, pipe, log, home
+        self.inputs, self.diagnostic, self.serial = inputs, diagnostic, 0
+        self.forward_ms = 0
+        self._activity_sample = None
+
+    def text(self):
+        return self.log.read_text(errors="replace")
+
+    def issue(self, command):
+        verb = command.split()[0]
+        allowed = {"weapon", "attribute", "save", "load", "use", "dk3_look", "viewpos", "screenshotJPEG",
+                   "dk3_runtime_observe", "dk3_runtime_actors", "dk3_runtime_world",
+                   "dk3_runtime_items", "dk3_runtime_character", "dk3_runtime_projectiles", "dk3_runtime_beams", "dk3_runtime_ion_aim", "dk3_runtime_movers", "dk3_runtime_presentation", "quit"}
+        buttons = {sign + name for sign in ("+", "-") for name in
+                   ("forward", "back", "moveleft", "moveright", "moveup", "movedown", "attack", "speed")}
+        if not self.diagnostic and (verb not in allowed | buttons or ";" in command or "\n" in command):
+            raise ValueError(f"Command is outside ordinary campaign input: {command}")
+        self.inputs.append({"command": command, "synchronization": "observed state"})
+        send(self.pipe, command)
+
+    def observe(self):
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            result, offset = self._observe_once()
+            if not result.get("connecting"):
+                previous = self._activity_sample
+                if previous and result.get("mode") == previous.get("mode") == "normal" and result.get("map") == previous.get("map"):
+                    if result.get("forward", 0) > 0 and previous.get("forward", 0) > 0:
+                        self.forward_ms += max(0, result["cmd"] - previous["cmd"])
+                self._activity_sample = result
+                return result
+            # A map handoff may accept console commands before ClientBegin.
+            # Wait for the connection event, including one emitted just after
+            # the pending response, then request authoritative state again.
+            wait(self.process, self.log, lambda text, offset=offset:
+                 "player entered isolated movement runtime" in text[offset:] or
+                 engine_failure(text[offset:]), max(0.1, deadline - time.monotonic()))
+        raise TimeoutError("Native player connection did not finish")
+
+    def _observe_once(self):
+        prior = self.text()
+        if failure := engine_failure(prior):
+            raise RuntimeError(failure)
+        self.serial += 1
+        marker = f"dk3 observe {self.serial}: "
+        before = len(self.text())
+        self.issue(f"dk3_runtime_observe {self.serial}")
+        text = wait(self.process, self.log, lambda value: marker in value[before:] or engine_failure(value[before:]), 5)[before:]
+        if failure := engine_failure(text):
+            raise RuntimeError(failure)
+        line = next(line.split(marker, 1)[1] for line in text.splitlines() if marker in line)
+        result = {}
+        for key, value in re.findall(r"(\w+)=([^ ]+)", line):
+            result[key] = tuple(map(float, value.split(","))) if key in ("pos", "angles") else value if key in ("mode", "map") else int(value)
+        self.inputs.append({"observed": result})
+        return result, before
+
+    def until(self, predicate, *, seconds=10, description="expected native state"):
+        deadline = time.monotonic() + seconds
+        last = None
+        while time.monotonic() < deadline:
+            last = self.observe()
+            if last["processed"] and predicate(last):
+                return last
+        raise TimeoutError(f"{description}: last observation {last}")
+
+    def ready(self, weapon=None):
+        return self.until(lambda s: s["ready"] and (weapon is None or s["weapon"] == weapon), description="weapon ready")
+
+    def select(self, weapon):
+        self.issue(f"weapon {weapon}")
+        return self.ready(weapon)
+
+    def stop_forward(self, *, settle_vertical=False):
+        """Release acknowledgement precedes physical stopping under friction."""
+        self.issue("-forward")
+        previous = self.until(lambda s: s["forward"] == 0, description="processed forward release")
+
+        def stationary(state):
+            nonlocal previous
+            if state["map"] != previous["map"]:
+                raise RuntimeError("Unexpected map transition while stopping")
+            # A released swimmer can still be carried by authored currents.
+            # Steering resumes from the observed moving position in that case.
+            if state.get("water", 0) > 1:
+                return state["forward"] == 0
+            elapsed = state["cmd"] - previous["cmd"]
+            if elapsed < 50:
+                return False
+            distance = sum((state["pos"][i] - previous["pos"][i]) ** 2 for i in range(3 if settle_vertical else 2)) ** 0.5
+            previous = state
+            return state["forward"] == 0 and distance * 1000 / elapsed < 1
+
+        return self.until(stationary, seconds=3, description="horizontal motion settled after release")
+
+    def aim(self, yaw, pitch):
+        limit = 16000 * 360 / 65536  # Authoritative movement short-angle clamp.
+        pitch = max(-limit, min(limit, pitch))
+        self.issue(f"dk3_look {yaw} {pitch}")
+        def close(a, b):
+            return abs((a - b + 180) % 360 - 180) < 0.03
+        return self.until(lambda s: close(s["angles"][0], pitch) and close(s["angles"][1], yaw), description="processed view angles")
+
+    def fire(self):
+        previous = self.ready()
+        self.issue("+attack")
+        try:
+            return self.until(lambda s: s["event"] != previous["event"] and s["fire"] != previous["fire"], description="actual fire event")
+        finally:
+            self.issue("-attack")
+            self.until(lambda s: not s["buttons"] & 1, description="processed attack release")
+
+    def elapsed(self, milliseconds):
+        start = self.observe()["cmd"]
+        return self.until(lambda s: s["cmd"] >= start + milliseconds,
+                          seconds=milliseconds / 1000 + 5, description="processed command time")
+
+    def diagnostics(self, command, marker, seconds=5):
+        before = len(self.text())
+        self.issue(command)
+        text = wait(self.process, self.log, lambda text: marker in text[before:], seconds)[before:]
+        self.inputs.append({"diagnostic": command, "result": text})
+        return text
+
+    def save(self, slot):
+        before = len(self.text())
+        self.issue(f"save {slot}")
+        result = wait(self.process, self.log, lambda text: "dk3 zig: world saved" in text[before:]
+                      or "Save/load refused:" in text[before:] or engine_failure(text[before:]), 10)[before:]
+        if failure := engine_failure(result):
+            raise RuntimeError(failure)
+        if "Save/load refused:" in result:
+            raise RuntimeError(next(line for line in result.splitlines() if "Save/load refused:" in line))
+        path = self.home / f"state/dk3/saves/{slot}.sav"
+        if not path.exists() or not path.read_bytes().startswith(b"DK3SAVE"):
+            raise RuntimeError(f"Save completion did not produce a native save: {slot}")
+        self.last_save = slot
+        return path
+
+    def load(self, slot):
+        before = len(self.text())
+        self.issue(f"load {slot}")
+        result = wait(self.process, self.log, lambda text: ("saved world restored" in text[before:] and
+             "dk3 zig client: restoration applied" in text[before:]) or "Save/load refused:" in text[before:]
+             or engine_failure(text[before:]), 120)[before:]
+        if failure := engine_failure(result):
+            raise RuntimeError(failure)
+        if "Save/load refused:" in result:
+            raise RuntimeError(next(line for line in result.splitlines() if "Save/load refused:" in line))
+        # A legacy single-world snapshot can finish restoring its root before
+        # initial connected-region admission releases input. Observe that actual
+        # processing boundary with the same bounded restoration deadline.
+        restored = self.until(lambda _: True, seconds=120, description="restored input processing")
+        self.last_save = slot
+        return restored
+
+
+def record_identity(engine, prefix, report, *, require_installation=False):
+    """Hash the actual executable, modules, shaders and admitted local packages."""
+    import hashlib
+    files = [engine / "bin/dk3"]
+    selected = runtime_files(prefix)
+    files += list(selected.values())
+    files += sorted((engine / "share/dk3").glob("*.pk3"))
+    # Renderers can be built in or adjacent to the engine executable.
+    files += sorted((engine / "bin").glob("*renderer*.so"))
+    regions = engine / "share/dk3/dk3/campaign-regions.cfg"
+    if regions.exists():
+        files.append(regions)
+    records = {}
+    for path in files:
+        with path.open("rb") as stream:
+            records[str(path)] = hashlib.file_digest(stream, "sha256").hexdigest()
+    if require_installation:
+        manifest = json.loads((engine / "installation.json").read_text())
+        for destination, source in selected.items():
+            if records[str(source)] != manifest["files"].get("share/" + destination):
+                raise RuntimeError(f"Scenario runtime differs from its immutable installation: {source}")
+    digest = hashlib.sha256(json.dumps(records, sort_keys=True).encode()).hexdigest()
+    (report / "identity.json").write_text(json.dumps({"sha256": digest, "files": records}, indent=2) + "\n")
+    return digest

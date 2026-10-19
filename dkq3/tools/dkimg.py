@@ -184,6 +184,25 @@ def _tga_packets(raw, at, size, channels, entry):
     return bytes(out[:size])
 
 
+def encode_tga(img):
+    """-> uncompressed 24- or 32-bit TGA bytes of an (H,W,3|4) uint8 image, stored
+    bottom-up in BGR(A) order, which is what LoadTGA reads (gl_image.cpp:573-739).
+    Unlike PNG this is byte-identical for equal images and needs no decoder."""
+    h, w, nch = img.shape
+    if nch not in (3, 4):
+        raise ImageError("TGA needs 3 or 4 channels, got %d" % nch)
+    header = struct.pack('<BBBHHBHHHHBB', 0, 0, 2, 0, 0, 0, 0, 0, w, h, nch * 8, 0)
+    order = [2, 1, 0, 3][:nch]
+    pixels = img[..., order][::-1]
+    return header + pixels.astype(np.uint8).tobytes()
+
+
+def write_tga(path, img):
+    """Writes encode_tga(img) to `path`."""
+    with open(path, 'wb') as f:
+        f.write(encode_tga(img))
+
+
 def write_png(path, img):
     """Writes encode_png(img) to `path`."""
     with open(path, 'wb') as f:
@@ -206,7 +225,11 @@ def encode_png(img):
 
 def read_png(path):
     with open(path, 'rb') as f:
-        d = f.read()
+        return decode_png(f.read())
+
+
+def decode_png(d):
+    """-> (H,W,3|4) uint8 image of 8-bit RGB or RGBA PNG bytes (the files encode_png writes)."""
     pos, idat = 8, b''
     while pos < len(d):
         ln = struct.unpack('>I', d[pos:pos+4])[0]; tag = d[pos+4:pos+8]

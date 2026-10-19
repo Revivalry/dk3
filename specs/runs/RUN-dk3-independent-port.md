@@ -2529,3 +2529,7477 @@ behind the Mishima logo upstairs.
 The first beam-height probe read a save before writing completed; the corrected
 runner waits for the save and both directions pass. No code change or repeat
 broad suite was needed after the scenario correction.
+
+## Runtime Zig foundation — sequence 217
+
+Accepted architecture: [native Zig replacement](../../docs/runtime-zig.md). Full
+replacement remains open. This checkpoint implements parts of stages 1–2, not a
+playable game or acceptance cutover. Legacy remains the ordinary launcher runtime.
+
+Implemented: isolated native server/client/UI build and public ABI adapters;
+archetype ECS with aligned chunks, explicit component IDs, generational handles,
+persistent IDs, deferred commands and independent engine slots; bounded workers,
+access/dependency scheduling and owner-thread collision; exact frame clock and
+relative deadline helpers; map metadata retaining authored fields; portable save
+record codec and read-only audit tool. A shared inventory acquisition transition
+now serves legacy weapon code and the replacement Inventory component. Client/UI
+entrypoints explicitly reject use; gameplay, player movement, weapon backends,
+world behaviors, staged save reconstruction and cutover are not implemented.
+
+The worker scenario exposed a queue-handoff race: after clearing the job slice,
+`next` retained the completed batch's index and an idle worker indexed an empty
+queue (`index 8, len 0`). Resetting the cursor under the same mutex and checking
+exhaustion with `>=` repaired it. A 1,024-batch changing-queue regression passes.
+The legacy build caught an allowzero C-pointer adaptation error; the adapter now
+copies selection into a typed local and writes the result back before weapon
+acquisition hooks.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Native replacement builds and ABI | Passed | Three modules compile without legacy C gameplay sources; public entity projection layout checked. |
+| ECS, workers, scheduling and codec contracts | Passed | 15 replacement tests, including stale handles, structural barriers, ordered commands, frozen access declarations, batch handoff, owner affinity and 0/1/4-worker equivalence. |
+| Real engine bootstrap/collision/restart | Passed | `runtime_probe.py`, `e1m3b`, 456 authored objects, 128 probe entities × 20 steps; identical hash `d3bcc3f6a1f26070` with 0/1/4 workers before and after restart. Temporary home, dedicated engine under dkguard. No campaign behavior demonstrated. |
+| Existing save record compatibility | Passed | 22 local saves parsed and reproduced byte-for-byte, including latest 20,638,706-byte quicksave; before/after source hashes unchanged. Gameplay restoration is not qualified. |
+| Shared inventory in legacy game | Passed | Isolated headless legacy build under dkguard, `devmap e1m3b`, `give weapons`, save inspection: all 28 ownership bits, initial selection preserved, paired Cordite ammunition 2. Harness initially used the wrong save-field name; corrected inspection of the recorded save passed. |
+| Premature installation guards | Passed | Replacement rejects default prefix and `play-install`; normal launcher installation unchanged. |
+| Broad checks | Passed | `zig build test --summary all`: 153 Zig tests, 49 Python tests; legacy native game build passes after C-pointer repair. No duplicate broad suite. |
+| Replacement gameplay/client/UI/save restoration | Unrun | Required implementations remain open; bootstrap and codec results do not establish this acceptance. |
+
+Reproducible commands are in `docs/runtime-zig.md`. Local inputs/logs/results are
+under `zig-out/reports/runtime-zig-217`; assets and saves remain private. No normal
+installation was updated. Continue stages 1–2 with actual player movement, shared
+weapon backend extraction and ECS persistence mappings before world/client/UI
+migration and implemented-scope acceptance.
+
+
+## runtime-zig — sequence 218 (active implementation)
+
+Continues the accepted full native rewrite. This sequence does not close the task
+or authorize production cutover. Normal launcher/profile/assets/saves are unchanged.
+
+Implemented: shared player movement and prediction with public ABI projections;
+all 28 pure weapon descriptions/input policies and shared supplied-data parsing;
+ECS weapon state and shot event delivery; native BSP/brush rendering; matching
+source-identity checks; binary movers with grouped trajectories, delays/dwell and
+transactional player pushing; use/proximity/rider activation; target/delay/killtarget
+routing and basic once/multiple/relay/counter triggers. GPL movement provenance is
+retained. The C differential baseline is test-only. Native combat dispatch, actors,
+trains/secrets, scripts/cinematics, restore/travel and full presentation/UI remain
+implementation work, not failed acceptance claims.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Native shared movement vs bundled baseline | Passed | Six 240-command runs compare origins/velocities within 0.05 and exact eye height on flat ground and in shallow/deep water. Includes diagonal walking, crouch, jump, swimming and gravity; other geometry/ladders remain unrun. |
+| Shared weapon input policies | Passed | All 28 policies exercised without legacy engine globals; dedicated assertions for burst continuation, ten-shot reload, charged release and spin-up. No native damage/presentation claim. |
+| Native e1m3b connection/prediction | Passed | `zig-out/reports/runtime-zig-218/movement218.log`; matched identity in userinfo, supplied weapon table read and client/server movement active. Standing/crouching captures inspected. |
+| Delayed door repeated activation | Passed | `movers218.log`: id 255 remains opening after second activation, progresses from z=0 through z=27.5 and reaches authored z=122. This uses explicit diagnostic activation, not an authored puzzle replay. |
+| Group rollback, crushing and rider transport | Unrun | Implementation connected; blocked/rider scenarios required. |
+| Trigger/target/delay/killtarget progression | Unrun | Implementation connected; authored scenario replay required. |
+| Mixed native build rejection | Unrun | Server and client rejection paths implemented; matching-build connect passed, intentional mismatch still required. |
+| Native complete movement/weapon/actor/UI/save parity | Unrun | Significant implementation remains. |
+
+Local diagnostics and captures stay ignored. Reusable isolated client runner:
+`dkq3/tools/runtime_player_probe.py`; no original or converted assets are committed.
+Existing-runtime and replacement module builds passed during connected development;
+the aggregate suite passed 159 Zig tests and 49 Python tests. Full runtime acceptance remains pending.
+
+
+## runtime-zig — sequence 219 (active implementation)
+
+Train path legs, angular timing, departure-corner dwell, trigger-only rest, redirected
+activation/elevators and teleport corners are connected. Attachment parent IDs,
+cycle checks, pose preparation/rebase and whole-hierarchy initial/teleport movement
+are implemented. Collision publication is transactional; deadlines advance and both
+mover families finish before arrival targets run. Static brush roots support animated
+children. Existing target queue capacity is preserved at 256 delayed actions.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Replacement domain checks | Passed | 26 tests: adds departure dwell/retrigger, angular timing, parent pose composition, nested teleport/door endpoint rebase and cycle rejection. |
+| First diagnostic e1m3a board attempt | Failed input; corrected | `rider219.log` and `rider219-diagnostic.log` retained. Bounding-box-center placement put the player below walkable world geometry. Collision held the lift and player at the bottom. The board helper now rejects obstructed placement. |
+| Valid standing position, repeated ascent activation, upper dwell and return | Passed | `zig-out/reports/runtime-zig-219/lift/`: 47 recorded samples. Lift z -902 → -274, wait 10000 ms, fixed due 13801, observed upper hold 9750 ms between polling samples, then z -902 / paused. Player carried to upper stop and returned to the bottom landing. Upper capture inspected. |
+| Nested attachment placement | Passed (domain) | Preparing poses leaves ECS untouched; commit moves child/grandchild and rebases child-door endpoint. Real cinematic assembly/rendering is not yet accepted. |
+| Compound obstruction / rotating riders | Unrun | Complete collision transaction code exists; richer scene validation remains. |
+| Physical button, path targets, script/cinematic progression | Unrun | Diagnostic activation isolates train behavior. Scripts/cinematics are still implementation work. |
+
+Reproducer: `runtime_player_probe.py --engine zig-out/play/current --prefix
+zig-out/replacement --scenario lift`. It copies only native modules into a temporary
+profile, invokes dkguard headless software rendering and keeps logs/inputs/captures
+local. No normal installation or existing save was written. Aggregate checks from
+218 remain recorded; replacement tests and affected engine scenarios were refreshed.
+
+
+## runtime-zig — sequence 220 (active implementation)
+
+Implemented secret-door two-leg travel, inter-leg pauses, return/stay-open behavior,
+continuous rotation toggling and attachment integration. World ordering and trajectory
+projection now have shared owners instead of duplicated module-entrypoint logic.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Replacement build and domain checks | Passed | Native products build; secret-cycle, stopped rotation and attached-child proposal/rollback checks pass. |
+| e3dm1 secret door 43 | Passed | Both opening legs, open dwell, both return legs and closed rest recorded in `runtime-zig-220/secret/`; diagnostic activation only. |
+| e1m3b rotation 72 | Passed | Rotation advances, holds exact stopped angles across samples, then resumes in `runtime-zig-220/rotation/`. |
+| Affected lift and delayed door | Passed | Refreshed `runtime-zig-220/lift/` and `client/` preserve upper dwell/rider transport and repeated delayed-door activation. |
+| Shooting secret doors, rotation riders, compound obstruction | Unrun | Shooting depends on native combat; other scenarios remain required. |
+
+All engine runs use dkguard headless software rendering and isolated profiles.
+No normal installation or save was written. Earlier aggregate checks remain valid
+for unchanged components; no duplicate broad suite. Full rewrite remains open.
+
+
+## runtime-zig — sequence 221 (active implementation)
+
+Implemented keys, weapon/ammunition, health and armor pickup policies; ballistic
+floor placement/bounce with supplied model bounds; resource configstrings and item
+models; acquisition visibility/target dispatch and respawn deadlines; key ownership
+checks; explicit weapon selection and server acquisition selection. Metadata is
+shared through reviewed source definitions. Ammunition saturation and Gas Hands
+duration policies are shared with the existing Zig weapon backend. Spawn mode/skill
+filters now precede behavior registration while preserving map persistent IDs.
+Tagged components no longer require meaningless zero initialization during relocation.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Domain/build checks | Passed | 37 replacement tests, native modules built. Covers union relocation, metadata/key composites, bounded acquisition, gas timing, model bounds and spawn exclusions/ID stability. |
+| Initial e1m3b key/button diagnostic | Failed scope; corrected | `runtime-zig-221/inventory/` records collection and activation, but source review identified button 423 as co-op-only. Missing mode filtering was repaired; this result is not single-player progression acceptance. |
+| e1m6a blue card and locked button | Passed | `runtime-zig-221/blue-card/`: item 2 settles, touch changes key mask to 1 and hides the item; button 85 stays closed before collection and opens afterward, activating four-way door 82. Explicit diagnostic placement/activation; key capture inspected, normal walking/cinematic path not certified. |
+| Affected lift and delayed-door paths | Passed | `runtime-zig-221/lift/` and `client/`; same isolated runners after map-filter/item integration. |
+| First aggregate build | Failed; repaired | C pointer nullability in `DK_AddAmmunition` adapter prevented legacy compilation and two Python contract tests. Fixed by validating the C pointer and passing a local typed value to shared rules. All 175 Zig checks had already passed. |
+| Aggregate checks after adapter repair | Passed | `zig build game test --prefix zig-out/legacy-check -Dgame-runtime=legacy --summary all`: existing modules build, 175 Zig and 49 Python tests pass. |
+| Pickup audio, boosts/statuses, platform-carried items, full progression | Unrun | Remaining implementation/acceptance; ordinary launcher stays legacy. |
+
+All probes use dkguard and temporary profiles. Private assets, saves and captures
+remain local. This is continuing implementation, not full rewrite completion.
+
+
+## runtime-zig — sequence 222 (character state and sound events)
+
+Implemented native character attributes/boost deadlines, protection/status pickups,
+ring damage reduction, armor/protection accounting, and snapshot sound events.
+Player snapshots project character state; domain movement parameters use attributes.
+Weapon and ammunition pickup sounds now come from weapon audio definitions: reviewed
+Gold defaults plus Ion/Shotcycler/Sidewinder/Shockwave ammunition overrides. Item
+systems do not switch on weapon IDs for audio. No private code/assets were imported.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| e4m4b speed and invincibility pickups | Passed | `runtime-zig-222/effects/result.json`: boost active then expired, protection blocks diagnostic damage then permits it after expiry; two snapshot sound dispatches. Diagnostic positioning/damage; physical audio and actual combat unqualified. |
+| Native policies and projections | Passed | 41 native tests include character snapshot roundtrip, protection accounting and pickup class audio resolution. |
+| Full weapon combat, actor reactions, HUD/status presentation | Unrun | These paths remain implementation work. |
+
+## runtime-zig — sequence 223 (single runtime)
+
+Owner explicitly requested removal of the old runtime. Removed C game/client/UI,
+legacy module entrypoints, C-dependent weapon/multiplayer adapters and seven old
+implementation fixtures. Pure weapon classes/policies, appearance metadata, online
+services and networking remain. The engine builds client/server/renderers only;
+legacy native/QVM module build paths are gone. Engine save-envelope validation moved
+into engine infrastructure. Bundled movement is retained solely as a test reference.
+Only Zig gameplay modules are built; legacy selection is rejected. Development play
+uses a separate prefix/profile, explicit map and native development mode. The
+preserved installed game, private reference, assets and saves were not modified.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Engine build after removal | Passed | `/tmp/dk3-native-only-engine.log`, client/server/both renderers, 14 build steps. |
+| Integrated native modules and surviving suite | Passed | `/tmp/dk3-native-only-suite.log`, 179 Zig tests (including 41 runtime tests), 42 Python tests; all three native modules built. |
+| Native client on rebuilt engine | Passed | `runtime-zig-223/client`: connect, movement/crouch/jump diagnostics and repeated delayed-door activation. New engine plus native modules, only asset packages reused, temporary profile; full campaign unqualified. |
+| Retired fixture scenarios | Unrun for native acceptance | Actor witnesses, scripts, laser shutdown and full weapon firing remain open; deleting old fixtures is not a passing result. |
+| Asset install/interactive play flow | Unrun | Build graph admits an isolated native prefix; full menu and campaign acceptance remain open. |
+
+Architecture priority: connect native weapon events to hit/projectile simulation,
+damage/death and actor reactions; then scripts/progression, restoration/travel and UI.
+No legacy backend parity work remains in the development cadence.
+
+
+## runtime-zig — sequence 224 (initial combat; feature branch)
+
+Connected copied fire intents to native Glock/Disruptor trace damage and Ion ECS
+projectiles. Weapon class policies own attack kind and Ion radius, water discharge,
+bounce and cleanup tuning. The server resolves collision and persistent shooter IDs;
+health/armor/protection remain domain rules. Fire/explosion audio uses class metadata.
+Normal input against diagnostic ECS targets kills with both Glock and Ion.
+`runtime-zig-224/combat/` records inputs/results. This does not qualify remaining
+weapons, knockback, all Ion cases, full effects or Gold parity. Other 25 combat
+policies are explicitly pending, not silently mapped to a generic attack.
+
+All committed and then-uncommitted rewrite work was preserved and pushed on
+`rewrite/native-zig-runtime` before restoring main. Main restoration `e3966c4` has
+exactly the `ed0755f` tree. The feature branch, not main, is the only rewrite target.
+
+## runtime-zig — sequence 225 (runtime structure and civilians)
+
+Renamed `src/replacement` to `src/runtime` and `build/replacement.zig` to
+`build/runtime.zig`. Runtime entrypoints compose domain rules, ECS infrastructure,
+public engine adapters, authoritative server systems and client presentation.
+Catalogs remain separate class-owned modules. Native products/tests share one build
+composition helper; architecture checks reject engine/system dependencies in pure
+layers and private engine gameplay headers.
+
+Implemented four civilian classes from supplied actor tuning and model animation
+metadata. World-system state owns definitions with map-lifetime storage. Actor state
+owns panic/death transitions; the shared damage service records attacker identity and
+time. Visible, new civilian deaths trigger nearby witness panic. Movement integrates
+actual elapsed time, while final death animation holds its last frame and routes
+authored death targets once. Client projection draws supplied actor frames. The mover
+transaction now admits actor/corpse bodies as well as players.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| First actor build | Failed; repaired | Explicit float coercion needed for yaw conversion; 44 native policy tests already passed. |
+| Initial e1m2a worker probe | Failed fixture | `runtime-zig-225/civilians/` and `civilians-diagnostic/`: chosen player point was over a drop. Player fell from the workers' elevation while the fixture aimed from its old position; actor damage was not exercised. Captures/log retained. |
+| Grounded e1m2a worker encounter | Passed | `runtime-zig-225/civilians-grounded/`: collision/line-of-sight-checked diagnostic placement, ordinary Glock input kills authored worker 10; worker 9 stays healthy, records the witnessed death, enters flee and moves. Death/flee capture inspected. |
+| Native build and surviving aggregate | Passed | `/tmp/dk3-runtime-225-suite.log`: all modules, 182 Zig tests (44 native runtime) and 44 Python tests including architecture boundaries. |
+| Existing lift and combat regressions | Passed | `runtime-zig-225/lift/` retains the authored upper dwell and player carriage; `runtime-zig-225/combat/` kills separate diagnostic targets with Glock and Ion after actor/structure integration. |
+| Actor/corpse platform carry and compound obstruction | Unrun | Implementation connected; player lift regression does not certify actor carriage or compound obstruction. |
+| Navigation, hostile actors, scripted actor control, actor audio, corpse pose bounds | Unrun | Remaining implementation/acceptance; initial civilian behavior is not full actor parity. |
+
+Reports use dkguard software rendering, temporary profiles and supplied local assets.
+Neither main, installed game, saves nor private reference files are changed by these
+runtime scenarios.
+
+
+## runtime-zig — sequence 226 (Mishima guard combat)
+
+Added a pure class-owned guard controller and hostile perception/attack adapter.
+The controller owns ammunition, pose selection, strike/reload deadlines and RNG;
+world systems own the actor lifecycle. Supplied tuning/events/animation files provide
+model scale, health/speed/sight, damage/spread/muzzle offsets, attack sounds and strike
+frames. Engine collision resolves visibility and bullets; the shared damage service
+records player damage and source identity. No private runtime or assets were imported.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| First guard build | Failed; repaired | Signed duration division required explicit `@divTrunc`; repaired before engine runs. |
+| Native modules and aggregate checks | Passed | `/tmp/dk3-runtime-226-suite.log`: 182 Zig and 44 Python checks. |
+| Class test admission correction | Passed | Named-module tests were not included by importing the actor catalog. `test-runtime` now explicitly runs the catalog root. `/tmp/dk3-runtime-226-class-tests.log`: 44 runtime + 2 actor catalog tests, all modules built. The pure test covers eight rounds, exactly one reload cue, and blocked-shot ammunition behavior. |
+| e1m3b authored guard 166 | Passed | `runtime-zig-226/guard/`: ordinary player fire provokes guard; eight guard shots report rounds 7..0, player health falls from diagnostic 1000 to 911, reload sound dispatches. Reload capture inspected. Diagnostic placement/equipment/health; full encounter balance not certified. |
+| Worker witness and player weapon regression | Passed | `runtime-zig-226/civilians/` and `combat/` after hostile integration; e1m2a death/witness behavior and Glock/Ion target kills retained. |
+| Full hostile behavior | Unrun | Cover, route navigation, pain responses, scripted activation, difficulty scaling and remaining actor classes remain open. |
+
+Development remains on `rewrite/native-zig-runtime`; main still points to restoration
+`e3966c4`. Both native scenario families use guarded software rendering and temporary
+profiles; the preserved installation and saves remain unchanged.
+
+
+## runtime-zig — sequence 227 (ground navigation and authored world actions)
+
+Implemented with focused verification below. Added an owning-thread botlib/AAS
+adapter with strict mode/difficulty asset selection and map checksum validation.
+Pure route state owns refresh/progress tracking; shared ground locomotion owns
+collision, safe-floor checks and supported jump travel. Civilian escape goals are
+bounded and reachable; guards pursue last-seen positions without wall tracking.
+Added typed destructible, wall, hazard and target-sequence components. Destructible
+controls use ordinary weapon damage; ordered authored events dispatch target actions,
+including changing train targets. Hurt toggles obey Gold's ALLOW_TOGGLE/START_DISABLED
+semantics. The working port's narrowly scoped e1m3b laser shutdown correction is
+retained: removed laser controls permanently disable their shared damage volume.
+No private implementation or assets were imported.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| First AAS startup | Failed; repaired | `runtime-zig-227/civilians/`: botlib rejected AAS because the adapter omitted `sv_mapChecksum`; copied the engine's loaded-map checksum before setup/load. |
+| Integrated build and focused policies | Passed | `/tmp/dk3-runtime-227-integrated-final.log`: all three modules and 47 runtime + 2 actor tests. Fixed component-registry compile-time quota and explicit slot coercion. |
+| Worker witness with navigation | Passed | `runtime-zig-227/civilians-repaired/`: authored worker death provokes healthy witness escape; AAS map checksum/startup now passes. |
+| Occluded guard pursuit | Passed, limited | `runtime-zig-227/navigation-repaired/`: fixture seeds a reachable occluded last-seen goal; guard physically moves 32.5 units around the corner and resumes normal firing. First probe required 64 units after the guard already gained visibility; fixed the unsupported assertion. This short route does not qualify long/dynamic/jump traversal. Capture inspected. |
+| Supply box and laser shutdown | Passed | `runtime-zig-227/laser-firing/`: ordinary Glock shots deal 18+18 to authored box 125, ordered 17-event timeline removes all controls, enabled field deals 100 damage and disabled field causes no hits at both approaches. Diagnostic placement/equipment/health. Captures inspected; full audiovisual parity remains open. |
+| Laser fixture repairs | Failed fixtures, repaired | `laser/` and `laser-repaired/`: initial standing search began above low ceilings; expanded vertical search. `laser-diagnostic/`: box takes one shot and retains 7 health; recorded separate normal press/release shots for the complete kill. These failures and collision diagnostics remain recorded. |
+| Aggregate checks | Passed | `/tmp/dk3-runtime-227-suite.log`: 187 Zig and 44 Python checks across native runtime, weapons, online and guard; run once after scenario repair. |
+| Full navigation and world presentation | Unrun | Dynamic route availability, authored air/water graphs, cover/yielding, debris, beam effects and full world-action parity remain open. |
+
+## runtime-zig — sequence 228 (weapon presentation and HUD)
+
+Connected class-owned view-model poses/audio to deduplicated predicted/server shots,
+finite animation timing and Glock reload. The native client places model flashes at
+supplied tags, uses additive Glock/Ion shaders, and exposes off/original/enhanced shine.
+Shared client/UI drawing validates supplied glyph metrics; HUD and inventory consume
+replicated character, ammunition and key state. Weapon and item catalog tests are now
+explicit test roots alongside actor tests; named imports alone did not execute them.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Integrated build | Passed after repair | Three native modules; 48 runtime + 2 actor + 4 weapon + 2 inventory + 1 item tests. Repaired duplicate module ownership and explicit compile-time float/integer coercions exposed by integration. |
+| Existing normal attacks | Passed | `runtime-zig-228/combat/`: Glock/Ion target damage and death still work with the native HUD/view models; captures inspected. |
+| View weapon transitions and supplied media | Passed | `runtime-zig-228/presentation/`: Disruptor/Glock/Ion fire and return to idle, Glock clip exhausts and enters its class-owned reload pose, returns to idle. Captures show additive Glock flash without an opaque rectangle, Ion flash, HUD, inventory and enhanced shine. Diagnostic equipment; not all-weapon or original-renderer parity acceptance. |
+| Complete presentation | Unrun | Other weapons, status feedback, multiplayer HUD, companions, all effects and physical audio remain open. |
+| OpenGL2 presentation | Passed, limited | `runtime-zig-228/presentation-opengl2/`: same transitions and supplied media checks; Glock firing capture inspected. Both renderer paths blend the flash without an opaque rectangle. |
+| Applicable broad checks | Passed | `/tmp/dk3-runtime-228-suite.log`: 195 Zig and 44 Python tests, run once after integrated scenario repair. |
+
+## runtime-zig — sequence 229 (native menus and input)
+
+Connected native UI entrypoints to separate state, artwork, settings and binding
+modules. Shared DKF rendering draws the supplied menu art and animated plates.
+Mouse/keyboard routing, campaign difficulty selection, live settings, input conflicts,
+configuration commands, loading display and pause/resume now run natively. Difficulty
+is not repeated under extra options. Save restoration and multiplayer panels remain
+explicitly unavailable while their native services are unfinished.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Integrated modules/domain tests | Passed after repair | 49 runtime + 9 catalog checks. Repaired a reserved identifier, shadowed names and a compile-time float coercion in the renderer. |
+| Initial XTest fixture | Failed fixture | `runtime-zig-229/ui/` and `ui-focused/`: Xvfb lacked focused input; fixture now finds the ioquake3 window, sets focus and primes its pointer with grabbing disabled. |
+| Negative mouse input | Failed; repaired | `runtime-zig-229/ui-input/`: negative C-int mouse deltas arrived zero-extended in native VM slots; checked isize-to-i32 casts panicked. Explicit low-32-bit decoding now preserves the signed ABI value. |
+| Complete recorded menu input sequence | Passed | `runtime-zig-229/ui-mouse-repaired/`: XTest clicks change shine to Enhanced; keyboard reaches controls; conflict cancel preserves the binding, confirm replaces it; Ronin starts e1m1a with skill 1; Escape pauses/resumes. Artwork, options, conflict and pause captures inspected. Temporary profile only. |
+| Complete UI and campaign acceptance | Unrun | Save/load, multiplayer, remaining settings/panels, full opening cinematic and matched reference menu/audio comparison remain open. |
+| OpenGL2 input/rendering | Passed, limited | `runtime-zig-229/ui-opengl2/`: the same XTest sequence passes; options capture inspected. |
+| Applicable broad checks | Passed | `/tmp/dk3-runtime-229-suite.log`: 196 Zig and 44 Python tests after the input repair. |
+
+## runtime-zig — sequence 230 (native persistence and save menus)
+
+Implemented staged native schema-1 capture/restoration with owned decoded strings,
+semantic validation, explicit timestamp rebasing, stable identities/resource bindings,
+pending target actions and projection rebuilding. The engine retains ownership of
+atomic writes and previous-save recovery. Mouse slot selection persists when moving
+to the Load/Save button; full native validation precedes main-menu map startup.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Integrated native build and policies | Passed after repair | `/tmp/dk3-runtime-230-final-build.log`: three native modules, 51 runtime + 9 catalog tests. Repaired Zig 0.16 type reflection, integer coercions and transport resource limits; duplicate-slot rejection leaves the live world unchanged. |
+| Moving lift and previous recovery | Passed | `runtime-zig-230/save/`: saved at z=-632.939, moved to -244.875 while losing 40 health, restored to -633.250 with health 100; lift continues. Previous quicksave recovers health; damaged checksum is refused without replacing the running world. Diagnostic placement/activation/damage; other action phases remain open. |
+| Save menu fixture alignment | Failed fixtures; repaired | `ui-saves/`, `ui-saves-focused/`, `ui-saves-aligned/`: renderer/map recreation loses X focus and resets relative UI cursor independently of the X pointer. Fixture reacquires the window and calibrates the active menu cursor against its bounds. Logs/captures retained. |
+| Mouse selection and direct main-menu load | Passed | `runtime-zig-230/ui-saves-calibrated/`: XTest selects Save1 then clicks Save, rejects corrupted bad slot, selects Save1 then clicks Load; health 100 restored. After disconnect, Load starts only e1m3a and restores health, without loading marsh first. Selection, corruption feedback and direct restored frame inspected. |
+| Laser shutdown ordering | Failed; repaired | `runtime-zig-230/laser-save/`: authored sequence already toggled hurt off before removing controls; correction skipped clearing collision/toggleability. Now permanent shutdown applies regardless of the field's prior enabled state. |
+| Invisible train restoration | Failed; repaired | `laser-save-repaired/` and `laser-save-model/`: full-world load refused authored model-less train 21. Admission/projection now preserve invisible attachment carriers; save runs projection admission before replacing a prior slot. |
+| Laser shutdown across save/load | Passed | `runtime-zig-230/laser-save-complete/`: ordinary shots break the box, the sequence completes, both approaches are harmless, full native save/load restores the broken control and the field remains harmless on both approaches. Restored capture inspected. `/tmp/dk3-runtime-230-train-build.log` verifies the final admission/projection repair. |
+| Applicable broad checks | Passed | `/tmp/dk3-runtime-230-suite.log`: 198 Zig and 44 Python tests, once after the integrated repair. |
+| Full persistence acceptance | Unrun | Independent schema-5 translation, authored travel/visited maps, companions/scripts and complete mid-action matrix remain open. |
+
+## runtime-zig — sequence 231 (authored travel and visited-world archives)
+
+Implemented with focused verification below. Exit latches, typed departure intent, named
+arrival selection, collision-checked offsets, independent traveler state and flat
+visited snapshots now form one native campaign lifecycle. Full saves own their
+visited worlds. Gold was consulted for transition classification, target selection,
+offset/NO_OFFSET behavior and episode inventory reset; no private code was imported.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Connected build and domain contracts | Passed | `/tmp/dk3-runtime-231-integrated-build.log`: three native modules, 54 runtime + 9 catalog checks. Includes deterministic named/fallback spawn choice, travel timer/inventory rules and nested archive validation/ownership. |
+| First authored exit contact | Passed; fixture assertion repaired | `runtime-zig-231/travel/` and `travel-state/`: e1m3b exit 127 starts only e1m3a and enters its named landing. New diagnostics establish health 333 at departure and arrival; a live guard subsequently deals 11 damage. Fixed-health checks now compare at the transition boundary, without assuming health stays fixed during subsequent live combat. Sequence 233 corrects the earlier pause claim: the engine rejected those console requests. |
+| Changed-world round trip and save recovery | Passed, limited | `runtime-zig-231/travel-paused-save/`: normal touch of authored exits 127/131 traverses e1m3b/e1m3a, named positions match, Glock and actual incoming health transfer (333, 222, 333). Returning preserves broken control 125. Full save after deleting this temporary profile's internal transfer files restores the visited world. Arrival/return/recovered captures inspected. Diagnostic positioning/equipment; complete route/offset/blocker and companion/cinematic acceptance remains open. |
+| Applicable broad checks | Passed | `/tmp/dk3-runtime-231-suite.log`: 201 Zig and 44 Python tests after the integrated scenario repair. |
+
+## runtime-zig — sequence 232 (pellets, rotary fire and impact presentation)
+
+Connected three more native combat policies to shared input, authoritative damage,
+saved pellet RNG and class-owned presentation. Contact events distinguish actors from
+world/destructible materials, drive clipped decals and cosmetic particles/lights, and
+select Ion flesh explosions separately from world spark sounds. Native save validation
+excludes transient events and retains RNG continuation. No legacy runtime was linked.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Integrated modules and domain policies | Passed after repair | `/tmp/dk3-runtime-232-final-build.log`: three modules, 55 runtime + 11 catalog tests. Repaired signed mark-fragment bounds at the public ABI. Includes burst/rotary transitions, pellet accounting and save RNG/transient-event behavior. |
+| Normal attacks and damage/death | Passed, limited | `runtime-zig-232/combat/`: normal fire input kills diagnostic ECS targets with Glock, Ion, Shotcycler, Ripgun and Slugger. Shotcycler capture inspected. Diagnostic targets/equipment; full weapon parity remains open. |
+| Flesh/material impacts and animation | Passed, limited | `runtime-zig-232/impacts/`: ordinary Ion shots hit authored worker 10 and choose explosion variants; floor hits choose electrical spark sounds. Shotcycler/Ripgun/Slugger project world decals; Ripgun loops and reaches spdn on release. Fire/settled captures inspected. Diagnostic placement/equipment; physical audio and complete reference comparison remain open. |
+| Initial OpenGL2 scenario | Passed, limited | `runtime-zig-232/impacts-opengl2/`: the same impact/animation assertions pass; settled Slugger capture inspected. |
+| Repeated-hit decal fringe | Failed visually; repaired | Initial captures show accumulated translucent borders becoming a square patch under repeated stationary fire. Cosmetic marks now coalesce nearby same-surface hits and rotate deterministically. `impacts-decals/` passes and its settled Ripgun frame shows separate holes without the accumulated square. |
+| Final OpenGL2 decal replay | Passed, limited | `runtime-zig-232/impacts-decals-opengl2/`: same impact/animation assertions pass; settled Ripgun frame inspected with the coalesced/rotated marks. `/tmp/dk3-runtime-232-decals-build.log` records the final renderer build. |
+| Applicable broad checks | Passed | `/tmp/dk3-runtime-232-final-suite.log`: 204 Zig + 44 Python tests after the visual repair. The earlier aggregate is retained as pre-repair evidence. |
+
+## runtime-zig — sequence 233 (projectile classes and sprite presentation)
+
+Implemented with the focused scenario results below. Pure class functions
+own flight/launch/contact rules and tagged extra state. Server projectile lifecycle,
+weapon damage and fire-intent resolution have separate owners. Sprite metadata drives
+rectangular, correctly anchored additive explosions. Class projectile sounds resolve
+on the client rather than mutating server resources during save restoration.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Integrated native build | Passed after repair | `/tmp/dk3-runtime-233-integrated-build.log`: three modules, 56 runtime + 12 catalog tests. Repaired a shadowed damage import and explicit attack-attribute narrowing. Tests cover water/acceleration state, step-independent Cordite damping, tagged projectile save state and rectangular sprite metadata. |
+| Initial fixture aim | Failed fixture; repaired | `runtime-zig-233/ballistics/`: forcing yaw zero faced a nearby wall and prevented target creation. Fixture retains the authored initial orientation for ranged attacks. |
+| Re-selecting diagnostic equipment | Failed fixture; repaired | `ballistics-aim/`: both projectile damage paths pass, but re-equipping an already-owned Bolter leaves the client's normal Sidewinder selection active. Fixture now also sends the normal weapon-selection command. |
+| Projectile damage and active saves | Passed, limited | `ballistics-selected/`: Bolter and Sidewinder kill diagnostic targets via ordinary attacks. Bolter embeds in the world and survives native save/load. Cordite resumes a saved fuse/bounce state and explodes at age 3000 ms after nine bounces. Bolter weapon capture inspected. Full water/actor/visual parity remains open. |
+| Final projectile/save replay | Passed, limited | `ballistics-opengl1/` and `ballistics-opengl2/`: normal fire, stuck-bolt save, grenade fuse save and detonation pass. `/tmp/dk3-runtime-233-final-build.log` verifies the client-owned audio integration and all 68 focused tests. Initial timed frames missed the brief explosions; capture now waits for their actual client impact event. Console pause requests were rejected by the engine and have been removed; the frames were captured live. |
+| Authored actor contact | Passed, limited | `grenade-contact/`: Cordite hits guard 166, applies blast damage and explodes at age 100 ms, before its fuse. Diagnostic placement/equipment and normal attack input. |
+| Shared projectile/impact regression | Passed, limited | `impacts/`: authored Ion flesh versus world sound selection, pellet decals and rotary animation still pass after the projectile lifecycle extraction. |
+| Explosion frames | Passed, limited | `explosions-opengl1/` and `explosions-opengl2/`: event-synchronized Sidewinder/Cordite frames inspected; additive explosion art/light render without an opaque background. The ineffective read-only pause requests were removed from the fixture. Exact Gold effect/trail parity remains open. |
+| Save-boundary diagnostic correction | Passed | `travel-boundaries/`: replay of the authored laser shutdown, e1m3b/e1m3a round trip and full visited-world save compares recorded save health at restoration, before live guard damage. No pause requests; incoming health 333/222/333 and the destroyed control survive. Final archive capture inspected. `/tmp/dk3-runtime-233-restore-log-build.log` records the diagnostic-only rebuild. |
+| Applicable broad checks | Passed | `/tmp/dk3-runtime-233-suite.log`: 206 Zig + 44 Python tests, once after integrated scenarios and fixture repair. |
+
+## runtime-zig — sequence 234 (timed melee and kill progression)
+
+Connected Silverclaw and Daikatana class-owned strike plans to persistent ECS actions,
+current-pose collision, directional damage and impact presentation. Actor death
+dispatch awards ordinary and sword experience exactly once. Saves retain action
+cursors, rebased strike/fire timestamps and the recorded killing weapon. The server
+restoration notice resumes the matching client attack animation without replaying
+the consumed damage window. Gold sword arcs and experience formulas were consulted
+as private behavior references; no reference implementation was imported.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Integrated modules and contracts | Passed | `/tmp/dk3-runtime-234-integrated-build.log`: three modules and 70 focused tests. Covers strike windows at sword levels, parry/backstab/immunities, class rewards and saved second-strike deadlines. |
+| Authored melee kills and saved rewards | Passed, limited | `runtime-zig-234/melee-opengl1/` and `melee-opengl2/`: normal Silverclaw attacks kill worker 10; normal sword arcs kill worker 9. Experience advances 0→5→10; sword experience advances 0→0→2. Repeated native restores and corpse contacts leave rewards unchanged. Diagnostic equipment and collision-checked close placement; full combat/reference parity remains open. |
+| First restored swing presentation | Failed visually; repaired | The second strike resumes at age 650 ms without replaying the first, but the initial capture shows the ready/draw pose. Saved fire timestamps and the restoration notice now resume the attack pose at its elapsed time. |
+| Restored attack and remaining strike | Passed, limited | `restored-view-opengl1/` and `restored-view-opengl2/`: both ordinary-kill/reward checks repeat; native save between the generated atakb strikes resumes strike 1 only and the atakb pose. Final captures inspected. `/tmp/dk3-runtime-234-restored-view-build.log`: all modules and 70 focused tests pass. |
+| Applicable broad checks | Passed | `/tmp/dk3-runtime-234-suite.log`: 208 Zig + 44 Python checks after the restored-view repair. Full arc/defense/audio acceptance, multiplayer rewards, remaining 17 combat policies and campaign completion stay open. |
+
+## runtime-zig — sequence 235 (status weapons and delayed releases)
+
+Gas Hands, Venomous and Kineticore now own concrete combat rules. Shared persistent
+ailments schedule poison and freeze damage, preserve source credit, decay with
+simulation time, and reset on cure/death/travel. Projectile animation callbacks use
+saved delayed-release actions. Venomous alternates supplied muzzle offsets, chooses
+body-traced bites, bounces/settles poison pools and dissolves in water. Kineticore
+ages damage, ricochets, allows self-contact after a bounce and recovers speed with
+bounded work even after a large clock gap. Sprite projectiles and frost/status
+overlays belong to client presentation. Gold callbacks, poison/freeze formulas and
+flight rules were consulted privately; no implementation or assets were imported.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Integrated build and contracts | Passed after repair | `/tmp/dk3-runtime-235-integrated-build.log` exposed an i64/i32 client trajectory boundary; fixed. `/tmp/dk3-runtime-235-final-build.log`: three modules and 72 focused tests pass. Tests cover nonstacking poison, cure, frame-independent freeze decay, rebased effects/releases, class muzzle offsets, aging damage and bounded speed recovery. |
+| First poison fixture | Failed fixture; repaired | `runtime-zig-235/status-first/`: aiming down makes the body trace hit the floor, selecting a thrown shot (30 damage), so five poison ticks cannot kill a 50-health worker. The bite fixture now aims horizontally. |
+| Bite, poison and freezing | Passed, limited | `status-bite/`: normal Gas Hands kills worker 383; a 200 ms Venomous bite poisons worker 384, whose timed damage survives save/load and awards the kill. Kineticore freezes guard 166 and the effect survives a native save. Diagnostic equipment and collision-checked placement. |
+| Saved delayed launch | Passed after fixture repair | The final part of `status-bite/` fired during weapon switching and never attacked. `status-launch/` waits through selection/raise and fires from the guarded corridor; the saved delayed Venomous shot releases after restoration and damages the guard. |
+| Settled pool persistence and contact | Passed, limited | `status-pool/`: poison settles, survives native save/load, and poisons its owner after diagnostic placement into the restored bounds. Gas/bite/freeze checks also pass. Frost/flight/player-overlay captures inspected. Pool appearance remains unverified where geometry occludes the capture. |
+| Second renderer and diagnostic timing | Passed after fixture repair | `status-pool-opengl2/` read an actor diagnostic before its server frame printed it. `status-synchronized-opengl2/` waits for each requested diagnostic; all damage/status/save/pool-contact assertions pass. Frozen guard and pool captures inspected; the latter is still occluded. |
+| Shared projectile regression | Passed, limited | `ballistics-regression/`: ordinary Bolter/Sidewinder damage, stuck-bolt restoration, and Cordite bouncing/fuse/save/explosion pass after the shared flight/contact changes. |
+| Applicable broad checks | Passed | `/tmp/dk3-runtime-235-suite.log`: 210 Zig + 44 Python checks. Fourteen combat policies remain to connect; full water/trail/audio/art parity and campaign completion stay open. |
+
+## runtime-zig — sequence 236 (C4 charges and Hammer quakes)
+
+C4 and Hammer use dedicated server controllers consuming pure weapon-class rules.
+Shared radius geometry, slot lifetimes and the existing mover attachment mechanism
+keep collision/storage separate from weapon policy. Native components 36/37 retain
+charge clocks, remote/chain schedules, pending strikes and quakes. Snapshot admission
+and time rebasing cover those states. Gold C4/hammer, radius damage, charge animations
+and scale-image behavior were consulted privately; no implementation/assets imported.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Integrated modules/contracts | Passed after repair | `/tmp/dk3-runtime-236-build.log`: corrected signed/unsigned collision-slot boundary. `/tmp/dk3-runtime-236-integrated-build.log`: three modules and 74 focused tests. Pure tests cover arming/scheduling and charge/quake formulas; snapshot round trip covers attached charges, delayed detonations/strikes and active quakes. |
+| First connected run | Passed, limited | `runtime-zig-236/area-first/`: C4 proximity kill, saved attachment, remote reselect and shooting detonation; Hammer partial strike/save, grounded full quake and quake/save. Captures inspected. Gold review then corrected direct trace hull from player bounds to the controller's ±1 bounds and radius centers to actor origins. |
+| Chain setup | Failed fixture; repaired | `area-chain-opengl2/` detonates both charges by proximity before the planned shot. `area-chain-safe-opengl2/` exposes the placement helper falling back to 64 units. The helper now accepts an explicit minimum radius; C4 fixtures require at least 160 units. No gameplay proximity suppression added. |
+| Chain and quake visibility | Passed after fixture repair | `area-distance-opengl2/` verifies direct C4 contact, two saved charges and shot-triggered amplified, linked explosions. Its final expectation incorrectly required Hammer to kill a worker protected by geometry; the visible guard dies and the injured worker remains alive. `area-follow-opengl2/` confirms repositioning to the same point does not change that obstruction. |
+| Both renderers | Passed, limited | `area-visibility-opengl1/` and `area-visibility-opengl2/`: direct C4 kill, saved attachment/remote button, shot detonation, saved two-charge chain; saved partial Hammer strike, grounded full quake, visible guard kill, occluded worker protection and quake restoration. Normal attack/selection commands, diagnostic equipment/standing positions. |
+| Mover attachment | Passed, limited | `attached-charge-first/`, e1m3a: C4 attaches to authored bigplat (parent 3), follows its ascent from z=-888.38 through -798.36, and resumes its attachment after save/load at -753.35. Remote detonation succeeds. Diagnostic placement and lift activation. |
+| Ring presentation | Implemented; appearance unverified | Reviewed Gold scale-image settings and changed the client to normal alpha, white modulation, 0.2→60 scale, controller-relative height and fixed 0.4 opacity. `/tmp/dk3-runtime-236-visual-build.log` passes. `area-gold-rings-opengl1/` and `area-early-ring-opengl1/` pass gameplay/save assertions; inspected frames demonstrate charge/release/jump but do not establish the rings’ complete expansion or visibility. |
+| Applicable broad checks | Passed after test repair | `/tmp/dk3-runtime-236-suite.log`: 212 Zig + 44 Python checks. Review added checked lifetime subtraction and malformed-charge coverage. `/tmp/dk3-runtime-236-final-suite.log` exposed the test expecting decode to reject a number already rejected at capture; corrected the expectation and added a bounded but overlong lifetime case. `/tmp/dk3-runtime-236-validated-suite.log`: 212 Zig + 44 Python checks pass. Full deployment-limit/fuse/liquid/material behavior, complete quake/impact art/audio, multiplayer and campaign acceptance remain open. |
+
+## runtime-zig — sequence 237 (Shockwave flight and expanding bands)
+
+Shockwave uses class-owned release, flight, damage-band and presentation rules with
+a dedicated server controller. Native saves retain the delayed shot, wet/ricochet
+orb state and active bands with their consumed radii. Restoring rebases absolute
+clocks while preserving relative flight timers. Snapshot projections carry band
+offsets to client-owned rotating ring sprites and camera shake. Gold flight,
+elasticity, wave damage and sprite behavior were reviewed privately.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Integrated modules/contracts | Passed after repair | `/tmp/dk3-runtime-237-integrated-build.log` found stale imports shadowing class state names; removed. `/tmp/dk3-runtime-237-connected-build.log`: three modules and 75 focused tests pass. Tests cover six bands, water arming, damage attenuation and saved release/orb/band clocks. |
+| First connected run | Passed, limited | `runtime-zig-237/shockwave-first/`: normal fire after diagnostic equipment/placement, saved delayed shot kills authored worker 383; band identity/radii survive save/load, six rings expand and expire. A second saved orb ricochets six times before exploding. |
+| Second renderer | Passed, limited | `shockwave-opengl2/`: repeats all combat/save assertions, including an observed in-flight orb save. Both renderer captures inspected; translucent blue rings are visible without opaque backgrounds. Full trails, muzzle timing, liquid interaction, quake motion and audio parity remain unverified. |
+| Applicable broad checks | Passed | `/tmp/dk3-runtime-237-suite.log`: 213 Zig + 44 Python checks pass. Seventeen combat policies are connected. The bounded 60-second orb cleanup is an independent runtime limit, not verified Gold flight behavior. Eleven combat policies and the broader accepted roadmap remain open. |
+
+## runtime-zig — sequence 238 (linked tips and actor transport)
+
+Implemented; verification continues alongside the remaining weapon controllers.
+Trident group links and Ballista victim references use persistent IDs, with native
+save validation and relative clocks. Weapon classes own spread/reversal, water and
+charge scaling, torso/plane tests and mass-dependent hold time. Shared mechanisms
+own engine slots, collision and area impulses. Gold was consulted privately.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Integrated build/contracts | Passed after repair | `/tmp/dk3-runtime-238-connected-build.log` and `integrated-build.log` exposed an unused local, a shadowed helper and signed collision slot inference. `/tmp/dk3-runtime-238-save-build.log`: all three modules and 77 focused tests pass. Class tests and native round trips cover group links, victim ownership and relative deadlines. |
+| Close Trident impacts | Passed, limited | `runtime-zig-238/linked-first/`, `linked-flat/`, `linked-torso/` and `linked-lanes/`: ordinary attacks spend three rounds and kill worker 383 with separate 30-base-damage tips. Diagnostic equipment/placement. |
+| Ballista saved victim | Passed after fixture repair | First shot from an elevated south position reaches geometry immediately after restore. Flat eastern aim hits outside the torso. `linked-torso/` uses a normal torso aim from the east: saved delayed launch, active victim bytes in the native save, restored reference, wall pinning, 1-point ticks and final release/explosion. Worker 384 has diagnostic health 500 to survive the observed action. Capture inspected. |
+| Trident saved merge | Failed fixture; open | Oversized diagnostic clearance bounds begin in scenery (`linked-torso/`). After switching to a centerline measurement, `linked-lanes/` finds 935 units, but outer tips hit nearby walls before merging. The saved three-tip group restores; a suitable authored merge lane still needs verification. |
+| Media and broader verification | Unrun | Shockwave's trail binding was corrected from Gold's global path to the supplied e1 path. Trident merge/water/partial ammo, Ballista water/oblique walls, complete art/audio, second renderer, actor-motion regression and refreshed aggregate suite remain open. No still-valid broad suite was duplicated as a per-item gate. |
+
+## runtime-zig — sequence 239 (continuous beams and personal actions)
+
+Novabeam and flashlight use class-owned timing, damage/battery and visual rules.
+Components 39/40 preserve controller identity and relative clocks. Shared effect
+projection and camera-facing beam geometry remain mechanical adapters. Personal
+melee, delayed releases, pending Hammer, Nova and light controllers are cancelled
+on player arrival/disconnect. Gold behavior and internal flashlight defaults were
+consulted privately; no private implementation/assets imported.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Integrated modules/contracts | Passed | `/tmp/dk3-runtime-239-beams-build.log`: three modules and 79 focused checks pass, including diminishing discharge, battery thresholds and restored controller clocks. |
+| Beam and light persistence | Passed, limited | `runtime-zig-239/beams-first/`: ordinary attacks after diagnostic equipment/placement; saved pending/active Nova restores its identity and remaining damage, kills worker 383, closes and expires. Held flashlight spends battery, restores active state and expires after release. |
+| Rendered presentation | Passed, limited | Active restored Nova and flashlight on/off captures inspected: orange beam, transparent muzzle/end flare and changed surface illumination are visible. Full material/audio parity and second renderer remain open. |
+| Broader integration | Unrun | Arrival/disconnect cancellation, multiplayer and refreshed aggregate checks remain pending the connected weapon batch. Twenty-one combat policies are connected; seven remain. |
+
+## runtime-zig — sequence 240 (returning Discus and burning fields)
+
+Discus/Sunflare state belongs to the class-owned ballistic union; server controllers
+consume it through collision, inventory and effect mechanisms. Save admission and
+round trips cover target IDs, dropped/return state, flame phases, random state and
+relative clocks. Gold's midpoint animation callback, return/catch rules, flame damage,
+buoyancy and sprite blending were reviewed privately.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Integrated modules/contracts | Passed after repair | Initial builds exposed a comptime float division and collision-slot signedness/statement boundaries. `/tmp/dk3-runtime-240-visual-build.log`: three modules, 81 focused checks pass. Pure checks cover steering/drop/melee, flame damage and buoyancy equilibrium; native round trips cover return/active fire. |
+| Returning weapon and fire | Passed, limited | `runtime-zig-240/returning-first/`: normal attacks, saved melee/release/flight, worker melee kill, authored guard hit and catch, saved Sunflare release/active field, worker kill, cooling and expiry. Diagnostic equipment, placement and guard health 35. |
+| Rendered fire repair | Gameplay replay passed; appearance still open | Inspected active-fire frame shows rectangular sprite boundaries. Gold `SPR_ALPHACHANNEL` means SRC_ALPHA/ONE; changed both flame and glow to that binding. `/tmp/dk3-runtime-240-additive-build.log` passes. `returning-additive-opengl2/` passes combat/save assertions, but its inspected frame still has bright effect boundaries. Flight capture precedes the visible disc and does not qualify its full appearance. |
+| Remaining integration | Unrun | Discus water/drop/other-player catches, Sunflare liquid motion, complete smoke/trail/audio, shared launch and travel regressions, multiplayer and refreshed aggregate suite. Twenty-three combat policies are connected; five remain. Airborne cleanup is independently bounded at 60 seconds. |
+
+## runtime-zig — sequence 241 (growing meteors and fragments)
+
+Stavros uses the reviewed meteor model, displaced initial spawn, growth/acceleration,
+spin, primary explosion and 4–6 single-player fragments. Fragments retain separate
+scale, gravity, first bounce and second-contact explosion. Gold main-blast owner
+exclusion, fragment damage/radius and finite lifetimes were reviewed privately.
+Native snapshots retain growth, RNG and fragment state; client projections retain
+launch origins for the portal and scale for meteor/glow effects.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Integrated build | Passed | `/tmp/dk3-runtime-241-meteor-build.log` and `probe-build.log`: three modules compile. The latter adds read-only meteor diagnostics. |
+| Meteor and fragment persistence | Passed, limited | `runtime-zig-241/meteors-first/`: saved growing primary, blast with six fragments, saved/restored live fragments, authored worker 383 kill, fragment second-contact explosions and expiry. Diagnostic equipment and collision-checked placement. Captures show the correct meteor model and fragment models. Full smoke/portal/light/audio parity remains open. |
+| Sunflare appearance diagnosis | Open | Same run captures near/distant burning fields. Source PNGs retain alpha, renderer image diagnostics show RGBA images at expected dimensions and explicit shaders. Additive correction alone does not eliminate bright effect boundaries. Distant capture shows individual flames; close-range presentation needs further repair/comparison. |
+| Shared travel regression | Passed, limited | `travel-regression/`: the existing native campaign departure/revisit/full-save scenario passes after personal-action cancellation and carried-victim changes. It does not qualify every active-weapon travel permutation. |
+| Applicable broad checks | Passed | `/tmp/dk3-runtime-241-suite.log`: 220 Zig + 44 Python checks. Growth acceleration, multiplayer fragment suppression, main/fragment native round trips included. Four combat controllers remain; full actor, campaign, UI, compatibility and multiplayer scope stays open. |
+
+## runtime-zig — sequence 242 (Zeus chain lifecycle)
+
+Zeus delayed strike, branch/zap/fade, ammo charge, closing phase and native snapshots
+are connected. Gold was reviewed privately for behavior; implementation is independent.
+The native nearest-two branch selection corrects Gold's nearest/previous-minimum
+selection, and horizontal cone comparison avoids its signed-angle asymmetry.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Modules and contracts | Passed | `/tmp/dk3-runtime-242-contract-build.log`: three modules, 83 focused checks. |
+| Zeus lifecycle | Passed, limited | `runtime-zig-242/zeus-first/`: pending/active saves, two workers killed, one ammo charge, closure, free single-player miss. Diagnostic placement/equipment. Blue bolt/flare capture inspected; full presentation, water and multiplayer open. |
+| Identity | Recorded | `runtime-zig-242/identity.json`, also summarized in the current acceptance matrix. |
+
+## runtime-zig — sequence 243 (Wyndrax, Nightmare and Metamaser)
+
+The three controllers finish class dispatch coverage (28 policies); they do not close
+all weapon interactions. Typed state and references, snapshots, concrete server
+controllers and client projections are connected. No legacy gameplay backend is used.
+Private Gold review covered acquisition, motion, timing, body control and destruction.
+Intentional bounded corrections: Nightmare marks at most ten targets and does not
+steal an already controlled body; Metamaser relative attack/sound clocks avoid Gold's
+double addition of absolute time, charges cannot underflow, and rings retain their
+origin after the parent disappears rather than referencing a removed cube.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Integrated modules/contracts | Passed | `/tmp/dk3-runtime-243-integrated-build.log`: three modules, 86 focused checks. Snapshot round trips include Wisp links, frozen Nightmare victim and Meta rings/lasers. |
+| First controller scenario | Failed; superseded | `controllers-first/` failed the two-target setup assertion. Nightmare traced visibility from feet; reference traces both endpoints with observer view offset. Local eye-height correction made. Failure was retained and never counted as success. |
+| Corrected targeting run | Invalid setup; superseded | `controllers-sight/` passed the Nightmare portion then stopped at a mistaken six-charge Metamaser assertion. Supplied data gives 30. Only the diagnostic expectation changed. |
+| Consolidated controller replay | Passed, limited | `controllers-integrated/`: saved Wisp target links/damage/fading; saved Nightmare casting/reaping, both workers killed and control released; saved Metamaser arming/tracking/destruction and expiry. Identity `821eb42549316cb8e2dfb45134911c56ed76b372ecaa118127f815eb4b21302f`. Diagnostic equipment/placement/health, no campaign acceptance. Reaper and cube captures inspected. |
+| Aggregate checks | Passed after formatting repair | `/tmp/dk3-runtime-243-aggregate.log`: 224 Zig and 47 Python checks pass; initial formatting failure corrected and `zig fmt --check build.zig build.zig.zon build src` passes. Assertions enabled; all named test roots explicitly executed. |
+| Remaining interactions/presentation | Open | Wisp environmental arcs/trail; Nightmare marked-actor/pain/blood effects; full cube presentation/target overlap, water/multiplayer and reference playback comparison. Shared body/input ownership and pitched-muzzle regressions remain tracked. |
+
+The new driver requires actual connection, input processing, readiness, fire event,
+save completion and client-applied restoration. Ordinary-input mode rejects fixture
+commands. Every new probe records exact executable, modules and asset hashes.
+Full intro and connected opening campaign remain unrun; the complete port remains
+the outcome, with current state in `docs/native-acceptance.md`.
+
+Venom/status regression: `runtime-zig-243/status-regression/` fails because a
+restored shot strikes the guard between fixed projectile observations. The saved
+launch now must contain an actual pending release and the driver waits for restored
+flight or confirmed Venom flesh contact. `status-events/` passes Gas Hands kill,
+Venom bite/poison death, pending release restoration, saved pool owner-contact and
+Kineticore freeze/restoration. This is a repaired driver, with no gameplay adjustment.
+
+## runtime-zig — sequence 244 (native authored intro execution)
+
+Implemented supplied cinematic parsing, cameras, actor queues, animation, movement,
+local sound, freeze/release and typed save state. New Game now requests the authored
+intro. Private review established model selection, queue identity fallback and missing
+animation behavior; no private implementation was imported. Diagnostic runners disable
+cinematics explicitly; the ordinary-input runner enables them and clicks Normal in UI.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| First fresh intro | Failed | `runtime-zig-244/intro-first/`: reaches shot 29, then missing Osaka actor due to authored `oka1`/`osa1` IDs. Reference queues fall back to class; spawn/remove remain exact. Regression distinguishes these lookups. |
+| Lookup replay from New Game | Failed | `intro-queue-lookup/`: passes Osaka case, stops at Usagi's unavailable `amba` cue near shot 34. Reference skips unavailable animation requests; native executor corrected accordingly. Legitimate shot-20 checkpoint retained. |
+| Presentation | Partially inspected | Intro shot 20 shows Toshiro/Hiro staging and supplied models. Full reference playback, sound restoration and remaining cinematic task families remain open. |
+| Scope | Implemented, incomplete | Opening programs contain supported tasks. Other program task families still produce explicit unsupported errors. No full campaign acceptance. |
+
+## runtime-zig — sequence 245 (opening actors and cinematic handoff)
+
+Protopod hatching and Slaughterskeet flight/melee/retreat consume class-owned policy,
+supplied tuning/events and converted authored air nodes. Froginator ground decisions,
+melee/spit/jumps and a separate poison-spit controller are connected; no player weapon
+substitute. Actor and projectile saves retain state/deadlines. These actors still need
+native interaction and connected encounter verification; death/pain presentation and
+other opening classes/scripts remain open.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Intro development checkpoint | Failed | `runtime-zig-245/intro-checkpoint/`: restored legitimate shot 20 from earlier build, passed both cue fixes and all remaining intro shots, fired authored exit. Observation command during reconnect raised `MissingPlayer`, crashing new server before arrival. This is a diagnostic endpoint defect; not campaign acceptance. |
+| Handoff correction | Implemented; replay pending | Missing player returns explicit connecting response; driver waits for ClientBegin before observing again. No gameplay rules modified. |
+| Integrated cinematic/pod/skeet build | Passed | `/tmp/dk3-runtime-245-cue-build.log`: three native modules and 90 focused checks. Probe identity is in `intro-checkpoint/identity.json`; it is superseded for acceptance by subsequent actor/handoff edits. |
+| Froginator integration | Implemented; verification pending | Supplied primary/secondary weapon data, both bite strike frames, normal/hard ranged restriction, per-class jump and poison contract. Frogs and spit snapshots added; build/engine replay in progress. |
+
+Fresh New Game through authored e1m2a remains unrun. The complete four-episode and
+multiplayer port remains open. Shared actor/component changes require affected actor,
+status/body-control and save regressions at the integration checkpoint. Earlier
+weapon results retain their narrow historical scope, not acceptance on this build.
+
+Sequence 245 handoff replay passes its limited scope in
+`runtime-zig-245/handoff-replay/`, identity
+`254909c3925ff64a9907a99c33053fe7021153677a8b4ec80004208bda34de48`.
+From the legitimate earlier-build shot-80 save, the remaining intro, authored exit,
+all seven arrival shots, normal control with health 100/Disruptor and arrival save/load
+complete. Restored arrival frame inspected. Not a fresh New Game result, and no combat
+or map traversal acceptance. `/tmp/dk3-runtime-245-opening-connected-build.log` records
+three native modules and 91 focused checks; four input-driver checks pass. The earlier
+`frogs-build.log` was accidentally shared by overlapping builds; it is not a coherent
+build record and is superseded by `opening-connected-build.log`.
+
+## runtime-zig — sequence 246 (authored actor actions and opening resupply)
+
+Implemented action program parsing/execution, unique actor IDs, spawn, ignore/aggressive
+states, supplied path following, messages, animation, facing and use. Actor paths and
+script execution are persistent. Script triggers keep their authored use-only/multiple
+flags. Private reference review establishes path arrival tolerances, random target
+selection, one-time pathtarget dispatch and absent script/animation no-ops. Other
+unsupported action types are explicit errors, not replacements. Full scripts, spawned
+bridge encounter, workers and saved execution remain unverified.
+
+Health trees were found missing while preparing the ordinary resupply route. Their
+reference single-player fruit is finite even when map epairs request recharge; only
+max_fruit is read, with ten health per fruit and a one-second use cooldown. This is a
+concrete opening integration blocker, not a reason to reduce damage for the driver.
+Ambient fireflies are separate presentation work; Cambot, Thunderskeet, Crox and Rockgat
+remain missing actor behavior. Normal-input route development uses the legitimate
+arrival save and must not be described as fresh full-route acceptance.
+
+Sequence 246 consolidated build: `/tmp/dk3-runtime-246-consolidated-build.log`
+passes all three modules and 94 focused checks, including script cursors, tree fruit/
+cooldown and spit rebasing. Ordinary route driver observes actual pickup/weapon readiness,
+processed movement, attacks and target health changes; lack of contact or movement
+invalidates the attempt. `runtime-zig-246/fresh-opening/` is the active fresh New Game
+run on this build. No route acceptance is claimed while it is running.
+
+Sequence 246 aggregate: `/tmp/dk3-runtime-246-aggregate.log` passes 232 Zig and
+48 Python checks plus formatting. Assertions remain enabled; named actor/item/weapon
+roots execute. This is supporting verification, not campaign acceptance.
+
+
+## runtime-zig — sequence 247 (bridge actors, authored factories and first encounter)
+
+Independent reference review: Thunderskeet chase/attack/hover tasks, four spray windows
+at frames 27/28/31/32, speed 128–192, quadratic 40/256 blast and half owner damage;
+factory epair/muniqueid/flag inheritance, single-use removal, deathtarget and spawnname.
+Implemented class policy and separately saved sprite controller. The reference's
+out-of-bounds spray cycle is bounded at twelve. Full flight inertia, pain/gibs and
+presentation remain unqualified; spray radius visibility uses engine solid tracing.
+Unknown monster death spawnname remains an explicit unsupported case. No private code
+or assets imported. Frog leading was extracted without changing its reviewed contract.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Fresh intro/arrival | Passed narrow prefix, route failed | Sequence 246 `fresh-opening/`: all intro/arrival shots, normal starting inventory, save/load, ordinary Ion pickup; driver then walked into rock. Not complete opening acceptance. |
+| Ground-route retry | Failed driver setup | `runtime-zig-247/opening-ground-route/`: moving through slow diagnostic/angle acknowledgements caused waypoint circles. No physics/geometry changes. |
+| Steering correction | Passed first combat, failed rock step | `opening-steering/`: Slaughterskeet killed with ordinary Ion shots; route needed a normal jump up the rock ledge. |
+| First encounter checkpoint | Passed narrow connected segment | `opening-jump/`, identity `b1a868d39f0d0e0c2242551e7b8deef800dc5a1691679b5a524640a5f741cf88`: legitimate prior arrival save, Ion pickup, actual fire/contact/kill, jump, first marsh checkpoint with health 100. Not a fresh playthrough or full map. |
+| Bridge scripts | Passed focused setup/restoration | `bridge-first/` same build/asset identity: exactly ten script-spawned skeets, one single-use Thunderskeet, path and ignore/aggressive states; save then fresh map and load preserves all eleven. Diagnostic activation/health excludes campaign acceptance. Death outputs and combat still unverified. |
+| Integrated build/contracts | Passed | `/tmp/dk3-runtime-247-bridge-rebuild.log`: three modules, 96 focused checks with assertions. Initial compile found a const admission caller; fixed before this coherent build. Aggregate pending batch checkpoint. |
+
+Save admission now loads dynamically spawned class animation metadata. Actor death
+uses authored deathtarget and item spawnname, not the unrelated navigation target.
+Affected prior actor, body-control, weapon and save scenarios need revalidation.
+Cambot/Crox/Rockgat, additional map traversal, tree interaction, water and connected
+persistence remain opening blockers. All later campaign, companion, MP and release
+requirements remain in scope. See `docs/native-acceptance.md` for the current matrix.
+
+## runtime-zig — sequence 248 (directional trigger bounds regression)
+
+Ordinary route development exposed a product defect: e1m1a transitioned to e1m1b
+near (410,-1750,488), far from the exit's authored x=-608..-592/y=-1480..-1288.
+The driver initially continued using old-map waypoints; it now rejects unexpected
+map changes during navigation/combat. This failed route is not map-traversal evidence.
+It did record a normal Ion kill of the first Froginator before the erroneous exit.
+
+Private behavioral review of trigger initialization and server linking established
+that trigger angles do not rotate their touch hull. ioquake's bmodel linking expanded
+the angled exit into a large sphere-derived box. Native projection now preserves the
+authored Transform but sends zero collision angles for trigger classes, on spawn,
+restoration and attached-brush publication. Solid rotating brushes keep their angles.
+No authored geometry, puzzle rule, damage or enemy behavior changed.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Defective-build regression | Failed as expected | `runtime-zig-248/trigger-before/`: exact remote point changed level. The regression detects the product defect. |
+| Corrected bounds and restoration | Passed focused regression | `trigger-after/`, identity `02a5fcdaf9752fbcfe8a91801ced0639e35ab6b07ab6d1ca986a3f664fba172c`: remote point remains e1m1a before/after save-load, actual exit interior reaches e1m1b. Diagnostic placement only. |
+| Consolidated checks | Passed | `/tmp/dk3-runtime-248-consolidated.log`: all three modules, 235 Zig + 48 Python checks and formatting, assertions enabled. Rotation preservation also has a focused contract. |
+| Normal marsh route after correction | In progress | `runtime-zig-248/marsh-trigger-fixed/`: legitimate sequence-247 checkpoint, no modified save or granted inventory. Not a fresh route. |
+
+Earlier angled-trigger travel/interaction scenarios require revalidation; the old
+241 travel result is now historical, not acceptance on this build. Full New Game
+through e1m2a must still be replayed after consolidation. Bridge script diagnostics
+remain narrow; live Thunderskeet combat/death outputs, tree use, missing Cambot/Crox/
+Rockgat and the rest of the accepted campaign/multiplayer port remain open.
+
+## runtime-zig — sequence 249 (Cambot acquisition and observed resupply)
+
+Connected Cambot class-owned acquisition, alarm, hovering pursuit/backaway/dodge,
+saved alert state and model-tag lamp. Supplied sight overrides now feed opening
+actor perception. Reviewed private contracts only; no source or assets imported.
+Alarm recipients use narrower PVS rather than PHS; dodge uses crosshair contact
+pending native auto-aim. Search cone, vertical avoidance, post-death wandering,
+flight/pain/gib and full presentation parity remain open.
+
+`runtime-zig-249/opening-actors-first/` detected patrol scheduling that kept moving
+sensing into the future. Corrected scheduler passes acquisition and alarm restoration.
+`opening-actors-sensing/` then exposed the driver's unsupported +use command;
+`opening-actors-use/` exposed an invalid final-health assumption under enemy fire.
+`opening-actors-heal/` passes camera and four observed ten-health fruit uses, including
+partial/empty save restoration. Identity
+`7398a5842fa26b90bf0c52012167b8a910824c5c2037d003648d759f39a11496`
+records exact executable/modules/assets. Placement/damage fixture excludes campaign
+acceptance. Rendered restored lamp and empty tree inspected. Three modules and 98
+focused contracts pass; aggregate checkpoint pending the connected actor batch.
+
+Normal marsh attempts are incomplete. The fixed trigger allowed sequence 248 to
+reach a real middle checkpoint, then a missed frog shot invalidated combat. Sequence
+249 observations distinguish actual line of sight, body aim point, velocity and class
+phase; complete diagnostic batches are recorded. Two more misses identified a moving
+frog and vertically rising hatch pose, so the driver waits for an actual attack pause
+or keeps approaching. No gameplay tuning changed to accommodate these failures.
+Old checkpoint saves lack newly admitted actors and cannot establish fresh acceptance.
+
+## runtime-zig — sequence 250 (Crox and Rockgat opening actors)
+
+Crox connects all four supplied attack poses and event frames, weapon range/damage,
+water samples at feet/origin/top, animation-boundary walk/swim transition, height
+band disengagement, supplied-node wandering and saved state. `crox-first/` observes
+water level 3, swimming displacement after load, and a pending dry melee pose restored
+before contact (31.41 damage). Identity `aa848b46b7bf8eb7aa8168e68b37ca9c59359752c7c5bf2eb8c2b1081374ff63`.
+Full amphibious steering/avoidance, transition permutations, floor orientation and
+pain/gib presentation remain unqualified. No reference runtime/source imported.
+
+Rockgat uses class defaults and epair overrides rather than unused AI table weapons.
+Reviewed contracts include 0..10 popup frames, one-second initial firing delay,
+0.13 plus random 0..0.03-second firing interval, six-shot chains, asymmetric pitch
+admission, slot-order targets and the extra deduction in its own pain callback.
+Native snapshot preserves live chains and all deadlines. Muzzle uses supplied
+hr_muzzle/model. Removal follows lethal damage; death explosion/gibs and bullet
+tracers/sparks remain missing presentation. Integer health rounding is not full
+reference fractional-damage parity.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Crox contact/swim/save | Passed focused | `runtime-zig-250/crox-first/`; diagnostic placement/health. Consolidated replay also passes in `crox-consolidated/`, identity `282dd04dbfffddac553b953267f7575711f125a62d3f9d0e9c98237b4df08cd1`. |
+| Rockgat popup/contact/restoration | Passed focused | `rockgat-first/`; development build identity `eb52b82e4153a236ecee0535ceafd915d42f456cb597b58c7d7320af7f7f60c3`. |
+| Rockgat burst and lethal contact restoration | Passed focused | `rockgat-contact/`, coherent identity `282dd04dbfffddac553b953267f7575711f125a62d3f9d0e9c98237b4df08cd1`; actual pending controller required, ten Ion contacts remove 500 health through class pain accounting, save/load does not recreate turret. Diagnostic equipment/health/placement. |
+| Ordinary marsh progression | Failed after new checkpoint | `marsh-middle/` starts from legitimate old checkpoint 8, kills frog 204 and several skeets, reaches checkpoint 17, then misses overhead skeet 395 near final climb. Health 49 at stop. No repeated shots or death loop, no full traversal acceptance. |
+| Coherent aggregate | Passed | `/tmp/dk3-runtime-250-aggregate.log`: 239 Zig + 49 Python checks, all three modules and formatting. Assertions enabled. |
+
+Pitch driver failures (-90 rejected, -89 clamped) were corrected to actual 16000-unit
+movement bound and covered by a meaningful acknowledgement regression. Actor samples
+include phase, actual sight, velocity, grounded state and complete record boundary.
+The campaign gap remains the whole coherent New Game→e1m2a gate; diagnostics and old
+checkpoint development do not close it. Full campaign/multiplayer scope remains.
+
+
+## runtime-zig — sequence 251 (Ion convergence and ordinary bridge approach)
+
+The failed ordinary `marsh-exit/` trace established the close Ion defect: crosshair
+contact was skeet 393, but the muzzle-to-hit dot product was negative. The generic
+forward-only guard sent the bolt past it. Private projectile-launch contract review
+established direct normalized convergence even for this close contact. Ion now owns
+that direction policy; other weapons keep their existing behavior. Captured geometry
+is a contract regression. Existing muzzle clearance remains a separate compatibility
+behavior; this repair does not certify auto-aim or all launch/weapon interactions.
+
+| Scenario | State | Evidence / limits |
+|---|---|---|
+| Defective close Ion contact | Failed product case | `runtime-zig-251/marsh-exit/`, identity `c2ccfe4604cdfe9313d144848741a16570b4bae2d28abac4131ba7a14f86627e`: crosshair names 393, forward-only first-flight trace misses, actual shot leaves target at 50 health. |
+| Repaired close contact and authored exit | Passed narrow connected segment | `marsh-ion-fixed/`, identity `fcec9367951d0aa5a7619003e8d32df28de584fc759a4ab3f05bce633eff376f`: two confirmed hits kill 393; normal touch reaches e1m1b, bridge arrival saved. Legitimate earlier-build marsh checkpoint, not fresh campaign. |
+| First bridge turret control | Passed narrow connected subcase | `bridge-control/` and later `bridge-fire-window/`: four distant ordinary Ion contacts break control 91 and remove turret 92. Latest identity `35d1e516f54aca675bf7230a64f4364c23dfd6f513ea43405ebc1322d3f1e260` includes complete modules/assets manifest. Overall route fails later. |
+| Bridge health pickup | Passed narrow pickup, route failed | `bridge-resupply/` records normal item 256 health gain and a legitimate river checkpoint; driver then waited for stillness in a water current. Later `bridge-ford/` stops after Crox contact at low health. |
+| East resupply route | Failed setup | `bridge-resupply-priority/`: tree 139 remains at three fruit; lower approach is occluded by a ledge. No healing inferred from `use`. |
+| Integrated checks | Passed before final observation/driver refinements | `/tmp/dk3-runtime-251-aggregate.log`: 240 Zig + 50 Python, formatting, three modules. `/tmp/dk3-runtime-251-attack-observation.log`: subsequent three-module build passes; `/tmp/dk3-runtime-251-input-tests.log`: eight focused driver checks pass. |
+
+The driver now waits for physical horizontal stopping after release, except observed
+submerged currents. A safer final waypoint prevents losing an aim command during
+exit reconnection. Actor diagnostics expose actual remaining attack time; expiring
+pauses are not valid firing windows. Ordinary held automatic fire across such a pause
+is implemented but not yet replayed. Low-health encounters defer toward authored
+resupply; no damage, geometry or enemy rules changed to help the driver.
+
+Fresh New Game through e1m2a remains unrun on one consolidated build. Old saves lack
+later-admitted actors. River combat, bridge destruction/combat/death outputs, e1m1c,
+connected death/reload and visited-world persistence remain open, along with the whole
+remaining campaign/multiplayer/release scope. Current compact matrix is
+`docs/native-acceptance.md`; the historical journal is not aggregate acceptance.
+
+
+## runtime-zig — sequence 252 (river resupply and connected bridge activation)
+
+A connected river run found tree 110 displaced from (-2032,-432,496) to roughly
+(-1896,-1248,408). Shared actor slide motion kept accelerating this stationary toss
+object down a walkable slope. Reviewed private contracts: healthtree.cpp class uses
+MOVETYPE_TOSS, rotated eight-unit XY hull and z[-24,8]; P_CheckGround probes 0.5 down
+and accepts normal.z >= 0.7; P_Physics_Toss clips with unit overbounce and settles
+floor contact below vertical speed 60. Native implementation independently applies
+this contract in the health-tree adapter and class-owned contact policy. No shared
+actor movement changes or source/runtime imports. Pushed/tree-moving permutations
+remain unqualified. Existing saves preserve their recorded positions; no save repair
+or hidden position reset is used to claim the corrected result.
+
+| Scenario | State | Evidence / limits |
+|---|---|---|
+| Old sloped tree drift | Failed meaningful regression | `runtime-zig-252/tree-before/`, identity `35d1e516f54aca675bf7230a64f4364c23dfd6f513ea43405ebc1322d3f1e260`; after four seconds tree 110 is (-1884.614,-1240.284,408.126). The position assertion fails. |
+| Repaired flat/sloped settlement and restoration | Passed focused | `tree-after/`, identity `a2335b58fb0761ca4ac551e49a172da257c49e554508340270f623104369131b`. Stable fresh worlds before/after save/load, actual ten-health use and partial fruit restore. Placement and health fixture only for use. |
+| Ordinary river combat | Passed narrow segments, earlier routes fail later | `bridge-healthy-ammo/` and `bridge-upper-contact/`, same repaired identity. Pond ammo increases by 50; actual Ion contacts kill submerged Crox 387 and 419. A corpse obscured the centre visibility test; the upper-body crosshair trace establishes the actual lane. |
+| Tree, ammo, west control, climb and bridge timeline | Passed connected segment | `bridge-active-defense/`, same identity, legitimate preceding Crox checkpoint. Kills river-side attackers, five observed tree uses (15→25,24→34,34→44,44→54,53→63; poison between uses), two authored Ion packs, control 86 breaks/removes turret 85, upper health supplies, ordinary bridge crossing destroys pieces 80/81/82 and creates boss. Final health83/ammo124. Not fresh campaign; boss combat/death exit still unverified. |
+| Integrated checks | Passed | `/tmp/dk3-runtime-252-aggregate-fixed.log`: 241 Zig + 52 Python, formatting and three modules. ReleaseSafe product/Debug test assertions enabled, separately imported test roots execute. Initial aggregate caught an incomplete driver actor-state fixture; repaired fixture also rejects idle hatching. |
+
+Driver changes address observed failures: true walking speed for close pickup contact;
+physical arrival recheck; stopped diagnostic time excluded from movement failure;
+actual held-fire events include the release acknowledgement; no firing while submerged
+with Ion when the starting Disruptor can reach. The unsafe low-health disengagement
+strategy was removed after it let nearby enemies kill the player before resupply.
+Stationary visible idle enemies can be engaged; hatching/expiring attack windows are
+excluded. Driver safety bounds remain distinct from gameplay rules. No damage, geometry,
+enemy health or puzzle semantics changed. Failed attempts preserve their logs/captures.
+
+Bridge boss/door/e1m1c route is implemented in the driver, not accepted yet. The compact
+matrix remains docs/native-acceptance.md. The complete fresh New Game→intro→e1m1a→
+bridge→e1m1c→e1m2a gate, connected death/reload and visited persistence remain open;
+all later campaign, companions, multiplayer and release requirements remain in scope.
+
+Sequence-252 boss follow-ups remain failed routes: `bridge-boss-battle/` first stops
+when corpse 907 intercepts the muzzle lane to live 901; `bridge-boss-clear-lane/`
+steps aside but dies to four actual world-contact splash blasts on the narrow ledge;
+`bridge-arena-route/` stops at a submerged intermediate waypoint and dies during
+failure capture. No successful battle or exit inferred. Driver now observes first
+flight obstruction, recognizes explicit save/load refusal, and implements sustained
+swimming ascent from actual water/height state; these latest route refinements await
+replay. Nine focused input tests pass in `/tmp/dk3-runtime-252-driver-final.log`.
+A bounded kill fallback prevents temporary engine shutdown delay from hiding the
+original scenario error. Installed game/saves/service and main remain unchanged.
+
+## runtime-zig — sequence 253 (bridge victory, restoration and frog floor contact)
+
+All 28 weapon policies remain connected. Work is on native campaign integration;
+full weapon interactions and the entire four-episode/multiplayer scope remain open.
+
+The bridge boss now has a connected successful segment from a legitimate ordinary
+checkpoint: observed Ion contacts defeat it, all ten factory skeets are observed,
+pending ThunderSprays clear while the player keeps moving, the defeated encounter
+saves/restores, and the death-opened door leads through the authored e1m1c transition.
+Stopping immediately after the kill had left the player under pending splash attacks.
+Read-only ThunderSpray position/velocity diagnostics now guide ordinary keyboard
+movement; no damage, geometry or enemy behavior was tuned for the driver.
+
+| Scenario | State | Evidence / limits |
+|---|---|---|
+| Fresh intro/arrival/first encounter | Narrow stages passed; whole route failed | `runtime-zig-253/fresh-opening/`, identity `a2335b58fb0761ca4ac551e49a172da257c49e554508340270f623104369131b`; Normal New Game, all intro shots, arrival, ordinary Ion pickup, actual save/load. Navigation fails later. |
+| Bridge boss, safe defeated encounter restoration and factory entry | Passed connected segment | `bridge-clear-sprays/`, identity `3309ba59495aee2a771ce24f870c1f818adc7f1abfc19b549372fd3b3ce2a779`. Starts at a legitimate checkpoint, not fresh campaign; later factory route fails. |
+| Boss reward and factory supplies | Passed narrow connected segment | `bridge-reward-route/`, identity `26ae3d5bcffe24fcfa305d3c8807057772dc9798025d4ef518cd49910afeef2d`; actual Megashield touch gives 400 armor, B→C transition, tree 195 fruit use and ammunition pickup. First gate setup fails because the control is above the lower approach. |
+| Natural death/reload | Passed narrow running/connected subcase | `bridge-open-water/death-reload.json`: observed natural death, then both server/client restoration boundaries and living normal gameplay from an earlier healthy checkpoint. The combat route remains failed. |
+| Old frog landing | Failed meaningful regression | `frog-before-contact/`: unmodified captured campaign save SHA `26f2a9c7c891ebbd13de6202baaea4fb014485d2795bd60a8cfe38f5f8b1304f`, exact old modules in identity manifest. Frog 27 never leaves jump after floor rebound. Earlier `frog-before/` and `frog-before-valid/` fail setup and do not count. |
+| Repaired frog landing | Passed focused running case | `frog-after-contact/`, same fixture. Actual ground entity and departure from jump required, not inferred from waiting. `marsh-landed-frogs/` then reaches authored A→B from a legitimate first-encounter checkpoint; later bridge combat driver assertion fails. |
+| Consolidated checks | Passed | `/tmp/dk3-runtime-253-aggregate.log`: 242 Zig + 54 Python checks, three native modules, formatting. Assertions enabled, all explicit test roots execute. Later factory-only driver route refinements require gameplay replay, not another unchanged broad suite. |
+| Fresh consolidated opening gate | In progress; not accepted | `fresh-consolidated/` uses the frog-fixed build and full asset manifest. Factory control approach, interior/lift, e1m2a exit and visited-world round trip remain open. |
+
+Frog repair follows reviewed private contracts without importing implementation:
+FROG_Start_Jump uses bounce motion; FROG_Jump finishes on ground contact; P_CheckGround
+probes 0.5 down, rejects upward speed above 100, and accepts normal.z >= 0.7. Native
+had required downward motion and sampled a repeating +13.333 rebound forever.
+Class-owned floor acceptance now settles that short rebound and snaps to the probe
+contact. Fast launches and wall/steep-slope hits remain airborne in the contract
+regression. No shared actor physics change; complete frog water/pose parity is open.
+
+Rejected driver shortcuts remain failures: the Cambot death target cannot substitute
+for the player-only touch bridge generator; the lower bank loses boss visibility;
+the eastern arena boundary is an authored lethal volume. The completed bridge segment
+uses the intact platform and normal player contact. No arbitrary dwell or puzzle bypass.
+
+Driver movement time excludes stopped diagnostics, frozen playback and restored/map
+clocks. Held attacks track observed actor displacement and independently record fire
+and contact. Failed setup/blocked flight does not pass. Precise approaches release
+from observed speed and verify actual stopping, preventing overshoot oscillation.
+Factory pipe exploration is still driver development; none of its failed paths counts
+as traversal. Main, installed game, user saves and live service remain preserved.
+
+
+## Sequence 255 — connected-native-coding-pass (in progress)
+
+The owner directed a broad implementation pass across the remaining four-episode and
+multiplayer scope before systematic scenario verification. The current outcome matrix
+is `docs/native-acceptance.md`; this entry records code work, not completed acceptance.
+
+Connected code includes action-script replacement/used-goal suspension, class-owned
+party combat and authored party controls, borrowed cinematic actors, intermission
+ending flow, selective party/visited-world transfer, and additional ground combat
+policies. Dwarf axes and Lycanthir resurrection have typed saved state. Missing
+monster controllers now name the unsupported authored class instead of disappearing.
+
+Native multiplayer code now has menu-to-server room controls, membership/reconnect
+state, ready countdown, identity-bound votes and moderation, worker presence/control
+files, permanent-room bot filling and rotation, objective release at disconnect/team
+change, team chat, scoreboard and player skin binding. Existing online allocation and
+transport remain their owners; the live deployment is unchanged.
+
+| Scenario | State | Evidence / limit |
+|---|---|---|
+| Intermediate server/client/UI linking | Passed compile only | `/tmp/dk3-runtime-255-multiplayer-link-fixed.log`; isolated `zig-out/native-dev`, subsequently superseded by Cryotech/surgeon changes. No fresh engine/asset manifest. |
+| Additional actor classes, attack completion, axes and resurrection | Unrun | Code and explicit class test roots written. Pain/evasion/gib/presentation and remaining authored classes still need completion. |
+| Party rescue, commands, death, transfer and restoration | Unrun | Native code written; affected historical travel/script/damage/cinematic cases need replay. |
+| Ending and credits entry | Unrun | Authored exit intermission wired; no campaign completion claim. |
+| Native rooms, LAN/Internet, readiness, moderation, chat and scores | Unrun | Module/UI connections written. No acceptance inherited from the preserved runtime. |
+| Fresh consolidated opening campaign | Unrun | Previous route/checkpoint results remain separate; full intro→e1m2a remains mandatory after consolidation. |
+
+Private reference was read to establish behavioral contracts; no private runtime code
+or assets were admitted. Compatibility corrections and unresolved parity are recorded
+in the current acceptance matrix. Work remains on `rewrite/native-zig-runtime`; main,
+the playable installation, user saves and the online service are preserved.
+
+Sequence-255 continuation, implemented/unverified: episode decoration definitions,
+collision, animation, breakage/material debris/drops; persistent firefly swarms;
+large/small spider attack and retreat controllers; Cryotech combat and scripted sprays
+with saved damage pulses and native atlas particles; surgeon cower/script suspension;
+cinematic completion triggers/kills; weapon-owned remote grip/character animation;
+objective toss, countdown, armor-respecting deathtag damage and CTF capture bonuses;
+bot weapon/ammunition eligibility, Hammer release and useful pickup selection.
+
+Private review confirmed deathtag pack damage intentionally names each victim as its
+own attacker; that attribution is preserved. No speculative planter attribution was
+introduced. Reviewed sound names also retain the original pickup sound. The current
+matrix records presentation gaps and compatibility corrections explicitly. New pose,
+objective, bot and actor contract tests are written but not yet executed. No native
+engine scenarios or live-service operations were performed in this continuation.
+
+Further sequence-255 coding: patrolling hostiles now run target acquisition before
+path movement while preserving injury receipts for their own combat controller.
+Lab monkeys have distance-specific attacks/leaps, lateral hops and authored use
+activation. Inmater has melee, ordinary laser and six-event sweep, close/ranged mode
+changes and ally-obstruction sidestepping; Lasergat remains stationary, turns in yaw
+and pitch, and fires its supplied sequence. Their shared native laser retains direct
+collision, ten-second scheduled expiry, wall sparks and saved state. Private reference
+contains prisoner-execution routines without a call site; these were not made into an
+invented ambient execution loop. Muzzle attachments, gibs and reaction parity remain.
+
+`/tmp/dk3-runtime-255-cryo-link-fixed.log` linked all three modules before the patrol /
+monkey / laser batch. The subsequent laser link found a client timestamp-width error;
+that call signature is repaired, with relinking pending. All these outcomes remain
+implemented/unverified; no campaign, multiplayer or reference playback acceptance.
+
+Sequence-255 continuation: native Knight1/Knight2 attacks connect to typed attack
+entities, save rebasing/admission and rendering. `/tmp/dk3-runtime-255-knight-link.log`
+linked all three modules; later Cerberus/rats changes supersede this intermediate
+compile result. Knight2's missing authored melee sequence is handled by the narrow
+compatibility mapping described in `docs/native-acceptance.md`. Civilian panic now
+interrupts authored paths/scripts. Model-less Cryotech save admission was repaired.
+Cerberus and Pipe/Plague Rat policies, supplied attacks/poison, evasion and shared water
+movement are written. All these engine/restoration/connected scenarios are unrun;
+shared water extraction additionally requires Crox regression replay.
+
+The coherent creature batch links all three native modules in
+`/tmp/dk3-runtime-255-creatures-link.log`. Shark dry/submerged target suspension,
+water-only routes/wandering and VenomVermin poison/leap/accelerating missiles are now
+connected. Supplied absent-animation behavior, water containment and incomplete
+evasion/presentation are explicit in the matrix. This feature-branch checkpoint is
+implemented/unverified: no new contract suite or engine scenario has run in this pass.
+The remaining actor/boss, campaign, companion, mode and release scope remains open.
+
+## Sequence 256 — episode-controller-continuation (in progress)
+
+Continues the authorized broad coding pass after feature checkpoint `54f15fe`, pushed
+only to `rewrite/native-zig-runtime`. Main, installed game/saves and live service remain
+preserved. Rotworm class connects authored ceiling ambush, acquisition/release, jump
+flight/landing and bite transitions, ground bite/spit selection and typed venom spit.
+Spit collision/lifetime, player-only poison and save rebasing/admission are connected.
+This is implemented/unverified; no scenario or aggregate suite has run. Current matrix
+retains the complete four-episode/multiplayer scope and all previous coverage limits.
+
+Centurion/Fletcher, Battleboar, Rocket Gang and Rocket MP are connected to authored
+weapon data, lifecycle/rendering and save state. Shared rockets retain distinct class
+launch offsets, accelerations, lifetimes and presentation. Evasion consumes supplied
+hide-node flags; reviewed ground sidestep distances reserve 44 units. Rockgat bullet
+logic was extracted without changing its firing contract. Previous actor movement,
+attack/restoration evidence requires affected replay. The acceptance matrix records
+remaining cover, targeting, reaction and presentation limits. No new tests or engine
+runs; the initial link's Zig 0.16 enum-conversion defect was repaired, with the repair
+link pending. Full remaining actor/boss, campaign and multiplayer scope stays open.
+
+The sequence-256 connected checkpoint additionally implements Thief, black/white
+prisoners and Femgang; all three modules link in
+`/tmp/dk3-runtime-256-episode-link.log`. Initial enum conversion and subsequent local
+name-shadowing compile errors are retained in the earlier logs and repaired. This is
+compile evidence only. No contracts, native-engine scenarios or connected playthrough
+ran in this coding pass. Supplied BSP class/factory/death-spawn inspection identifies
+21 remaining actor classes, explicitly listed in the current acceptance matrix.
+
+
+## Sequence 257 — sludge-and-gunners (implementation checkpoint)
+
+Continues the full campaign/multiplayer coding pass after pushed checkpoint `a79d091`.
+Sludgeminion and Seal Captain, Seal Commando, Seal Girl and Uzi Gang connect authored
+attacks, class weapon callbacks, rendering and persistence. Read-only authoring inspection
+confirms their attack events, tuning and converted muzzle tags. Reference contract review
+establishes the 100 ms effective bullet callback cadence. Narrow compatibility corrections
+and remaining cover/task/presentation limitations are recorded in the current matrix.
+
+All three native modules link in `/tmp/dk3-runtime-257-gunners-link-fixed.log`; the
+first client timestamp-width compile error remains in the initial link log. No tests,
+engine scenarios or connected acceptance ran. Current code changes remain implemented /
+unverified. Full remaining campaign, actors/bosses, companion progression, multiplayer
+and release work continues; no installed assets, saves, main or live services changed.
+
+## Sequence 258 — psychic-and-aerial-combat (implementation checkpoint)
+
+Continues the complete coding pass after feature checkpoint `c14f175`. Psyclaw paired
+projectiles/player warp, Doombat flight/bite/fireballs and Griffon air/ground combat
+connect to supplied authoring, native collision, persistence and presentation.
+Reference contract review also repairs shared generic pain, Knight fireballs and
+Uzi callback ordering. Class-owned decisions remain separate from common movement,
+projectile and pain services. No private implementation or assets entered the project.
+Narrow compatibility corrections and incomplete gib/particle/task parity are listed
+in the current matrix; affected historical coverage is explicitly due for replay.
+
+Targeted `zig build game --prefix zig-out/native-dev` links all three modules in
+`/tmp/dk3-runtime-258-griffon-link.log`. This is compilation evidence only. New
+light-hit pain and class-policy regression contracts have not run. No systematic
+suite, engine scenario or connected campaign/multiplayer acceptance ran during this
+checkpoint. Full remaining campaign, companion, boss, multiplayer and release scope
+continues. Main, installed game, saves, assets and online service remain untouched.
+
+## Sequence 259 — harpy-dragon-and-fragments (implementation checkpoint)
+
+Continues after pushed feature checkpoint `479035f`. Harpy terrain transitions and
+magic-arrow attacks, Dragon hover/breath/fireball combat and the three large fliers'
+flesh-fragment deaths are connected. Reference call-site review distinguishes active
+controllers from unqueued/dormant hover or retreat code. Supplied Dragon MD3 hardpoint
+inspection confirms `hr_muzzle`. Existing scenery and projectile mechanisms carry
+fragments and arrows; no new ECS framework or legacy gameplay dependency was added.
+
+`/tmp/dk3-runtime-259-dragon-link.log` records a coherent three-module link. New
+room-threshold and fragment-count contracts remain unexecuted. Blood/liquid fragment
+parity, particle comparison and all applicable engine/restoration scenarios remain
+open in the matrix. The complete campaign/multiplayer coding pass continues; no
+systematic verification, live-service change or preserved-install/save modification.
+
+## Sequence 260 — deathsphere-chaingang-and-robotic-fragments (implementation checkpoint)
+
+Continues after pushed feature checkpoint `39b37f8`. DeathSphere charge/volley/evasion,
+class-owned death bolts and robotic fragments connect alongside Chaingang's ground/hover
+combat, transitions, strafe/swoop, persistent gun callbacks and jet presentation.
+Shared movement, ground escape, node avoidance and particle drawing are reused only
+for concrete matching behaviors. Read-only converted model inspection confirms parent
+material and muzzle bindings. Private source remains outside the project.
+
+The combined three-module link completes in
+`/tmp/dk3-runtime-260-chaingang-link-fixed.log`; reserved-name/type/definition-name
+compile failures and repairs remain in earlier sequence-260 logs. This is compilation
+only. Policy/material regressions are written, unexecuted. Full campaign, companions,
+remaining bosses, multiplayer and release work continues. The current matrix records
+narrow compatibility choices, incomplete presentation details and shared coverage due
+for replay. No engine scenarios or broad verification suites run; main, installed
+playable game, user saves, local assets and live service remain preserved.
+
+## Sequence 261 — buboid-wisps-and-wyndrax (implementation checkpoint)
+
+Continues the complete coding pass after feature checkpoint `baf08bf`. Buboid's
+coffin/melt/resurrection lifecycle, authored Wisp swarms and Wyndrax's combat,
+station recharge, Wisp collection and damageable NPC attacks are connected to native
+collision, effects and persistence. Supplied animation/data inspection and read-only
+private contract review distinguish ambient swarms, NPC attacks and the player
+weapon. No private runtime or assets are imported. Compatibility corrections and
+shared coverage invalidations are recorded in the current acceptance matrix.
+
+A concrete MD3 alpha defect is repaired through existing per-surface shader variants;
+no replacement skins are embedded. The consolidated three-module link is recorded
+in `/tmp/dk3-runtime-261-consolidated-link.log`. Earlier name/type compile failures
+remain in sequence-261 logs. New damage regressions have not run. No broad suite,
+native-engine scenario, connected campaign/multiplayer acceptance or reference
+playback has run. Remaining classes, boss progression, companions, all campaign and
+multiplayer/release requirements stay open. Main, the installed game, saves and
+live online service are preserved. Continue the same coding pass.
+
+## Sequence 262 — garroth-stavros-and-meteors (implementation checkpoint)
+
+Continues after pushed checkpoint `274bf84`. Garroth's authored weapon choice and
+Buboid summoning, Stavros's attack controller and their shared NPC meteor/fragment
+callback connect to native movement, damage, effects and persistence. Supplied model
+inspection confirms Stavros's walk-only movement sequence. Private behavior review
+retains the source's unassigned fragment damage, distinct from the player weapon.
+Shared radial clearance/decal mechanisms are reused; their affected coverage and the
+NPC Wisp bounce correction are recorded in the acceptance matrix.
+
+The three-module link is `/tmp/dk3-runtime-262-meteor-consolidated-link.log`.
+Garroth range/fallback contracts remain unexecuted; no broad suites, engine runs or
+campaign/multiplayer acceptance. Four remaining BSP-admitted classes, script-created
+actors and all broader connected progression/companion/multiplayer/release outcomes
+remain open. This is the continuing implementation pass, not completion of the port.
+Main, installed gameplay, saves, private assets and online service are untouched.
+
+## Sequence 263 — mikiko-medusa-and-boss-attachments (implementation checkpoint)
+
+Continues the same coding pass after `2ea5371`. Final hostile Mikiko and Medusa
+connect their authored combat, special phases, motion, presentation and persistence.
+Private read-only review and supplied model/table inspection exposed missing named
+attachment conversion, absent Mikiko sequences/events, Medusa's shared venom callback
+and its one-frame flash. These are implemented without private runtime imports.
+
+The acceptance matrix records narrow compatibility details and remaining presentation
+qualification. New pure eye-contact and converter regressions are written, not run.
+No test suite or engine scenario runs during this checkpoint. The coherent module link is `/tmp/dk3-runtime-263-boss-final-link.log`; earlier
+sequence logs retain the initial syntax error. The changed
+converter requires a fresh asset identity for later engine acceptance. Kage, Nharre,
+dynamic Ghosts, remaining actor/script/companion phases, campaign traversal and all
+multiplayer/release acceptance remain open. Main, installation, saves and service are
+preserved. Continue implementing the remaining scope before systematic verification.
+
+
+## Sequence 264 — kage-ghosts-and-summon-effects (implementation checkpoint)
+
+Continues after `0f4fb5a` on the native rewrite branch. Kage and its dynamically
+summoned Ghosts now connect authored attacks, escape/recharge phases, damage/death,
+owner cleanup, presentation and persistence. The acceptance matrix records exact
+source contracts, narrow placement/cleanup corrections and remaining qualifications.
+New meaningful damage and restored-phase regressions are written, not executed.
+
+Three-module link: `/tmp/dk3-runtime-264-kage-consolidated-link.log`; the intermediate
+catalog name-shadow error remains recorded. No systematic test or engine scenario ran.
+Nharre/reaper, the broader actor/ability/script/companion audit and complete campaign,
+multiplayer and release outcomes remain open. Continue the same broad implementation
+pass before consolidated verification. Main, installation, saves and service preserved.
+
+
+## Sequence 265 — nharre-summons-teleports-and-reaper (implementation checkpoint)
+
+Continues after pushed `52b00f4`. Nharre now owns authored casting, ordinary summons,
+teleport/retreat and the NPC reaper lifecycle. Source contracts and narrow compatibility
+corrections are documented in the acceptance matrix. Shared freeze/perception and
+summon visuals are updated; new regressions remain unexecuted.
+
+All three modules link in `/tmp/dk3-runtime-265-nharre-consolidated-link.log`; the first
+shadowing failure is retained. Read-only BSP inventory finds no unregistered name in
+65 quoted monster strings (`/tmp/dk3-runtime-265-authored-classes.json`). This closes
+that inventory gap only. The dynamic ability/script/companion audit, campaign traversal,
+multiplayer goals/interactions and release remain open. No engine or systematic tests
+ran; no new gameplay identity/acceptance. A fresh asset manifest is required for the
+new boss tags and earth-crack decal. Continue the broad coding pass on the feature
+branch; preserve main, installed play, saves and the live service.
+
+## Sequence 266 — multiplayer-objectives-and-physical-controls (implementation checkpoint)
+
+Continues after pushed `de40f89`. CTF defense scoring, authored objective models/skins,
+carry attachments, character team skins, home settlement and capture rules are connected.
+Bots follow authored control links with key checks and physical use/touch/shoot input,
+yield narrow lanes, recover stolen flags and seek health/ammunition. Source contracts and
+native strategy limits are in `docs/native-acceptance.md`. Nharre reaper victim ownership
+now passes the general body-owner admission branch as well as the attack validation.
+
+All three modules link in `/tmp/dk3-runtime-266-multiplayer-consolidated-link.log`.
+The optional-return integration error remains in the first link log. New regression
+roots and converter checks are written, not executed; no scenario or broad suite ran.
+Fresh assets are required for explicit objective bindings, boss tags and the reaper
+mark. No verified gameplay build/asset identity or acceptance is added. Companion
+combat/pickups/navigation, campaign progression, complete multiplayer interactions and
+release remain open. Continue the broad coding pass before consolidated verification.
+Main, installation, saves and service preserved.
+
+## Sequence 267 — companion-combat-collection-and-equipped-models (implementation checkpoint)
+
+Continues after pushed `64bfb21`. Companion inventory/selection restrictions are now
+weapon-owned and enemy-owned; ordinary weapon controllers execute their decisions.
+Explicit/automatic collection, actual pickup admission, bounded route recovery,
+doorway yielding and nearby unlocked door use are connected. Carried equipment and
+supplied firing/body poses now render for companions and remote players. Snapshots
+rebase new deadlines; travel and authored party actions clear local recovery references.
+The matrix records reviewed contracts, narrow empty-ammo approach correction and
+remaining path/presentation qualifications. New regression roots are unexecuted.
+
+All three modules link in `/tmp/dk3-runtime-267-companions-consolidated-link.log`.
+No test suite, engine scenario, connected gameplay or reference playback ran. No
+verified gameplay build/asset identity or acceptance is added. Next continue companion
+swimming/ladder/crouch traversal, broader campaign interaction/script auditing and
+complete multiplayer/release implementation before consolidated verification.
+Main remains `e3966c4d40678dbf91619034b5dcb33b763dcbed`; installed game, saves and
+live service remain untouched. Feature branch only.
+
+## Sequence 268 — companion-traversal (implementation checkpoint)
+
+Continues after pushed `ca9eb0d`. Ground-only party motion now uses the shared native
+motor with class hull/jump attributes, crouch/swim/ladder navigation and saved stance.
+Script movement, weapon water state, body poses, item routes and bot travel input
+connect to those same mechanisms. Reference contracts and compatibility limits are
+recorded in the current acceptance matrix. New movement/clock/obstruction regressions
+are written, unexecuted. Three native modules link in
+`/tmp/dk3-runtime-268-traversal-link.log`; no test suite or gameplay scenario ran.
+Full scope remains open; proceed with liquid hazards and the broader authored world
+inventory before consolidated verification. Main, installed game, saves and service
+remain preserved. No verified gameplay build or new asset identity is claimed.
+
+## Sequence 269 — environment-hazards-and-authored-world-audit (implementation checkpoint)
+
+Continues after pushed `f5fc576`. Actual liquid samples now drive distinct client/AI
+hazards, breathing protection, saved exposure and active-use suit reserves. Player
+landings cause authored fall damage; deathtag retains self-hazard protection. Nitro
+contents no longer disappear in conversion. Reviewed contracts, compatibility details,
+source provenance and qualifications are in the acceptance matrix. Three native modules
+link in `/tmp/dk3-runtime-269-environment-link-fixed.log`; initial syntax failure is
+retained separately. Module identities: `/tmp/dk3-runtime-269-link-identity.json`.
+New regression roots are written, unexecuted; no engine or connected scenario ran.
+Asset regeneration remains necessary. The broader entity/property audit identifies the
+next missing authored controls rather than treating registered monster counts as complete
+campaign coverage. Continue the broad coding pass. Main, installed game, saves and
+online service remain preserved; feature branch only.
+
+## Sequence 270 — authored-controls-and-map-music (implementation checkpoint)
+
+Continues after `391ce57`. Timers, pushes, teleports, secrets, sidekick toggle volumes,
+map/trigger music and authored console/inventory actions now connect through existing
+routing, touch, collision and persistence mechanisms. The matrix records contract
+sources and scoped inventory-removal compatibility correction. New control variants
+use the existing 64-component registry capacity without expanding ECS architecture.
+Three native modules linked in `/tmp/dk3-runtime-270-controls-link.log` before later
+music-path validation and regression additions. Regression roots are unexecuted; no
+engine or connected scenario passed. Asset regeneration and consolidated verification
+remain pending. Continue authored speakers/audio, healing portals, effects and remaining
+campaign/multiplayer/release work. Main, installation, saves and service unchanged.
+
+## Sequence 271 — authored-speakers-and-healing-stations (implementation checkpoint)
+
+Continues after pushed `75de97f`. Authored speakers and ambient emitters now connect
+resource admission, random/loop/reliable playback, custom spatial parameters and saved
+state. Station/fountain class policies connect models, hulls, continuous transfer,
+recharge, cues and effects. Contracts, original quirks and presentation qualifications
+are recorded in the acceptance matrix. The initial link caught client/default-value
+and angle type coercions; corrected link log is
+`/tmp/dk3-runtime-271-audio-healer-link-fixed.log`. New regression roots remain
+unexecuted. No gameplay/audio/visual acceptance is claimed. Continue authored lasers,
+effects and broader campaign/multiplayer/release implementation before consolidated
+verification. Main, installed game, user saves and live service remain preserved.
+
+## Sequence 272 — authored-lasers-and-room-acoustics (implementation checkpoint)
+
+Continues after pushed `97f8994`. Authored laser hazards now share one saved on/off
+state for tracing, damage, presentation and optional sound. Room triggers connect
+listener restoration to the existing engine sound interface and pinned EFX preset
+metadata. The acceptance matrix records reference quirks, per-listener compatibility
+correction and software/visual qualification limits. Initial missing-import compile
+failure and corrected targeted engine/module link logs remain under `/tmp` as listed
+there; the corrected engine and three-module build exits 0. No tests, engine scenarios
+or connected acceptance ran. Continue authored
+breakage/debris, world effects and the complete episode/multiplayer/release scope.
+Main, installation, saves and service remain preserved; feature branch only.
+
+## Sequence 273 — medicine-boxes-and-grouped-wall-breakage (implementation checkpoint)
+
+Continues after pushed `8f66d64`. Drug boxes and grouped exploding walls now connect
+ordinary use/damage, physical objects, class media and native persistence. The matrix
+records authored contracts, retained quirks and pending contact/presentation comparison.
+New health-consumption and damage-redirection regressions are written, unexecuted.
+No compilation, test suite or engine scenario was run for this checkpoint; continue
+the coding pass with moving debris and gib emitters before consolidated verification.
+The previous sequence's engine/modules link remains compilation evidence for its
+exact earlier source. Main, playable installation, saves and service remain untouched.
+
+## Sequence 274 — moving-debris-and-gib-emitters
+
+Implemented native launched brush debris and finite gib emitters with authored launch,
+timing, sound and toggle contracts; persistent state and fragment visuals connected.
+Private behavioral review only. Emitters intentionally survive native saves despite
+reference FL_NOSAVE. Detailed scope/remaining contact and water parity in
+`docs/native-acceptance.md`. Three modules (including sequence 273) linked successfully:
+`/tmp/dk3-runtime-274-debris-link.log`; no test/engine/connected acceptance. Continue
+authored world effects and full campaign/multiplayer/release coding pass.
+
+## Sequence 275 — authored-quakes-and-lighting
+
+Connected player-specific authored earthquakes, target spotlights, switchable light
+styles/ramps and flare/episode-flame sprites and contacts through native transport and
+saves. Corrects cgame's constant full-brightness lightstyle projection. Exact default
+style strings admitted from pinned public GPL Quake II source; docs/provenance.md
+records license, scope and hash. No private implementation import. Native-module link
+fixed log exit 0, before final table replacement/clock regression; all new tests and
+engine scenarios remain unrun. Intentional spotlight endpoint and flame-damageability
+corrections and remaining qualification are explicit in docs/native-acceptance.md.
+Continue the broad full-port coding pass; no new campaign/multiplayer acceptance.
+
+## Sequence 276 — dynamic-lights-and-complex-emitters
+
+Native dynamic lights and complex particle emitters now own authored activation,
+visibility, timing, media and persistence. Private behavior review only; compatibility
+corrections and outstanding presentation qualification are recorded in
+`docs/native-acceptance.md`. Three modules linked successfully before the final monitor
+visibility addition: `/tmp/dk3-runtime-276-emitter-link.log`. All added regressions and
+engine scenarios remain unrun. Broad full-port coding pass continues with lightning,
+weather and remaining campaign/multiplayer/release behavior. No acceptance transferred
+from compilation or the preserved runtime; main/installation/saves/service untouched.
+
+## Sequence 277 — lightning-attractors-and-authored-hearing
+
+Connected native lightning hazards, ordered/cycling attractors and authored control
+chains with damage, audio, saved live bolts and client effects. Conversion and bundled
+engine now preserve/query authored PHS rows; Cambot no longer substitutes PVS for
+hearing. Private behavior review only; no implementation import. Compatibility
+corrections, old-asset diagnostic and revalidation scope are recorded in
+`docs/native-acceptance.md`. Corrected engine/module link exits 0; added regressions,
+engine scenarios and connected acceptance remain unrun. Continue the full coding pass;
+main, installed game, saves and online service remain untouched.
+
+## Sequence 278 — authored-weather-and-particle-motion
+
+Implemented native non-solid rain/snow columns with supplied brush bounds, authored
+height, directional flags, per-volume density and finite fall lifetime. Client culling,
+60 Hz birth scheduling, supplied atlas media and triangular rain/snow geometry connect
+to the shared particle service. Saves retain weather bounds/class state; transient
+particles refill after restoration. The two e1dm2 `effect_drip` brushes are removed,
+matching the commented-out Gold export, rather than creating solid invisible obstacles.
+Read-only corpus inventory: `/tmp/dk3-runtime-278-weather-authored.json` (1185 rain,
+592 snow and two retired drip entities across the current converted map corpus).
+
+Code review corrected sequence 277's attractor query: WorldControl had accidentally
+been placed in the excluded mask, while the query attempted to write it. The existing
+new linking regression is intended to catch this and remains unrun. Reference review
+also found shared complex-particle acceleration was integrated without the one-half
+factor. Native motion now uses the reviewed half-square term; an explicit trajectory
+regression is written, unrun. Revalidate affected actor/weapon clouds, gibs, emitters
+and lightning sparks, as well as weather and attractor linking.
+
+Three modules linked in `/tmp/dk3-runtime-278-weather-link-fixed.log` after the saved
+bounds variable-shadow error recorded in `/tmp/dk3-runtime-278-weather-link.log`.
+That successful link precedes the final particle-motion correction/root regression.
+No test suite, engine scenario, connected gameplay or visual comparison ran. Native
+60 Hz birth scheduling and the existing bounded particle pool are documented timing/
+capacity corrections; snow's effectively unit reference size is retained. Weather
+appearance, density under load and restoration still need engine/reference comparison.
+
+Current outcome matrix is condensed in `docs/native-acceptance.md`; the previous
+full ledger is preserved verbatim below. Main, installed version, user saves and live
+service remain preserved. Continue authored target effects and broader remaining
+campaign/multiplayer/release implementation before consolidated verification.
+
+### Acceptance ledger retained at sequence 278
+
+### Historical native acceptance ledger
+
+Development stays on `rewrite/native-zig-runtime`. Main, the installed game, user
+saves and the online service are preserved. Full four-episode campaign, companions,
+multiplayer modes/bots, persistence, UI and release remain in scope. Removed-runtime
+results never transfer to native acceptance.
+
+## Active implementation pass
+
+Owner-directed broad coding pass (sequences 255–277): remaining episode and multiplayer
+systems are developed together before consolidated verification and repairs. Opening
+route driver iteration is paused. Complete four-episode/companion/multiplayer scope
+and the fresh New Game→e1m2a integration gate remain required.
+
+Written, **unverified**: factory monitors; actor action replacement/interrupt semantics,
+script-owned actors, streamed dialogue and random/ordinal use programs; cinematic
+program selection, actor borrowing, head tracks and attribute backup; companion
+rescue/toggle/stop/teleport, orders, class-owned weapons, death failure/camera and
+exit-selected party transfer; final ending intermission and authored credits travel.
+Ground combat now includes Rage, Skeleton, Satyr, Column, Dwarf and Lycanthir policies,
+with supplied attack events, Dwarf axe lifecycle and Lycanthir resurrection. Large and
+small spiders have bite/leap/retreat controllers; Cryotech has timed combat and scripted
+spray pulses; surgeon cowering and civilian panic pause/resume action scripts; lab monkeys own melee,
+leap, hop and activation rules. Inmater and Lasergat connect their distinct attack
+controllers to persistent lasers. Both episode-three knights now connect melee, fireball
+and delayed lightning attacks to persistence and client effects. Patrolling hostiles now acquire targets before path
+following, without consuming the combat controller's injury receipt. Episode decorations now
+provide authored collision, animation, breakage, drops and debris; firefly emitters
+create persistent swarms. Cinematic completion dispatches authored `cinetrigger` and
+`cinekill` entities, including when playback is disabled. These are
+active implementations, not complete class parity or campaign acceptance.
+
+Multiplayer code connects native team/session lifecycle, authored spawning,
+respawn/scoring, CTF/deathtag objectives and ordinary-input bots. Room admission,
+identity-bound votes/bans, operator controls, presence, ready countdown, reconnect
+scores, permanent-room fill/rotation, chat and scoreboard connect to existing native
+online services. Native menus expose browser/create/private-room/LAN/player/lobby
+controls; remote player skins use the admitted appearance catalog. Weapon classes
+own remote grip selection; supplied character sequences drive movement, crouch, jump,
+transitions and death. Objective drops toss physically, countdowns and capture bonuses
+follow reviewed mode rules, and bots evaluate actual inventory/pickup eligibility and
+release charged Hammer attacks. No live service,
+installed profile or user save has been changed. Networking and room flows are unrun
+on this candidate; earlier-runtime Internet acceptance does not transfer.
+
+Coding-pass work remains: the broader dynamic-actor/ability audit and connected boss
+progression, complete companion/cinematic progression, dynamic navigation/bot goals,
+complete player/multiplayer presentation, CTF/deathtag interaction parity and
+release integration. Unknown `monster_*` entities now fail admission with their
+classname instead of silently disappearing. All four episodes and multiplayer remain
+open as complete outcomes. There is no verified engine/asset identity for the current coding pass.
+Targeted links establish compilation only. The sequence-256 checkpoint `a79d091`
+linked all three modules in `/tmp/dk3-runtime-256-episode-link.log`. Sequence 257
+adds Sludgeminion and the four episode-four gunners; its corrected link is
+`/tmp/dk3-runtime-257-gunners-link-fixed.log`. The first link's client timestamp-width
+error is retained in `/tmp/dk3-runtime-257-gunners-link.log`. No new contract suite,
+engine scenario or connected playthrough has run in this coding pass. Sequence 258
+connects Psyclaw, Doombat and Griffon, repairs generic pain and shared fireballs, and
+links all three modules in `/tmp/dk3-runtime-258-griffon-link.log` (compile evidence only).
+Sequence 259 connects Harpy, Dragon and flesh-fragment deaths; its coherent three-module
+link is `/tmp/dk3-runtime-259-dragon-link.log`. Sequence 260 connects DeathSphere and
+Chaingang; all three modules link in `/tmp/dk3-runtime-260-chaingang-link-fixed.log`.
+Sequence 261 connects Buboid, ambient Wisp swarms and Wyndrax; its consolidated
+link is `/tmp/dk3-runtime-261-consolidated-link.log`. Sequence 262 adds Garroth,
+Stavros and their NPC meteor callback (`/tmp/dk3-runtime-262-meteor-link.log`).
+No gameplay acceptance is added.
+
+Shared changes invalidate prior script/cinematic, damage, actor perception,
+restoration/travel and multiplayer coverage on the developing build. Sequence 258
+additionally requires replay of Knight fireballs, Skeeter retreat, actor-attack callback
+ordering, actor pain and psychic-effect restoration. Historical
+manifests remain valid only for their recorded narrower builds and setups.
+
+## Current outcome matrix
+
+| Milestone | Implemented / contract-tested | Running native engine / connected authored gameplay | Blockers and evidence limits |
+|---|---|---|---|
+| Weapon controllers | All 28 class-owned policies connected; Zeus, Wyndrax, Nightmare and Metamaser included. | Focused interactions passed in sequences 232–243. Sequence 251 repairs and exercises close Ion aiming. | Dispatch coverage does not establish all weapon interactions. Most fixtures grant equipment/health or place targets. Trident merge setup and Sunflare bright sprite edges remain open. |
+| Fresh opening campaign | Intro, opening actors, action programs, world controls and native saves connected. | **Full gate not accepted:** New Game → full intro → e1m1a → e1m1b bridge → e1m1c → authored e1m2a exit. | No coherent full-route build accepted. Checkpoint development now defeats the bridge boss, restores the defeated encounter, collects its authored Megashield and reaches e1m1c. The factory approach reaches the first gate. Factory traversal, authored e1m2a exit and a fresh consolidated replay remain. |
+| Native restoration | Typed snapshots, controller state and visited archives have executing contracts. | Actor/action restoration has focused engine evidence. Arrival save/load exercised. | Connected natural death/reload has narrow sequence-253 evidence. Sequence 254 verifies C→B→C visited restoration after a disk load, including retained boss/control/pickup state; the current broad changes require replay. Sequence-241 travel is historical and needs replay after trigger-bounds changes. |
+| Remaining campaign | Party triggers/travel, ending intermission and additional ground actor controllers written; no legacy backend. | Unrun on the current coding pass; no verified build/asset manifest. | Missing classes, abilities, bosses and connected progression. New class registration or reference-contract review does not count as encounter acceptance. |
+| Multiplayer and online rooms | Session/objective lifecycle, bots, room membership/moderation/readiness, chat, scoreboard and native menus written. | Unrun on the current coding pass; no native network/room acceptance. | Animation/equipment presentation qualification, dynamic bot goals, full mode interactions and consolidated network/hosting replay remain. Live service is untouched. |
+
+## Exact verified segments
+
+Every cited `identity.json` records executable, all three modules, renderer, shaders
+and the complete local package manifest. Different-build checkpoints are development
+replays, never a fresh combined playthrough. Private reference contracts were reviewed;
+these results do **not** claim comparison through reference playback.
+
+| Player outcome / subcase | Verified identity | Evidence | Setup limits / supersession |
+|---|---|---|---|
+| Fresh New Game, all 115 intro shots, arrival cinematic/save-load and ordinary Ion pickup | Full manifest: `runtime-zig-246/fresh-opening/identity.json` | `zig-out/reports/runtime-zig-246/fresh-opening/` | Route then failed a navigation waypoint. Later actor, script and Ion changes require relevant replay and ultimately a fresh consolidated gate. |
+| Close skeet takes two ordinary Ion hits and dies; authored e1m1a exit reaches e1m1b | `fcec9367951d0aa5a7619003e8d32df28de584fc759a4ab3f05bce633eff376f` | `runtime-zig-251/marsh-ion-fixed/` result, traces, capture, `opening_bridge_arrival.sav` | Legitimate old marsh checkpoint, health 67 before the segment. Old saves lack actors admitted later. Subsequent build adds read-only attack-time diagnostics; full fresh replay remains required. |
+| First bridge control takes four ordinary distant Ion hits, breaks and removes its linked Rockgat; close Ion skeet kill also observed | `35d1e516f54aca675bf7230a64f4364c23dfd6f513ea43405ebc1322d3f1e260` | `runtime-zig-251/bridge-fire-window/` inputs, control/encounter captures | **Narrow subcases only. Overall route failed** at low health before resupply. Latest `bridge-resupply-priority/` also failed a ledge-obstructed tree use. Neither is bridge traversal acceptance. |
+| Normal health pickup and river approach | `fcec9367951d0aa5a7619003e8d32df28de584fc759a4ab3f05bce633eff376f` | `runtime-zig-251/bridge-resupply/`, `bridge_health_pickup.sav` | Legitimate checkpoint, ordinary inventory/input. River route failed while the driver waited for stillness in a current; later attempt stopped at low health after Crox contact. |
+| Sloped and flat health trees settle and restore; partial fruit use restores | `a2335b58fb0761ca4ac551e49a172da257c49e554508340270f623104369131b` | `runtime-zig-252/tree-before/`, `tree-after/` | The old build fails the drift assertion. Diagnostic placement/health for use; floor settlement starts from fresh authored worlds. |
+| River Crox kills, five tree uses, two Ion packs and western turret control | Same sequence-252 identity above | `runtime-zig-252/bridge-healthy-ammo/`, `bridge-upper-contact/`, `bridge-active-defense/` | Narrow connected segments from legitimate checkpoints. Earlier attempts fail later. Active-defense reaches the boss entrance with 83 health and 124 Ion rounds; whole bridge battle is not yet accepted. |
+| Bridge boss defeat, ten authored skeets, safe defeated-encounter save/load and authored e1m1c entry | `3309ba59495aee2a771ce24f870c1f818adc7f1abfc19b549372fd3b3ce2a779` | `runtime-zig-253/bridge-clear-sprays/` | Legitimate bridge checkpoint. Ordinary Ion fire and movement; pending sprays must clear before stopping. Route fails later in e1m1c. Frog contact repair requires relevant route replay; not fresh campaign. |
+| Boss Megashield pickup (400 armor), authored e1m1c entry, fruit resupply, combat and first gate approach | `26ae3d5bcffe24fcfa305d3c8807057772dc9798025d4ef518cd49910afeef2d` | `runtime-zig-253/bridge-reward-route/` | Legitimate defeated-boss checkpoint, unchanged supplies. Gate shot fails setup: driver is below the upper switch. No gate or factory traversal claim. |
+| Froginator completes captured floor contact instead of rebounding forever | Full manifests in both reports; current modules match sequence-253 frog-fixed build above | `runtime-zig-253/frog-before-contact/`, `frog-after-contact/`, `frog-landings.json` | Same unmodified legitimate save SHA `26f2a9c7c891ebbd13de6202baaea4fb014485d2795bd60a8cfe38f5f8b1304f`. Old modules fail the actual landing assertion; repaired modules pass. Focused restoration fixture, not fresh gameplay. |
+| Repaired frogs and authored marsh exit into the bridge | Same frog-fixed identity above | `runtime-zig-253/marsh-landed-frogs/` | Legitimate first-encounter checkpoint; actual A→B crossing and bridge pickup. Later combat driver assertion fails; full bridge route not passed. |
+| Natural death and acknowledged restoration of living gameplay | Full manifest in `runtime-zig-253/bridge-open-water/identity.json` | `bridge-open-water/death-reload.json`, inputs and capture | Ordinary failed encounter, followed by reload of an earlier healthy checkpoint. The battle remains failed. Does not certify every death/restoration permutation. |
+| Cambot acquisition/alarm restoration and four observed ten-health tree uses, partial/empty restoration | `7398a5842fa26b90bf0c52012167b8a910824c5c2037d003648d759f39a11496` | `runtime-zig-249/opening-actors-heal/` | Diagnostic placement/health. Alarm/dodge permutations and full presentation remain open. |
+| Crox actual water level 3/swimming displacement, pending melee restoration/contact; Rockgat popup, burst restoration, lowering and lethal Ion contact/removal restoration | `282dd04dbfffddac553b953267f7575711f125a62d3f9d0e9c98237b4df08cd1` | `runtime-zig-250/crox-consolidated/`, `rockgat-contact/` | Diagnostic placement/equipment/health. Crox transitions/steering/avoidance, Rockgat authored toggle/death outputs and full presentation unqualified. |
+| Bridge factory creates ten skeets plus Thunderskeet; paths/aggression restore | `b1a868d39f0d0e0c2242551e7b8deef800dc5a1691679b5a524640a5f741cf88` | `runtime-zig-247/bridge-first/` | Controlled activation and health 10000. No bridge combat, boss death outputs or connected traversal acceptance. |
+| Remote angled-trigger rejection before/after load; actual exit contact works | `02a5fcdaf9752fbcfe8a91801ced0639e35ab6b07ab6d1ca986a3f664fba172c` | `runtime-zig-248/trigger-before/`, `trigger-after/` | Defective build fails the regression. Diagnostic placement; prior angled-trigger travel requires revalidation. |
+
+Paths above are under `zig-out/reports/`. Historical detail and older identities stay
+in [the journal](../specs/runs/RUN-dk3-independent-port.md), sequences 232–253.
+
+## Current defects, limits and revalidation
+
+- Sequence 251 close Ion defect: the old forward-direction guard discarded crosshair
+  contact behind the muzzle. `marsh-exit/` captures the failing trace and undamaged
+  target. Ion now owns direct convergence on that contact; the captured geometry has
+  a contract regression. Other weapon aiming policies are unchanged. The existing
+  muzzle-clearance trace remains; this is not a claim of full reference launch parity.
+- Sequence 252 repairs health-tree toss settlement. Sliding actor movement let a
+  tree drift down a walkable slope and disappear from its authored alcove. Class-owned
+  floor contact now stops it, with flat/sloped stability and fruit restoration exercised.
+  Existing displaced saves retain their positions; connected evidence enters a fresh
+  bridge world on the repaired build. Other actor physics is unchanged.
+- Driver navigation excludes deliberate stationary diagnostics from movement timeout
+  accounting. Precise pickup approaches use ordinary walk input; fire events and target
+  health establish contact. Idle visible enemies can be engaged before attacking.
+  Hatching/expiring windows remain excluded. Low-health disengagement proved unsafe
+  under active fire and has been replaced by active defense on the route to supplies.
+- Sequence 253 repairs frog jump landing only: a half-unit ground probe accepts slow
+  upward bounce motion (at most 100 units/second) on a walkable floor, as reviewed in
+  private ground-contact and frog task contracts. The defective build remains in the
+  focused regression evidence. No global actor physics, damage or geometry tuning.
+- Driver attack tracking follows actual displacement and records fire/contact separately.
+  Blind pause assumptions missed short frog attacks. Incoming boss spray observations
+  guide ordinary movement; an observed zero pending count precedes save/load. The
+  natural boss drop supplies armor for the factory route. Repeated low-health factory
+  attempts are superseded by this legitimate resupply route.
+- Next connected work: qualify the factory upper control route, yard, interior/lift,
+  e1m2a exit and visited-world round trip; then finish the fresh consolidated gate.
+  The sequence-253 fresh replay failed at river target priority after reaching the bridge; no fresh replay is currently running. All checkpoint results remain separate.
+- Crox amphibious steering/avoidance, floor orientation and all attack poses; Cambot
+  search cone, vertical avoidance, post-death wandering and inertia; Thunderskeet
+  combat/death outputs; actor pain/gibs and complete audiovisual parity remain open.
+  Rockgat fractional damage, death effects, tracers/sparks and authored toggle are open.
+- Explicit compatibility departures: Cambot alarm recipients use PVS instead of PHS,
+  dodge uses crosshair contact pending auto-aim; Thunderskeet's unsafe twelve-entry
+  cycle is bounded. Reference source review is distinct from playback comparison.
+- Pod shell monster/experience classification, complete triggered-cinematic progression,
+  earthquake/debris presentation and later campaign classes remain implementation gaps. Shared action
+  cleanup/body-control, death outputs, perception and travel need applicable regressions.
+- Aggregate checkpoint `/tmp/dk3-runtime-253-aggregate.log`: 242 Zig + 54 Python
+  checks, formatting and three modules passed. Assertions are enabled and all explicit
+  test roots execute. Subsequent factory driver waypoint/crouch refinements remain
+  under gameplay qualification; they do not alter the verified native build.
+
+
+
+Sequence-255 compatibility details and limitations:
+
+- Companion selectors interpret the authored `mikiko`/`superfly` name directly rather
+  than reproducing the reference's inverted string comparison. Teleport search tests
+  evenly spaced directions and keeps a blocked action pending; it does not reproduce
+  cumulative-angle search or ignore failed clearance. Neither behavior is engine-qualified.
+- Only companions requested by a submap exit are removed from its visited archive and
+  transported. Other party members retain their local world state. This changes save
+  and restoration coverage and requires both leave-behind and return-with-party replay.
+- Ending intermission uses the first stable authored camera rather than a random one;
+  target-facing, five-second input delay, frozen/invulnerable player and destination
+  credits map follow the reviewed contract. It remains unrun, including reload during it.
+- Column non-Hammer immunity avoids the reference's lethal-hit clamp-to-one anomaly.
+  Complete Column reaction/quake presentation remains unfinished.
+- Dwarf axes use a launch-relative five-second expiry instead of inheriting an unset
+  reference timestamp. Contact starts its own five-second fade lifetime. These native
+  projectiles persist through saves although the reference marked them transient.
+- Lycanthir recovery checks the full standing hull before rising, extending the
+  reference's corpse-hull occupancy check to avoid materializing into a player/mover.
+  Evasion, terminal gibs, sound parity and the complete encounter still require work.
+- Ground attack events are delivered before ending an elapsed sequence; the previous
+  ordering could lose a final strike on a long frame. Earlier ground-combat results
+  require replay. A before/after regression is required at consolidated verification.
+
+
+- Decoration hulls retain authored zero coordinates instead of the reference helper's
+  zero-to-minus-sixteen substitution. Breakage retains an inert source identity for
+  delayed target dispatch and visited-world persistence. Flesh debris currently uses
+  the decoration fragment lifecycle; full gib behavior remains open.
+- Firefly personalities are bounded below by 0.25, extending the reference reroll
+  guard to initial spawn so its steering divisor cannot be zero.
+- Hiro and Superfly supply no `bjump` sequences. Native moving jumps use their
+  supplied `ajump` grip variants; Mikiko uses the authored `bjump` variants.
+- Deathtag explosion attribution deliberately remains self-damage, as established by
+  the reference contract. Armor/invulnerability now participate instead of being
+  bypassed. Pickup/alarm/victory/return/tick sounds are class-mode selections; exact
+  attenuation, heartbeat volume ramp and the layered polygon explosion remain open.
+  Sequence 266 connects CTF/deathtag carrier attachment, skins and additional defensive bonuses; their runtime qualification remains open.
+- Cryotech keeps separate 800 ms damage-pulse and 1500 ms particle lifetimes. Spray
+  particles use the supplied atlas rectangle, color, spread and speed; post-half-second
+  growth is elapsed-time based (60 units/second) instead of reference frame-count growth.
+  Pain variants, absent authored `diec`, ambient audio and playback comparison remain open.
+- Inmater/Lasergat lasers retain the scheduled ten-second lifetime (the reference
+  also writes an unused three-second delay). Inmater crouched-target direct damage
+  follows its reviewed callback; sweep yaw adjustments are unused in that reference
+  callback. Muzzle attachment, robotic gibs and complete reaction/presentation remain
+  open. Uncalled prisoner-execution routines were not invented as ambient behavior.
+- Patrol acquisition changes invalidate authored path/aggression regression coverage.
+  The repair and new classes have no running-engine acceptance yet.
+- Surgeon cowering preserves its interrupted script timing. Broader worker alert,
+  wandering and pain/gib behavior remain unqualified. These additions do not establish
+  complete class parity or transfer campaign acceptance from another build.
+
+
+- Knight2's supplied model/events have no `ataka` or `atakb`. Its native close
+  punch uses the supplied `atakc` stroke and strike event; this is an intentional
+  animation compatibility correction, not reference playback parity. Fireball world-X
+  drift is retained but collision-traced; its first native drift tick is 100 ms.
+  Knight lightning retains two captured-contact blasts, three 5-damage/90-radius ticks
+  each, and separate 250 ms child lifetimes. Sword attachments, fire trails and exact
+  subtractive-light presentation remain unqualified.
+- Save admission now allows model-less Cryotech spray and typed knight effects.
+  Actual restoration must be replayed; a compile result does not establish this path.
+- Cerberus bite/leap and Pipe/Plague Rat combat, poison selection and amphibious
+  locomotion are implemented, unverified. Shared water movement was extracted from
+  Crox, invalidating its previous movement/restoration evidence for this build.
+  Rat close/leap choice retains the reference's second probabilistic range check.
+
+- Shark suspension uses actual water levels: stop pursuing a dry target; resume
+  that target at level 3. Wet route filtering and movement prevent a route through
+  air. Surface targets are approached at the shark's current depth. This is a narrow
+  native containment correction; steering and exact water-boundary parity need replay.
+- VenomVermin owns poison bite/leap bands and its seven-to-one missile acceleration,
+  10 ms first update, 100 ms following updates and silent four-second expiry. Its
+  supplied model lacks `atakd`; as in the reference's failed sequence change, the
+  running sequence continues. A supplied `atakd` is used when present. Ranged cooldown
+  and attack/missile state persist. Evasive targeting/actions, smoke trail, polygon
+  explosion and full pain/presentation remain unfinished. No encounter claim is made.
+
+- Sequence 256 continues the same broad coding pass after pushed feature checkpoint
+  `54f15fe`. Rotworm ceiling admission/release, jump landing/bite and poison/spit are
+  connected, unverified. An authored ceiling flag without a ceiling intersection is
+  rejected instead of moving the actor outside the map. The supplied model lacks
+  `jumpa`; the existing `atakb` sequence remains, as on the failed reference request.
+  Spit poison applies only to players; bite poison uses the shared living-character
+  contract. Rotworm generic pain, inertial impulse parity and tracked spit particles
+  still require completion/qualification. No new campaign or restoration acceptance.
+
+- Sequence 256 also connects Centurion/Fletcher shafts, Battleboar gun/rocket and
+  Rocket Gang/Rocket MP controllers, authored attack events, projectile collision,
+  client models/glows and saved state. Centurion uses the active throwing-knife
+  contact contract: world embedding versus entity-contact falling, followed by fade.
+  Fletcher arrows disappear on contact and silently expire after ten seconds.
+  Battleboar fires one bullet trace despite its two muzzle flashes; its full-speed
+  missile expires after five seconds. Gang/Vermin missiles use seven-to-one
+  acceleration; MP missiles use four-to-one. MP's frame-zero second strike is retained.
+- Evasion adds supplied hide-node flags, class admission chances, strafing, sidesteps
+  and dodge destinations. Ground sidestep/strafe/dodge travel reserves the reviewed
+  44-unit offset (52/36/84 units), superseding earlier distance descriptions. Native
+  collision uses the full hull, continuous floor support and either clear side;
+  this deliberately repairs the reference's rejected clear opposite side. Hide-node
+  admission uses native graph reachability; weighted-path equivalence remains open.
+  Player targeting currently retains Cambot's direct-crosshair contract, narrower
+  than reference auto-aim. Exact cover scheduling and reaction/presentation remain
+  unfinished. These are implemented paths, not claims of full class parity.
+- Shared rocket/bullet extraction and sidestep correction require Vermin, Rockgat,
+  Inmater, spider, rat and knight regressions. Authored movement dispatch no longer
+  calls combat in place of motion for Rotworm/Vermin. Vermin missile origin now uses
+  its active post-aim class offset. Save layout/controller changes supersede prior
+  native restoration evidence. No installed or user saves were edited.
+- Initial sequence-256 module linking failed on a removed Zig 0.16 enum conversion
+  API (`/tmp/dk3-runtime-256-link.log`); corrected to `std.enums.fromInt`. A subsequent name-shadowing error was repaired; all three modules then linked in
+  `/tmp/dk3-runtime-256-episode-link.log`. No new contract, engine or connected-campaign acceptance.
+
+- The same checkpoint connects Thief knife/melee cadence, black/white prisoner
+  punch/ballistic-rock selection and Femgang moving kicks/idle variation. Prisoner
+  attack admission, two strike flags and distinct pain/death policies are explicit.
+  A knife without contact expires after three seconds relative to launch; this avoids
+  the reference's uninitialized absolute delay affecting freshly spawned projectiles.
+  Contacted knives retain the five-second axe callback. No scenario acceptance yet.
+
+## Sequence 257 implementation checkpoint
+
+Sludgeminion connects fluid-only replenishment, two authored hand attacks, attack
+floor pitch, idle choices, bouncing damaging globs, model/glow and persistent state.
+Its particle trails/contact smoke and exact transitional/reaction presentation remain
+unqualified. Shared NOLEAD extraction retains Rotworm's aiming contract and needs its
+affected replay. A prisoner throw whose target moved to coincident XY now consumes
+the undefined ballistic shot instead of terminating the game; ordinary throws retain
+their existing solution. This narrow compatibility case still needs regression execution.
+
+Seal Captain/Girl shotgun traces retain distance falloff; Seal Commando's two stationary
+poses fire a first bullet plus five callbacks; Uzi Gang starts callbacks without an
+initial bullet and stops at absolute model frame 80. Callbacks run every 100 ms, matching
+the reference server tick despite its 10 ms requested deadlines. Authored chase/standing
+transitions, injury/death choices, attachments, sounds and saved bursts are connected.
+The supplied converted models contain the required muzzle tags (read-only asset audit).
+The commando's first bullet deliberately starts at its owner's muzzle rather than the
+reference temporary entity's unplaced world origin. Class-specific take-cover scheduling,
+tracers and exact task/reaction timing remain incomplete/unqualified. No damage/geometry
+changes were made to help an input driver. New contracts are written but unexecuted.
+
+## Sequence 258 implementation checkpoint
+
+Psyclaw connects paired spheres, melee, ranged sidestepping, jump reduction, initial
+immunity and eight-second player warping. Player movement interference, rendered FOV /
+roll / color, loop sound and save/travel deadlines are connected. Compatibility changes:
+the small sphere keeps the actual shooter instead of treating its parent projectile's
+hook as an actor; flying spheres honor the otherwise unused eight-second lifetime;
+the oscillation stays within twelve samples, and final FOV recovery cannot overshoot.
+The supplied model has no `dieb`; normal death retains its available `diea` sequence.
+
+Doombat connects bite/ranged health rules, retreat/hover, bobbing, collision response
+and corpse bounce. Its percentage-versus-base-health comparisons are retained, including
+the speed branch that is unreachable with the supplied base health. Griffon connects
+air/ground pursuit, room/liquid checks, authored-node landing, retreat, ground leaps
+and timed strikes. Its ten-unit launch lift is collision-traced. Air turning uses the
+shortest wrapped yaw difference; retreat uses a bounded search and existing authored
+graphs. These are native compatibility choices, not reference-playback acceptance.
+Griffon/Harpy always-gib behavior was still missing at this checkpoint and is connected
+in sequence 259 below; this does not claim complete actor parity.
+
+Shared generic pain now preserves the ordinary first roll before the independent
+heavy-hit wrapper roll. A light second-roll reaction retains its current animation
+and attack cursor. Unrun regression contracts cover the light-hit defect and lock.
+Shared fireballs now use point collision, radius 64, four secondary 30%-damage pulses
+for full-size fireballs, and quiet five-second expiry; Doombat uses only the small
+primary explosion. This supersedes the earlier Knight implementation. Fire trails
+and detailed impact-light comparison remain open. Actor-attack callbacks now observe
+the actor frame published during the same tick, repairing Uzi stop-frame ordering.
+
+All three modules link in `/tmp/dk3-runtime-258-griffon-link.log`; the initial fireball
+extraction's unused-variable compile error was corrected. New policy/pain tests are
+included in explicit test roots but **have not run**. No running native-engine identity,
+connected encounter, save restoration or private reference playback was established.
+
+## Sequence 259 implementation checkpoint
+
+Harpy now connects ground/air ranged combat, obstruction dodge, room-height terrain
+selection, authored-node approach, forward/reversed `drop`, ascent and settling phases.
+Its magic arrow reuses Fletcher's reviewed callback, including ten-second scheduled
+expiry despite the unused three-second delay field. Private call-site review finds no
+transition of Harpy into the hover movement mode required by its dormant swooping code;
+native active flight attacks therefore remain stationary. Magic-arrow flight/contact
+and the existing Fletcher scenarios require affected regression replay.
+
+Dragon connects patrol sounds, random-duration hover, attack animation/sound, breath
+warning and fireball release. The converted model contains `hr_muzzle`; both breath
+and fireball particle effects are connected to the supplied atlas. Particles retain
+their birth pose and continue after emission ends. Native emission is normalized to
+60 Hz, uses a bounded 4096-particle pool and a regular radial emitter; these intentional
+presentation departures from render-frame emission/private radial math need visual
+qualification. No unused Dragon fly-away task is invented as an active combat loop.
+
+Griffon, Harpy and Dragon now fragment on death unless the violence setting suppresses
+that branch. The existing scenery lifecycle carries mass/mode-dependent flesh fragments,
+class hulls, inherited motion, bounce, delayed fade and saved clocks. Corpse collision
+clears immediately; the actor is removed after death outputs and the following tick.
+The fragment cap is a strict 100 rather than the reference's off-by-one admission.
+Blood clouds/decals, liquid float behavior and additional gib sounds remain presentation /
+physics parity work. Other creature gib policies have not yet been connected.
+
+Status remains **implemented; unverified**. `/tmp/dk3-runtime-259-dragon-link.log`
+links all three modules; no new contract execution, engine scenario, connected campaign
+or multiplayer run. Current engine/asset gameplay identity remains unestablished.
+
+## Sequence 260 implementation checkpoint
+
+DeathSphere connects charge, four-muzzle volleys with two extra frame-driven volleys,
+aerial evasions/altitude checks, bobbing, hover audio and robotic fragmentation. Death
+bolts own their three-second lifetime, health-contact-only radius damage, owner
+immunity, gold sparks and contact sounds. World impacts do not deal splash damage.
+Robotic fragments use the material read from the owning supplied MD3, with bounded
+material parsing and cache invalidation; the inspected model names `skins/m_dsphere`.
+No skin or private asset is embedded in game code. Bolt contact entities remain briefly
+for native spark presentation although the reference deletes its projectile immediately.
+
+Chaingang connects ground/hover admission, room/liquid transitions, ground-node dodge,
+six-feeler aerial strafing/swoops, attack warmups, overlapping chaingun callbacks,
+water-triggered node wandering and death variants. Gun damage/spread, speeds and
+ranges come from class authoring. Saved phase, strafe and volley clocks resume through
+the existing snapshot path. Its supplied muzzle tag is `hr_muzzle`. Jet smoke/debris,
+sparks and light share the bounded particle renderer with Dragon; each emitter retains
+its own clock. Takeoff/landing smoke bursts and tracer presentation remain finer
+presentation work. Full wandering/path/task and pain interruption behavior need playback.
+
+Reviewed reference quirks remain class-scoped: DeathSphere's floor "up" projection is
+world +X; best-away selection applies its final turn to pitch; Chaingang's wall helper
+passes .15 to an integer parameter. Its old 299/316 transition thresholds are below
+supplied `flyb`/`flyc` starts (304/329), so those phases finish on their first tick and
+the 293–294 start sound cannot occur. The death selector makes `dieb` unreachable;
+only `diea` and `diec` are selected. These source findings are not playback comparison.
+
+Compatibility details: initial temporary chaingun bullets use the actual owner's muzzle
+(the previously recorded Commando correction); jet emission uses a fixed 60 Hz clock.
+A full-hull slide still prevents physical penetration when the reference obstruction
+branch leaves its requested direction unchanged. DeathSphere's interrupted attack
+returns through a non-firing `flya` recovery; that task mapping needs qualification.
+Mechanical damage classification, fragment liquids/decals and full sound parity remain
+open. Shared bounce extraction affects Griffon leaps and Doombat corpses; shared escape,
+gun callbacks and particle drawing affect Harpy, Commando/Uzi and Dragon. Replay those
+regressions and all affected restoration scenarios at consolidated verification.
+
+**Implemented; unverified.** Targeted three-module link:
+`/tmp/dk3-runtime-260-chaingang-link-fixed.log`. Initial compile errors are retained in
+sequence-260 logs. New volley/counter/material bounds contracts are included but have
+not executed. No native-engine, connected campaign, multiplayer or reference playback
+acceptance is added, and no current gameplay build/asset identity is established.
+
+## Sequence 261 implementation checkpoint
+
+Buboid connects coffin wakeup, melee, nonterminal collapse, ten-second resurrection,
+second lethal-hit termination, melt immunity, alpha changes and holy-ground-aware
+relocation. The collision adapter exposes the already-converted holy surface bit;
+converter/engine semantics are unchanged. Standing placement is additionally checked
+with the actual hull after the reference's enlarged search probe. This intentionally
+avoids emerging inside an occupant/mover. Melt deadlines, alpha, corpse/recovery state
+and permanent-death dispatch persist. Exact pain/script interruption and encounter
+playback remain unqualified.
+
+Ambient Wisp clusters connect authored counts, movement, alpha, sequential collection,
+100-second regeneration, sound scheduling and a persisted delivery handshake. They
+remain distinct from damageable attack Wisps. Initial ambient personalities use the
+same minimum 0.25 guard as Fireflies, avoiding singular steering at spawn. Wyndrax
+owns lightning above half health, Wisp ammunition below it, the named power station,
+node/ground movement, collection loops and active-projectile retreat. Missing active
+swarms cause wandering and rechecking rather than the reference's invalid enemy
+access; no free ammunition is granted. The final collection waits for its monitor's
+acknowledgement before retiring the source, preserving that last delivery on reload.
+Wyndrax's special sequences are present in the model but absent from CSV; reviewed
+frame-data initialization supplies their first+1 strike. Station arcs do not damage
+the boss: the source's null owner suppresses that damage path.
+
+NPC attack Wisps connect homing/oscillation, collision reflection, shootable health,
+the class pain callback's second deduction, two-damage lightning ticks, world arcs,
+owner death/expiry and shrinking fade. Wyndrax's discharge emits four arcs in two
+pairs, with captured-contact radius damage and separate flare lifetimes. A missing
+or dead target starts Wisp fade, avoiding a stale pointer. Typed effects and swarms
+use existing ECS, projection and save mechanisms. New Buboid/Wisp damage regressions
+are written and unexecuted. Beam/particle geometry, sound attenuation, full effect
+comparison and dynamic summoner interactions still require qualification. Particle
+emission uses the bounded native pool and fixed 60 Hz, rather than render-frame rate.
+
+The alpha repair selects each converted MD3 surface's existing alpha material;
+shaderRGBA alone did not blend implicit opaque skins. Robotic-fragment material
+lookup now explicitly selects ordinary/alpha variants. Revalidate Buboid, fragments,
+DeathSphere bolts, Psyclaw spheres, Dragon fireballs, Dwarf axes/arrows and player
+projectile fades. Chaingang wandering now reuses the existing node selector and
+requires its affected replay. All new damage, actor, script, effect and restoration
+paths require consolidated regression and native/connected scenario verification.
+
+**Implemented; unverified.** All three modules link in
+`/tmp/dk3-runtime-261-consolidated-link.log`; earlier compile errors are retained in
+sequence-261 logs. This establishes no running-engine or campaign acceptance and no
+verified gameplay build/asset identity. Main, preserved installation, user saves,
+private assets and live service are untouched.
+
+## Sequence 262 implementation checkpoint
+
+Garroth connects the reviewed melee/ranged admission gap, difficulty-dependent
+selection, ordered weapon fallbacks, both authored strike events, death variants
+and dynamic Buboid summoning. Summons share the existing radial clearance selector
+with Nightmare while retaining each caller's mask. The selected location also passes
+full standing-hull clearance; a blocked summon is consumed instead of creating an
+actor inside occupied geometry. Death outputs are not inherited by a summoned Buboid.
+Stavros connects pitch-facing, its supplied `ataka` event, one-percent pain admission
+and meteor firing. Its supplied model has no `runa`; movement uses `walka`.
+
+The shared NPC stave callback owns launch offsets, initial five-percent speed,
+growth-conditioned acceleration/spin, twelve-second lifetime, impact and 4–6 fragments.
+Parent damage and blast radius both use the authored base damage, as in the source
+callback. Fragment spawn never assigns health in the reference; its explosion damage
+therefore stays zero while its scaled radius and bounce/expiry lifecycle remain active.
+No guessed fragment damage is introduced. This NPC callback is distinct from the
+existing player Stavros weapon. Effects include the persistent launch flare, light,
+particle trail, explosion disc/model, sprite, sound and world scorch. Full particle
+atlas/attenuation/scale comparison remains open. Explosion projections briefly persist
+for native delivery and save restoration, extending the deleted reference projectile.
+
+The same reference physics inspection corrects NPC Wisp bounce damping to 0.75 and
+its normalized-axis stop epsilon. The shared decal helper preserves the existing
+weapon overlap/retention policy; radial-search extraction preserves Nightmare's
+existing mask and cumulative headings. Revalidate those affected paths, new summon/
+combat/restoration cases and all connected episode encounters. Range/fallback contracts
+are written but unexecuted. Supplied authoring and private contracts were read locally;
+no private source or assets were admitted.
+
+**Implemented; unverified.** The coherent link is
+`/tmp/dk3-runtime-262-meteor-consolidated-link.log`. No test suite, native-engine,
+connected campaign/multiplayer or reference-playback acceptance was performed.
+No verified gameplay build/asset identity is established for this coding pass.
+Main, the installed game, user saves and the live service remain preserved.
+
+## Sequence 263 implementation checkpoint
+
+Hostile Mikiko connects all three sword attacks, authored/default strike events,
+absolute-frame voices, direct dodge requests, swimming, pain, aura and loop-sound
+lifecycle. The supplied model lacks `dieb`, retaining the already selected `diea`
+when that reference sequence request fails. Its third attack has no CSV row and
+uses the reviewed first+1 default. The class's one-shot aura/untrack quirk remains.
+Mikiko, Kage and Medusa's visible `eye1`/`eye2`/`sword1`/`sword2` surfaces now produce
+animated attachment tags; the previously installed conversion omitted them.
+A rebuilt coherent asset manifest is required before engine verification.
+
+Medusa connects poison bites/spit, probabilistic ranged admission, partial-cover
+sidesteps, authored retreat nodes, rattle/gaze/recovery phases and mutual yaw/pitch
+contact. Its flash clears after one server frame, following the reference's per-frame
+alpha decrement. Petrification preserves the struck frame and solid body and still
+dispatches death/progression. Armor/protection remains in damage accounting; no
+special damage reduction is introduced for driver convenience. Dead petrification,
+player input, actor body state and restored phases need replay. Native player gaze
+uses the current fixed 90-degree gameplay view. Wraith/other target visibility and
+encounter navigation still need connected qualification.
+
+The shared venom callback retains the saved `rotworm_spit` union tag and defaults
+old records to Rotworm; its implementation is now `server/venom_spit.zig`. Medusa
+owns its model/scale, absence of Rotworm launch audio and particle colors. No generic
+spit substitution is used. Direct pain uses one chance roll, separate from the generic
+wrapper's heavy-hit roll. Existing evasion, melee, poison and movement adapters are
+reused. Fine blade lightning, particle atlas, stone brightness/skin blending and
+sound-volume comparison remain open. The eye-contact, direct-pain, petrification/protection and missing-attachment
+regressions are written and unexecuted.
+
+**Implemented; unverified.** All three modules link in `/tmp/dk3-runtime-263-boss-final-link.log`;
+the first link's syntax error is retained. No tests, native-engine scenarios,
+connected campaign/multiplayer or reference playback ran. This adds no verified
+build/asset identity. Revalidate affected shared actor pain/evasion, poison,
+petrification/death, converter attachments and save paths on the consolidated build.
+Main, installed play, user saves and live service remain unchanged.
+
+
+## Sequence 264 implementation checkpoint
+
+Kage now connects sword strikes based on the victim's remaining health, authored
+animation/sound events, finite smoke escapes, node-based return, twelve protector
+summons, difficulty-owned recharge and damage refunds, sword aura and death inventory
+removal. Recharge can suspend and resume a smoke task. Fractional refund health is
+retained; lethal recharge hits do not dispatch a false death. Removing the first
+player's sword ownership preserves its selected identity until normal weapon switching,
+matching the reviewed inventory unlink; native ownership prevents further firing.
+
+Summoned Ghosts connect wake/fade animation, aerial pursuit, their direct strike,
+player-hit pain deduction, owner-phase cleanup and corpse-content collision. They
+respect ordinary actor scripts and freeze ownership, cannot gib and suppress blood
+particles while retaining weapon-owned impact audio/effects. Their supplied model
+has no death sequence or CSV attack row; class-owned fading uses `flya` and the
+reviewed default first+1 strike. The inactive, commented-out spiral task is not queued.
+Rotating boss flares and smoke use persistent typed attack effects, with restored
+clocks and client emission serials. No private implementation/assets were imported.
+
+Narrow compatibility corrections reject blocked Ghost spawn hulls and Kage's snapped
+return destination rather than embedding actors. A rejected protector still consumes
+its authored summon attempt. Ghost ownership also bounds cleanup when summoned without
+an enemy. Ghost sight audio retains the four-second same-class limit; the reference's
+shared five-species sound-cache eviction is not reproduced. Fade/flare geometry,
+particle scale, sound attenuation and overlapping hum/charge-loop mixing remain
+presentation qualifications. The named sword/eye attachments still require the
+sequence-263 asset rebuild.
+
+**Implemented; unverified.** Three-module link evidence is
+`/tmp/dk3-runtime-264-kage-consolidated-link.log`; the earlier declaration-shadow failure
+is retained in `/tmp/dk3-runtime-264-kage-final-link.log`. New recharge, pain, immunity
+and restoration regressions are written but unexecuted. No engine, connected campaign,
+multiplayer or reference-playback acceptance was performed and no verified gameplay
+build/asset identity is added. Revalidate damage/death, ordinary impact effects,
+actor scripts, saved controllers, sword ownership and the new boss encounter on the
+consolidated build. Main, installed gameplay, saves and online service remain preserved.
+
+
+## Sequence 265 implementation checkpoint
+
+Nharre connects both authored casting sequences, all three ordinary summons and the
+reaper. Teleport points retain authoring order and the reference's final-point exclusion.
+The boss fades out, waits until its selected destination hull is clear, relocates, fades
+in and restarts its attack task; no extra dwell or alternative destination is inserted.
+Pain/cooldown and the shared summon deadline persist. Retreat follows the reviewed
+bounded outward node traversal, complete-hide checks and the historical pitch/yaw
+fallback, including its integer-resolution quirk and node cursor behavior. Normal
+movement, door use and reachability reuse native locomotion/navigation.
+
+The NPC reaper owns a separate saved controller from the player Nightmare weapon.
+It freezes one eligible victim, turns the view, delays appearance, strikes for the
+reviewed 50 damage, pushes players, and releases control on strike, interruption,
+owner death, victim death or removal. NPC velocity/collision mask and player view
+height restore explicitly. Other NPCs can still target a player under this specific
+freeze. Appearance audio, screams, flame, shrinking light, spiral particles, the
+jittered column and earth-crack mark are connected. Player bodies hide during the
+owned freeze. Private read-only source/contracts and supplied tables/models were
+reviewed; no private code or assets were admitted.
+
+Compatibility corrections cap the ten-point array and skip undefined empty-point
+teleports; reject failed/uninitialized or blocked summon placements; isolate dynamic
+summons from inherited boss death outputs; and prevent overlapping controllers from
+stealing a victim. Release restores view height and cleans up dead victims instead of
+retaining the reference's lost pointer/omitted restoration. Native navigation can differ
+from the original node pathfinder. The spiral and frame-driven flame use bounded fixed
+60 Hz cosmetic updates; exact particle atlas, attenuation, frame timing and visual
+comparison remain open. The shared summon flares now use the supplied additive sprite
+variant. Kage's Ghost and Nharre's Doombat begin their requested wake/flight poses at
+spawn. The earth-crack decal variant requires another asset rebuild, together with the
+sequence-263 attachment conversion.
+
+**Implemented; unverified.** All three modules link in
+`/tmp/dk3-runtime-265-nharre-consolidated-link.log`; the initial shadowed capture error
+is retained in `/tmp/dk3-runtime-265-nharre-link.log`. Teleport occupancy, release
+ownership, restored appearance/freeze boundaries and decal-admission regressions are
+written and unexecuted. No tests, engine scenarios, connected campaign/multiplayer or
+reference playback ran. No verified gameplay build/asset identity is added. Revalidate
+shared perception, freezes/restoration, actor attacks, summon visuals, dynamic spawns
+and the connected boss encounters on the consolidated build. Main, installation,
+saves and live service remain preserved.
+
+
+## Sequence 266 — multiplayer objectives and physical bot controls
+
+**Implemented; unverified.** CTF now awards reviewed base/flag/carrier/escort
+kill bonuses before objective release. Capture grants one team point regardless of a
+pad's deathtag points field; shared pads remain deathtag-only, matching CTF admission.
+Visibility uses opaque collision and the observer view offset. Objective hulls and
+standing/carry frames use the supplied flag contract. Home objectives settle under
+gravity, and return/capture restores the original spawn before settlement.
+
+CTF uses `a_ctf_flagl`, its authored color and body-skin mapping. Both flags and
+backpacks attach to each character's animated `ctf_flag` hardpoint. First-person
+carriers do not render their own back attachment. The model converter now packages
+eight explicit objective skins while preserving invisible helper surfaces. Current
+asset packages lack these bindings; the consolidated conversion is required.
+
+Bots seek a physically reachable use/touch/shoot control linked to the blocking mover,
+including forwarding relay chains and key requirements. They submit actual `use`
+client commands only after the current view trace reaches the control; shooting uses
+the ordinary weapon controller. This is native bot strategy, not claimed source AI
+parity. Bounded subgoal timeouts abandon unsuitable controls without changing puzzle
+rules. Safe lateral yielding prioritizes human teammates and deterministically chooses
+between bots. Goals prioritize recovering a stolen flag before an impossible capture,
+choose nearby capture pads, reject unavailable pickup routes, and seek needed health
+or ammunition. Dynamic route/mover, contested objective and network scenarios are unrun.
+
+Code review also repaired Nharre reaper victim ownership admission: the existing saved
+reaper test must pass through both the attack and body-owner validation paths. Its
+regression is written but unexecuted. New scoring, control-chain/lock/cycle and skin
+binding regressions are written and included in the intended roots, not yet run.
+
+A targeted three-module link passed in `/tmp/dk3-runtime-266-multiplayer-link-fixed.log`
+after correcting an optional error-union return; that compile failure remains in
+`/tmp/dk3-runtime-266-multiplayer-link.log`. The final coding checkpoint includes bot
+resupply and hazard rejection; all modules link in
+`/tmp/dk3-runtime-266-multiplayer-consolidated-link.log`. No
+engine, connected multiplayer/campaign, test-suite or reference-playback acceptance is
+added. Scoring, team changes, objective settlement/attachment, bot controls/yielding and
+Nharre restoration require consolidated replay. Main, installed game, saves and live
+service remain untouched.
+
+## Sequence 267 — companion combat, collection and body presentation
+
+**Implemented; unverified.** Weapon definitions now own companion inventory slots,
+pickup/ammunition permissions, empty-ammo melee eligibility, shot-clearance probes
+and close-teammate restrictions. Enemy class policies own their selection exceptions
+(e.g. Silverclaw against Lycanthir). The selector preserves the reviewed later-choice
+priority instead of substituting player/bot damage ranking. Companions use ordinary
+weapon switching/firing controllers and suppress fire across blocked traces or below
+15 health. Empty Discus/Venomous selection approaches within melee reach; this narrowly
+corrects the reference's overwritten melee-range calculation, without changing weapon
+damage or collision.
+
+Explicit collection rejects unsupported items, wrong episode weapons, unavailable
+ammunition, unwanted health and carrying-Mikiko weapon use. Automatic idle collection
+checks `itemspawnflags`, visibility, eligibility and a bounded route under 256 units;
+explicit orders may override the authored companion exclusion bits as in the reference.
+Actual overlap and the shared pickup policy grant items and own their audio. Bounded
+failed collection returns to follow and reports failure for explicit orders. The AAS
+route length is native navigation evidence, not claimed private-node path equivalence.
+Companions yield an occupied movement lane and use physically encountered unnamed,
+unlocked ordinary doors with their own activator/key checks. Neither path teleports
+followers or remotely activates puzzle controls.
+
+Companion body frames now use supplied character/grip idle/run/jump/attack sequences,
+including the separate carrying model. Repeated attack decisions no longer restart the
+body pose every frame. Remote players use actual fire timestamps for supplied standing
+and crouched attack poses. Both remote players and companions attach the weapon-owned
+world model/frame at `hp_gun`; unsupported/missing media raises a named error. Exact
+attack/movement blending, jump timing and effect presentation need runtime qualification.
+
+Collection/yield deadlines rebase in snapshots; travel and authored stop/teleport clear
+local item/recovery references. New selection, item admission, bounded-route, clock and
+firing-pose regressions are written and unexecuted. The targeted three-module link is
+`/tmp/dk3-runtime-267-companions-link.log`; all three modules also link at the final
+checkpoint in `/tmp/dk3-runtime-267-companions-consolidated-link.log`. No test suite or engine/connected scenario ran. No verified gameplay identity
+or acceptance is added. Companion swimming, ladders, crouch navigation, full scripted
+progression and their movement/persistence interactions remain coding-pass work, along
+with the complete campaign/multiplayer/release outcomes. Revalidate companion orders,
+collection, travel, combat and remote presentation on the consolidated build.
+
+## Sequence 268 — companion-traversal (implemented; unverified)
+
+Companions now submit routed commands to the existing native player motor for
+water, ladders, jumps, crouching and scripted movement. The motor accepts supplied
+class bounds and upward velocity while retaining existing player defaults. Saved
+party state owns its motor independently of Player components; restoration rebases
+command/jump clocks, while travel and authored teleport reset local movement state.
+Bot and companion routes retain crouch/ladder travel flags; crouch steering requires
+a clear crouched collision sweep. Companion collection can consider these routes.
+Supplied crouch/walk/attack and swimming poses reflect actual motor state; weapon
+controllers receive actual water and stance state. Carrying Superfly has supplied
+crouch poses but no supplied swimming sequence; carrying presentation stays with
+that model's authored movement poses instead of borrowing another model's frames.
+
+Private reference inspection: `AI_File.cpp` AIATTRIBUTE_SetInfo applies authored
+bounds/run/walk/jump values after Sidekick initialization; Sidekick enables swimming,
+ladders and doors; AI crouching uses a four-unit top. This implementation reuses
+independent native acceleration/step physics and requires movement parity qualification.
+It is not an import of private AI tasks. New hull/jump/water, obstruction and restored
+clock regressions are written and unexecuted. The shared player differential root
+remains required at verification. The native three-module link completed in
+`/tmp/dk3-runtime-268-traversal-link.log`; it is compilation evidence only.
+No engine, connected gameplay, reference playback or fresh asset identity is accepted.
+Revalidate player/bot/party movement, low passages, water combat and party restoration.
+The broader audit also found absent native liquid/drowning damage; implementing
+that authored contract is the next connected gameplay work.
+
+## Sequence 269 — environment-hazards (implemented; unverified)
+
+The native world now measures actual feet/waist/head liquid contents and applies
+player/AI drowning, lava, slime, cold-water and nitro behavior through ordinary damage
+and death scoring. Air reserves, damage cadence, cold exposure, fractional damage and
+the companion nitro callback are saved/rebased. Players and land/aquatic actors retain
+separate reviewed rules. Nitro's formerly discarded BSP content is now preserved at
+`CONTENTS_DK3_NITRO`; it does not join the swimming mask. Robotic nitro immunity is
+class-owned. Existing weapon-owned `protects_water` supplies Trident breathing.
+
+Suit charge uses 400 authored units at the 100 ms gameplay cadence, pauses outside
+exposure and persists across saves/travel. The existing transport deadline projects
+remaining charge; old native timed suits migrate on their first environment update.
+This follows the counter/cadence rather than the source's approximate one-minute
+comment. Native integer health accumulates fractional drowning damage before applying
+whole units instead of rounding every tick upward. Player fall damage uses reviewed
+450 velocity threshold, 0.0625 scaling, acro reduction/boost exemption and the default-on
+multiplayer `dm_falling_damage` option. Deathtag carriers receive reviewed self-hazard
+protection without suppressing trigger or enemy damage. Cold water stops thawing while
+submerged in episode three; existing freeze effects still own slowed movement/damage.
+
+Reviewed privately: client inertial/water/powerup routines; AI_CheckWaterDamage;
+Sidekick nitro callback delay; artifact suit charge; deathtag damage flags. No private
+implementation imported. The new engine header mapping has an updated provenance digest.
+Written, unexecuted regressions cover actual liquid sampling, damage cadence, immunity,
+falling, air/charge/clock restoration and preserved converter contents. The first native
+link found a Zig nested-if assignment syntax error; the corrected three-module link is
+`/tmp/dk3-runtime-269-environment-link-fixed.log`. Module SHA-256 identities are recorded
+in `/tmp/dk3-runtime-269-link-identity.json`. This is compilation evidence only.
+No contract suite or engine scenario ran; assets require regeneration for nitro as well
+as prior boss/objective media changes. Water routes, damage, cold, falling, multiplayer
+scoring and save/travel require consolidated replay. Detailed audiovisual parity,
+horizontal inertial collisions and NPC escape behavior still require qualification.
+
+The broader supplied-world inventory is `/tmp/dk3-runtime-269-world-classes.json`;
+controls/properties are `/tmp/dk3-runtime-270-controls-authored.json`. Literal-owner
+absence is an audit candidate, not proof of missing behavior: definition tables and
+prefix owners must also be inspected. The audit confirmed missing teleports/push/timer/
+secret and authored audio controls; continue their implementation next. Full campaign,
+multiplayer and release acceptance remain open with no fresh verified gameplay identity.
+
+## Sequence 270 — authored-controls-and-map-music (implemented; unverified)
+
+Distinct saved control states now connect `func_timer`, `trigger_push`,
+`trigger_teleport`, `trigger_secret`, `trigger_toggle`, `trigger_changemusic`,
+`trigger_console` and `trigger_remove_inventory_item` to ordinary touch and target
+activation. Timers use authored initial pause/delay, repeat variance and once/toggle
+semantics; delay is not reapplied at every target firing. Push volumes use authored
+angle/speed and enable/once flags. Sidekick-only toggle volumes retain their activator
+and reviewed center/radius exit condition. Secrets count once and use episode audio.
+Console controls recognize the three commands actually supplied by the corpus;
+they do not execute arbitrary text in an engine command buffer.
+
+Teleport destinations retain their authored 27-unit marker offset; normal transit
+redirects entry speed, applies destination facing, clears ground and records a saved
+700 ms cooldown/teleport snapshot bit. Named cinematic relocation is separate.
+Occupied destinations damage intersecting bodies; map solids prevent relocation.
+Full telefrag immunity/occupancy, visual fog, paired transit, bot routing and normal
+campaign/cinematic traversal remain unverified. Those limits are not acceptance.
+
+Map music now reads the converted `music` table; trigger changes persist and restore
+through CS_MUSIC and the existing background-track service. The supplied trigger
+volumes use full gain; intermediate authored gain and complete music/cinematic mixing
+remain presentation qualification. Native user mixer settings are preserved. Selected
+music follows the most recent saved trigger; map-table selection supplies initial play.
+Inventory removal uses the trigger's authored `item`, intentionally correcting the
+reference's erroneous check of the touching entity's `keyname`. Deleting a selected
+weapon removes ownership without an invented forced switch; ordinary weapon rules
+prevent firing it. The final sword trigger is the supplied affected case.
+
+Private reference review covered Triggers.cpp and func_various.cpp contracts, and the
+supplied entity/property inventory `/tmp/dk3-runtime-270-controls-authored.json`.
+Native definitions use the existing ECS/target/collision/asset services. The final
+available component slot holds distinct authored control variants; no ECS expansion.
+Three modules link in `/tmp/dk3-runtime-270-controls-link.log` (before subsequent
+music-path validation and test additions). Timer/restoration/inventory regression
+roots are written and unexecuted. No tests, engine scenarios or connected acceptance
+ran. Saved controls, traversal, music and affected prior campaign/multiplayer routes
+require replay on the consolidated build. Authored speakers, healing portals, effects,
+remaining world controls, campaign interactions and complete release remain work.
+
+## Sequence 271 — authored-speakers-and-healing-stations (implemented; unverified)
+
+`target_speaker` and `sound_ambient` now own first-six authored sound selection,
+loop/toggle/start-off behavior, integer randomized delay, volume, distance and
+non-directional parameters. Reliable speakers use reliable server commands; other
+speaker events broadcast with client distance attenuation. Ambient defaults and
+multi-sound loop disqualification follow reviewed authoring contracts. The supplied
+volume `2` retains the original unsigned-byte gain, 254/255, instead of rejecting
+maps. Mixer parameters persist on each emitter during spatialization, clear on client
+restoration, and resume with saved loop/delay/random state. Resource indices, binding
+admission and save clocks connect to the existing native snapshot mechanisms.
+
+`misc_hosportal` and `misc_fountain` connect class models, stationary solid hulls,
+continuous healing, depletion/recharge lockout, charge indicators, sounds and native
+sparkle/spray presentation. Ordinary use requires range/facing and a living player
+or companion; continuing transfer rechecks eligibility. The reviewed behavior starts
+with 100 charge before parsing recharge capacity, transfers one health per 200 ms,
+and recharges one per 100 ms. Supplied bestow/recharge/sound properties unused by
+those reference classes remain unused. Horizontal FOV preserves the reference's
+single-wrap comparison. Healing and emitter states persist across native restoration.
+
+Contracts reviewed privately: world/target.cpp speaker/laser sections,
+world/MISC.CPP ambient initialization, world/hosportal.cpp, ai_func.cpp FOV,
+server/sv_send.cpp and qcommon/common.cpp gain encoding, client particle/Artifact_fx
+contracts and atlas coordinates. Native implementation is independently written;
+no reference code or assets were imported. Visual effects use the supplied local atlas
+with native bounded/analytic particles; original frame-dependent densities and
+acceleration remain presentation comparison work. Engine sound metadata services were
+reused without engine changes. Directed regression roots for speaker cadence/gain,
+healing eligibility/depletion and restoration clocks are written, unexecuted.
+
+The initial targeted link caught type coercions, retained in
+`/tmp/dk3-runtime-271-audio-healer-link.log`; corrected link evidence is tracked with
+the journal. No engine scenario, audible/rendered comparison or campaign acceptance
+is claimed. Fresh assets/build identity and all affected gameplay, restoration,
+sound and multiplayer regressions remain required in the consolidated pass.
+
+## Sequence 272 — authored-lasers-and-room-acoustics (implemented; unverified)
+
+`target_laser` now performs the authored 2048-unit, 100 ms ray trace, damages eligible
+bodies, continues through actors and stops at solid obstructions. Spawn-after-world
+resolution, named tracking, on/off, change-triggered contact sparks, optional loop
+sound and ray state connect to native persistence. Temporary trace exclusions always
+relink penetrated bodies. The native beam uses the supplied laser texture and the
+reference renderer's actual white half-alpha, radius-two taper; color/fat flags are
+not substituted for behavior that the supplied renderer ignores. The four supplied
+instances are 1000-damage hazards in e4m6c. Collision, disable/re-enable, multi-body
+penetration and restoration still require engine scenarios; no laser acceptance yet.
+
+`trigger_change_sfx` reads authored preset names case-insensitively, including e4m5a's
+`fxStyle=2`. Listener selection travels in the existing player-state field, survives
+save/load and clears on map travel. Intentional compatibility correction: the touching
+listener owns room changes; the reference broadcasts every player's room to everyone.
+User volume settings remain independent. Prior engine styles 0..4 retain their meanings;
+styles 5..30 map the 26 authored IDs to the already bundled OpenAL EFX definitions.
+OpenAL applies full EAX reverb when supported, with standard EFX common parameters on
+backends lacking EAX. Software mixing derives bounded delay feedback, damping and gain
+from those same presets; it is a distinct DSP realization, not claimed auditory parity.
+
+Private contract review: target.cpp laser trace/start/use and Triggers.cpp room touch,
+cl_ents.cpp actual RF_BEAM rendering, Audio.h preset numbering and sv_send.cpp broadcast.
+Public preset definitions are included directly from the pinned, already admitted
+OpenAL headers (`engine/UPSTREAM.json`); no private implementation was copied. Engine
+changes and new header hashes are recorded in DEVELOPMENT.json. Supplied property
+inventory: `/tmp/dk3-runtime-272-world-properties.json`, using the existing local asset
+manifest. Player-state round-trip coverage now includes room selection (unexecuted).
+
+Targeted compilation builds the native modules and bundled engine because this batch
+changes their audio contract. The first link's missing import is retained in
+`/tmp/dk3-runtime-272-laser-room-link.log`; the corrected attempt is
+`/tmp/dk3-runtime-272-laser-room-link-fixed.log` (exit 0: all native modules and engine products linked). No tests or engine sessions run.
+Consolidated verification must use the updated engine, modules and regenerated assets;
+prior audio, beam, restoration and campaign/multiplayer results need affected replay.
+Authored breakage/debris, effects, remaining dynamic behavior and full-port acceptance
+remain open. Main, installed playable build, saves and live service are unchanged.
+
+## Sequence 273 — medicine-boxes-and-grouped-wall-breakage (implemented; unverified)
+
+Episode-four `misc_drugbox` now uses the existing native healing-object binding and
+toss/contact path with its own class policy: open without healing, then three finite
+ten-health doses, stage-specific cooldown/audio, supplied model frames and final fade
+/removal. Full-health use can open the box but cannot consume a dose. Damage cannot
+destroy it. Stage, deadlines and fade state persist. Existing health-tree fruit and
+multiplayer regeneration remain separate behavior; drug boxes never regenerate.
+
+`func_wall_explode` now admits authored shootable or use-only walls. Lethal hits on a
+grouped higher section route to a lowest remaining section in that team; nonlethal
+hits remain local. Destruction removes collision, dispatches targets and schedules
+saved fragment/explosion bursts from the actual brush bounds. Authored wood/rock model
+choices, chunk/velocity/sound/explosion flags, 10–20 second fragment lifetime and the
+two supplied explosion sprites use existing native effects and physics services.
+Reference quirks are retained: NO_CHUNKS also prevents burst explosions; the metal
+flag does not override the class's actual rock defaults. Broken sources stay inert
+for delayed targets and pending bursts. Common explosion presentation now resolves its
+registered sprite and publishes the orange light rather than hardcoding one variant.
+
+Private review: healthtree.cpp drug-box use/initialization/fade, Triggers.cpp grouped
+wall death and fragment generation, MISC.CPP explosion dispatch, World.cpp media names,
+and cl_tent.cpp actual explosion variants/sounds. Implementations are independently
+written. The supplied inventory has five drug boxes and 64 exploding walls; these
+counts are authoring inventory, not acceptance. Directed regressions cover real health
+consumption/cooldowns and damage redirection versus unaffected walls (written, unrun).
+No link/test/engine gate was run for this checkpoint. Drug-box animation timing and
+wall debris contact/water behavior still need presentation/physics comparison; the
+shared native fragment response is not asserted identical to the private callback.
+Fresh campaign, restoration and multiplayer verification remain required. Continue
+moving authored debris, gib emitters and the remaining world/campaign/full-port work.
+
+## Sequence 274 — moving-debris-and-gib-emitters (implemented; unverified)
+
+Authored `func_debris` and `func_debris_visible` now own their initial visibility,
+delayed target/owner resolution, launch, momentum damage, angular motion, delayed hull
+expansion, impact audio and finite settling. Moving inline models render independently
+of their bounding-box collision representation. Activator/drop/water launch contracts
+and the authored fan exception follow private behavioral review. The class's effective
+momentum-damage divisor is three, including its reference assignment quirk; unused
+quarter-size/no-rotation-adjust flags are not given invented behavior. Persistent
+state retains launch/expansion clocks, destination, spin, activator and stopped pose.
+
+`func_gib` now resolves its target after the authored randomized startup, clamps count
+and speed, emits finite 800 ms bursts, and respects use/no-toggle scheduling. Start-on
+scheduling remains distinct from the reference's initially clear toggle flag. Bone and
+robotic bounce, supplied torso/bone models, sound variants/attenuation, global fragment
+cap, violence preference and fragment fade use native services. Fragment visuals add
+travel-sampled diminishing blood trails and bone smoke. Native saves intentionally
+retain emitters and pending bursts instead of the reference's FL_NOSAVE exclusion.
+No private implementation was imported. Reference review covered MISC.CPP debris,
+physics bounce/masks, gib.cpp generator/lifecycle and cl_fx.cpp diminishing trails.
+
+The three native modules, including sequence 273, link successfully in
+`/tmp/dk3-runtime-274-debris-link.log` (exit 0), under `zig-out/native-dev`.
+Written targeted policy regressions are unrun. No contract suite or engine scenario
+ran, and no verified build/asset identity is issued. The local authoring inventory
+remains `/tmp/dk3-runtime-272-world-properties.json` on manifest
+`ba03d6e56c08eef76e9a79a32b2da6c223d68433293c9e4f3b2aecead0606dc3`.
+Remaining contact splats/sounds and precise fragment water/presentation behavior need
+completion/comparison; a compiling emitter is not torture-rack cinematic acceptance.
+Earlier fragment, collision, restoration and shared particle scenarios need affected
+replay. Earthquake/lighting/particle/weather behavior and the remaining full-port
+campaign/multiplayer/release work continue. Main, install, saves and service untouched.
+
+## Sequence 275 — authored-quakes-and-lighting (implemented; unverified)
+
+Earthquakes now use the authored radius/severity/duration/damage aliases, 100 ms
+player-only pulses, per-player view-kick messages, 50/100 ms view envelope, random
+loop sound and terminal source removal. They do not apply generic actor impulses.
+Loop sound and active deadlines persist; restoration clears stale client kicks and
+resumes server pulses. The damage path retains normal protection/armor accounting.
+
+`target_spotlight` resolves/tracks its target, traces through actors without damage,
+and toggles two sixteen-sided translucent cones and their endpoint light. Endpoint,
+activation, target and timing survive native saves. A narrow compatibility correction
+uses the computed endpoint in native presentation: the reviewed target_spotlight
+source writes mins while its renderer reads render_scale. The two intro instances
+still require actual engine/reference comparison; written geometry is not cinematic
+acceptance. No arbitrary beam dwell, damage or obstacle bypass was introduced.
+
+Switchable lights, authored lightstyle strings, shared-style update precedence and
+reversible ramps now drive the existing bundled DKLS renderer interface. Previously
+native cgame supplied all-one lightstyle values. Flare and episode flame sprites use
+the supplied frame assets and per-axis scales; flames animate as two crossed planes
+and apply their class's two damage on actual contact with damageable entities. The
+native flame callback does not reproduce the reference assignment that makes arbitrary
+non-damageable objects damageable. Plain inert lights stay authored metadata, as their
+runtime reference instances are removed. Ambient-sound fields remain preload-only,
+matching the reviewed no-op reference AmbientSound; no invented loop was added.
+
+The earlier approximate default flicker samples are replaced by the thirteen public
+GPL Quake II animation strings. Admission, pinned source/hash and attribution are in
+`docs/provenance.md`; no private implementation was imported. Converter and native
+policy now use those exact public samples. Custom pattern phases, lamp state and
+in-progress ramp clocks persist. Built-in periodic styles still follow engine time;
+full visual phase restoration/comparison remains to qualify.
+
+Three modules linked in `/tmp/dk3-runtime-275-lighting-quake-link-fixed.log` (exit 0)
+after correcting two compile errors recorded in the original
+`/tmp/dk3-runtime-275-lighting-quake-link.log`. That link precedes the final public
+sample-table replacement and added restoration regression. Policy/clock regressions
+are written but unrun; no suite, engine scenario, connected route or reference visual
+comparison ran. No current verified build/asset identity exists. Authoring inventories:
+`/tmp/dk3-runtime-275-lights-authored.json` and sequence-272 world properties, on local
+manifest `ba03d6e56c08eef76e9a79a32b2da6c223d68433293c9e4f3b2aecead0606dc3`.
+Regenerated assets/shaders and coherent build/replay remain required. Dynamic lights,
+lightning/attractors, particle/weather emitters and the remaining full-port campaign,
+multiplayer and release work continue. Main, installation, saves and service untouched.
+
+## Sequence 276 — dynamic-lights-and-complex-emitters
+
+Implemented; unverified. `func_dynalight` connects authored brightness/color, spin,
+cone/flare switches and optional model to the saved spotlight owner. Complex particle
+emitters connect delayed setup, activation, finite lifetime, PVS/cinematic/monitor
+visibility, emission windows, gravity helpers, planar/radial bursts and supplied atlas
+media. Native snapshots retain state, random sequence and deadlines; transient particles
+restart from the restored emitter. Policy regressions are written, unrun.
+
+Behavior review preserves flag precedence, consumed gravity markers (including shared
+ones), zero-direction down vectors and the reference start-on finite-expiry quirk.
+Intentional corrections: dynamic-light brightness/color travel explicitly instead of
+reading unused reference fields; combined cone/flare uses unit flare scale instead of
+aliasing the cone endpoint. Particle emission uses a fixed 60 Hz visual clock instead
+of render-frame counts, with bounded catch-up. Rain orientation and combined cone/flare
+appearance still require qualification; no visual parity is claimed.
+
+Three modules linked successfully in `/tmp/dk3-runtime-276-emitter-link.log`, including
+sequence 275's final public lightstyle table. That link precedes the monitor visibility
+addition. No suite, engine or connected acceptance ran. Existing manifest
+`ba03d6e56c08eef76e9a79a32b2da6c223d68433293c9e4f3b2aecead0606dc3`
+provided authoring data; new shaders still require regenerated assets. There is no
+verified build/asset identity for this candidate. Continue lightning/attractors, weather
+and remaining episode/multiplayer/release implementation; preserved environments unchanged.
+
+## Sequence 277 — lightning-attractors-and-authored-hearing
+
+Implemented; unverified. Lightning now connects exclusive player/ground/attractor
+selection, trigger-index ordering, cycling, authored target dispatch, finite/continuous
+bolts, direct and traced damage with existing inertial impulses, random sound and
+loop shutdown. Persistent emitters, linked attractors, live bolts and deadlines restore
+through the native snapshot. Bolts survive late joins through ordinary snapshots.
+Client geometry uses supplied lightning/sparkle media, authored color/scale/modulation,
+segmented displacement, optional distance alpha fade and endpoint sparks. SPAWN_LIGHT
+remains unused, as in the reviewed tracking packet; no invented damage or light is added.
+
+The converter now retains separate authored PHS hearing rows in a bounded DKPH/DKPT
+trailer before DKLS. The bundled collision loader and native query consume those rows.
+Missing PHS on an older converted map fails with an asset-regeneration diagnostic.
+This replaces Cambot's documented narrower PVS fallback and permits lightning's actual
+hearing-culling contract. Existing merged area-portals remain a separate converter
+limitation; preserving PHS does not establish closed-door acoustics parity.
+
+Narrow compatibility corrections: shared attractors have independent emitter membership
+instead of reference linked-node aliasing; deleting an emitter safely removes surviving
+bolts. Native scorch transport supplies a complete typed event because the reviewed
+reference sender omits fields required by its surface-mark receiver. Sparks/arc animation
+use the existing fixed 60 Hz visual-clock correction. Bounded geometry and the shared
+native decal lifetime still need presentation comparison.
+
+Engine plus three modules linked successfully in
+`/tmp/dk3-runtime-277-lightning-link-fixed.log` after two compilation errors retained in
+`/tmp/dk3-runtime-277-lightning-link.log`. Final added regressions are unrun: branch
+exclusion, cycle order, bolt expiry, shared attractor linking, clock restoration and
+synthetic distinct PVS/PHS rows. No suite, engine scenario, connected gameplay or visual
+reference comparison ran. No verified build/asset identity exists. Source authoring
+inventory is `/tmp/dk3-runtime-272-world-properties.json` on manifest
+`ba03d6e56c08eef76e9a79a32b2da6c223d68433293c9e4f3b2aecead0606dc3`.
+Regenerate assets before engine use; replay Cambot alarms and affected beam presentation.
+Continue weather/world effects and remaining complete campaign/multiplayer/release work.
+
+## Remaining authored actor admission
+
+Read-only inspection of supplied BSP entity data finds no unregistered names in
+65 quoted `monster_*` strings, including factory/death-spawn values. Nharre and Kage
+now have controllers; the dynamically summoned Ghost has its separate controller.
+Firefly, Wisp and path-corner names use their existing native owners.
+Inventory: `/tmp/dk3-runtime-265-authored-classes.json`, local asset manifest
+`ba03d6e56c08eef76e9a79a32b2da6c223d68433293c9e4f3b2aecead0606dc3`.
+This inventory is not an engine run, full ability audit or campaign acceptance.
+Dynamic dependencies, task combinations and boss progression require the broader audit.
+
+## Acceptance rules
+
+Track **implemented**, **contract-tested**, **running engine**, **connected authored
+play**, and **reference comparison** separately. Failed setup invalidates its scenario.
+Observe connection/restoration, input processing, weapon readiness, actual attacks and
+contact, water levels, controller existence and save completion. Preserve first useful
+failure evidence. Do not certify whole weapons/maps/restoration from narrower tests.
+
+ReleaseSafe/Debug assertions are enabled. `build/runtime.zig` explicitly executes the
+runtime root and separately imported actor, weapon, inventory and item test roots.
+After material shared changes, mark affected coverage for replay; run affected checks
+and the applicable aggregate at coherent checkpoints, without duplicate broad suites.
+
+## Sequence 279 — authored-target-effects
+
+Connected `target_effect` to class-owned timing, startup/use behavior, authored particle
+kinds, gravity/speed, volume-0.75 sound and violence/multiplayer particle suppression.
+Native presentation includes sprite/beam variants and optional beam smoke. The supplied
+e1m7a cage's type 6 remains its actual blood particle kind; it is not replaced with a
+generic spark. Invalid particle enum 33 now follows the invalid-type smoke correction
+rather than indexing beyond the reference renderer table. The uninitialized fifth
+blood definition remains invisible, and zero direction preserves the byte-zero normal.
+
+Native saves retain this emitter despite reference FL_NOSAVE. The RANDOM flag uses
+saved per-emitter bounded randomness in place of the reference shared fixed table and
+unsaved global cursor; this is an intentional compatibility departure, not parity.
+The sole supplied target_effect does not use RANDOM. Ordinary emission timing uses the
+reviewed immediate-use pulse and strict terminal-interval boundary. Presentation
+transport retains the latest short-lived burst; loss/late-join/restoration appearance
+still needs engine qualification.
+
+The direction-normal data alone is admitted from already bundled public GPL ioquake3
+q_math.c, with copyright retained and provenance recorded. No private implementation
+or asset entered the project. Three native modules link successfully in
+`/tmp/dk3-runtime-279-target-effect-link.log`; this includes sequence 278's final
+particle acceleration repair and precedes the added restoration regression. All new
+contracts and engine scenarios remain unrun. Main/install/saves/service untouched.
+
+Fresh class audit identifies `fish_goldfish`, `fish_grayfish`, both guppies, Dopefish
+and `e_seagull` outside the prior `monster_*` inventory. These require native owners;
+class-name census alone had not established complete actor coverage. Continue their
+actual behavior implementation and remaining campaign/multiplayer/release audit before
+consolidated verification. `target_splash` has no export in the supplied Gold tree;
+no speculative splash behavior is introduced.
+
+
+## Sequence 280 — aquatic-wildlife-and-seagulls
+
+Connected the previously unowned `fish_goldfish`, `fish_grayfish`, `fish_guppy1`,
+`fish_guppy2`, `fish_dopefish` and `e_seagull` classes. Canonical supplied aidata
+names own tuning/model selection; explicit exported aliases resolve to those owners.
+Harmless fish and seagulls do not acquire hostile targets or companion attack orders.
+Fish use aquatic exposure, water-node wandering, smooth swimming and the reviewed
+upward-only surface clamp. Dopefish retains its first target, strict <150/50% attack
+admission and >175 disengagement hysteresis, authored bite range/damage, direct 75%
+pain callback and sequence termination. Normal shared melee contact/damage applies.
+
+The supplied Dopefish model names its attack `atak`; its CSV has `ataka`. Reviewed
+reference name lookup is exact and initializes every model sequence to strike first+1
+before attaching CSV events. The new controller therefore keeps that default strike
+and no mismatched attack sound. This is not an invented event alias. Seagulls follow
+authored corners with 0.01 steering, doubled walking speed, and 100 ms sampled vertical
+motion; the sine samples are derived mathematically rather than copied from private data.
+Their idle pose uses supplied `stand` because this model has no `amba`.
+
+Fish/seagull/Dopefish deaths use the existing physical gib lifecycle. Successful
+Dopefish bites produce the reviewed 200 ms delayed, 500 ms finite blood cloud and
+mass-dependent fragments; transport/rendering owns its bounded visual clock. The cloud
+retains the reference attacker's absolute-upper-Z height quirk and only occurs when
+actual target health decreases. Shared actor-gib emission was factored to accept its
+actual inputs, allowing this effect to reuse fragments without inventing a fake actor.
+The reference tiny victim-model carrier is omitted; native transport draws the effect.
+As with earlier effects, rendering uses a 60 Hz bounded visual cadence. Negative color
+channels pass through the current particle renderer, so finer blending parity remains
+unqualified. Native snapshots intentionally preserve wildlife omitted by reference
+FL_NOSAVE, preventing save/visited-world restoration from repopulating dead wildlife.
+
+The water-wander review also corrected nearest-node admission: land nodes and nodes
+unreachable through water no longer preempt a reachable water node. Linked destinations
+must likewise carry the authored water bit. This shared correction affects Shark/Crox
+wandering and requires applicable replay. No authored movement/combat values changed to
+assist a driver. Added unrun contracts cover alias/class ownership, engagement hysteresis,
+surface direction, seagull wave phase and rebasing pending/active blood effects.
+
+Authoring census `/tmp/dk3-runtime-280-fauna-authored.json`, manifest
+`ba03d6e56c08eef76e9a79a32b2da6c223d68433293c9e4f3b2aecead0606dc3`, finds 26 guppy1,
+44 guppy2, 70 grayfish, 54 goldfish, 4 Dopefish and 8 seagull placements. All supplied
+fish use wander flags; all seagulls use authored paths. This supplements the earlier
+monster-prefix inventory, which did not count these classes.
+
+Targeted module link `/tmp/dk3-runtime-280-fauna-link-fixed.log` exited 0 after two
+compile errors retained in `/tmp/dk3-runtime-280-fauna-link.log`. It precedes final
+water-node admission, injury handling and regression additions. Implementation remains
+unverified: no tests, engine scenario, connected gameplay or visual comparison ran.
+The broad implementation pass continues; all four episodes, multiplayer and independent
+release remain in scope, followed by coherent build/assets and consolidated verification.
+
+
+## Sequence 281 — retained-editor-portal
+
+The broader class audit identifies one retained `func_areaportalass` submodel, *40
+named `eledoor` in e1m2b. Supplied data and the permitted private export inventory
+show no runtime spawn owner. Native generic submodel binding incorrectly made it
+solid. Brush admission now excludes this exact retained class, alongside existing
+`func_areaportal` metadata. It does not alias it to a gameplay portal or alter real
+doors/walls. Added unrun regression admits a real door/wall with the same model while
+rejecting the retained portal. No engine traversal is claimed.
+
+The other inventory suspects are metadata: all 54 supplied `func_group` entities
+have no model; all four retained `light_flame` entities have no model and that private
+export is disabled. They do not need invented runtime controllers. The companion
+health review resolves a prior uncertainty: Sidekick initialization explicitly resets
+health to ATTR_HEALTH (100), so the native 100-health reset is retained despite high
+unused aidata health values. These are source/data findings, not playthrough evidence.
+
+The audit also confirms unfinished shared actor audio: sight-only CSV records and
+non-attack frame cues are not dispatched by current native actor controllers. The
+converter loses whether sound2 is a sequential cue or an alternative at frame1, and
+its missing-probability default is 100 instead of the reference initialization of 0.
+Continue implementation through these actual behavior gaps before consolidated
+verification. No new build, test, engine run or reference presentation comparison ran.
+
+
+## Sequence 282 — authored-actor-audio
+
+Connected authored sight-only rows and frame cues for idle, movement, pain and death,
+including companions. CSV conversion now preserves explicit disabled frames, absent
+second frames, fractional probabilities, animation weights and the distinction between
+a sequential sound2 and an alternative chosen at sound1's frame. Explicit zero remains
+an alternative and suppresses the second sequential event. Missing sound2 probability
+is zero; missing first attack frame defaults to first+1, matching model initialization.
+Old actor-event tables fail with a regeneration diagnostic instead of guessing lost data.
+
+Generic idle selection uses contiguous supplied amba/ambb/... sequences and their
+weights, retaining custom class idle owners. Crox swim/wander poses bypass land idle
+selection. Sound admission uses authored active distance and attenuation; ambient cues
+retain their 10–40-second cooldown. Attack choices and consumed cues have independent
+saved state so sound probability cannot consume a rat/spider launch event. Existing
+class-owned impact and launch samples remain class-owned. Guard outgoing attack cues
+are consumed before completion changes the phase. Out-of-clip sounds never become
+late events. Generic cues do not repeat on a held death or petrified pose.
+
+Companion pose selection returns the actual sequence, clock and looping rule used by
+both projection and audio. Its weapon and jump epochs remain distinct from movement;
+no duplicate companion audio policy was added. Snapshot clocks rebase together and
+admission checks cue identity/frame and selected idle against loaded class metadata.
+Written, unrun regressions cover conversion alternatives/disabled frames, exact model
+lookup, contiguous idle choices, crossed/consumed frame events, finite death sounds,
+companion shot/jump/movement clocks and saved audio deadlines/masks. Both new domain
+roots are explicitly included in the native test root.
+
+Permitted private behavior review: MonsterSound/ai_frames/ai_func and class/Sidekick
+callbacks establish those data contracts. No private source or assets are imported;
+tests use synthetic public fixtures. Targeted native module link
+`/tmp/dk3-runtime-282-actor-audio-link.log` exited 0 before final companion cue sharing,
+guard completion, Crox idle admission and restoration-validation edits. No contract
+suite, engine scenario, connected route or reference presentation comparison ran.
+Revalidation includes shared actor attack timing/audio, companions, persistence and
+all affected campaign encounters. The full four-episode/multiplayer/release coding
+pass continues before consolidated build/assets and scenario verification.
+
+
+## Sequence 283 — party-injury
+
+Companions now consume injury receipts, choose the actual supplied weapon-grip pain
+pose with the reviewed 75-percent admission, respect the pain lock, and retain a
+hostile attacker for retaliation even when its own target points elsewhere. Self
+hazards do not cause retaliation or a hit pose. Hero/party damage never creates a
+hostile party target. Authored movement and its script clocks pause during a pain
+pose, then resume; movement-lane yielding cannot override that pose.
+
+Class-owned pain/death sound families use companion identity, water/slime/lava
+exposure, episode and actual health. Environmental injury sounds retain 15-percent
+admission; normal injury voices are independent of the animation lock. Death clears
+armor and cancels active weapon controllers before its voice. The existing held
+corpse/game-over path remains; current companion deaths are not admitted to the
+shared always-gib cleanup, so the suspected premature-removal bypass is not present.
+Generic corpse fragmentation and full conversational barks still require qualification
+and further implementation; these cues do not claim complete companion audio parity.
+
+Permitted private Sidekick callbacks and generic initialization/weapon-grip selection
+were reviewed as behavior contracts. Supplied character models own clip identity.
+No private implementation/assets were copied. All three modules link in
+`/tmp/dk3-runtime-283-party-injury-link.log`, exit 0, including final sequence-282
+changes. No tests or native gameplay ran. Current acceptance remains unverified.
+
+The next audit finds omitted native ordinary weapon drops on player/companion death,
+unread item-respawn configuration, missing weapons-stay handling and missing player
+pain/death feedback. Continue those connected inventory/participant lifecycle paths
+within the broad coding pass, then consolidate assets/build and scenario verification.
+
+
+## Sequence 284 — participant-lifecycle
+
+Weapons now own `respects_weapons_stay` and pickup respawn policy. Discus,
+Sunflare and Metamaser remain consumed when multiplayer weapons-stay is enabled;
+Metamaser respawns after 60 seconds, other weapons after 30. Already-owned authored
+stay weapons cannot farm ammunition. Dropped weapons always consume, carry actual
+remaining rounds, never respawn and expire after 60 seconds only in multiplayer.
+Player/companion death uses the reviewed class-specific toss ranges, cancels personal
+controllers, discards inventory and retains the selected class only for corpse grip.
+`dm_item_respawn` controls ordinary ammunition/item respawns, not weapon callbacks.
+
+Player death now dispatches once before respawn can replace the entity: objective
+release, current-weapon drop, corpse collision, armor/invisibility cleanup and
+appearance/liquid-specific voice. Injury voices retain the reviewed one-second lock,
+35-damage sound-family boundary, underwater suppression and separate lava/slime
+voice cooldowns. Native multiplayer kill notices use sanitized participant names
+and original descriptive text. Damage flash uses surviving health damage / 40,
+a .75 display cap and elapsed-time .045/100ms decay. Poison/cold ticks clear it.
+The inactive Quake II damage-feedback function was explicitly excluded after checking
+its commented call site. Elapsed-time fading replaces reference tick-step fading;
+flash deadlines restore with the snapshot instead of replaying injury audio.
+
+Multiplayer class starting attributes and advancement survive respawn/reconnect,
+while temporary protection/inventory do not. Match rotation resets advancement.
+Kill XP uses the opponent's spent attributes and honors skill-system/level-limit
+settings; Daikatana kills accrue sword experience without ordinary XP. The same
+sword exclusion repairs monster rewards. Nightmare describes its episode-local
+credited-kill ammunition grant; progression applies it through the existing ammo cap.
+Snapshot admission validates new pickup, progression and feedback state.
+
+Contracts were reviewed in the permitted private client/weapon/death/physics reference;
+no private implementation or assets were admitted. New policy/restoration regressions
+are written but unrun. First targeted link reported a sound-channel integer mismatch
+(`/tmp/dk3-runtime-284-participant-lifecycle-link.log`); corrected intermediate link
+passed (`/tmp/dk3-runtime-284-participant-lifecycle-link-fixed.log`) before final
+obituary and inventory-discard changes. Consolidated build and verification follow.
+
+Asset regeneration is running via dkguard against read-only supplied 1.3 data,
+using the local conversion cache (`/tmp/dk3-runtime-284-assets.log`). This does not
+update the preserved playable installation, user saves or online service. All current
+native gameplay acceptance remains unverified. The broader corpse/cold-death,
+companion conversation and visual/audio parity limits remain visible; connected
+campaign and multiplayer scenarios, not implementation counts, determine acceptance.
+
+
+## Sequence 285 — consolidated-native-verification
+
+The broad code batch now builds as one independent engine and three native modules.
+`zig build -j4 --prefix zig-out/native-dev --summary all` passes all 41 build steps.
+The first aggregate run finds test-only setup drift: missing required weapon grips,
+an outdated ECS constructor in two fixtures and a signed array index in a bot test.
+These failures invalidate those test roots, not the independently passing roots.
+After repairing the fixtures, `zig build test-runtime -j4 --summary all` executes
+130 runtime, 48 actor, 24 weapon, two inventory and seven item tests successfully.
+The aggregate's other 138 Zig tests and 64 Python tests also pass. A source/import
+walk finds exactly 130 runtime test declarations reachable, with no unreferenced
+test files. ReleaseSafe/Debug assertions remain enabled. Formatting the consolidated
+coding pass also corrects presentation of previously minified blocks.
+
+Native multiplayer observation now reports actual participants, injury sources,
+weapon actions, body identities, progression and objective controllers. The bot-match
+runner requires observed movement, pickups, attack contact and a new living body
+after death; objective modes additionally require real carrying/capture. Failed team,
+controller or admission setup invalidates the scenario. The runner creates only a
+fresh map and ordinary bots, without fixture placement, grants or rule changes.
+This is narrow natural-bot scenario coverage, not human network/mode acceptance.
+
+Evidence: `zig-out/reports/runtime-zig-285/consolidation/`; source logs are
+`/tmp/dk3-runtime-285-build.log`, `/tmp/dk3-runtime-285-tests.log`,
+`/tmp/dk3-runtime-285-runtime-tests-repaired.log` and
+`/tmp/dk3-runtime-285-observation-link.log`. Regeneration is still compiling authored
+navigation in the private local cache. No engine/connected acceptance is claimed
+before the new manifest and binaries are staged together. Fresh New Game/intro and
+connected campaign progression remain the primary integration gate; all episodes,
+multiplayer/network, companion parity and independent release remain in scope.
+
+## Sequence 286 — native-play-entry-and-integration-repairs
+
+Owner requested bare `zig build play` at any time during development. Native code builds
+now default to `zig-out/native-dev`; the preserved root installation and online prefix
+are not destinations. Converted assets remain in the shared local `zig-out/assets`
+cache. Routine play rebuilds current source, verifies/packages immutable products and
+launches through dkguard without source-data or conversion-environment arguments.
+Explicit `-DDK_DATA` requests conversion; `-Dassets-dir` selects a different completed
+cache. `-Dheadless=true` provides guarded software rendering. Settings/saves remain in
+the development profile, and the launcher prints the exact build/asset identity.
+Installer regression tests preserve old generations and player saves across updates,
+reject incomplete/corrupt inputs before publishing, and explain first-use asset setup.
+
+The class audit finds 21 episode-three chests incorrectly admitted as collectible keys.
+They now use the existing WorldControl union and shared tossed-item service: solid
+bounds, one-use opening animation/audio, five wooden rewards and four black rewards.
+Black chests decide the trap on opening; safe rewards follow the delayed reveal, while
+a trap applies 25 damage to its opener and removes the chest after its explosion.
+Chosen rewards, timers and body state persist; rebasing retains remaining reveal time.
+Historical key bit positions stay stable while chest names no longer resolve as keys.
+Private contract review covered artifacts and artifact/explosion presentation; no
+private implementation/assets were imported. Native entity RNG is saved per chest.
+Trap poly-body/ring, sprites and sound are connected; the 15 wood fragments and finer
+explosion particles remain open. The supplied private throw_debris definition is absent,
+so no invented fragment velocity is called reference parity. Running chest scenes remain
+unverified; no all-episode acceptance follows from this class repair.
+
+The first integrated runs reveal actual defects that contract-only runs missed:
+wisp spawning used an excluded component as a writable query mask (every map crashed),
+and multiplayer telefrag had another invalid writable mask. Wisp scanning now excludes
+existing swarms; telefrag collects overlaps before applying damage. Assertions stay on.
+Direct map-spawn and occupied-spawn regressions cover these paths. Debug native traces
+identify the fault; the optimized trace incorrectly localized it to an inlined math site.
+
+After startup repair, save admission rejected visual WorldControl projections for
+lacking Body. Admission now distinguishes known non-solid controller projections and
+retains body requirements for physical entities. The regression serializes real effect,
+flare and earthquake states without fake bodies, rebases deadlines, and still rejects
+a physical binding missing its body. The original failure also occurred at intro shot
+20. Bots additionally failed to acknowledge reliable engine configstrings/chat, causing
+command overflow and disconnect during world iteration. Bots now drain the existing
+engine console-message service before issuing normal commands. Four-bot admission and
+continued observation work; pickup/combat/respawn acceptance is still pending.
+
+Asset regeneration completed successfully under dkguard with manifest
+`e7dbc2565c3c1f9ce1add690e6d713841d55d9ef740b3be85de7f4a3375df9ff`.
+Coherent installation `ef7a0c105d1454316b4f6cc9793fb2dfe8be1e48143ede5aad255749ef75e04b`
+passes 54 build/test steps and 216 native contracts (134 runtime, 48 actor, 24 weapon,
+two inventory, eight item). Three installer tests pass. A missing test-fixture flags
+field was repaired after retaining the failed compilation log. Unaffected aggregate
+roots retain sequence-285 results; no duplicate broad suite.
+
+`zig-out/reports/runtime-zig-286/play-final/` records the actual bare-play build graph,
+headless launch, rendered menu, e1m1a admission, save, acknowledged restoration and clean
+exit. The fixture deliberately disables intro and selects the map: it is launcher/save
+coverage only. Both preserved installation links remain unchanged. Earlier failed
+launcher setup (missing temporary FIFO directory), map crash, save rejection and bot
+overflow remain separate evidence directories. `fresh-opening-repaired/` is a fresh
+normal New Game/full-intro run in progress, not an accepted milestone. Bot diagnostics
+show no meaningful pickup/combat yet. Swamp-decoration out-of-range frame warnings are
+also retained for authored animation follow-up. Full campaign, interactions, companions,
+network/multiplayer and release requirements remain open in the acceptance matrix.
+
+## Sequence 287 — native-wire-and-collector-navigation
+
+The first fresh sequence-286 New Game completes all 115 intro shots and checkpoint
+saves at 20/50/80, reaches e1m1a, restores arrival, collects the Ion Blaster and fights
+through the marsh. It stops at a driver mistake with health 100: a lower west ledge
+was treated as the upper path. The driver now continues along the connected lower
+ledge. A legitimate marsh checkpoint reaches the authored e1m1b exit and bridge
+control 91. This is not a fresh campaign gate; separate builds and replay starting
+points remain explicit in `result.json` / `failure-scope.json`.
+
+Read-only botlib diagnosis finds every observed weapon goal below the navigable
+player volume. Goal coordinates now align the collector's bottom with the item's
+actual support plane, sharing a pure helper between bots and companion collection.
+No arbitrary height offset, geometry, item position or movement rule changes. A
+resupply regression uses a floor weapon whose raw point has no route and confirms
+that choosing the goal neither moves the item nor grants inventory. Hidden/avoided
+items remain excluded. The natural four-bot e1dm1 run on installation
+`8dc7a3d6883645b84dc2b4ca8c52189b4a177ec245aedccafd4330761acf4053` demonstrates
+movement, pickups, actual attacks/contact, kill credit and respawn. It is a bounded
+DM scenario, not full mode or network acceptance. CTF/deathtag contested captures
+fail. Deathtag separately demonstrates combat and respawn. Subsequent read-only CTF
+diagnosis finds both resting flag origins outside reachable areas: all eight raw
+lookups fail and body-aligned lookups succeed. Resting objective pursuit uses the
+same correction; carried objectives retain their carrier coordinates. Replay pending.
+
+The connected bridge control exposes `InvalidImpactEvent` in the native client.
+The snapshot wire retained an 8-bit generic1 field, truncating native effect tags
+above 10000 and persistent effect identities. Lightning's scorch tag consequently
+failed client admission; many other native effects could not reach their dispatch.
+Both independent Zig transport and the bundled ioquake3 codec reference now retain
+32 bits. Protocol/schema moves to 1347 so incompatible clients are rejected. The
+live online service and installed earlier protocol are unchanged. A regression of
+actual encoded/decoded values fails on the defective layout (`10002` becomes `18`)
+and passes after repair, alongside the randomized bundled-codec comparison.
+
+Installation `807f488be71e81716955e106b77363730afe74bfd2a168f4a0e2ede6d1ea4a08`
+and unchanged asset manifest
+`e7dbc2565c3c1f9ce1add690e6d713841d55d9ef740b3be85de7f4a3375df9ff` pass 232
+applicable contracts (218 native, four codec, ten online/security). Eleven input
+driver checks pass, including immediate invalidation on client/engine failure.
+The driver previously waited for a server after a client crash had returned to
+menus; it now preserves the error and last historical observation distinctly.
+The actual bridge replay passes the former crash, both ford encounters, turret
+controls, boss fight, defeated-boss save/load, authored death/reload and reward
+collection. It then fails on surfacing with `MissingComponent`: water voice lookup
+incorrectly required a multiplayer Session on campaign Hiro. Voice selection now
+uses the established campaign identity while preserving multiplayer appearance
+voices; direct contracts cover missing Session, Mikiko and Superfly. Repaired replay
+is pending. Fatal server errors now retain the Zig error-return trace when available.
+
+The remaining factory driver route is implemented from supplied ground nodes and
+brush/control authoring: platform 219, upper passage, liftmaster button 118 and
+descending lift 117, lower water path, then ordinary contact with exit 312 into
+e1m2a. It checks actual controller presence, player height, health and input
+acknowledgements. This route is unverified and does not close the milestone.
+
+Evidence is in `zig-out/reports/runtime-zig-287/`: `navigation/` and
+`objective-navigation/` are read-only Debug diagnostics, `dm/`, `ctf/`, `deathtag/`
+have separate natural match results, `marsh-checkpoint/` retains the client failure,
+`bridge-wire-repaired/` retains the successful narrower behaviors and surfacing
+failure, and `consolidation/` keeps the failing/passing wire and driver checks.
+The exact build and asset hashes accompany each run. Shared wire changes require
+native effect/presentation and multiplayer replay; collector changes require party
+pickup replay. The complete fresh gate and all-episode/multiplayer/release scope
+remain open. No acceptance is inferred from the repaired code or passing contracts.
+
+## Sequence 288 — restoration-admission-and-route-diagnosis
+
+The sequence-287 surfacing replay reaches the authored factory arrival alive, saves
+and reloads its visited-world archive, then fails on the C→B return. The saved bridge
+resource registry is published only after ClientBegin, overflowing the engine's
+64-command reliable queue before the client can acknowledge. The resulting synchronous
+disconnect mutates the ECS while lightstyle publication holds a reader. First failure:
+`runtime-zig-287/bridge-surface-repaired/`, installation `5414bcb6…`; no visited-world
+acceptance transfers from historical results.
+
+The pending repair publishes admitted saved resources during map initialization,
+before the initial gamestate, and suspends fresh-world simulation while restoration
+is pending. Lightstyle queries release readers before engine callbacks. Neither
+reliable queue size nor authored gameplay timing changes. Implementation is unverified
+until the affected transition replay. Read-only bot route diagnostics are added to
+the existing match observation command. Body-aligned resting goals alone did not
+fix CTF/deathtag captures: both sequence-287 repaired matches time out without a
+carrier. No repeated unchanged broad or prolonged match runs are acceptance.
+
+The first repair replay also exposed same-map resource replacement from a fresh map
+into a late checkpoint. In-place loading now requires all saved resource identities
+to be an already published prefix; otherwise the existing admitted map-load path
+provides a fresh gamestate. Prefix, reordered and new-resource contracts execute in
+the native root. Client drops now retain server-side reasons, and save/load waits
+fail immediately on those drops. Build `fa467c30668dee2537bd194a18c872f57c3eb7d22f6bf1408655eaf743b48344`
+passes 220 native contracts and 12 driver checks. `visited-admission-repaired/`
+verifies actual same-map load, surfacing, factory arrival and the disk-backed C→B→C
+round trip. The later pipe approach fails after overshoot correction slides off its
+edge. A bounded safe takeoff region replaces that needless correction in the driver;
+`factory-pipe/` replays the legitimate checkpoint. No geometry or movement rule changes.
+
+Bot evidence identified alternating portal exits. Bundled botlib calculated portal
+travel costs but never populated the first-reachability array read by PredictRoute.
+The repair retains the existing chosen edge with its cost and rejects unavailable
+zero-cost portal routes. `portal-regression-before/` uses the new diagnostic module
+with the defective engine: four routes cycle after two edges, two local routes pass.
+On the coherent repaired engine, `portal-regression-after/` reaches all six goals,
+including a 77-edge objective path. These read-only diagnostics change no actor state.
+The natural `ctf/` match now passes pickup, actual attack/contact, death, respawn and
+one contested capture (identity `f8f36f36562e91ec87953b44071c878ed761bc0dff07bb6a212f33522093f961`).
+`deathtag/` still fails without a bomb carrier: blocked corridors and one submerged
+route remain. Its combat/respawn evidence does not establish captures. The complete
+fresh opening gate, remaining campaign/interaction/party scenarios and human network,
+rooms and independent release acceptance stay open.
+
+## Sequence 289 — factory-cinematic-and-authored-bot-controls
+
+Checkpointed normal-input factory traversal now exercises both outer controls, yard
+combat/resupply, the console switch, its monitor, save/load during monitor playback,
+three exit doors, platform ascent, the upper rail crossing, liftmaster descent and
+the lower route to the authored e1m2a exit. Driver corrections follow supplied ground
+node connections and actual collision: console access comes through node 122, use
+occurs from its reachable front, and the upper 32-unit rail requires an ordinary
+jump. No movement speed, damage, geometry or puzzle timing changes. Evidence on
+installation `fa467c30668dee2537bd194a18c872f57c3eb7d22f6bf1408655eaf743b48344`:
+`runtime-zig-288/factory-pipe/`, then `runtime-zig-289/factory-console/` and
+`factory-departure/`. These remain separate checkpoint replays, not one fresh gate.
+
+The exit exposes `UnknownCinematicClass` during e1m2a admission. Its supplied final
+shot calls Hiro `cien_hiro` while retaining the correct unique ID `hiro1`. Native
+queue execution already binds the unique ID first, matching private reference
+behavior; preloading incorrectly attempted to load a second model for the typo.
+Preloading now recognizes tracks addressing a previously spawned identity. Real
+spawns, borrowed actors and class-only references still require their definitions.
+A native regression covers typo binding and those unaffected admission cases.
+
+The first repaired exit then exposes `MissingCinematicSound` at shot eight. The
+authored path `globa/a_speedwhoosh.wav` is absent. The private sound contract does
+not abort playback when media fails to load. Native cinematic audio now logs that
+path and continues, without substituting another asset. On installation
+`0490b20023b7306d69ee4088db4e70a5dc706cf4fdd45851afd67f7c8ce5f159`,
+`factory-arrival-repaired/` completes all nine shots and releases the living player
+with health 82, armor 162 and Ion ammunition 100. The frame was inspected. Exact
+combined identity is `31b5d79d732239f1dd02c127318a39e597c6bdd4c6bee9dcd6e5a1c85f22e2ce`;
+asset manifest remains `e7dbc2565c3c1f9ce1add690e6d713841d55d9ef740b3be85de7f4a3375df9ff`.
+`factory-exit-repaired/` retains the missing-sound failure. The fresh full opening
+replay on `0490b…` is running in `fresh-opening/`; no completed milestone yet.
+The applicable native batch passes 222 contracts and driver/evidence checks pass 16.
+
+Read-only bot diagnostics distinguish separate deathtag failures. Blue bots physically
+hit named lift door 110; its remote button 18 is itself obstructed by door 321,
+which button 507 controls. Initial floor-trace solidity alone is inconclusive:
+final stationary hull clearance remains required. Bot control discovery now follows
+these observed door prerequisites with cycle bounds, returning a real reachable
+control goal for normal movement/use, never remotely firing the target. Progress
+renews a control trip deadline rather than abandoning a cross-base goal after a
+fixed total duration. Additional physical obstructions can select their own controls.
+
+The other observed bot is on a dry ledge (actual water level zero), correcting the
+earlier submerged inference. Its outgoing routes require crossing slime. Bots may
+request that escape only when AAS finds no safe route; damage remains authoritative,
+and campaign actors/companions retain their existing safe routing requests. Optional
+pickups now require a safe return route so they do not invite that trap. The
+resupply contract rejects one-way loot without granting or moving it.
+`deathtag-routes/`, `deathtag-controls/`, `deathtag-controls-repaired/` and
+`deathtag-edges/` retain read-only diagnosis. Debug `deathtag-control-chain/` shows
+prerequisite-control pursuit. `deathtag-control-escape/` shows all four bots moving,
+collecting, attacking, receiving opponent damage and respawning, but no carrier
+within its 120-second diagnostic. It is not consolidated mode acceptance. The latest
+return-route change and production replay remain pending; prior CTF acceptance
+requires revalidation after shared bot changes. Full campaign/weapon/companion, human
+network, rooms and release requirements remain open.
+
+The bot consolidation `edf131c18aecec693aaae945bb0ab7dd9983a23781867eedaf7d7fd07a2b60b3`
+passes all 222 applicable native contracts. `ctf-consolidated/` revalidates pickups,
+movement, actual attacks/opponent damage and respawns by all four participants and
+one contested capture. Combined identity: `b9cbc6d200b60bb8f8f5beddf68e60abfca67fd33cd2cbc997e92379c67f5331`.
+`deathtag-consolidated/` remains in progress. The fresh opening run retains its
+immutable `0490b…` build and staged modules while these bot-only changes are tested.
+The match driver now invalidates fatal engine errors immediately and retains read-only
+control/mover diagnosis on failure; existing report directories cannot be reused.
+
+A read-only supplied cinematic/model audit finds three additional authoring-resolution
+issues: credits requests absent `c_hiro_cred.dkm`, e3m4b names absent `e3m4_intro`,
+and e3m6_cinemid refers to `monster_gharroth` while actor tuning names
+`monster_garroth`. `cinematic-authoring-audit.json` is asset diagnosis only, not
+map-load or playback acceptance. Reference behavior is being checked before repair.
+
+## Sequence 290 — campaign admission, pickup projection and authored bot continuation
+
+Continues the full accepted independent port on `rewrite/native-zig-runtime`.
+Main, the installed preserved game, user saves and live service remain unchanged.
+Bare `zig build play` remains the sequence-286 native development entry point.
+
+The sequence-289 fresh opening replay failed at Crox 425 in the second pool after
+all 115 intro shots, ordinary marsh traversal, controls and bridge resupply. Its
+last living inventory held 135 Ion rounds; zero ammunition was the death reset,
+not exhaustion. `runtime-zig-290/bridge-second-pool/` clears that Crox from the dry
+bank with ordinary fire, traverses the climb and activates the authored boss.
+The old boss patrol then loses its firing line at the west cliff. Lower-bank and
+narrow-plateau alternatives fail survival; the wider wave-defense patrol hits the
+actual east `trigger_hurt` (5000 damage, x=-623..-619). These retained failures are
+driver evidence, not authorization to change authored damage/geometry. The next
+patrol preserves clearance from both cliff and barrier and handles nearby skeets.
+
+A real rendering failure used frame 10030 on spawned Ion ammunition: a released
+sound-event transport slot retained its animation/event fields. Pickup binding now
+initializes the projection, and publication clears old wire state. A poison-frame
+regression explicitly executes from the native root. Three bot regressions
+cover prerequisite completion, allied live control reservations and lift riding.
+Bots retain the original blocked door while performing prerequisite controls;
+ordinary `use` logs show both 507→18 and 508→22 chains in the running server.
+`deathtag-control-continuation/` is a Debug diagnostic combination. The coherent
+`deathtag-lift-rider/` still has no carrier/capture despite movement, pickups,
+attacks, opponent damage and respawns by all four participants. No complete
+objective-route or multiplayer acceptance is transferred from earlier runtimes.
+
+Consolidated installation:
+`b55eef1a5de4fe3fdbb54020b83889f649264cb3b8a650690b19d9b868710e54`.
+Unchanged asset manifest:
+`e7dbc2565c3c1f9ce1add690e6d713841d55d9ef740b3be85de7f4a3375df9ff`.
+228 native contracts pass (146 native root, 48 actors, 24 weapons, 2 inventory,
+8 items); 17 input/evidence checks pass. Assertions remain enabled. The first new
+cinematic fixture had an invalid test header and failed; correcting that fixture
+produces the passing consolidated result. No unrelated broad suite is repeated.
+
+The supplied cinematic audit becomes three reproducible engine regressions:
+`cinematic-before-e3m4b/` fails InvalidFileSize, `cinematic-before-e3m6a/` fails
+UnknownCinematicClass, and `cinematic-before-credits/` fails InvalidFileSize on
+`c39087674306439fae19c80553f9b3e771b75f34781d1d7ab9ee7fcf92039f4b`.
+The repaired immutable build above passes all three narrow cases: e3m4b admission
+and gameplay save restoration; e3m6a's 16-shot mid-cinematic and completed restore;
+credits' two-shot playback and completed restore. e3m6a uses explicit diagnostic
+activation of its actual authored trigger after the arrival cinematic. This is
+not a connected boss encounter, credits presentation qualification or campaign
+traversal. Post-credits direct-map player view is dark and remains outside the
+narrow playback result. Shared cinematic changes require the opening regression.
+Combined immutable-run identity:
+`f31deb83ece0f3de17e7730797d948b1fb17131af838145e90051051842c602a`.
+
+Private behavior review confirms missing programs do not start and absent actors
+receive no queued command. Unknown spawn classes remain errors; empty IDs no
+longer alias unrelated unnamed performers. Empty/oversized/malformed files remain
+errors. Credits has no c_hiro_cred model in the local original archives; its actor
+only carries timed door-use/removal tasks. Such control-only classes may lack
+media. Intentional correction: render no missing-model marker for this carrier;
+real performances still require metadata. See tracked provenance for reviewed
+reference paths; no private implementation or assets were admitted.
+
+`bridge-east-plateau/` was invalidated because build-prefix module replacement
+raced with staging. The specific guarded process group was terminated. New
+campaign/match runs use immutable installation modules by default and verify both
+selected identities and copied bytes. Mismatches invalidate setup. A driver
+regression replaces a module between identity recording and copy and confirms
+rejection. Explicit mixed-build match diagnostics require a separate flag.
+No evidence from that interrupted mixed run is accepted. Fresh continuous opening,
+remaining campaign, weapon interactions, human multiplayer, rooms and release
+remain open in the tracked current acceptance matrix.
+
+The `bridge-barrier-clearance/` replay kills the Thunderskeet and observes all ten
+wave actors but dies under remaining attacks before collecting the shield. The
+following `bridge-reward-resupply/` replay dies before boss defeat. Both are failed
+routes; no fresh acceptance is assembled from them. Further combat diagnosis must
+record actual damage sources rather than infer splash/self-damage from health loss.
+`cinematic-after-e3m6a/` and `cinematic-after-credits/` completed successfully with
+actual post-playback saves/restores; their final rendered frames were inspected.
+
+
+## Sequence 291 — native-restart-lift-entry-and-damage-evidence
+
+Bare `zig build play` remains available on the native branch with isolated profiles.
+Main, the preserved installation/saves, and the online service are unchanged.
+The exact installations, asset identity and acceptance boundaries are recorded in
+`docs/native-acceptance.md`; all evidence is under `zig-out/reports/runtime-zig-291/`.
+
+Read-only player observations now include actual ground and damage receipts.
+The fresh `2b789…` New Game run observes every intro shot, traverses the marsh,
+uses authored bridge controls/resupply, clears both pools and reaches the boss.
+It then crosses the real east 5000-damage barrier. A 10000-health arena diagnostic
+separately defeats the boss and collects its actual shield; it establishes damage
+sources and reward contact only, never ordinary campaign acceptance. The first
+boundary correction avoids that hazard but dies under spray. Batched observation
+queries subsequently let a legitimate ordinary-health checkpoint defeat the boss,
+collect armor, restore a death, and retain C→B→C world progress. It arrives with
+four health and dies approaching the factory tree. `bridge-exit-resupply/` uses
+the real north bridge health tree to reach 100 health, repeats the factory and
+visited-world transition, uses its next tree and reaches the upper pipe alive
+with 71 health. The driver then oscillates across a straight approach waypoint;
+its corrected safe region retains actual height/ground assertions. The narrow
+`factory-pipe-approach/` checkpoint replay passes that segment and the supported
+takeoff, then carries too much momentum across the upper landing. No fresh
+completion is claimed.
+
+Two actual native UDP clients expose a fast-restart crash: the game unloaded and
+reallocated botlib while engine hunk marks remained set. Engine navigation now
+survives the VM restart, with stale entity projections cleared; bot input owners
+release their engine slots and the new match repopulates them. Client restart
+commands reset restoration presentation state. This follows the bundled engine's
+restart contract; no private implementation or runtime is admitted.
+`lan-synchronized/` retains the crash. `lan-restart-repaired/` on `b5cc3…` verifies
+admission, movement, fire events, commanded death/respawn, spectator/rejoin,
+disconnect/reconnect and fast restart with two real clients. Post-restart frames
+were inspected. Ordinary LAN reconnect starts a new session; authenticated public
+room identity restoration and network combat contact remain unverified. Earlier
+LAN attempts exposed driver errors (too many startup commands, status address
+format, and the reliable text-command throttle); those are explicitly not game
+failures. The driver now rejects oversized launch commands and observes server
+time after acknowledged team changes before issuing the next text command.
+
+Controlled red-lift riding reaches the objective, but a separate raised-lift
+approach reproduces oscillation until the closing gate crushes the bot. AAS
+entrances alternate while physical sideways motion falsely suggests useful
+progress. A grounded ascent now checks for an actual obstructing mover and seeks
+its real authored control. `bot-lift-ascent-repaired/` on `0bfdec…` presses the
+button, rides and carries the objective without altered geometry/waits/damage.
+`ctf-ascent-regression/` passes movement, pickups, attack, opponent damage and
+respawn by all four bots plus one contested capture. `dm-restart-admission/`
+repeats movement/pickups by four bots, combat by two and a respawn after fast
+restart. A first restart driver attempt incorrectly retained its admission sample
+counter; the corrected deadline begins anew at the real restart boundary.
+
+Natural deathtag now produces carriers but still cannot capture. A read-only AAS
+regression shows area 6435→3956 unreachable, with reverse and adjacent routes
+passing. Inspection of the supplied graph finds two required water-jump edges;
+the native motor supports that motion but navigation excludes its travel flag.
+This is the next concrete shared-route repair, not permission to alter the course.
+
+The `0bfdec9bd5a2a4d75ff206012a608212175412050723bcfefe3a33607a4afa9d`
+installation passes 228 native contracts (146 runtime, 48 actor, 24 weapon,
+2 inventory and 8 item tests), with assertions enabled. Seventeen driver/evidence
+checks pass. Asset manifest remains
+`e7dbc2565c3c1f9ce1add690e6d713841d55d9ef740b3be85de7f4a3375df9ff`.
+Fresh opening completion, remaining episodes/interactions, complete multiplayer,
+public rooms and independent release acceptance remain open.
+
+
+## Sequence 292 — water-jump-routes-scheduled-lifts-and-fresh-opening
+
+The exact installation/asset identities and current evidence states are recorded
+in `docs/native-acceptance.md`. Native player/companion navigation now admits the
+water-jump travel supported by its existing motor. Read-only AAS diagnosis also
+accepts explicit slime permission, corresponding to the bot's existing escape
+fallback. Supplied graph analysis confirms that the deathtag carrier path needs
+both permissions; a first strict query correctly remains unreachable. The
+explicit-slime replay reaches all three goals. Actual water contact/traversal is
+not inferred from this graph result.
+
+CTF replays successfully with movement, pickups, fire, opponent damage and respawn
+by all four bots plus one contested capture. Natural deathtag still fails capture:
+a red carrier returns to a stationary raised lift and waits despite no scheduled
+movement. The centering policy now considers only actual travel or a scheduled
+return that approaches the requested floor. Its stationary/wrong-direction
+regression and the 228 native contracts pass. Controlled departure fails before and after: centering is repaired, but the
+actual lower AAS waypoint lies under the raised platform. Preserving a downward
+obstacle trace selects a remote prerequisite behind that same descent, so the
+`lift-departure-floor-trace/` scenario also remains failed. The natural
+`deathtag-scheduled-lift/` run has no capture. `ctf-lift-regression/` passes on
+`da72b58…`; 228 native contracts and 17 driver/evidence checks pass. Next diagnosis
+must establish a physically clear local departure before another natural match.
+
+The factory driver now accepts the supported straight pipe approach and starts
+its jump from the actual raised joint. The checkpoint reaches the gate, yard,
+monitor restoration and both lifts, then dies to the lower-route Froginator.
+A separate legitimate yard-checkpoint replay uses the authored side-tree detour
+and reaches the lower route with 58 health, then dies to Crox 160 in the pool.
+`factory-lower-crox/` uses the existing dry-bank encounter driver, clears that
+actual Crox, reaches the authored e1m2a exit and completes its nine-shot arrival
+alive with 58 health. The ordinary New Game replay on the immutable `c812630…`
+installation completes all 115 intro shots, marsh, bridge boss/all ten waves,
+reward contact, death/reload, north-tree resupply and first factory arrival. Disk
+save/load retains the visited bridge; an authored return verifies its progress.
+The next driver waypoint oscillates just outside tolerance and times out with
+the player alive at 75 health. The fresh gate remains failed. No fresh completion is claimed, and no
+checkpoint chain is assembled across builds as continuous acceptance.
+
+Main, preserved installation/saves and live service remain unchanged. Complete
+remaining campaign, interactions, companions, multiplayer/public rooms and release
+acceptance stay open.
+
+
+## Sequence 293 — visited-return-driver-and-authored-teleporter-diagnosis
+
+The normal-input driver's exact 32-unit waypoint boundary now uses its existing
+precise movement mode, and the loop consumes the actual forward acknowledgement
+rather than discarding it for another moving query. On immutable installation
+`57afcd9738ecb87af4e881b57edbcc2280597f76c64428c8a0868e64fa918a53`,
+`runtime-zig-293/visited-return-driver/` starts from sequence 292's legitimate
+bridge-boss reward save, uses the north health tree, verifies disk restoration
+and the actual factory→bridge→factory visited-world round trip, crosses the
+factory pipe, operates its controls, saves/restores the active monitor, rides
+both lifts, clears Crox 160 from the dry bank and reaches the authored e1m2a
+exit. All nine arrival shots complete, with Hiro alive at 89 health, 13 armor
+and 100 Ion ammo. It does not replay the boss/death encounter before its starting
+checkpoint and is not fresh campaign acceptance. The exact combined identity is
+`97ba4cb3c64e3f917322ff90f092d9a1b35efc3260ff4fe0aea1d38f6df7d9ee`;
+229 native contracts pass.
+
+The separate lift-exit geometry diagnostic establishes that westward ordinary
+walking takes the objective room's small step and authored teleporter. Its
+initial lower-floor assertion was unsuitable and remains failed; three other
+candidate directions are physically blocked. The new bounded hull-walk/trigger
+route recovery does not yet select that passage in the controlled bot scenario.
+`lift-teleporter-recovery/` on `57afcd…` and `lift-trigger-contact/` on
+`512eb1e92f29c050c0521efb9b268e46c3ef5d9f10e021f464a5938e24321905`
+both verify lift carrying but fail departure. The latter combined identity is
+`8ea7cccbe02f3c8d02410f2986836bad1c573c78fe9984f66a78550e492f08ce`.
+No capture acceptance or successful local routing is inferred from these runs.
+No further unchanged natural deathtag match is justified until that selection
+failure is diagnosed. Shared bot changes require the affected CTF replay.
+
+All evidence uses unchanged asset manifest
+`e7dbc2565c3c1f9ce1add690e6d713841d55d9ef740b3be85de7f4a3375df9ff`.
+Main, the preserved playable installation/saves and live service remain untouched.
+
+
+## Sequence 294 — cinematic-skip-authored-ui-and-render-interpolation
+
+The owner reports unskippable cinematics, different menu controls, missing original
+loading art and stepped animation. The native implementation now connects the
+existing class-owned animation clocks and wire fields to per-render-frame poses;
+actor/performer/remote-player positions use snapshot interpolation, with explicit
+teleport, camera-cut, absence and restoration boundaries. Simulation speed and
+combat rules remain unchanged. Character poses, reverse animations and final
+holds share the existing sequence mechanism instead of introducing another
+animation system.
+
+Escape dispatches single-player cinematic completion before the pause menu.
+Natural completion, disabled cinematics and explicit skips share cleanup and
+authored continuation. Monitor cameras retain their separate kind and ordinary
+menu behavior. Camera cuts clear their loop/interpolation boundary while retaining
+streamed dialogue; full completion stops the reserved dialogue channels using a
+narrow addition to both bundled engine audio backends. Ordinary WAV effects keep
+automatic concurrent channels. A native contract checks that cuts retain dialogue
+and completion stops it once without stopping unrelated audio.
+
+The menu draws supplied `int_buttons` glyphs, sliders and radio markers, uses
+pressed/selected states and matches the projected side-plate hit region. Sliders
+accept direct dragging as well as existing keyboard control. Loading selects the
+worldspawn's chapter artwork or supplied connection plaque and renders the
+original six tiles, bar and blocks from actual resource-loading progress. Assets
+remain local. No artificial loading delay is introduced.
+
+Assertions and all intended roots execute: 232 contracts pass (150 runtime,
+48 actor, 24 weapon, 2 inventory, 8 item). Installation `6bf5b349…`, full identity
+and asset manifest are recorded in `docs/native-acceptance.md`. Its OpenGL1
+presentation scenario passes real New Game selection, intermediate Hiro frames,
+actual Escape skips of the intro and arrival, normal starting inventory/health,
+save/load and pause/resume. Menu and Marsh loading captures are visually inspected.
+The first held-pose probe is invalid setup; the next probe detects a compiled-out
+Escape hook. A repaired engine then exposes the driver's premature Escape during
+connection. Synchronization now requires rendered client admission, real input and
+an applied cinematic camera; the same repaired build passes that replay.
+
+OpenGL2's corresponding run reproduces a sky-buffer overflow on entering Marsh.
+The bundled renderer appended generated sky faces to the nearly full source
+polygon batch. It now reuses the buffer after visibility clipping. Final
+installation `4c250287…` changes only `bin/renderer_opengl2.so` relative to
+`6bf5b349…`; all native modules, OpenGL1 and assets are byte-identical. The
+OpenGL2 scenario passes after repair using the actual OpenAL backend with null
+audio output. This verifies backend execution, not audible sound quality.
+
+`monitor-factory-regression/` replays the legitimate before-console checkpoint:
+real authored panel use, saved active monitor restoration/release, both lifts,
+Crox 160 combat and the authored e1m2a exit. All nine arrival shots finish with
+89 health, 13 armor and 94 Ion ammo. This is checkpoint evidence, not a fresh
+opening. The full New Game/115-shot intro/campaign replay used one immutable
+installation, separately from the skip scenario; its failed result is recorded
+below. The affected real UDP client
+lifecycle passes. The affected CTF replay passes all four participants’ movement,
+pickups, fire, opponent damage and respawn, plus one contested capture. Complete
+visual/menu equivalence,
+all actor/weapon interactions, remaining campaign, deathtag/public rooms and
+release acceptance remain open. Known supplied decoration-frame warnings are
+retained as a presentation gap, not hidden by broad acceptance labels.
+
+
+The additional mouse-operated save-menu regression exposes
+`InvalidKnightAttackProjection` on actual e1m3a admission: actor lasers and knight
+attacks both used generic render tag 10006. Class-owned knight tag 10044 removes
+the ambiguity. The catalog uniqueness test first reproduces the duplicate, then
+the repaired integration passes 233 contracts. On immutable `a2f70c11…`,
+`ui-saves-paused-fixture/` passes selecting a slot and separately clicking
+Save/Load, corruption refusal, real health restoration and direct saved-map
+entry into e1m3a without loading Marsh first. Captured menu feedback/selection
+and restored gameplay are inspected. This fixture explicitly places the player,
+sets 100 health while paused and applies 30 diagnostic damage after saving; it
+is not campaign acceptance. Its first repaired-engine attempt invalidates setup
+when an actual enemy hits before health is established. The driver now observes
+admission/input and setup, records exact identity, verifies staged files and
+reports failures immediately. `ui-menus/` covers settings, binding conflict
+cancel/replace and difficulty selection; pause acceptance belongs only to the
+separate synchronized presentation scenario. Its old broad scope label is
+superseded. The full fresh route used its unchanged `4c2502…` installation.
+
+`fresh-opening/` finishes all 115 intro shots, normal arrival, the marsh route,
+bridge boss/waves/reward, death/reload, north-tree resupply and C→B→C visited-world
+restoration. It fails in the factory approach: after descending past waypoint
+(-217, 2027, 536), the driver tries to jump back up the continuous slope and holds
+jump against it until its height assertion expires. Releasing jump immediately
+allows uphill motion. Final observed state is living: 58 health, 345 armor,
+72 Ion ammo. `failure.json`, `inputs.json` and captures retain the failure; the
+fresh milestone is **not accepted**. The factory approach now uses walking on
+that slope and reserves its jump for the actual channel lip. No shared movement,
+geometry, damage or enemy behavior changes. A separate replay starts at the
+unmodified legitimate `factory_outside_3.sav`; it cannot replace fresh acceptance.
+
+`factory-slope-walking/` clears that slope, uses the real health tree and reaches
+the upper pipe approach, then fails its raised-joint takeoff assertion while
+alive with 84 health. Its trajectory from the south edge of the approach
+tolerance misses the narrow joint when aimed directly at the distant landing.
+The driver now approaches the actual observed joint at (522, 2353, 536), then
+turns and jumps toward the upper landing. Both supported takeoff and actual
+height gain remain required. `factory-joint-waypoint/` starts from that run's
+legitimate pipe-launch save; no checkpoint is edited.
+That replay passes the supported joint/jump and opens the authored gate, then
+stalls alive with 77 health at a Froginator occupying the lower doorway. The
+driver had disabled combat on this descent segment; the doorway waypoint now
+uses its existing ordinary combat policy. The subsequent replay starts at the
+legitimate upper-control save. These are distinct retained driver failures,
+not passed factory scenarios or a stitched fresh campaign.
+
+`factory-gate-combat/` passes on the unchanged `4c2502…` installation: authored
+gate operation, actual doorway combat, yard controls and health-tree resupply,
+active monitor save/restore/release, both lifts, Crox 160 combat from the dry
+bank, the authored exit and all nine e1m2a arrival shots. Final state is normal,
+living, 89 health and 95 armor. This verifies only the route after the legitimate
+upper-control checkpoint. The complete fresh opening remains failed and requires
+a subsequent continuous replay; no acceptance is assembled across these saves.
+
+The applicable aggregate `zig build test --summary all` passes 42/42 build steps,
+372/372 Zig tests and 74 Python checks. The first aggregate exposes a stale
+media-installer test fixture that mocks package validation but lacks the
+completed manifest required by the installer's preflight. Adding its synthetic
+manifest repairs the fixture; production validation is unchanged. Before/after
+logs are retained as `runtime-zig-294/aggregate-before.log` and
+`aggregate-passed.log`.
+
+## Sequence 295 — default-hd-textures
+
+The owner requests HD textures by default. Native `play-install` previously
+looked only under its new prefix, overlooking the already admitted shared local
+package. The build now supplies the shared cache as a fallback; selection order
+is explicit `-Dhd-textures`, prefix-local package, then shared package. Missing
+optional HD data retains original textures. Existing image-only validation and
+the full-resolution launcher setting remain active. The admitted overlay
+contains 3564 PNG images, SHA-256
+`d2e8d95bdbcb52de5529d932d8a3be378b46ac293fe2ec15849c7ac2d299c645`.
+
+`zig build play-install --summary all` passes and publishes `d9159285…`.
+Six focused installer/media tests pass; they verify default fallback, local and
+explicit precedence, unchanged gameplay compatibility and the launcher's
+`r_picmip 0`. Actual manifest comparison against `a2f70c11…` changes only the
+overlay and `compatibility.json` cosmetic field; engine, runtime, gameplay
+assets, saved-game identity and preserved installation remain unchanged.
+
+The guarded actual launcher check uses an isolated profile with saved
+`r_picmip 2`. `hd-default-repaired/` reaches e1m1a with processed input, observes
+`r_picmip 0`, and checks 22 rendered image upload dimensions against the HD and
+original packages. A rock texture uploads at 1024×1024 instead of 256×256.
+The rendered capture is inspected. The initial `hd-default/` driver duplicates
+too many startup settings and exceeds the engine's 32-command admission limit;
+it never loads the requested map and is retained as invalid setup. The repaired
+driver uses fewer arguments and the actual `dk3config.cfg` filename. Evidence:
+`zig-out/reports/runtime-zig-295/`; exact identities are in native acceptance.
+This is HD selection/rendering acceptance, not campaign completion.
+
+## Sequence 296 — opening-gameplay-and-effects-repairs
+
+The nine reported defects receive one connected native repair batch, followed by
+focused engine scenarios and an aggregate run. The preserved main runtime is a
+read-only behavioral reference; no gameplay backend is reconnected. Work stays on
+`rewrite/native-zig-runtime`, with the installed game, user saves and online service
+untouched.
+
+Ion now renders its class-owned additive sprite, four electrical arms, timed sparks
+and green additive light. Native skies load the already supplied map shader bindings,
+including moving cloud layers and sky lightning. Cambots use interpolated lamp
+hardpoints and the existing spotlight geometry, with the class-owned search sweep
+and alert target. The supplied asset/HD packages are unchanged.
+
+The running presentation probe exposes the animation defect: rendering time 862
+precedes the newest snapshot at 900. The old interpolator subtracts 900 and clamps
+the fraction to zero. It now interpolates across the preceding/newest timestamps;
+the captured-clock regression checks distinct intermediate positions at 862, 878
+and 894. Rendered frame blending alone had failed to detect this motion defect.
+Scenery fragments also publish interpolated motion. This is not acceptance of every
+model's animation; the pre-existing `d1_swp3` frame-2 warning remains separately open.
+
+Actor perception preserves the close-player hearing exception and pods' horizontal
+512-unit acquisition range without a view cone. Ignore-player flags and visibility
+remain authoritative. Private reference observation confirms hatching starts with
+the child at pod origin +10 and the shell shrinks after the hatch animation; that
+existing native sequence is retained, rather than importing main's different
+clearance workaround. Class-owned gib eligibility now reaches normal actor deaths,
+including robotic/no-blood and bone presentation. Already dead bodies can receive
+fragment-producing damage without awarding another kill or firing death outputs.
+Petrification, companions and resurrection controllers retain their exclusions.
+
+Death recovery captures an internal checkpoint at a playable arrival and refreshes
+it on successful manual save/load. After the four-second death delay, fire or jump
+restores that checkpoint through the normal validated load path. It writes no
+user-visible autosave slot and has no effect on multiplayer respawn.
+
+The bridge pieces are authored `func_explosive`, not moving BSP debris. Their native
+use path previously hid the brush without emitting fragments. It now emits the
+specified material, count, scale, speed, gravity and vector-target behavior through
+the existing saved scenery lifecycle. The Gold class's flags identify bit 8 as
+stone and bit 32 as metal; main's generic material mapping is not copied. The tested
+`piece_01` creates ten stone chunks, visibly flies apart, and restores those chunks
+after a real save/load.
+
+Verified installation: `0c6cc7ebd055e0dcd902d2605d8c4c2389fd3642344066f1b34170282dca43b5`.
+Combined executable/module/renderer/asset identity:
+`bc98d6be01d9c0b82c99df73adf400061c264d478721e6a66844ed927cd9e2dd`.
+Base assets remain `e7dbc2565c3c1f9ce1add690e6d713841d55d9ef740b3be85de7f4a3375df9ff`;
+HD overlay remains `d2e8d95bdbcb52de5529d932d8a3be378b46ac293fe2ec15849c7ac2d299c645`.
+Evidence is local under `zig-out/reports/runtime-zig-296/`:
+
+| Scenario | Result and limit |
+|---|---|
+| `opening/` | Passed: entry and manual-save checkpoint death recovery, actual pod hatching into an enemy skeeter, Cambot acquisition/rendered lamp, intermediate actor motion, real Ion firing and mechanical gibs. Placement/equipment/health fixtures; not continuous campaign acceptance. |
+| `crox/` | Passed: actual water level 3/swimming movement and restoration; pending land melee saved/restored, actual contact and player health loss (25.69 damage). Placement and health fixture. |
+| `bridge-camera/` | Passed: ten stone chunks from the supplied bridge piece, visible fragments and save/load restoration. Diagnostic activation; not the complete encounter. |
+| `sky-repaired-driver/` | Passed: twelve fixed-camera captures show cloud motion and illumination variation with advancing native time. Supplied lightning shader is bound; exact original flash timing remains unqualified. |
+| `presentation-opengl2/` | Passed: ordinary menu New Game, real Escape through intro/Marsh, supplied loading art, animation poses, save/load and pause. Skips are not full-intro acceptance. |
+| `lan-regression/` | Passed: two real UDP clients, movement/fire, death/respawn, spectator/rejoin, reconnect and fast map restart with ordinary inventory. No public-room or complete multiplayer acceptance. |
+| `aggregate.log` | Passed: 379 Zig tests and 75 Python checks, with assertions enabled; all five native test roots execute (240 native tests). |
+
+Initial `presentation-initial/` on `82e96c…` retains the incorrect clock evidence;
+its narrow pose-blending pass is superseded. The first contract run exposes a
+single-precision threshold boundary; the comparison now uses sufficient precision.
+`bridge/` proves submission/restoration but points away from the fragments;
+`bridge-camera/` adds the correctly aimed inspected capture on the same build.
+`sky/` is invalid setup (unavailable Pillow), replaced by the existing ImageMagick
+reader; its cleanup timeout is also retained. No failed setup counts as acceptance.
+
+The previous fresh campaign result remains incomplete and must be replayed after
+these shared perception/death/presentation changes. This batch adds no complete
+episode, connected bridge encounter, fresh opening gate or full multiplayer claim.
+Finer Ion impact/gib presentation parity and all-class animation comparison remain
+tracked separately from the repaired missing behavior.
+
+## Sequence 297 — seamless-worlds: resident collision preparation
+
+The owner withdraws the reported death-restoration defect and requests asynchronous
+level loading. The accepted plan explicitly chooses continuous movement/rendering,
+connected combat and complete connected-region residency before releasing control.
+Authored cuts may be held until the next region is ready. This is a new authorized
+engine/runtime workstream, not a reduction of complete-port scope. The complete
+contract and remaining implementation are recorded in `docs/seamless-worlds.md`.
+
+Implemented: per-world collision allocation and generation-checked ownership,
+scoped temporary hulls/portal counters, independent asynchronous loose/PK3 reads,
+owner-thread collision admission, versioned native preparation/trace imports and
+native lifecycle ownership. Inline model leaves now append actual array indices;
+upstream unrelated-allocation pointer subtraction is removed. Collision arrays,
+patches and PHS bytes all belong to the released world, not the global hunk.
+Workers never call game/engine owner APIs. Native preparation permits four active
+readers; complete decoding remains one owner-thread map per frame and is measured,
+not claimed nonblocking. Cancel/release joins workers and invalidates handles.
+
+The connection inventory inspects all 84 supplied BSPs and 124 exits (22 authored
+cuts, 102 geometry-unreviewed). Four named arrival markers are missing. Initial
+filtering by episode prefix wrongly omitted transition/ending maps; the retained
+inventory includes them and claims no missing destination or seamless portal.
+Actual seam geometry and region membership remain to be qualified.
+
+Verified installation:
+`zig-out/native-dev/play/feeda104ab302c3a0aac69c07ccaa6bb2a4ba553e8239a88f6584600b2b348bc`.
+Combined identity:
+`1ee73a1054d8554a6e6b14f1d07bc838f944147761413f5bc029b5174c9b594b`.
+Base asset generation remains `e7dbc256…9ff`; default local HD remains `d2e8d95b…645`.
+Evidence root: `zig-out/reports/runtime-zig-297/`.
+
+| Scenario | Outcome |
+|---|---|
+| `resident-opengl1/` | Passed: four collision contexts ready without changing the active map/player; distinct destination floor traces, ordinary movement, save/load, release and handle generation reuse. Preparation diagnostics only. Admission 7–9 ms. Inspected active-world capture. |
+| `presentation-opengl2/` | Passed: existing real New Game/intro skip/arrival skip, snapshot presentation, save/load and pause. Shared collision allocation regression; not full intro/campaign acceptance. |
+| `lan-regression/` | Passed: two real UDP clients, movement/fire/death/respawn, spectator/rejoin, reconnect and fast restart. No public service touched. |
+| `aggregate.log` | Passed: 379 Zig + 78 Python tests and actual-engine collision executable; all 44 steps. Engine tests exercise separate worlds and inline models, active-world pinning, stale handles and malformed-header rejection without relying on NDEBUG-sensitive assertions. |
+
+Build repair: the native cleanup loop required a block. The first standalone C
+contract build exposed the test allocator macro and debug-draw stubs plus a PHS
+allocation still using the hunk; these were repaired before the verified build.
+`zig build play-install` remains usable, with default HD. All engine runs use
+software rendering under dkguard with isolated profiles and temporary saves.
+
+**Incomplete:** resident rendering and navigation, geometric seam qualification,
+map-owned native ECS/client state, cross-portal movement/combat, region readiness
+admission and region save migration/restoration. Ordinary exits still perform map
+loads; preparation is a diagnostic entrypoint, not an advertised seamless option.
+No connected seamless acceptance is claimed and no old runtime is reconnected.
+Previous full-route/encounter acceptance must be replayed after shared world changes;
+main, the preserved playable installation, user saves and live service are untouched.
+
+
+## Sequence 298 — seamless-worlds: resident renderer and gameplay owners
+
+Continues the authorized seamless-loading plan and complete native-port scope on
+`rewrite/native-zig-runtime`. This is an implementation checkpoint, not completion
+of seamless travel. No removed runtime is used.
+
+Both bundled renderers retain map geometry, lightmaps/deluxemaps, fog/visibility,
+lightstyle blocks, sun/cubemap data and inline models. Map-qualified material and
+lightmap identities prevent another map's numbered resources from aliasing the
+active map. Pending scenes complete before context selection. Surface admission
+is split into bounded batches across frames; indivisible texture work and other
+phases remain measured stalls. Held HDR data owns heap storage across frames.
+Renderer API advances from 10 to 11.
+
+Server map state now owns stable entity link trees, projections, entity parsing
+and resource configstrings. Preparation does not broadcast destination resources
+into the active connection. Native `world_context.zig` retains map ECS, class-owned
+systems, clients, projections, resource registries and restore ownership. Full
+class-owned spawning prepares destinations without ticking encounters. Map-name
+lookups use selected-world identity rather than changing the connection's cvar.
+AAS contexts retain their geometry, entity links, routing/alternative-route caches,
+reachability scratch and mover model classifications. Their allocations can be
+released independently; original botlib algorithms and notices remain. Shutdown,
+release and fast restart retain the appropriate active owner.
+
+Read-only private authoring/reference inspection established the intermission
+flag's named-landing exception; no implementation text was imported. The converted
+map inventory now reports 84 maps / 124 exits: 32 explicit cuts and 92 connections
+requiring geometry qualification. C→e1m2a is an authored intermission. Independent
+local vertex comparisons find 424, 305 and 123 coincident points near A↔B and the
+two B↔C corridors, supporting identity transforms. These are not portal acceptance.
+
+Verified build: `046e4b21e4992c3983ee9cd5a50c96bb0237341e845ead17c53a515c2d88b599`.
+Combined identity: `06da21e56dd1705e128883060e48949ce8e14144e2333016868767568ff687e8`.
+Base manifest: `e7dbc2565c3c1f9ce1add690e6d713841d55d9ef740b3be85de7f4a3375df9ff`.
+HD SHA: `d2e8d95bdbcb52de5529d932d8a3be378b46ac293fe2ec15849c7ac2d299c645`.
+All evidence is local under `zig-out/reports/runtime-zig-298/`.
+
+| Scenario | State and exact scope |
+|---|---|
+| `world-contexts-contacts/` | Passed preparation isolation: B/C/e1m2a retain 518/518/455 entities; actual collision contacts hit all 27/81/65 actors in their owning trees. AAS point queries return 6098/3961/315. Actor position/health hashes remain unchanged across selection, active A movement and A save/load. Release preserves A input. No region save or crossing claim. |
+| `render-staged-opengl1/`, `render-staged-opengl2/` | Passed static map views and distinct inline handles with restoration of A's view; captures inspected. Largest measured poll steps B 26/26 ms, C 91/101 ms. **Frame-time requirement remains failed/unqualified**; staging alone does not eliminate all stalls. |
+| `presentation-opengl2/` | Passed real New Game, Escape intro skip, Marsh presentation, save/load and local pause. Full intro/campaign not replayed. |
+| `lan-regression/` | Passed two real UDP clients through movement/fire/death/respawn/spectator/rejoin/reconnect/fast restart after shared server/AAS changes. |
+| `aggregate.log` | Passed 44/44 steps: 379 Zig tests, 79 Python tests and actual-engine collision contracts; all intended roots execute with assertions enabled. |
+
+`world-contexts-opengl1/` is an invalid setup: the literal e1m2a start point falls
+outside an AAS area. Replayed with the diagnostic sample at z=441 (area 315), without
+changing geometry or rules. `3c96d…`/`bd44be…` pre-staging/pre-contact results are
+superseded by the consolidated build above. Preparation uses developer commands
+and preview cameras, so none of this is continuous campaign acceptance.
+
+**Remaining:** client/wire map identities and readiness, activation/transfer that
+preserves ongoing actions and input, qualified portal clipping/collision/combat,
+remaining asynchronous admission work, complete connected-region manifests,
+atomic region save migration/restoration and full campaign/multiplayer acceptance.
+Ordinary exits still invoke existing map loads. `zig build play` remains available
+with default HD. Main, installed preserved game, user saves and online service are
+untouched. Continue implementation past this checkpoint.
+
+## Sequence 299 — resident-client-admission-and-player-transfer
+
+**Implemented:** bounded acknowledged world-config streaming with order, length,
+digest, version and actual BSP-checksum validation; actual client collision/media/sky
+readiness; map-qualified allocation and transactional full-component player copying;
+server/client world activation without reconnecting or spawning; protocol 1348 world
+identity in both message codecs and no cross-world snapshot delta baseline. Prepared
+encounter deadlines are rebased on first exposure. Initial map ownership remains
+available for return. `zig build play` remains available with HD textures by default.
+
+**Verified build:** installation `3647922bc510e353c08ae9c595919a33685146e3eb6dbe8607e1c35fe533c429`;
+combined identity `ba5b77659ac22f9925c747c93c75521af2079ca766d12f90741ba8c3c615a114`;
+base assets `e7dbc2565c3c1f9ce1add690e6d713841d55d9ef740b3be85de7f4a3375df9ff`;
+HD `d2e8d95bdbcb52de5529d932d8a3be378b46ac293fe2ec15849c7ac2d299c645`.
+Evidence: `zig-out/reports/runtime-zig-299/`.
+
+| Scenario | State and exact scope |
+|---|---|
+| `transfer-initial/`, `transfer-opengl2/` | Passed controlled A→B→A→B transfer in both renderers after actual readiness. Player 341, health 100, weapon/ammunition and command clock survive. Position is copied; ordinary gravity continues. Normal movement/prediction works afterward with no server initialization or ClientBegin. Captures inspected. Explicit placement and transfer commands; not authored traversal, combat or region-save acceptance. |
+| `lan-regression/` | Passed two actual UDP clients: movement/fire/death/respawn/spectator/rejoin/reconnect/fast restart on protocol 1348. Remaining mode/bot requirements stay open. |
+| `aggregate.log` | Passed 44/44 steps, 381 Zig tests, 79 Python tests and actual-engine collision contracts. Assertions enabled; intended roots execute. |
+| `admission-initial/` | Earlier B/C/e1m2a preparation passes on `e3a84ae…`; superseded for wire/transfer claims. Not part of the coherent transfer result. |
+
+**Remaining:** qualified geometry, automatic region admission and authored seam
+activation, portal rendering/collision, connected actors/projectiles/hitscan/sound,
+complete map-owned presentation, asynchronous admission stalls, atomic region
+save/migration/death restoration and campaign/multiplayer acceptance. Ordinary exits
+still load maps. Previously passing shared-system scenarios require applicable replay.
+No new private reference implementation was consulted or copied for this sequence.
+Main, preserved installation, user saves and live service remain unchanged.
+Continue implementation past this checkpoint.
+
+## Sequence 300 — resident-region-save-and-death-restoration
+
+**Implemented:** schema-2 atomic region files retain active/resident worlds, allocation
+namespaces, checksums, activation state, resource IDs and pending actions. Explicit
+world/entity references validate foreign owners without aliasing ECS handles. Hidden
+contexts own admitted restored state before client readiness releases control. Time
+spent preparing is rebased; unexposed encounters remain unstarted. Schema 1 migrates
+its initial allocation range, and old flat visited archives remain readable. Full
+conversion of those archives into simultaneous resident namespaces remains open.
+
+**Verified build:** installation `c8b457464b3fdf7d48dd3de77248314667a744a39872e5c8c970da7fbcc4d118`;
+combined identity `9d91f01c0fc2fbdd98c24261c3c465c4ab3a38900416aba4f941c246718727fe`;
+base assets `e7dbc2565c3c1f9ce1add690e6d713841d55d9ef740b3be85de7f4a3375df9ff`;
+HD SHA `d2e8d95bdbcb52de5529d932d8a3be378b46ac293fe2ec15849c7ac2d299c645`.
+Evidence is under `zig-out/reports/runtime-zig-300/`.
+
+| Scenario | State and exact scope |
+|---|---|
+| `region-save-active-snapshot/`, `region-save-opengl2/` | Passed actual region save/load and death/reload in both renderers. A actor 9 and B actor 16777312 restore health 37/53 after post-save changes to 9/7. Player 341 saves in B with health 73, dies in A and restores in B with health 73; returning to A retains its saved state and processed input. Captures inspected. Explicit placement, health and transfer setup; not continuous campaign acceptance. |
+| `legacy-schema-one/` | Passed actual sequence-296 schema-1 save load and new save, health 73 in A. Source SHA `cfce1b357a444263f6226e7ff8d8f8b248bda5ba5400fbc5f9076f3dd0cd7cf2`, source/driver recorded locally. Original file unmodified. Not full legacy visited-region migration. |
+| `lan-regression/` | Passed two UDP clients through movement/fire/death/respawn/spectator/rejoin/reconnect/fast restart. |
+| `aggregate.log` | Passed 44/44 steps: 383 Zig tests, 79 Python tests and actual-engine collision contracts. Assertions enabled, intended roots executed. |
+
+The death/restore scenario detects `SnapshotWorldMismatch` on `b26e55…` in
+`region-save-opengl1/`. Native cgame accepted a loading snapshot marked
+`SNAPFLAG_NOT_ACTIVE` before ClientBegin. The correction follows the existing
+bundled-engine connection contract; active-world validation stays strict. Repaired
+runs log actual inactive snapshots before successful manual and death restoration.
+`region-save-initial/` is invalid setup (slope enters the authored return trigger).
+`region-save-safe-setup/` stops at the diagnostic's old sv_cheats restriction after
+load. The host-console diagnostic now uses the existing explicit native mode; no
+puzzle, geometry, damage or enemy rule was changed to help the driver.
+
+Region load/death currently restarts the connection and then asynchronously restores
+members before input. That is not seamless travel acceptance. Automatic region/seam
+qualification, portal views/collision, cross-map actors/projectiles/hitscan/sound,
+remaining admission stalls and complete campaign/multiplayer acceptance remain open.
+Main, installed game, user saves and live service are unchanged. Continue past this
+checkpoint toward authored traversal; the complete independent-port scope remains.
+
+## Sequence 301 — automatic-region-progression
+
+**Implemented:** local asset-derived region graph; automatic required-region
+admission before control; upcoming-region preparation; ordinary authored exit
+handoff with established companion, cinematic, ending and traveler rules. Exact
+BSP digests qualify opening identity seams. Other exits retain authored landings.
+Carried actions retain identity and reuse the restoration projection dispatcher.
+A cinematic-authored control identifies the intro cut (33 cuts, 91 unreviewed
+connections). Full portal/cross-boundary gameplay remains incomplete.
+
+**Verified build:** `af499dc7237f74b162e5a6d49ea7b55758c1b2b22b2440bc5a07335833c945c9`;
+combined `ff127b1a20c07fc3fcfdcb16b395773f8899ddcd837cb447db239dad637012e7`;
+base assets `e7dbc2565c3c1f9ce1add690e6d713841d55d9ef740b3be85de7f4a3375df9ff`;
+HD `d2e8d95bdbcb52de5529d932d8a3be378b46ac293fe2ec15849c7ac2d299c645`;
+region manifest `af0c2eea2324fd08577c5db4a0293175424540d1b94e3b3f1babd843d8835320`.
+Evidence under `zig-out/reports/runtime-zig-301/`.
+
+| Scenario | State and scope |
+|---|---|
+| `automatic-crossing-owned-memory/` | Passed GL1 actual A→B→A touch handoffs, stable player/health/input, continued movement, retained connection. Controlled approach placement. |
+| `authored-cuts-opengl2/` | Passed skipped-intro authored exit, complete seven-shot A arrival, and controlled C exit overlap into prefetched M2. Both cuts retain connection. Region save/load succeeds, final sample in saved M2 arrival cinematic. Full intro/factory puzzle not covered. |
+| `six-world-restore-owned-memory/` | Passed load/resave of immutable controlled six-world fixture, all five members acknowledged, player 433 health100, processed input. Cinematics disabled in this narrow replay. |
+| `lan-owned-memory/` | Passed two real UDP clients movement/fire/death/respawn/spectator/rejoin/reconnect/fast restart. |
+| `aggregate-final.log` | Passed 44/44 steps, 384 Zig tests, 81 Python tests, real C collision and independent owner-memory contracts, assertions enabled. |
+
+Before/after regressions retain the OpenGL2 renderer-zone exhaustion on `6eb60…`,
+fifth-reader failure on `6b260…`, and subsequent botlib-zone exhaustion on `efc409…`.
+The final build queues client admissions at actual readiness and gives renderer,
+navigation and spatial owners releasable heap storage. No damage/geometry/puzzle
+rule was changed. Invalid driver setups (disabled intro, transfer during arrival,
+and a normal approach blocked by the authored locked door) remain documented in
+[native acceptance](../../docs/native-acceptance.md).
+
+No fresh campaign acceptance. Complete geometric qualification, portal views,
+actors/projectiles/hitscan/sound across seams, eviction/admission stalls, legacy
+visited-save migration and complete campaign/multiplayer acceptance remain open.
+Main, installed playable game, user saves and live service remain unchanged.
+Continue beyond this implementation checkpoint.
+
+## runtime-zig-302 — visited migration and admission lifetime repairs
+
+Consolidated installation `10b056cafcf909dd3114a3e6dd97bd40bfe302de30a00daffdfbf5b4595f7581`;
+combined identity `93ed84bcc6e64b701b3991e8176d4111adf9a1600df61401c53f0e350bad4733`.
+Base assets `e7dbc2565c3c1f9ce1add690e6d713841d55d9ef740b3be85de7f4a3375df9ff`;
+HD `d2e8d95bdbcb52de5529d932d8a3be378b46ac293fe2ec15849c7ac2d299c645`;
+local region manifest `af0c2eea2324fd08577c5db4a0293175424540d1b94e3b3f1babd843d8835320`.
+Evidence: `zig-out/reports/runtime-zig-302/`.
+
+| Evidence | Outcome | Limits |
+|---|---|---|
+| `legacy-visited-final/` | Unmodified sequence-294 save loads into C with hero 574 at health 89. A/B archives become namespaces 1/2, preserving all 53 recorded actors' health (42 dead), without stale player copies. Both maps are inspected in-engine, schema-2 save/reload succeeds, and a handoff plus load in one command batch correctly discards obsolete world commands. Original fixture hash remains `7e3a04f8e4dcb4c7eaae9ede1c41f71941a369d0109526b6288a4b76dd5dbf73`. | Controlled transfers/placement for inspection; no ordinary traversal or fresh campaign claim. Broader saved controller/party combinations remain unverified. |
+| `cinematic-restore-final/` | Six-world save restores in GL2; the saved factory arrival cinematic advances through completion, normal movement resumes, and saving succeeds while the next region preloads. Final rendered frame inspected. | Immutable controlled sequence-301 fixture, hash `4d04edef2e1f2d2cbaca9a0ace7610fc48c3b72b0609e6d670fa597c91271b73`; not full intro or connected factory progression. |
+| `automatic-crossing-final/` | GL1 automatic A→B→A authored touches preserve identity, health, input and connection after inline-model ownership changes. | Controlled initial approach; no portal view or cross-world combat claim. |
+| `lan-final/` | Two real UDP clients pass movement/fire/death/respawn/spectator/rejoin/reconnect/fast restart with the new cgame initialization boundary. | Full multiplayer modes remain open. |
+| `aggregate-final.log` | 44/44 steps, 387 Zig and 81 Python tests pass; actual C collision/owner-allocation/inline-handle contracts execute with assertions enabled. Migration roots explicitly execute. | Contracts support the narrower running scenarios above. |
+
+Before/after evidence is retained. The additional sequence-301
+`six-world-cinematic-restore/` run fails on the renderer's shared 1,024-model table.
+`cinematic-restore-inline-models/` on `63d52…` passes that allocation point, then
+fails on the supplied `global//e_forcefield.wav` spelling. Map-owned brush handles
+and sound separator normalization repair those defects; no substitute asset or
+raised global model ceiling is used. `cinematic-restore-normalized-sounds/` on
+`2f4b6…` first passes complete cinematic restoration; the consolidated run above
+replays it after the reliable-command repair.
+
+`legacy-visited/` has an invalid driver timeout: root restoration completes before
+required region admission releases input. The driver now waits for actual processed
+input with the bounded restoration timeout. `legacy-visited-synchronized/` then
+preserves and inspects both worlds but fails its second load with `WorldNotAdmitted`:
+an unexecuted world-entry command belonged to the old gamestate. The final replay
+explicitly queues that race and records the obsolete command's sequence before the
+new gamestate boundary. Current-map readiness errors remain strict.
+
+The full fresh opening milestone, portal clipping and qualified cross-map gameplay,
+other seam geometry, party identity/transfer, residency eviction, admission stalls
+and complete campaign/multiplayer acceptance remain open. Earlier broad scenarios
+are historical evidence and require replay after the shared owner/restore changes.
+
+Main, installed playable game, user saves and live service remain unchanged.
+Continue with cross-world gameplay and party ownership; this checkpoint is not completion.
+
+## runtime-zig-303 — connected views and qualified combat
+
+Consolidated build `f9ba99b696f7ac14bf84776586b4affcee55b42b27c439690e26c30e319b6b11`;
+combined identity `5f174004f53ad81db214e07b8c84591e34358b03c99e30a0600715426c20c9cd`.
+All six final scenarios record that identity. Base assets
+`e7dbc2565c3c1f9ce1add690e6d713841d55d9ef740b3be85de7f4a3375df9ff`;
+HD `d2e8d95bdbcb52de5529d932d8a3be378b46ac293fe2ec15849c7ac2d299c645`;
+region manifest `f0cb127dcc3fa705a51cc5d9fd597960396e7bfdc3ca2cc55e709998e6a1368d`.
+Evidence: `zig-out/reports/runtime-zig-303/`.
+
+Implemented qualified collision, selected projectile transfers, neighbor simulation,
+world-owned aperture rendering, foreign snapshot slot leases and acknowledged late
+resource publication. Protocol 1349 and renderer ABI 12 carry explicit ownership.
+Party ID rebinding is implemented/contract-tested; natural companion traversal and
+running-engine party transfer acceptance remain open.
+
+| Evidence | Outcome | Limits |
+|---|---|---|
+| `foreign-final-opengl1/`, `foreign-final-opengl2/` | Both renderers submit the actual B-owned target while the hero stays in A; verified qualified contact and ordinary Glock/Ion/Sidewinder attacks reduce health. A newly registered B model arrives through acknowledged updates. Normal and destination-only frames retained; final normal frames inspected. | Controlled placement/equipment and synthetic target; one aperture, not authored pursuit or fresh campaign acceptance. |
+| `crossing-final/` | Actual movement triggers A→B→A, retaining identity, health, input and connection; region save succeeds. | Controlled initial approach. |
+| `legacy-visited-boundary/` | Original sequence-294 fixture restores all 53 A/B actors with exact health before simulation. Actual retirement events account separately for 36 subsequent gib removals. Controlled visits, schema-2 save/reload and obsolete-handoff rejection pass. | Fixture unchanged; no fresh traversal or complete saved-controller coverage. |
+| `cinematic-restore-final/` | Controlled six-world fixture restores its factory cinematic, completes it, resumes movement and saves during further preparation. Final frame inspected. | Not full intro/factory progression. |
+| `lan-final/` | Two real UDP clients pass the existing movement/fire/death/respawn/spectate/rejoin/reconnect/restart scenario on protocol 1349. | Full modes and public service unverified; no deployment. |
+| `aggregate-final.log` | 44/44 steps, 398 Zig and 81 Python tests pass; actual C owner/collision/inline-handle checks and intended roots execute with assertions enabled. | Contracts support the narrower engine scenarios. |
+
+Failure evidence is preserved and detailed in `docs/native-acceptance.md`. GL2
+portal rendering first crashed by indexing a source brush against destination
+surfaces; explicit scene ownership repairs both renderers. Resource update replay
+caught active configstring loss and reliable-command overflow; preserving current
+gamestate, prioritizing resource fields and limiting chunks by actual acknowledgements
+repairs both. Restore probes initially sampled after legitimate corpse retirement;
+read-only installation-boundary auditing now establishes restoration first. No
+damage, lifetime, geometry or puzzle change was made to satisfy these diagnostics.
+
+The first aggregate caught a client helper in the pure domain layer; relocation
+to the client adapter passes the unchanged architecture check in the final suite.
+Actor/companion pursuit, specialized cross-world weapons, multiple/recursive views,
+remaining seam classification, eviction/admission stalls and fresh campaign/full
+multiplayer acceptance remain open. Continue implementation beyond this checkpoint.
+Main, preserved installation, user saves and live service remain unchanged.
+
+## runtime-zig-304 — actor and party ownership
+
+Immutable build `0262fb30b698ef5ff862e23df2f37ae32fcb4adf210c3250477a99a9ac4dedef`;
+combined identity `d2bb6e1d893f014c64c65bfd4f69cec75b95d97d24dade5c4186b8ba118ee710`.
+All eleven final engine scenarios below record this identity. Base assets
+`e7dbc2565c3c1f9ce1add690e6d713841d55d9ef740b3be85de7f4a3375df9ff`;
+HD `d2e8d95bdbcb52de5529d932d8a3be378b46ac293fe2ec15849c7ac2d299c645`;
+region manifest `f0cb127dcc3fa705a51cc5d9fd597960396e7bfdc3ca2cc55e709998e6a1368d`.
+Evidence: `zig-out/reports/runtime-zig-304/`. No protocol/renderer ABI change.
+
+Connected explicit actor targets, class-owned attacks and radius recipients;
+accepted ground/flight/swim ownership with a saved per-frame actor clock;
+body-attached actions; moved actor authored script/name scope; continuing party
+exit/capture and qualified interaction rays. Damage, timing, geometry, puzzle and
+companion distance rules were not adjusted for the driver. Source implementation
+remains independent; local converted script programs are loaded by authored home.
+
+| Evidence | Result | Limits |
+|---|---|---|
+| `sentry-final/`, `spit-final/` | Actual Rockgat acquisition/fire and identified Froginator spit contact damage Hiro across B→A while Hiro stays in A. | Controlled class spawns/positions/health; frog seed 1 and checked grounded dry setup. |
+| `pursuit-final/`, `companion-final/` | Real Slaughterskeet pursuit and normal Superfly follow order physically cross; persistent ID, health, party/threat ownership and authored home survive save/load. | One corridor; no broad navigation, authored rescue/cut or all-controller acceptance. Initial crossing frames inspected. |
+| `foreign-final-opengl1/`, `foreign-final-opengl2/` | Qualified target contact and ordinary Glock/Ion/Sidewinder fire, owning rendering and late resource update replay. | Synthetic target/equipment and one aperture. |
+| `crossing-final/` | Normal A→B→A movement after controlled approach retains identity/input/health/connection; save succeeds. | Not fresh route. |
+| `region-save-synchronized/` | Independently changed A/B actors and hero state restore after actual save/load and death/reload. | Controlled transfers, placements and health. |
+| `legacy-visited-final/` | Unmodified 294 archive fixture restores all 53 A/B actors at the actual boundary; later retirement is observed separately; schema-2 reload and obsolete-handoff race pass. | No fresh progression; original fixture unchanged. |
+| `cinematic-restore-final/` | Six-world saved factory arrival restores/completes, movement resumes and saving succeeds during preparation. | Controlled 301 fixture; no fresh full intro. |
+| `lan-final/` | Two real UDP clients pass existing movement/fire/death/respawn/spectate/rejoin/reconnect/restart lifecycle. | Full modes/public service remain open. |
+| `aggregate-final.log`, `trigger-regression/` | 44/44 steps, 400 Zig and 81 Python tests; actual C contracts; temporary defective trigger comparison fails the new assertion. | Runtime/catalog tests run ReleaseSafe, other roots Debug; assertions enabled. First aggregate's new fixture needed more archetype capacity; production limits unchanged. |
+
+Failed/superseded evidence remains. `spit-initial/` selected jumping/bites and
+cannot establish a projectile result. The final grounded/dry deterministic setup
+requires actual launch/contact. `region-save-final/` timed out before initial
+admission; its older driver now waits for the actual event and avoids redundant
+preparation and unintended automatic crossing. No engine loading semantics changed.
+The first three narrow passing actor fixtures used `22c438…`; final engine cases
+above replay on the consolidated `0262fb…` build.
+
+Specialized player weapons/muzzle-origin ownership, broader navigation, remaining
+party pickups/teleports/cuts and witness/hearing behavior, multiple/recursive views,
+unreviewed seams, residency/admission stalls and fresh campaign/full multiplayer
+acceptance remain. Script/action implementation is not blanket authored acceptance.
+Continue the accepted seamless/full-port work beyond this checkpoint. Main remains
+`e3966c4d40678dbf91619034b5dcb33b763dcbed`; installed game, saves and service unchanged.
+
+## runtime-zig-305 — specialized weapons across seams
+
+Immutable build `18750658f9ccb2d67fe6f782a277dcb754fafadbeb26058e236ec474171c5c13`;
+combined identity `abaccd1628f849daca0e1c96b1df01de9232dc33543e2ad466baf63dbed7ada3`.
+Base assets `e7dbc2565c3c1f9ce1add690e6d713841d55d9ef740b3be85de7f4a3375df9ff`;
+HD `d2e8d95bdbcb52de5529d932d8a3be378b46ac293fe2ec15849c7ac2d299c645`;
+region manifest `f0cb127dcc3fa705a51cc5d9fd597960396e7bfdc3ca2cc55e709998e6a1368d`.
+Evidence: `zig-out/reports/runtime-zig-305/`. Protocol 1349, renderer ABI 12 unchanged.
+
+Connected specialized player weapon targets, grouped controllers, qualified
+muzzle/flight ownership, Ballista victim transport, global personal-action cleanup
+and controller presentation references. Class-owned damage, timing, acquisition,
+visibility/liquid masks, geometry and puzzle rules remain unchanged. Lightning
+hop attachment follows its source separately from attack ownership. Metamaser
+laser endpoints are coordinates and no longer undergo entity-slot remapping.
+NPC offset attacks retain their actual spatial owner without changing the offset.
+
+| Evidence | Result | Limits |
+|---|---|---|
+| Eleven `*-final/` weapon scenarios | Real dry grounded B worker takes actual damage from ordinary player attacks in A: Wyndrax, Nightmare, Metamaser, Zeus, Trident, Ballista, Discus, C4, Sunflare, Stavros, Shockwave. Wisp/ritual/tracking-cube/pending-chain identities restore. Nightmare restores actual victim freeze, damages/releases the victim and completes. | Diagnostic class spawn/placement/health/equipment, not authored encounters. Three actual Trident tips; no merge/water acceptance. Ballista contact/skewer, not carried crossing/pin restore. No blanket secondary interaction or reference presentation claim. |
+| `metamaser-final/saved-owners.json` | Original saved cube is physically in B; its locked fly is physically in A with an actual weapon-26 Hurt receipt from Hiro (40 damage). | Read-only inspection, not an inference from birth ID. Post-load fly physical ownership is not separately asserted. |
+| `sentry-final/`, `spit-final/`, `pursuit-final/`, `companion-final/` | Real Rockgat/Froginator attacks contact Hiro across the seam; enemy pursuit and Superfly follow cross B→A and actually restore health, identity, authored home and party/threat ownership. | Controlled real classes and one reviewed corridor. |
+| `foreign-final-opengl1/`, `foreign-final-opengl2/`, `crossing-final/` | Owning renderer/resource publication, actual Glock/Ion/Sidewinder foreign contact and normal A→B→A player movement replay. | Synthetic combat target and controlled approach; retained connection/input/identity checked. |
+| `region-save-final/`, `legacy-visited-final/`, `cinematic-restore-final/` | Independent A/B actor and hero state restore after save/death; unmodified older archive migration audits all 53 actors before simulation; six-world factory arrival restores/completes and permits movement/saving. | Controlled or historical immutable fixtures, not fresh campaign traversal. |
+| `lan-final/` | Two real UDP clients replay the existing movement/fire/death/respawn/spectate/rejoin/reconnect/restart lifecycle. | No public service or full multiplayer mode/bot acceptance. |
+| `aggregate-final.log`, `python-final.log`, `c4-regression/` | 44/44 steps, 402 Zig, original 81 Python tests and actual C contracts pass. After the driver repair, all 82 Python tests pass; affected driver contracts 18/18. Temporarily removing C4 neighbor scheduling fails `expected 2, found 1`. | Assertions enabled: runtime/catalog ReleaseSafe, other roots Debug. Defect copy is outside production source. |
+| `fresh-opening/` | Failed observation assertion after living normal marsh arrival. Full intro and arrival advance; driver misses sampled shot 69 and includes finished cursor 115. | Actual server shot-transition event proves the brief missed observation. Original failure remains failed; no arrival save or route acceptance. |
+| `fresh-opening-events/`, `factory-checkpoint/` | Running: corrected fresh New Game and independent factory checkpoint development. | Results pending; checkpoint progress never transfers into fresh acceptance. |
+
+Failed health setup and superseded builds are retained. The foreign health fixture
+initially addressed only local IDs. Later Wyndrax awaited disabled damage logging,
+and Nightmare's driver timeout expired while its earlier acquired victims were
+being processed. Corrected diagnostics and bounded event-based waits preserve the
+class rules. Failed setup assertions invalidate their scenarios.
+
+The campaign driver now resolves authored IDs against stationary active-world
+exits, checks actual retained-connection crossings, and distinguishes completed
+cinematic cursors from played shots. Actual transition events supplement active
+player observations; shot zero still requires a real active observation. Selected
+weapon frames were inspected; developer swap-model invalid-frame output remains
+an open presentation defect.
+
+Full fresh opening acceptance, broader weapon/party/navigation interactions,
+multiple/recursive views, remaining geometry qualification, residency/admission
+stalls and complete campaign/multiplayer acceptance remain open. The manifest has
+six identity seams, 33 cuts and 85 unreviewed landings (124 exits total). No private
+reference implementation or original assets enter the public source. Continue the
+authorized work after this checkpoint. Main, installed game, user saves and online
+service remain unchanged.
+
+
+## Sequence 306 — incremental-lightmap-admission
+
+Implemented and compiled on `rewrite/native-zig-runtime`. Build
+`96438935d3357b5ea701fa315569de849be720e40110ca43cf2b9c0d47c87073`, combined identity
+`825ee3cbe14bc71fce6672b97b9f92aaeb58bbb3a8e625c23a4a0634c783a428`.
+Assets/HD/region manifest unchanged from 305; protocol 1349 and renderer ABI 12
+unchanged. Evidence: `zig-out/reports/runtime-zig-306/`.
+
+Both renderers yield between lightmap uploads, retain per-world progress and
+separate definitions/lightmap/fog phases. GL2 retains merged/deluxe page progress.
+GL1 duplicates the actual single lightmap instead of reading a second nonexistent
+image; RGB converters provide alpha explicitly. Actual C renderer roots exercise
+interleaved owners, upload pixels, merged deluxe pairs and a guard page. Removing
+only GL1's upload yield in a temporary source copy fails the new assertion.
+
+Final-build `loader-final-opengl1/`, `loader-final-opengl2/`,
+`restore-final-opengl2/`, `region-save-final/`, `crossing-final/`, `lan-final/`
+pass their scoped controlled scenarios. GL2 aperture inspected. Lightmap phases
+peak at 2–4 ms; surface/texture stages still exceed 100 ms. No frame-time guarantee.
+Aggregate: 48/48 steps, 402 Zig, original 85 Python and actual C contracts pass;
+subsequent driver batch: all 86 Python tests pass. Assertions enabled.
+
+Driver repairs use actual kill events for retired targets; loss from a local
+owner is separately recorded and never implies a hit or death. Health-tree climbs
+retain combat; bridge health pickup requires observed healing and item consumption,
+including concurrent damage. Confirmed blocked approaches may try one normal jump.
+The actual factory lower-bank checkpoint reaches e1m2a alive and observes all nine
+arrival shots with retained connection/identity on unchanged 305 build (`305/factory-bank-input/`).
+
+Fresh `305/fresh-opening-defenders/` completes intro/arrival/save-load, marsh,
+ordinary A→B crossing and bridge progression, then dies during the boss fight.
+Checkpoint `bridge-retreat/` and `bridge-open-bank/` also die. Avoidance remains a
+driver blocker; no actor damage, geometry or puzzle changes are justified by it.
+A checkpoint fight may have fewer observed waves after earlier corpses retired;
+full fresh acceptance separately requires all ten actual wave observations.
+
+The `306/fresh-opening/` run uses superseded `258815…` (before final RGB bounds
+repair) and remains development evidence only. Earlier loader/restore results on
+that build are superseded by the final replays. Wider seamless work and the full
+independent campaign/multiplayer scope remain open in the current acceptance
+matrix. Continue after this checkpoint; preserve main, installation, saves and
+service. No private reference implementation/assets admitted.
+
+## Sequence 307 — native-hd-png-admission
+
+Build `99ea9654869df4e10be7ddc2eed76e49bbe91da4eaa034a255cf9ffb98293123`;
+combined identity `499e7f690756d540e13b8aba24c3d6687835c6079392851c015c045773cb3028`. Base, HD and region manifest
+identities are unchanged from 306. Protocol 1349 and renderer ABI 12 unchanged.
+Evidence: `zig-out/reports/runtime-zig-307/`.
+
+The actual image timings identify PNG read/decode as the dominant HD material
+stall. Both renderers now use the already bundled zlib inflater once, with an
+exact scanline allocation bound, retaining the existing pixel/filter/alpha
+conversion. Empty IDAT chunks consume their CRC; oversized palettes are rejected.
+The zlib header/checksum is now validated, a deliberate stricter malformed-input
+contract. No private runtime, assets or new third-party component is admitted.
+
+| Evidence | Verified outcome | Limits |
+|---|---|---|
+| `png-opengl1/`, `png-opengl2/` | Both actual renderers admit A/B/C, display an owned portal and record actual foreign Glock/Ion/Sidewinder contact; HD textures enabled | Controlled setup. Surface phase peaks 26/33 ms respectively, versus 107–111/101–107 ms in 306 final runs. Decoding/upload still occur on the owner thread; no frame-time or full asynchronous-loader claim. GL2 aperture inspected. |
+| `aggregate-final.log`, `png-contract.log`, `png-defect/` | 50/50 steps, 402 Zig, 87 Python and actual C roots pass; synthetic PNG checks exercise filters, alpha, bit depths, Adam7, empty/split IDAT, malformed streams and cleanup | Initial aggregate had a missing SDL include in the new C root; fixed. The unmodified prior public decoder fails the valid empty-IDAT fixture. Assertions enabled. |
+| `bridge-collision-forecast/` | Read-only forecast copies the actual spray controller and traces the existing geometry; six eventual impacts match within 0.008 units and 8–35 ms frame quantization | **Failed boss encounter** on earlier `4fd0ae…`, combined `d69b3e…`; Hiro dies with boss health 270. Forecast validity does not establish successful avoidance or campaign traversal. No gameplay damage/rule changes. |
+
+`306/fresh-opening/` is now a failed superseded-build development route: full
+intro/arrival, marsh and ordinary bridge progression reach the boss; the driver
+falls into water and loses its firing lane. `305/fresh-opening-defenders/` also
+fails at the boss. Neither is a fresh complete milestone. Checkpointed factory
+exit evidence remains narrow. Next work removes remaining decode stalls and
+uses a materially different legitimate encounter route before replaying the gate.
+
+## Sequence 308 — native-background-png-preparation
+
+Final build `d3db133f78affc07113642a685d540a4a20ef01d19144ead550a9219d82a5813`;
+combined identity `940837b5c7363d6a6ea9923efba3054b3488daf6295323170b31ddc52b23c4c9`.
+Base, HD and region manifest identities remain those recorded at 306; protocol
+1349 and renderer ABI 12 are unchanged. Evidence: `zig-out/reports/runtime-zig-308/`.
+`zig build play` installs this isolated native implementation with HD enabled.
+
+World surface admission discovers each actual material's PNG inputs using the
+existing shader definitions and backend format preferences. Independent file reads
+feed pure CPU decode workers; completed pixels are consumed by the ordinary owner
+thread material compiler and GPU uploader. Each material has a 128 MiB pixel bound;
+cancellation joins before releasing input/output. No engine filesystem, renderer
+allocation, logging or GL calls occur on decode workers. Other image formats,
+generated normal maps, GPU uploads, collision decode and gameplay admission still
+include synchronous work. This is not complete loader/frame-time acceptance.
+
+Rejected lookahead no longer crashes the current world. A required failed
+destination is refused before traveler ownership changes, including a pending
+cut; a held source resumes its clocks and input. New saves exclude unfinished
+preparations with no exposure or restored/migrated state. Already exposed or
+historical worlds remain mandatory; no existing gameplay history is discarded.
+
+| Evidence | Verified outcome | Limits |
+|---|---|---|
+| `async-opengl1/`, `async-opengl2/`, `admission-summary.json` | Both renderers admit A/B/C and pass actual foreign Glock/Ion/Sidewinder contacts, owned portal presentation and late resources. Each prepares 189 PNGs; measured surface peaks 8/11 ms. GL2 aperture inspected | Renderer-consolidated build `af21d5416d577bdf23d259d4fa3615cd83afa90290b41411cf1b46d3598e1216`, combined `efcc2d9468dd22191f26c800f12a33f31195ff4a880a302d2bb6d398fb38a8a1`, precedes server failure repairs. Renderer code is unchanged in final build. Controlled setup, not fresh campaign acceptance. |
+| `failed-prefetch-save-boundary/` | On final build, a confirmed corrupt future PNG fails admission while current identity, connection and processed movement survive. Current save/load succeeds; a new failure is observed after restoration, entry into the failed factory region is refused, and ordinary control remains available | Temporary profile-only PNG override, recorded in `setup.json`; diagnostic placement/health. Original assets/saves untouched. |
+| `region-save-final/`, `restore-final/` | On final build, both A/B actor states survive actual load and death/reload; the unchanged six-world save admits all five resident members, completes its arrival cinematic and permits normal movement/saving | Controlled/historical fixtures. No fresh traversal acceptance; simultaneous final restore runs are not used for frame-time comparison. |
+| `aggregate-failure-repair.log`, `runtime-final.log`, `png-asan-final.log`, `worker-defect/` | Repair aggregate: 50/50 steps, 403 Zig and 87 Python plus actual C roots. Final save-boundary change: affected runtime suite 19/19 steps, 264 Zig and C roots. Worker/cleanup ASAN passes. Inline dispatch in a temporary source copy fails the required non-owner-thread assertion | Assertions enabled. Unaffected aggregate roots are retained rather than rerun. Tests exercise actual decoder pixels, two owners, cancellation during read/decode, prepared-cache consumption, corrupt input and budget failure. |
+
+Failed evidence remains: `failed-prefetch/` incorrectly equated renderer/server
+handles (invalid setup); `failed-prefetch-owner/` exposed the actual fatal future
+admission; `failed-prefetch-recovered/` exposed a saved unfinished second map that
+later failed restoration. All remain failed, superseded by the final recovery run.
+The latter uses build `4f46b1…`; positive six-world `restore-opengl2/` on `af21d5…`
+is superseded by `restore-final/`. No acceptance is transferred from the removed
+runtime. Wider seam qualification/transforms, multiple views, navigation, residency,
+remaining admission work and the fresh campaign gate are still open.
+
+## Sequence 309 — native-grounded-actors-and-gameplay-feedback
+
+Build `18681cf879b513dd84b471dd4e6b9cfe6d0c0cf9356badfa7fb353e29b4282d5`;
+combined identity `a7211a68e66400d48df29e744ecf970c732b5e79b443e590a2edf4799936b0d0`.
+Base, HD and region manifest remain at the identities recorded in sequence 306.
+Protocol 1350, renderer ABI 12. Evidence: `zig-out/reports/runtime-zig-309/`.
+Native clients and servers must use the matching protocol; the live service is
+unchanged. `zig build play` selects this isolated development build with HD assets.
+
+The actor motor no longer mistakes the 0.04 upward velocity left by floor
+collision for an actual jump. Its departure rule matches the admitted slide/player
+contract. Worker-specific fear consumes witnessed injury/death and existing
+navigation, vocal and animation services; blocked/finished retreat stops in an
+authored cower/ambient pose. Private reference behavior was inspected, without
+importing implementation. Original hide-node route equivalence remains unverified.
+
+Monitor mode 2 and ending mode 4 previously vanished in a one-bit snapshot field,
+while the server correctly used the remote view for visibility. Three bits retain
+all modes. Multiplayer already uses shared class-owned weapon controllers; the
+repair gives presentation a spawn lifetime and consistent 16-bit shot ordering.
+It does not create separate single-player/multiplayer weapon implementations.
+
+Playable arrivals write `autosave-arrival`; periodic saves write `autosave` after
+60 simulation seconds, only when Hiro and every recruited companion exceed 90%
+of their own maximum health. Stopped/carried members and connected neighboring
+worlds participate. Successful saves also refresh death recovery; manual slots
+are untouched. Cambot lights use a small emitter, a softer beam and a contact
+surface pool with range attenuation; this is an enhancement, not a shadow-mapped
+spotlight or a claim of original rendering parity.
+
+| Evidence | State and verified outcome | Setup limits |
+|---|---|---|
+| `aggregate-final.log` | Passed: 93/93 build/check steps, 409 Zig, 87 Python and actual C roots | Assertions enabled; explicit worker, companion-health, camera-wire and movement roots execute |
+| `ground-defect.log`, `ground-defect.json` | Passed regression sensitivity: restoring the strict upward-sign rejection in a temporary copy fails the actual actor-motor test | Captured resting velocity, ordinary slide collision; no production source mutation |
+| `ground/`, `crox-ready/` | Passed: actual guard pursuit around occlusion and subsequent fire; Crox swimming, restored pending melee and real contact | Ground-equivalent build `21d238…`, combined `ec768240c73d1296d224f65ff92df1227a4b204759c08f219025fa2c49fbe036`; diagnostic positioning/health, no route acceptance |
+| `monitor-final-opengl1/`, `workers-final-opengl1/` | Passed on final build: ordinary button use selects the actual remote camera, releases input and restores a finished scene; witnessed worker injury/death dispatches fear vocals, settles into the stopped pose and restores fear state | Diagnostic placement/equipment. Fat worker uses ambient fallback; skinny cower frame ranges appear during the living victim's injury. No full cinematic/task parity claim |
+| `lighting-final-opengl1/`, `lighting-final-opengl2/` | Passed on final build: Cambot acquisition, actual lamp submission and inspected close/wide captures | Enhanced appearance, not full renderer equivalence or independent shadow/occlusion qualification |
+| `multiplayer-final/` | Passed on final build: two real UDP clients advance/interpolate attack frames before and after respawn, then spectate/rejoin/reconnect/restart | Ordinary starting weapon; this does not qualify every weapon interaction or multiplayer mode |
+| `progression-final/`, `region-save-final/` | Passed on final build: ordinary movement across both authored A/B exits retains identity/input and creates a B arrival autosave; independent actor states and active world survive save/load and death recovery | Controlled approach/state changes; no fresh playthrough. `arrival-b.sav` and `.info` retain the actual boundary evidence |
+| `autosaves-final-opengl1/` | Passed on final build: actual arrival save, real 60-second eligibility boundary rejects 90% health, saves at 91% and restores 91% after subsequent damage | Controlled health setup; companion maximum/ownership/stopped/carried eligibility is contract-tested, not yet exercised as a complete live party autosave scenario |
+
+Earlier successful `monitor-input/` and `autosaves-ready/` use `6201ad…`, combined
+`1d6004cdfc56d92014bb8734ab308b2f3482a0c22098f6f3931661a5cd834295`.
+`workers-terminal/`, `multiplayer-input/` and initial `lighting/` use `21d238…`;
+the latter's close-range pool was too bright and is superseded by reduced gain.
+Failed setup runs remain: early monitor aim preceded floor settling, multiplayer
+held attack through the normal respawn guard, initial world readiness timed out,
+and a killed worker was correctly retired before the driver's next sample.
+These invalidate those scenarios; later runs require actual input/attack, camera,
+readiness, contact and save-completion evidence. Ground contract fixture failures
+preceded correction of its contact-depth tolerance; final assertions and the
+negative mutation both execute. Fresh intro/campaign, broad ground-class traversal,
+full multiplayer modes and the complete independent port remain unaccepted.
+
+## Sequence 310 — native-multiplayer-map-picker
+
+Build `e2df24ee6037eda462fc9d81f3482d609e560337ff884c46f1533f1ec4e36d0b`;
+combined identity `48e0b439886dd6c50e4c17efa4b5f7a45909d6d04b480b6b96d1df4039855666`.
+Base, HD and region manifest remain at sequence 306 identities; protocol 1350 and
+renderer ABI 12 remain unchanged. Evidence: `zig-out/reports/runtime-zig-310/`.
+
+Internet Create and LAN hosting now share a paged map picker instead of requiring
+a typed map identifier. Names, titles and mode capabilities come from the existing
+local `dk3/maps.cfg`; only mounted BSPs are offered. Mouse or keyboard selection
+persists in the existing room-map setting. Changing mode retains a compatible
+selection or chooses the first available map. Missing/incompatible selections
+cannot launch a room. Mode labels now show Deathmatch, CTF and Deathtag directly.
+
+| Evidence | State and verified outcome | Limits |
+|---|---|---|
+| `build-approved.log` | Passed: 62/62 build/check steps, 270 Zig tests and actual C runtime roots; map-catalog root explicitly executes | Applicable runtime suite and native installation only; no duplicate broad suite |
+| `map-picker-approved/` | Passed: actual XTest mouse and keyboard selection, paging, Escape cancellation, DM/CTF/DT filtering, selection shared by Create/LAN and a real e1dm1 LAN launch with processed player input. Captures inspected | Isolated profile, OpenGL1 software rendering. Internet Create selection is verified; no Internet room was submitted. This is UI acceptance, not broader multiplayer/campaign acceptance |
+
+The first build could not write the compiler cache inside the sandbox. The first
+engine setup could not access its virtual X display and exercised no menu. Both
+failures are retained; the approved replays above completed outside that sandbox
+using dkguard and temporary profiles. No private reference source/assets, preserved
+installation/saves or live service were changed. Earlier gameplay evidence keeps
+its recorded build identity; complete-port acceptance remains open.
+
+## Sequence 311 — native-pickup-view-feedback
+
+Build `e1e3c7fd4ac9f463c5e75d8368463f1d9038b5a68a75ae87830ac0a608f6b78a`;
+combined identity `f626e617c965cccbdf342c9e92cd395c2ff6148be5d09d7a18354ea39b6ac446`.
+Base, HD and region manifest remain at sequence 306 identities; protocol 1350
+and renderer ABI 12 are unchanged. Evidence: `zig-out/reports/runtime-zig-311/`.
+
+Weapon acquisition now enters its class-owned raise transition, preventing queued
+old-selection input from starting another draw. Ammunition pickups preserve the
+current transition. Restoration initializes the presentation incarnation once.
+First-person stairs and crouch follow main's admitted 200/100 ms presentation
+contract; predicted command replay cannot accumulate the same step twice.
+Collision, damage and player speed are unchanged.
+
+Armor and the reviewed rotating pickup classes use the existing angular trajectory;
+ammunition and single-player world weapons retain placed orientation. Pickups sample
+light above their base and request minimum light, now honored by both renderers.
+Neutral texture-modulated shine replaces the blue additive veil. These lighting
+changes are documented enhancements, not complete original-material equivalence.
+
+| Evidence | State and verified outcome | Limits |
+|---|---|---|
+| `aggregate.log`, `runtime-approved.log` | Passed: aggregate 50/50 steps, 413 Zig and 87 Python tests plus actual C roots; affected runtime 273/273 | Assertions enabled, new roots execute. Controller fixtures explicitly begin already equipped; acquisition has its own regression |
+| `pickup-defect/` | Reproduced defect on prior native `e2df24…`: ordinary contact produces two Ion ready animations | Expected-defect run, not product acceptance; combined identity `0c2bbf287f59879aa0cb4be92856e979b7e669258bcba3d6617559c922fac8b9` |
+| `view-final-opengl1/`, `view-admitted-opengl2/` | Passed on final build: actual pickup contact produces one ready animation, crouch/stand include intermediate eye heights, save/load does not duplicate the ready animation. Fixed-camera armor rotation, readable alcove armor/ammo and Off/Original/Enhanced shine captures inspected | Diagnostic positioning/health, ordinary pickup contact, isolated profiles. Actual crouch and grounded alcove setup asserted. Not a fresh playthrough or every pickup class |
+| `stairs-final-opengl1/` | Passed: ordinary walking climbs three authored e1m1c step rises, with negative camera offsets that decay to zero | Diagnostic placement, no jump or geometry changes; not full traversal or frame-time qualification |
+| `network-final/` | Passed on final build: two real UDP clients move/fire with advancing weapon frames, respawn, spectate/rejoin, reconnect and restart | Ordinary DM inventory; commanded death. Affected shared-presentation regression, not complete multiplayer or every weapon interaction |
+
+Failed setup runs remain invalid: early input observations preceded the final region
+admission event; initial item viewpoints intersected rock, and the first stair
+route was a ramp. The driver now waits for final admission and asserts walkable
+placement. The first renderer correction was excluded by build flags; final
+lighting captures supersede it. Existing `d1_swp3` out-of-range frame warnings are
+still visible with developer diagnostics and remain a separate presentation issue.
+Earlier local report directories disappeared during this session; sequence-311
+evidence above was recreated. Historical journal outcomes retain their identities,
+but missing artifacts are not treated as fresh native acceptance. No preserved
+installation, saves, main branch or service was changed. Full-port and connected
+campaign acceptance remain open.
+
+## Sequence 312 — native-restoration-wet-ground
+
+Build `26864935fe82571da35369cc415d47920647333b6d74d38998ad7db711cf1ca0`;
+combined executable/module/asset identity
+`4144b1501f1e32fe307155cc2258d8c80f5bb8e95a68d87d1b56e52442f521eb`.
+Protocol 1350 and renderer ABI 12 remain unchanged. Each final report's
+`identity.json` records every admitted asset hash; base/HD/region manifest remain
+at sequence 311 identities. Evidence: `zig-out/reports/runtime-zig-312/`.
+
+Loading a saved region previously consumed a frame for every preparation step
+and kept its progress bar empty. Loading now processes at most 64 steps or an
+8 ms scheduling budget per frame; individual engine calls retain their existing
+limits. Ordinary background prefetch still yields after one step. Progress counts
+actual admitted resources/worlds, and restoration still requires every saved world.
+A reproduced loader crash exposed background ZIP closure freeing the engine zone
+from workers. Stream finalization and CRC validation now follow the reader join on
+the engine owner thread; no zone-size increase or discarded history masks the issue.
+
+The reported robot is an authored Sludgeminion. The supplied hull has valid floor
+support, but the old ground routing flags reject water areas, including walkable
+shallow floors. Native AAS now allows water areas for ground walking without
+adding swimming, water-jump, ladder, elevator or hazardous-liquid capabilities.
+Class-owned speed, collision, damage and authored geometry remain unchanged.
+
+| Evidence | State and verified outcome | Limits |
+|---|---|---|
+| `aggregate.log` | Passed: 52/52 steps, 415 Zig tests, 87 Python tests and actual C contracts, including the new background ZIP reader root | Assertions enabled; runtime root explicitly includes navigation and client admission tests |
+| `read-fixed.log`, `read-defective.log` | Actual bundled minizip/shared reader passes concurrent completion, repeated polling, cancellation, size rejection and CRC failure; moving cleanup back to the worker fails the owner-thread assertion | Synthetic local ZIP, no private assets or alternate runtime |
+| `wading-before-defect.json`, `robot-diagnostic/` | Expected defect reproduced: living chasing robot remains horizontally stationary across actual engine samples | Intermediate build `ff196a…` with loader diagnostics, preceding navigation repair; not product acceptance |
+| `wading-final/` | Passed: untouched autosave's robot 83886443 moves 28 units during measured pursuit at supplied speed 80; actual AAS travel cost is 0 without water admission and 1377 with it | User's saved easy difficulty and inventory retained; player position unchanged during pursuit. Camera placement occurs only after acceptance. Not fresh traversal |
+| `ui-autosave-input-fixed/` | Passed: real mouse selection and Load from paused/main menus, visible nonzero progress, restored input and actual death recovery in e1m2b, OpenGL2 | Untouched copied user autosave with ten resident worlds; menu loads 7.21/6.59 s, death recovery 10.61 s including death delay. Local software-renderer timings, not a performance guarantee |
+| `ui-save2-opengl1/` | Passed: same menu/death sequence using untouched copied save2 in e1m3a, OpenGL1 | Twelve resident worlds; menu loads 9.66/7.60 s, death recovery 11.62 s. Both save scenarios assert retained dead actors and restored player identity/weapon |
+| `ground-regression/` | Passed: authored guard navigates around occlusion, moves over 32 units and fires | Controlled last-seen goal/player placement; unaffected dry-ground regression, not campaign completion |
+| `region-save-isolated/` | Passed: independently changed actor health in e1m1a/e1m1b, active world/player identity and inventory restore after explicit load and death in the other world | Controlled health/placement and resident transfer; not connected campaign traversal |
+
+The initial console reproductions could restore the user saves but required long
+admission waits. `robot-wading-isolated/` preserves the pre-cleanup-fix real zone
+allocation crash. Failed UI setup runs did not exercise Load: one shared display
+received another window's input, and another used relative mouse grab with an
+absolute XTest driver. The corrected driver uses the existing ungrabbed UI test
+mode and asserts actual pause before clicking. Concurrent display teardown also
+invalidated `region-save-regression/`; engine regressions run alone afterward.
+None of those failed setups counts as acceptance.
+
+Original save files remain byte-identical; main, the preserved installation and
+online service are unchanged. Full campaign, broader ground-actor/worker routes,
+all weapon interactions and multiplayer qualification remain open. Earlier route
+results affected by shared navigation changes still require replay.
+
+## Sequence 325 — saved-button-travel-and-lift-carry
+
+Reopened the owner's two defects from session
+`01a0ef9e-e4c1-7b71-95fa-92583c26a88a`: buttons still disappeared after ordinary
+use and rising lifts kicked the player upward when launched with `zig build play`.
+Fresh-map travel fixes were overwritten by old saved mover components. Admission
+now repairs recognized old endpoints/poses without replaying targets or resetting
+used latches. Restored audio bindings and leading-slash sound normalization also
+repair connected resident-map admission exposed by these old saves.
+
+Client replay now tests geometry at committed snapshot time and applies a single
+ground presentation adjustment to render time. Ground movement no longer magnifies
+the collision residue of a stationary falling rider into an upward launch. The
+prior −79 → +79 landing reversal is covered by a new regression; ordinary bundled
+movement differential cases continue to pass.
+
+Installed build
+`d61c5af7426f2faccf5939b8f5e66735743dd525662c5cb88a05d84358e92109`;
+combined identity
+`b6645c24846cf38389c047c0c3eea535d9049fb0d9225eeda58554d26549fcfe`.
+Evidence: `zig-out/reports/runtime-zig-325/`; driver:
+`dkq3/tools/runtime_saved_mover_probe.py`. See
+`docs/native-acceptance.md` sequence 325 for retained failure details and scopes.
+
+| Evidence | State and outcome | Limits |
+|---|---|---|
+| `saved-before-101/` | Expected saved-endpoint defect reproduced on prior installed build: 25 incorrect e1m3a endpoints | Press capture shows the authored remote camera, not the panel |
+| `save2-verified/` | Passed: all 25 saved button endpoints, ordinary flush-terminal press, visible used face and actual save/load retaining its latch/audio binding | Copied original save, diagnostic placement; mixer audibility unverified because normal load disables `s_show` |
+| `autosave-verified/` | Passed: all 14 saved e1m3b button endpoints; ordinary use and save/load keep panel 357 visible | Copied original autosave, diagnostic placement; sound dispatch is not mixer proof |
+| `save2-verified/lift-frames.json`, `view-summary.json` | Passed: repaired landing and ascent/dwell, 743 supported frames, zero feet/deck and camera/deck range, zero lost ground | Living contact renews upper dwell; no descent claimed |
+| `save2-verified/big-lift-frames.json`, `view-summary.json` | Passed: ordinary-button large-lift ascent/descent, 2,180 supported frames, 169 rising/156 falling samples, camera/deck range below 0.0003, zero lost ground | Clear-deck placement and elevated health amid combat; no mover/geometry changes |
+| `fresh-lift-final/` | Passed: fresh living ascent/dwell, 658 supported frames, zero feet/deck and camera/deck range, zero lost ground | Diagnostic placement/elevated health; upper dwell is held by contact |
+| `aggregate-landing.log` | Passed: 52/52 steps, 435 Zig tests including 208 runtime tests, 108 Python tests and C contracts | Approved compiler-cache access after sandbox write failures |
+| `original-saves.json` | Passed: source save2/autosave hashes unchanged | Isolated profiles, dkguard software runs; preserved installation and main untouched; no Git operations |
+
+Other maps, parent-rotated saved movers, all classes, mixer audibility on restored
+saves and hardware rendering remain unverified. This is focused acceptance of the
+reported saved-button and lift defects, not full campaign or multiplayer acceptance.
+
+## Sequence 326 — superfly-encounter-prop
+
+Reproduced the owner's e1m3b cinematic screenshot through ordinary encounter
+trigger contact. The torture apparatus was incorrectly classified as a Superfly
+performance by the cosmetic converter. Fitting the multipart prop produced a
+generated body nearly 494 units high around the authored camera. The classifier
+now excludes the apparatus; overlay admission rejects the faulty substitution.
+The local overlay repair removes that model and its four skins, preserving all
+594 other non-manifest entries byte-for-byte and the converted prop geometry.
+
+Installed build
+`925b35601295734af913ac3e57c14dd55e39cf2554b91107b6665ed2ac4dd7d9`;
+combined identity
+`060db5bdb0e15f70909b02b9cb27352a44e2ae6f4c6b9c344e5778e20d15be13`.
+Evidence: `zig-out/reports/runtime-zig-326/`; driver:
+`dkq3/tools/runtime_superfly_cinematic_probe.py`. See native acceptance sequence
+326 for component bounds, retained overlay and exact scenario scope.
+
+| Evidence | State and outcome | Limits |
+|---|---|---|
+| `encounter-before/` | Expected defect reproduced: supplied giant-limb view, ordinary trigger 50 contact and removal of its first decorative stand-in | Prior installed overlay, copied source autosave; first shot only |
+| `encounter-final/` | Passed: corrected first-shot view, all 13 authored encounter shots, active scene save/load, natural return to player control and completed-scene save/load | Diagnostic placement outside trigger, ordinary forward input; software rendering. Later four-shot rescue and full campaign remain unverified |
+| `package-repair.json` | Passed: only invalid IQM/four skins removed, 594 other entries unchanged, strict package admission succeeds | Original converted model package unchanged; old overlay retained locally |
+| `aggregate.log` | Passed: 52/52 steps, 435 Zig tests, 109 Python tests and C contracts | Package admission/repair regression added; no native movement or camera code changed |
+| `original-save.json` | Passed: original autosave unchanged | Isolated profiles, dkguard software runs; no Git or preserved-installation changes |
+
+The broader cosmetic classification, other cinematics/props, facial performance,
+later rescue sequence and hardware rendering remain unverified.
+
+## Sequence 327 — skills-attachments-corpse-physics
+
+Implemented zero fresh multiplayer attributes, level-five timed skill pickups,
+render-time parent attachment composition, stable embedded-pickup recovery and
+support following, retained damageable multiplayer bodies, weapon-caused player
+gibs and sequenced corpse impulses. Articulated solvers inherit death velocity,
+release the living pose gradually and wake on subsequent localized hits. Explosion
+splash admits corpses and preserves the blast direction without duplicate impulse.
+Engine/native snapshot schemas use protocol 1351 together.
+
+Evidence under `zig-out/reports/runtime-zig-327/`; scenario driver:
+`dkq3/tools/runtime_physics_repair_probe.py`. Passing scenarios: all five SP
+full-bar pickups, save/load and expiry; the copied e1m3b autosave's t478 lift button
+and four grounded pickups in both software renderers; two real UDP clients with
+zero skills, full-bar pickup/expiry, articulated death, retained identity after
+respawn, later body-hit response, living-player and retained-body explosive gibs,
+and no duplicate corpse score. The existing SP companion ragdoll/save restore
+scenario also passes. Screenshots inspected. Aggregate and focused runtime repair
+complete 442 distinct Zig tests, 113 Python tests and C contracts. The aggregate's
+new test literal compile failure is retained; only the affected runtime target is
+rerun. `installed-network-gl2/result.json` also passes on the final installed build with
+the recorded combined identity. See native acceptance sequence 327 for exact scope,
+retained failed setup and original-save hash. Bone physics remains cosmetic with an
+approximate authoritative corpse hull; full physics/campaign acceptance stays open.
+
+Final installation: `81687de5a239474418de2ff1240c08e8f88d79d95733f1386d1e68ff18a6d49a`;
+combined identity: `d6d73498e12c6414fa05d1aa289e9ceeb2b43455174b637bad6023b32f4db0f1`.
+Generated compatibility metadata and native/API protocol now agree on 1351; matching
+client/server builds are required. Native `zig build play` uses the refreshed
+isolated installation. No Git operations or service deployment.
+
+## Sequence 328 — neural-characters-episode1
+
+Implemented and executed the local original capture → reviewed detailed concept
+→ pinned RTX 5090 TRELLIS.2 → 4096-pixel atlas/36,000-triangle skeletal IQM pipeline
+for the 37-master roster: all 22 episode-one monsters, five core characters and
+ten additional story identities. The two chained prisoners retain exact protected
+concept, prompt, IQM and atlas bytes; they were not regenerated.
+
+Suitable bipeds use shared anatomical character weighting, fixed-length IK and
+independently authored motion. Source frame/event intervals, props, hardpoints,
+cinematic aliases, carry performance, moving attacks, team colors and appearance
+indexes remain part of variant construction. Native humanoid and generic creature
+physics are connected. Face refinement covers 19 exposed humanoid/nonhuman faces
+and Psyclaw's eyes with registered image edits and bounded UV bakes.
+
+Visual failures were repaired before package verification: torso centering for
+translated cinematic references, Toshiro's standing reference, Sludgeminion's
+front/back ambiguity, missed recessed eye masks, robe-owned hand vertices and
+floor hems, and the flattened fitted pod hatch. The pod now has four rigid hinged
+shell sections and retains the original separate mechanical mosquito spawn event.
+All-frame structural audit passes 37 masters and 11,458 frames; pose and face
+reviews are retained with source/output hashes. Local evidence:
+`zig-out/neural-monsters/episode1/`, `review.html`, `quality-audit.json` and
+`zig-out/neural-monsters/verification/prisoners-final.json`.
+
+The final pass also welds glTF UV seams before decimation, re-registers bounded
+face projections (fresh edits for changed Psyclaw/Garroth faces), reconstructs
+missing lighting normals without changing motion bytes, and replaces stretched
+Venomvermin motion clusters with a connected 16-joint quadruped. The latter's
+all-frame edge-stretch p99 falls from 10.27 to 1.92. Froginator previews follow its
+jumping geometry while retaining a shared camera/scale with each source pose.
+The bundled engine's cumulative file-read counter uses unsigned 64-bit accounting,
+fixing the observed signed overflow during repeated large-package restoration.
+
+Pipeline execution and focused native acceptance are complete. The isolated
+package contains 132 runtime IQMs: 110 character variants and 22 monsters. Fourteen
+scenario groups pass: all monster loads; guard/Crox/robot/Venomvermin ordinary
+deaths, contacts and restoration; default guard gibs; pod and separate mechanical
+mosquito hatch; all five UDP character gaits, moving attacks, full deaths, respawn
+and settling; held sword/rifle/Glock; carried Mikiko; companion death/restore;
+intro through shot 35; and the full 13-shot saved Superfly encounter with active
+and completed restoration. Native captures are inspected. Broad aggregate passes
+52 steps, 442 Zig tests, 125 Python tests and C contracts.
+
+Final installation:
+`b39371cb7fb58d6c4a57b3c88af78c3061b5875da7b1770bf1b7b3e4138099a2`;
+combined identity:
+`79582fa0f439d63a0ab768c1cdbe1ab155c0e98629fe971095322239d1bf9c08`.
+Package SHA-256:
+`e58e1d7ca38e82b734032f328445c8547b0ae829704918d736dc563b625cf7c0`.
+Selected through `zig-out/neural-monsters-dev/play/current`; the preserved
+installation and source save remain unchanged. No Git operations.
+
+Exact outcomes, inputs and limitations are in native acceptance sequence 328 and
+`zig-out/reports/runtime-zig-328/final-evidence.json`. Master and native galleries
+are `zig-out/neural-monsters/episode1/review.html` and
+`zig-out/reports/runtime-zig-328/native-review.html`. Package proof retains all 131
+unaffected models byte-for-byte from the seam-qualified scenarios. Final protection
+receipt checks both published prisoners and the unchanged source autosave.
+Failed air-route/shot-lane setups remain recorded. Equal-spawn multiplayer replay
+settles every rig; an earlier wall/stair-adjacent Mishima placement remained awake
+at 8.4 seconds and general settling there is not qualified. Full campaign, the
+complete 115-shot intro, every story performance and hardware rendering remain
+unverified. Approximate cosmetic physics, base-color runtime materials and no
+facial morphs remain explicit limits.
+
+## Sequence 329 — neural-face-quality
+
+Completed the owner-reopened close-up repair for all 15 character identities and
+Mishima Guard, Fatworker, Skinnyworker and Surgeon. Fine closed surfaces and
+independent head/body atlas charts remove the observed ragged edges. Measured
+front/side face paintings align eyes, glasses, ears, jaw and clothing boundaries.
+Ten new side portraits use the built-in imagegen tool; exact images, references,
+prompts and hashes are in
+`zig-out/reports/runtime-zig-328/texture-quality-review/closed/continuation-side-artwork.json`.
+Both prisoners retain their protected chained poses and exact input/product bytes.
+
+The projection baker rejects sampled folds, contributes no backward-facing camera
+weight outside the named anterior orbital exception, and prioritizes only measured
+eye regions. Tatsuo's corrected glasses/collar landmarks remove the projected
+stripe. All 41 registered views have positive sampled Jacobians (minimum
+0.2377788665). Normal conversion exactly reproduces all 19 reviewed candidates;
+closed topology, nonoverlapping/nondegenerate UVs, skeleton hierarchy, bind channels
+and frame channels pass, with zero measured frame-channel error. Serialized
+normal/albedo receipts cover 217 sampled poses and 19 lit faces. The all-frame
+audit passes 37 masters and 11,458 frames.
+
+The cache check also rebuilt Psyclaw after the shared face-baker hash changed.
+The current bounded bake retains original atlas pixels outside face coverage;
+its IQM remains exact. Refreshed eye/pose review, audit and package provenance
+qualify the updated atlas. A subsequent conversion command retains all 37 entries.
+The 110 character variants were rebuilt once, then reused exactly when refreshing
+the episode package. Final package namespace contains 132 IQMs. Relative to
+sequence 328, 114 change and 18 remain exact; prisoner assets, model/physics mapping,
+engine/modules/renderers and base content retain their preceding identities.
+
+Eleven scoped native groups pass on the final isolated installation: all 22
+monsters; guard articulated death/restoration and default gibs; five real UDP
+character gaits, attacks, complete deaths, respawn and settling; sword/rifle/Glock
+grips; carry; companion death/restoration; intro face/motion playback through
+shot 35 and actual save/load; and all 13 Superfly encounter shots with active and
+completed restoration. Guard and UDP cases include GL1 and GL2. Passing captures
+are 960×540 with two GL2 or eight GL1 software workers; the GL1 guard uses e1m1a.
+All engine runs use dkguard and `--headless` without `--gpu`. Native captures inspected.
+One final aggregate passes 52 steps, 442 Zig tests, 130 Python tests and C contracts.
+
+Final installation:
+`d0d76e7161d12122ad295efa5948e2f0bfe67456112978e4d6a47fe82337354e`;
+combined executable/module/asset identity:
+`f159f7bccf495ac482c130e0117001156a9136fdabb14ae29b8fefa64a3c838c`.
+Package: 1,875,536,283 bytes, SHA-256
+`a3cce6c208de4e7977798ba2efd7959076ede55a48eb7990b2ff36466fde3ff1`.
+At the owner's explicit request, `zig-out/native-dev/play/current` now selects the
+same immutable generation as `zig-out/neural-monsters-dev/play/current`. All 25
+installed file hashes exactly match the qualified installation. The normal local
+`dk3` command now launches the native development prefix through its dkguard;
+its previous launcher bytes are retained. The local default neural-package
+selector chooses the rebuilt episode package for future `zig build play` runs,
+with the previous experimental archive preserved by SHA-256. Default
+`zig build play-install -j8 --summary all` passes 43/43 steps; compiled inputs
+remain cached. The prior native installation, preserved game/online current links,
+and all 120 snapshotted save/settings files remain exact. Promotion proof is
+`zig-out/reports/runtime-zig-328/texture-user-install.json`. Owner manual hardware
+testing is pending. Source autosave SHA-256 remains
+`6241cc17800ea58c99d293e16173bb0f9163b6ce890b6434e591540d97b7355d`.
+No Git operations.
+
+Evidence is `zig-out/reports/runtime-zig-328/texture-final-evidence.json`,
+`texture-native-review.html`, per-scenario receipts and the master `review.html`.
+Failed attempts remain: the HD software intro overflows reliable commands;
+initial two-worker GL1 captures miss firing/gait windows; e1m3b GL1 guard replays
+overflow commands, and one drop-cleanup path raises `StaleEntity`. The passing
+standard intro and opening-map guard do not qualify those failed paths. Probe
+dimension options record explicit capture profiles. Full campaign, full 115-shot
+intro, every story performance, hardware rendering, higher-load software behavior
+and reliable-command drop cleanup remain open. Approximate cosmetic body physics,
+1280-pixel concepts, base-color runtime materials and no facial morphs remain limits.
+
+## Sequence 330 — neural-visible-quality — reviewed replacements installed; cinematic acceptance partial
+
+Owner testing reopens visual acceptance: the submitted Toshiro image has broken
+forehead and neck surfaces and insufficient detail. Direct inspection of all
+37 gallery bodies and 19 front/quarter face sets also rejects Hiro hairline,
+Usagi hair/beard, Superfly eyes, Garroth face and Charon jaw results. The prior
+topology/skeleton and scenario receipts do not qualify these visible defects.
+The rejected intermediate concepts, broken decimation results and native failures
+remain preserved. The final reviewed replacement package is now installed for
+owner testing through the existing guarded native development launcher.
+
+Six separate realistic heads are admitted: Toshiro, Hiro, Superfly, Usagi,
+Garroth and Charon. Closed high-detail geometry, repaired neck joins, localized
+weights and five fixed mesh-conditioned painting cameras replace failed portrait
+fitting. Combined-model depth rejects hidden projection surfaces. Each head has
+a separate 4096 atlas; body parents and gameplay joint/bind/frame channels stay
+exact. The rejected natural-painted Toshiro reconstruction and its torn clay
+geometry remain recorded. The head-only memory adapter preserves full cascade
+resolution; bounded normalization and sparse-convolution comparisons are recorded
+with their actual tolerances rather than claiming every operation bit-identical.
+Original accepted body concepts and both chained prisoners remain protected.
+
+Owner steering adds Hiro proportions and the opening cinematic, with all other
+cinematics inspected. Hiro's head is enlarged by 15%; eight front/quarter/side
+albedo/lit views and six serialized gameplay poses pass visual review. Exact
+duplicate gameplay pose blocks share storage, keeping Superfly below the native
+16 MiB IQM bound with every named playback/attack pose bit-identical.
+
+Shared cinematic reconstruction now preserves semantic source regions, calibrates
+anatomical limb orientation, keeps fixed-length connected IK and decouples head
+orientation from arm gestures. Original weapon rotations and visibility survive
+retargeting; quantized hidden staff pieces are recovered, and Toshiro's grip uses
+the standing source reference. Upright first-frame orientation survives mostly
+recumbent clips. Source-pinned landmarks repair Hiro's kneeling ending; Charon's
+original weapon is extracted from the connected hand mesh. All 102 cinematic
+variants and matching skins were rebuilt, preserving authored clip/frame ordering.
+
+The new paired viewer exports every original/serialized frame and uses a shared
+camera and diagnostic playback clock. Numeric angular-step triage covers 55,604
+frames and 2,081 clips, excluding clip boundaries. All 13 final contact sheets
+were visually inspected: 300 samples cover every model. Evidence:
+`all-cinematic-final-inspection.json`, `cinematic-pose-review.json` and
+`final-cinematic-candidate-proof.json` under `zig-out/reports/runtime-zig-330/`.
+This is sampled inspection of all models, not complete visual/native scene acceptance.
+
+Guarded exact-installed GL2 opening samples under GDB reach shots 10–18, including
+Hiro's gesture/face and Toshiro's detailed close-up. Both head atlases upload at
+4096; inspected captures remove the submitted forehead/neck tears. The affected
+paced Usagi native comparison verifies separate `nomipmaps` head materials remove
+filtering speckles. Body mipmaps remain enabled. Normal GL2 playback still drops
+after shot 17 with “illegible client message”; the GL1 probe fails earlier with
+server-command overflow. Its pending queue is dominated by repeated ordinary
+lightstyle `cs 29` commands alongside bounded world patches. The debugger does
+not reproduce the GL2 drop through shot 18; no runtime playback repair is claimed.
+Older direct previews are retained separately from guarded qualification.
+
+The initial combined archive crossed Python's 2 GiB ZIP64 threshold. The bundled
+reader misread ZIP64 directory bytes and trapped during shader listing; original
+failure/GDB evidence is preserved. The canonical packager writes unsigned ZIP32
+offsets below 4 GiB and rejects ZIP64 before installation. All 939 reviewed
+payload hashes remain exact. Sparse-archive regression covers the actual boundary
+above 2 GiB. No engine change or disabled guard is involved.
+
+Final package: 2,195,897,606 bytes, SHA-256
+`cc2637bd3efcb4d3404c64d2312e965665c49e0f5f888407bafbb27906174267`.
+There are 132 IQMs: all 110 character variants change; all 22 monster IQMs remain
+exact relative to the fresh before snapshot. Both development prefixes select
+`22352873871ec98a877aa919368ae48b05a45b40a6f609cc5ba7da28f46dc3e5`.
+Only the neural archive changes among the 25 installed files. The previous
+immutable generation, package backups, normal launcher, main/online selectors
+and all 106 snapshotted owner-state files retain their exact hashes.
+`head-user-install.json` records the authorized installation and preservation.
+
+Final audit passes all 37 masters and 11,458 frames. Focused rig and archive
+regressions pass; the consolidated aggregate passes 52/52 steps, 442/442 Zig tests,
+173 Python tests and C contracts. Final normal-prefix installation passes 43/43
+build steps. Failed initial environment/fixture runs remain recorded alongside
+the repaired aggregate; no duplicate broad suites are required.
+
+Open: female guard weapon omission, ninja crouched-reference size/airborne poses,
+rolled/death and torso/cloth approximations; Osaka/Casseti facial artifacts and
+Mikiko style remain rejected. Superfly scene completion exits on signal 4 and
+Charon native camera/resident-scene presentation remains unqualified. Full intro,
+all native story timing/completion, owner hardware rendering and full campaign
+remain failed or unverified. No facial morphs. No Git operations.
+
+
+## Sequence 331 — native-multiplayer-map-japandm — new arena authored, gated, played, installed
+
+Owner request: a new multiplayer map in the shipped future-Japan register, built in
+Blender from locally generated assets and installed as `japanDM`, with no change to
+the game's code. The map is authored in `maps/japanDM/` (`build_blender.py`,
+`materials.py`, `screen_styles.py`, `textures.py`) and built by
+`dkq3/tools/map_build.py`, in the same tool tree as every other developer tool. No
+file under `src/` or `engine/` changed and the preserved installation and its saves
+were not written; the only installed artefact is `zz-dk3-japandm.pk3` in the
+development play prefix.
+
+Pattern research is measured rather than copied. `inspect_bsp` over the shipped
+arenas in `dk3-maps.pk3`, re-run this session, gives the footprint and density
+budget: `e4dm1` 571 brushes / 4,545 surfaces / 988 portal clusters and 272 entities
+(158 `light`, 42 `sound_ambient`, 11 `info_player_deathmatch`, 12 health, 8 weapon
+tiers), `e4dm2` 1,302 brushes / 4,763 surfaces / 983 clusters and 207 entities (76
+`light`, 34 `sound_ambient`, 11 starts, 6 `trigger_teleport`). Neither shipped arena
+uses deluxe lightmaps and both carry 23 lightmap images; 11 starts is the shipped
+convention. The runtime supplies the movement rules -- 320 u/s run, 18 u step-up,
+44 u of clearance to clear a jump, eye at feet + 22 -- which become 16-unit treads,
+a 160-unit maximum gap and two independent routes per level change. `japanDM` keeps
+`e4dm1`'s footprint and spends its doubled brush budget on detail: a T0 street ring
+at 0/64, a T1 market deck at 256, a T2 roof with a torii plaza at 512 and a monorail
+viaduct at 704, joined so that retreat is never a corridor.
+
+All 56 images are generated on this machine's RTX 5090 and nothing else is in the
+package: no shipped Daikatana or id Software art, no purchased pack, no downloaded
+model, and nothing imported from the private reference workspace. Stable Diffusion
+XL base 1.0 (CreativeML Open RAIL++-M) paints the albedo,
+`xinsir/controlnet-tile-sdxl-1.0` (same licence) steers it with a periodic
+procedural field so the result tiles, and `sdxl-vae-fp16-fix` (MIT) decodes it;
+height comes from the procedural field and the normal and specular maps derive from
+that, so tiling is structural rather than hoped for. FLUX.1-dev was considered and
+rejected because its licence is research-only and this map ships. Model weights
+stay out of the package; `maps/japanDM/PROVENANCE.md` records per-material seeds,
+sizes, digests, licence notices and the checking recipe, which was re-run this
+session: 50 of 50 recorded array digests agree with the shipped TGA files, none
+missing. The 2017-not-1999 register spends its detail on what the engine already has and the
+shipped maps could not use: GL2 perpendicular-space normal and specular maps on
+every structural material, `-deluxe` two-image lightmaps (40 images against the
+shipped 23), a light grid, additive `_g` glow stages so signage carries light
+instead of only reflecting it, worldspawn fog for rain haze, and a generated dusk
+panorama reprojected into six sky faces. Lighting is an authored rig rather than
+placed lamps: `q3map_skyLight` lives on the sky shader (on worldspawn it is silently
+ignored) and the emissive surfaces are the light sources -- 527 point, 2,291 area
+and 197 sun/sky lights, 2,739 total with 276 culled, against the 53 point lamps and
+no sun the first pass had.
+
+Compiling that is a measured cost, not a guess. The authored `.map` is 669,840
+bytes: 807 brushes (806 solid plus one `trigger_hurt`), 98 entities, 4,876 faces,
+bounds -1408 -1408 -128 to 1408 1408 1536, exported from 903 Blender objects with
+53 authored lamps, 14 starts and 29 pickups. q3map2 (ydnar 2.5.17) writes BSP v46,
+4,303,396 bytes, 3,549 surfaces, 17,120 drawverts, 2,096 portal clusters over 8,297
+portals, visdatasize 553,352, 40 lightmap images from 20 lightmaps and 83 unique
+lightmap/shader combinations, light grid present. Per-pass cost read out of
+`compile-*.log` (`passes` in the build report is a log line count, not seconds):
+`-bsp` 1 s, full `-vis` 884 s (11 passages per leaf, 182 MB passage memory,
+2,517,445 visible cluster pairs, average 1,201), `-light -deluxe -samples 3 -super
+2` 52 s (1,264,756 luxels illuminated, 261,027 used of 655,360 stored, 39.83 %
+efficiency). `-fastvis` was measured against a scratch copy of the same portal set
+to price that choice: 1 s, but 4,427,496 visible pairs at an average of 2,004 --
+76 % looser visibility, so the quality build keeps full vis. Navigation is 3,355
+areas and 10,787 reachabilities over 3 clusters (the pre-fix baseline, snapshotted
+before the lane fix, was 3,412 and 11,012). The package is 97,882,729 bytes and 61
+files -- 56 images plus BSP, AAS, navigation config, shader and `maps.cfg` --
+SHA-256 `5e9dbeaaf0e330fe32ea0a9e3fb4dc8417465cf219c3b43a98a7db5fa56205be`,
+installed at `zig-out/native-dev/play/current/share/dk3/zz-dk3-japandm.pk3`. The
+post-install audit returns RESULT OK: CRC clean, the installed BSP and AAS
+byte-identical to what the compilers wrote, and `dk3/maps.cfg` carrying
+`"japanDM" 1 "Neon Bazaar"`.
+
+Four rules decide whether a spot may hold a start, and each is a gate with an exit
+code: something to look at (straight-ahead line >= 120, +-25-degree cone >= 90), the
+engine's own 30 x 30 x 56 body box around the origin, nobody shooting it from 640
+units away, and no line of sight to another start. Both gates were re-run against
+the shipped `.map` this session and exit 0: `map_spawn_aim.py` reports 0 of 14
+starts unaimered, the weakest cone 96 and the longest straight line 721 units;
+`map_sightlines.py` reports 806 solid brushes, 3,650 walk-reachable eye samples of
+8,285, 58,400 rays, 8,409 clear lines at 640 units (3,859 at 1,024, 1,454 at 1,536),
+0 start pairs in open sight, 0 starts exposed beyond 640 units and 0 stranded items.
+`deck_e` was moved three times by these rules -- a stall in the eye line, then 57
+long-range vantages along the same open line it looked down, then a glass balustrade
+8 units from a foot and 7 units inside a body, which no geometry-only gate could see
+and which cost 20 seconds of the engine refusing to seat a player in the capture.
+
+The last blocked start was settled by removing it, and removing it found a real
+defect. The viaduct start at (-300, 880) could never be aimed: its deck floor is at
+704 so the eye sits at 726, and the deck's own 44-unit rails (crown 748) and 40-unit
+guide beam (crown 744) bracket the eye line at 40 to 170 units in every facing --
+the widest cone the deck offers measures 85 degrees against a gate of 90, and
+`--propose-sites` over that district returns 6 legal sites, none on the deck. With
+the start deleted, `map_sightlines.py` immediately reported `weapon_kineticore`
+stranded: that start had been *seeding* the deck's far lane in the walk-reachability
+flood. Without it the route must come up the two stairs and across the guide beam at
+its crossings, and it cannot, because the lanes are 84 units deep, a body is 30
+wide, and two props the exposure planner had put on the platform -- a 64x96 cabinet
+and a 64x64 signal box -- each span a lane from the beam to the rail. The game's
+strongest weapon had been standing in a pocket sealed by its own scenery, reachable
+only by jumping a 40-unit beam, and the match telemetry had been reporting the
+consequence as a preference: the highest reading in the pre-fix survey was 598. Both
+props are gone, the platform carries two 16-unit cable ducts in their place (under
+the 18-unit step-up, so they are walked over), and openness went up rather than
+down: 8,409 clear lines at 640 against 8,360, and 1,454 at 1,536 against 1,433. The
+fourteenth start went to the roof instead -- `roof_e` at (488, 680), 721 units of
+clear line, the longest on the map.
+
+The engine seats all 14 starts: one capture per start under `dkguard --headless`
+(software GL2, `llvmpipe`, GL 4.5 core, Mesa 25.3.6), 14 of 14 with no dark frame,
+mean scene luma from 0.106 to 0.364. Two starts are dim -- `w_lane_s` at 0.109 and
+`roof_n_w` at 0.106 -- and one ad board clips to pure white near the torii; all
+three are recorded as quality gaps rather than fixed blindly. The renderer's own
+admission line for the shipped archive reads `map=maps/japanDM.bsp lightmaps=3
+fog=0 surfaces=52`, and the sky shader still draws "has lightmap but no lightmap
+stage".
+
+Two sampled deathmatches run against the installed archive, with no placements and
+no grants. The acceptance probe (4 bots) passes the moment its evidence set is
+complete at 30.25 s of match time: all four moved, three picked an item up, one
+fired, one was hit, one died and respawned. `--observe` was added to
+`runtime_match_probe.py` for the gap that leaves, and the 8-bot survey ran 420.1 s:
+1,429 snapshots carrying 11,192 bot positions. Recomputed from that file, bots
+stood 54.0 % of samples on the T1 market deck, 28.9 % on the T0 street, 17.0 % on
+the T2 roof, 0.1 % on the viaduct stairs and **0.1 % on the monorail deck itself**;
+weighted by travelled distance it is 47.9 % / 41.3 % / 9.5 % / 1.1 % / 0.2 %. The
+deck samples are one contiguous visit -- bot 6 climbed the east stair between
+t=141.2 s and t=148.2 s and walked x 563..739, y 616..811 at feet 704, the first
+time any bot had stood on the viaduct in a sampled match, which is what the lane fix
+was for. Combat: 6 of 8 bots moved and picked an item up, 5 fired, 5 were wounded,
+4 respawned, 17 deaths concentrated in the four bots still playing (bot 7 on score
+10 with 2 deaths). Bots 0, 4 and 5 stopped travelling and stayed put for the rest of
+the survey (4,394 / 269 / 0 units of path over 420 s) while alive and still taking
+damage, two parked on the 192-unit tower crowns at x +/-1137 and one on the roof at
+(-600, 1000); nothing in the map stops them leaving, so this is bot navigation
+behaviour outside this task's scope, and it is why the split above is a survey of
+where bots end up rather than a statement of where they choose to fight. The visited
+box is x -1137..1137, y -1009..1009. An earlier draft of these numbers reported
+47.5/31.2/16.3/5.0 %, "all eight fired, all eight wounded, all eight respawned" and
+three bots on the deck; none of it reproduced from `samples.json`, so the design
+document and this record now carry the recomputed figures instead.
+
+Three build-integrity defects were found and fixed on the way, none of them in the
+map: `materials.py` was not an input to the model step, so a light-rig edit sat in a
+file nothing re-read (the author stage now watches the scene script, the material
+table and the screen styles together); `passes` in the build report is a log line
+count, which is why per-pass cost has to come out of `compile-*.log`; and a
+walk-reachability flood seeded from spawn points silently treats "a start stands
+there" as "a player can walk there", which is exactly how the sealed power-weapon
+pocket survived three matches.
+
+A full product install performed later the same day replaced the active development
+generation (`play/current` moved from `2235287387…` to `37835f14ad…`, 25 files,
+including `zz-dk3-neural.pk3`, `zz-dk3-textures-hd.pk3`, `ui.so` and fresh
+`qagame.so`/`cgame.so`). A loose map package is not one of the 25 manifest entries,
+so the generation swap silently left `current/share/dk3/` without `japanDM` -- the
+map was gone from the playable tree while still installed in the old generation.
+Re-running `--stages package,install` put it back: the rebuilt archive is
+byte-identical to the recorded `5e9dbeaaf0e330fe32ea0a9e3fb4dc8417465cf219c3b43a98a7db5fa56205be`
+and the post-install audit again returns RESULT OK. Because that swap also changed
+the runtime binaries, the two engine checks were repeated against the new prefix:
+the view probe again seats all 14 starts with 14 captures and the same mean lumas
+(0.106 to 0.364, no dark frame), and a fresh 4-bot deathmatch passes with 4 bots
+moving, 3 picking an item up, 3 firing, 3 wounded and 2 respawning plus 60 s of
+observation. The map's evidence therefore now covers both the 11:57 and the 22:40
+generations; any future full install drops the loose package again unless it is
+re-installed or added to the manifest, which is product packaging and out of scope
+here.
+
+Open and unverified, stated plainly: every capture is OpenGL 2 on the software stack
+(`llvmpipe`), so hardware rendering is unverified; the generated albedos came back
+brighter than the dusk register wants and the model's preference for a mid-grey was
+not trained away; the renderer still reports `fog=0` from `renderercommon`, so the
+authored haze is not admitted; `textures/japandm/sky` draws the "has lightmap but no
+lightmap stage" warning, cleared by adding `q3map_nolightmap` to it in a later
+build; two starts sit at ~0.106 mean luma and one ad board clips to white; the
+monorail deck has now been visited, but by one bot in one 7-second visit out of
+11,192 samples, so its tier still has almost no play evidence; the three bots that
+parked mid-survey are unexplained; and no human client, no network play and no mode
+other than free deathmatch has been run. No Git operations, no estimates, no
+game-code change.
+
+## Sequence 332 — cinematic-motion-publication — opening playback and systematic motion repairs
+
+Continued the owner's request to repair the first cinematic and inspect all model
+performances, preserving the accepted realistic artwork and Hiro's previously
+admitted 15% larger head. Sequence 331 belongs to the independent japanDM map task;
+this pass's retained work/evidence directory is `zig-out/reports/runtime-zig-331/`.
+Native development remains on `rewrite/native-zig-runtime`. No Git operations.
+
+The ordinary primary configstring path duplicated the bounded regional stream.
+Frequently changing `cs 29` lightstyles filled the reliable queue and dropped the
+opening. New engine import 718 updates the selected world's real registry without
+broadcast; the native observer owns campaign updates, coalesces changes and retains
+the four-command acknowledgement window. Arenas retain ordinary engine publication.
+The actual `sv_init.c` contract checks 500 silent regional changes, ordinary/primed
+broadcasts, unchanged values, world isolation and null removal. Engine changes are
+recorded in `engine/CHANGES.json`, preserving upstream licenses.
+
+A fresh Superfly map then failed with `InvalidSoundPath`: primary snapshots could
+reference a sound while its bounded definition was still queued. Both primary and
+foreign entity publication now wait for the referenced model/loop/event sound.
+The dedicated `SVF_DK3_CONFIG_PENDING` bit is 0x1000, distinct from upstream client
+selection/visibility bits; snapshot suppression retains collision links and does
+not alter publisher-owned `SVF_NOCLIENT`. The original failure remains under
+`superfly-final-full-gl2/`, the repaired complete scene under
+`superfly-resource-barrier-gl2/` and `superfly-final-runtime-gl2/`.
+
+Cinematic performers publish floor contacts and the brush pusher carries both
+spawned and borrowed performers. Before admission, Charon's trace identified 511
+blocked pushes of Hiro against world geometry: pushing had added player-only clip
+policy to the scripted rider. Pushing now uses the performer's configured mask;
+ordinary player/actor pusher masks retain their preceding behavior. The final boat
+and both actors pass the former stall and reach the dock region. The scene's native
+camera/task timing still needs repair: many shots miss the actors and Hiro's
+movement queues trail the authored framing. All-shot captures visibly establish
+that remaining failure; successful playback does not qualify visual staging.
+`func_event_generator` cinematic/target metadata is classified separately from
+strict finite numeric timer fields, fixing the e2m2c resident admission failure.
+The offline authored-field audit found the two relevant metadata cases in e2m2c
+and e3m3c; numeric delay bounds remain enforced.
+
+The ninja fit previously calibrated height on crouched frame 46 and allowed a wrist
+to dominate spine rotation. Reviewed standing frame 143 restores scale from
+0.80085 to 1.10799464. SHA-pinned source body vertices drive pelvis/spine/chest/neck;
+running/jumping no longer turn the torso horizontal with wrist motion. The female
+guard's short blades were connected to the source body and never met generic
+long-prop extraction. Its topology-pinned 36 weapon triangles are split into two
+independent hand attachments, retaining source geometry/normals/UVs. Combined-grip
+and wrist-driven candidates are retained as rejected evidence.
+
+Six paired ninja frames and four female-guard frames were visually inspected from
+the exact serialized IQMs. Eight actual opening captures spanning shots 95–100
+also show the ninja performance and current Hiro face. Only two of 132 IQMs change;
+all 130 other IQMs, 37 master geometries/atlases, both prisoners and model/physics
+mappings stay exact. The other 100 cinematic models retain sequence 330's complete
+sampled inspection and clip triage. Cloth, legs and rolled/death motion still
+approximate the source vertex performance; no facial morphs are added.
+
+| Scenario | State | Evidence and limits |
+|---|---|---|
+| Opening 115 shots → e1m1a seven-shot arrival → completed save/load | Passed within authored playback scope | `opening-final-runtime-gl2/` completes the real handoff and releases control after all destination shots on the final runtime. `opening-resource-barrier-gl2/` retains the earlier publication candidate pass. Ordinary dkguard software GL2, no GDB. |
+| Superfly full scene | Passed within diagnostic scope | Final-runtime fresh e1m3b admission, actual authored trigger activation, all 13 shots, teardown, completed save/load and normal control; rendered contact sheet inspected. Continuous rescue/owner save not qualified. |
+| Copied historical active Superfly save | Passed within restoration scope | `superfly-historical-final-runtime-gl2/`: final runtime restored cursor 1, completed all remaining shots 1–12, restored a completed save and released control. Source save hash exact; owner state untouched. |
+| Charon 17 shots and completed restoration | Passed within diagnostic scope | Final runtime boat-rider positions reach beyond the previous stall. `charon-all-shots-final-gl2/` retains in-shot native captures and diagnoses visual framing/task backlog. Visual acceptance remains failed. |
+| e4m3 boat arrival | Passed within diagnostic scope | Final runtime all 19 shots and completed save/load; ten captures inspected. Boat/arrival actors visible; repaired female-guard blades are not shown in this scene. |
+| GL1 opening past old drop point | Passed within partial scope | Final runtime ordinary software GL1 shots 10–18; full GL1 opening unqualified. |
+| Aggregate | Passed | `aggregate-resource-barrier-final.log`: 54/54 steps, 445/445 Zig tests, 190 Python tests and engine C contracts. Includes 18 anatomical/prop rig regressions. |
+| Installation | Passed within installation scope | Both development prefixes select the qualified immutable generation; all 25 manifest files verified per prefix. Native's loose japanDM archive survives selector activation. 106 owner-state hashes, launcher, main/online selectors and previous immutable generation exact. Both installations pass 43/43 steps; `cinematic-user-install.json`. |
+
+Final classic ZIP32 episode archive: 2,195,922,456 bytes, SHA-256
+`e58108e57ef159b85003d8ab5c426b037f82e7a1dc5b9971a52d5c0769db52d6`.
+Archive changes are the two IQMs, four female-guard skins and the receipt. Engine
+binaries, native modules and runtime compatibility metadata also change relative
+to 330. Installed generation:
+`b895461e6ab7c59844540bac9d0b76c0adbca1a63b6cc9de86d98f8cac20ba6f`.
+`cinematic-final-package.json`, `cinematic-motion-review.json` and
+`cinematic-native-review.html` bind the actual reviewed models and frames.
+
+Failures remain retained: earlier whole-intro probes demanded handoff before the
+completion button's delayed target, then saved during the short normal boundary
+before the destination's own arrival scene. The driver now observes the actual
+handoff and all destination shots before saving. These were probe timing errors,
+not proof of an intro restart. The fresh-map sound drop and pre-mask boat stall
+remain separate runtime failures with successful affected replays. Earlier GDB
+completion covers a copied scene cursor, not ordinary fresh trigger entry.
+
+Open: Charon visual task/camera timing; full native female-guard weapon scene;
+cloth/rolled/death pose fidelity; Osaka/Casseti/Mikiko visual repair; complete visual
+playback of every story scene, hardware rendering and connected campaign completion.
+All new engine runs use dkguard `--headless` without `--gpu`. Original assets and
+replacements stay local; no legacy runtime/assets were imported wholesale.
+
+## Sequence 333 — human-arms-locomotion — connected arms and distinct running
+
+Owner direction: repair the inverted wrists and odd arm placement in the opening
+gate screenshot, continue systematic cinematic inspection, and restore visible
+running for human gameplay/multiplayer actors. Implementation preceded integrated
+build and real scenario verification. No Git operation or sub-agent was used.
+
+The cinematic fitter now derives upper-arm/forearm rotation through the connected
+chain instead of fitting each roll independently. Its elbow pole remains within
+65 degrees of an anatomical down/out plane. Wrist swing is bounded to 35 degrees
+and palm roll to 80 degrees independently of forearm pronation. Serialized
+interpolation/quantization is checked with a 36-degree numeric envelope; the
+largest measured refreshed wrist bend is about 35.195 degrees. Generated palms
+follow actual forearms while weapon tags retain their established world axes.
+
+Gameplay authoring preserves full per-grip arm channels rather than replacing
+every arm with a stand pose. Relaxed walk/run motion uses opposed arm swing;
+running bends elbows and adds a flight phase, stronger stride and foot clearance.
+The initial 34-unit stride exceeded Superfly's existing hip limit and was rejected;
+the admitted 32-unit stride passes. Native publication chooses walk/run by speed
+relative to the character's current movement speed, covers reverse walking and
+stop transitions, and retains existing pose enum indices. Cinematic movement
+uses a run sequence when queued, preserving explicit task animation and fallback
+for classes without run clips. Mishima/Usagi playback uses the actual rendered
+variant's ranges instead of another character's deduplicated clip offsets.
+
+The opt-in character rebuild freezes all admitted masters, separate heads,
+geometry, binds, weights and atlases while rebuilding cosmetic motion. Cryotech,
+Mishima Guard, Fatworker, Skinnyworker and Surgeon loops are authored in normalized
+coordinates on their existing rigs; appended 30 Hz loops retain original source
+authority ranges/events. Normal package creation applies the same human motion
+policy. No original or converted asset is overwritten.
+
+The fresh native opening reproduces the owner's rear gate view in shot 26 at
+8,000 ms: Hiro's previously inverted left wrist follows the forearm and the elbow
+stays beside the body. Earlier gate-dialogue samples were a different scene;
+authored script inspection identified the correct walking shot. Additional
+restored dialogue/pan captures are retained separately, without conflating them
+with that fresh walking replay. `human-motion-review.html` includes the owner
+image, native comparison, selectable walk/run captures and all paired sheets.
+Its local-file browser inspection checks all five characters' capture selectors.
+
+| Scenario | State | Evidence and limits |
+|---|---|---|
+| Full opening → destination arrival → completed save/load | Passed within authored playback scope | `opening-gl2/result.json`: all 115 intro shots, seven arrival shots and restored normal control on the final runtime. |
+| Owner's gate walk | Passed within sampled visual scope | Fresh `gate-walk-native/`, shots 26–35; exact rear walking camera captured in shot 26. `gate-replay-native/` covers restored dialogue shots 77–94 and `gate-pan-native/` samples the full 18-second dialogue pan. |
+| Five actual UDP walk/run appearances | Passed within LAN scope | `network-run/` and `network-walk-fixed/`: Hiro, Mikiko, Superfly, Mishima, Usagi; 20 samples per character/mode. Distinct 24-frame walk and 15-frame run at 30 Hz, visible remote arms/body. Movement, fire, death/respawn, reconnect and restart checks pass. Public room acceptance unqualified. |
+| Held weapons | Passed within controlled grip scope | `held-weapons/`: real remote Daikatana, Ion rifle and Glock ready/attack attachments on two clients; native captures visually inspected. |
+| Superfly movement/restoration | Passed within diagnostic scope | `companion-motion/`: live companion movement, rendered skeletal pose and save/load. Continuous rescue route is outside this rendering probe. |
+| Five human NPCs | Passed within diagnostic scope | `npc-native/` and `npc-dry-native/`: class-owned grounded fixtures, native 30 Hz loop samples and save/load. Workers/surgeon captures on dry ground inspected; actual damage flashes retained on armed actors. Campaign chase/navigation and every attack unqualified. |
+| All cinematic/NPC paired samples | Passed within sampled review scope | `all-cinematic-review/`: 102 variants, 55,604 original frames and 2,081 clips catalogued; 206 serialized/source paired samples and all 13 sheets visually inspected. `npc-motion-review/`: 15 pairs across five humans. Full temporal visual acceptance remains open. |
+| Package preservation | Passed | `package-proof.json`: all 132 IQMs compared, 115 changed motion outputs and 17 exact. Geometry/UVs/normals/weights/triangles/binds/parents exact for every model. All atlases, skins, model/physics mappings and 15 character master inputs exact. |
+| Aggregate | Passed on tested generation | `aggregate-final.log`: 54/54 steps, 446/446 Zig tests, 193 Python tests and C contracts; 21 anatomical/prop rig tests. Uses `/usr/bin/python3`, which has Pillow/numpy. |
+| Installation | Passed within exact reviewed installation scope | `install-final.json`: native-dev and neural-monsters-dev select the qualified immutable generation; all 25 manifest files per prefix verified, 106 latest owner-state hashes exact, native loose JapanDM exact, launcher/main/online/previous immutable generations exact. |
+
+Runtime identity:
+`a9d6bbbc5a28a620d0e0bec883be5fbcaf955040513e1ba10c1b0fbd2893c5d0`.
+Installed development generation:
+`6ac170908fc2ddd0a3b0536218b6349eb5e524857b49f8fc7a119cf9595c2825`.
+Classic ZIP32 episode archive: 2,196,041,740 bytes, SHA-256
+`59854041cfb853cc787a079efe593a13c0b87be33fdc3863dd66142604b3f564`.
+Canonical archives and metadata sidecars match the reviewed candidate. Embedded
+candidate receipts retain their pre-qualification state; exact archive acceptance
+lives in `human-motion-acceptance.json` and the scenario receipts.
+
+Concurrent work is preserved explicitly. An already running independent launcher
+changed the native selector from sequence 332 to `91f7a1e…` and updated 14 save
+files; `concurrent-launcher.json` records the source of those changes and the
+refreshed 106-file baseline. The dropped loose JapanDM archive was copied into
+the reviewed native generation before activation. Both later canonical installer
+builds passed 43/43 steps but picked up unrelated new native/Lua edits and emitted
+unqualified generation `8d61f363…`. `reviewed-activation.json` records selecting
+the pre-staged exact tested generation under each install lock. Those later
+source edits/build products and all earlier generations remain intact. This
+pass's tests qualify the recorded generation, not the unrelated later edits.
+
+Initial rejected stride, missing-Pillow aggregate and hardcoded 15-frame walk
+driver failures remain in their original logs. The walk probe now checks its
+actual 24-frame clip and native cadence; the repaired probe passes. Startup-only
+review attempts using a build prefix instead of an immutable installation path
+were rejected and are retained; corrected invocations pass. No duplicate broad
+suite follows the valid final aggregate; later report/probe edits are qualified
+by their actual affected runs.
+
+Open: Charon visual task/camera timing; cloth and extreme rolled/death pose
+fidelity; Osaka/Casseti/Mikiko visual repair; full visual playback of every story
+scene, hardware rendering and connected campaign completion. All game runs use
+dkguard software `--headless` without `--gpu`. Assets/replacements remain local;
+original assets and owner saves are preserved.
+
+## Sequence 334 — animation-authoring
+
+Implemented and qualified the agent-operated authoring path above the current
+native runtime. Strict YAML manifests compile to `neural-animations.cfg`; a
+higher-level actor/camera source compiles to `dk3_cinematic 1`. Typed Blender jobs
+import BVH/FBX, convert FBX and render actual serialized IQMs with explicit material
+atlases. Motion operations cover rig inspection, source audit, approximate legacy
+fitting on copies, directional retargeting, contact proposals/cleanup, joint/loop/
+attachment validation, explicit prop policies and 30 Hz compatibility grids.
+Validated builds package into a separate closed cosmetic PK3. Generated sealed
+studio maps include native navigation and a working cinematic trigger; dkguard
+records demos and exact-identity replay produces AVI/H.264. No native runtime
+source, ordinary installation, launcher or owner-save change is part of this pass.
+
+CMU 07_01 walking and 09_01 running are pinned to conversion revision
+`09a07f54f3bbb58797325f009282d0b2048a2871` with file hashes and full license notice.
+The publisher permits all uses; conversion adds no restrictions. Only motion data
+and notices are downloaded. Blender's standard importers and installed dependency
+licenses are retained; no external Blender MCP, service SDK or private runtime is
+admitted. FreeMoCap classroom footage remains unavailable (publisher/API 403).
+CMU's per-trial AVI links are identified, but local downloads fail TLS chain
+verification; their contents are not admitted or described as camera footage.
+
+Three examples append 117 frames to the 955-frame admitted opening Hiro: 63
+procedural-neutral frames, a 32-frame captured walk and a 22-frame captured run.
+Actual source authority names/ranges/rates stay intact. The explicit run alias
+uses existing `walkb`; no absent `runa` is invented for the cinematic class.
+In-place travel derives movement speeds 42.864/103.592 model units/s, which the
+scene compiler checks against actor speed. Same-sample walk plant displacement
+falls from 2.0204 to 0.4853 units after cleanup and serialization; run falls from
+0.6809 to 0.00015. All declared contact, anatomy, fixed-length, loop and tag limits
+pass. Prop visibility is a discrete channel, and the unarmed examples explicitly
+hide all three old sword parts.
+
+Runtime-format inspection found that task `head` writes the whole actor's angles
+and `turn` multiplies yaw speed by ten. The compiler now preserves the actor's
+absolute initial heading, emits continuous look-curve velocities, tracks movement
+yaw and compensates the turn-rate factor. It reports whole-body look semantics;
+independent head/eye tracking remains a later layer feature. Zero-FPS mappings use
+the actual effective target rate for travel/contact analysis rather than guessing
+the source rate. Standalone clip tables use integer native FPS fields.
+
+| Scenario | State | Evidence and limits |
+|---|---|---|
+| Source download, BVH import, FBX interchange | Passed for selected motion | `qualified-walk-import/`, `qualified-run-import/`: real 317/149-frame actions and 31 joints, approximately 120 Hz. `fbx-roundtrip-aligned.json`: 317 walk frames/hierarchy/rate preserved, maximum 0.084 source-unit/0.648° error. |
+| Motion build and serialized checks | Passed for three aliases | `zig-out/animation-authoring/qualified-build/build.json` and `contact-proof.json`: frozen 33-joint rig, measured travel, contact cleanup, joint/loop/tag limits and zero-scale prop policy. Neutral is a procedural fallback, not capture. |
+| Original source audit | Failed for 12 clips; retained | `source-anatomy-audit.json`: 12 of 42 original Hiro clips exceed the anatomical joint-step limit. Auxiliary prop events are excluded from this body threshold. Three replacement aliases do not qualify the other performances. |
+| Final native studio on GL2/GL1 | Passed within isolated playback scope | `native-final/`, `native-final-gl1/`: all three shots, 34/25 actual mapped clip samples, measured-speed arrivals at x=60/-60, camera ownership and normal input release. `native-final-clip-proof.json` and `native-arrival-proof.json` check both renderers. GL2 active save/load resumes and completes. |
+| Engine replay/video and visual review | Passed within recorded scope | `video-final/`: receipt-matched demo replay → 960×540 30 Hz H.264, 16.84 s. Final native video sheet and material-correct Blender front/side walk/run inspected. `browser-review.json` decodes video and exercises all shot/pose selectors and half-speed playback. |
+| Package/input preservation | Passed with measured re-encoding | `package-proof.json`: 940 members, 937 payload hashes exact; one IQM and compact clip table change, metadata refreshed. Geometry/UVs/normals/weights/triangles/binds/parents/atlases exact. Original 955 frames re-encode through IQM quantization with maximum 0.00097 rigid-joint units/0.00278° error and scale exact. Masters/source archive preserved. |
+| Final aggregate | Passed | `aggregate-final.log`: 218 tests, including 25 new authoring regressions for strict sources, FPS/timing, shortest quaternion arcs, contact/root travel, prop policy/visibility, frozen admission, material assignment, actor look/turn contracts and queue overlap. `final-policy-proof.json` reproduces every qualified IQM/motion/manifest/table output byte for byte after the final root-policy repair. Native runtime binaries remain unchanged; no duplicate broad native suite. |
+| Installation isolation | Passed within recorded preservation scope | `qualification.json`: exact sequence-333 immutable generation selected in both development prefixes; ordinary launcher hash exact. Every engine run is a dkguard software child in a disposable profile; outputs remain separate. |
+
+Evidence root: `zig-out/reports/animation-authoring-334/`. The local
+`animation-review.html` includes full native video, 34 GL2 captures, ten corrected
+material previews, source failures, recipes and proof links. Its reproducible
+artifact generator and isolated browser inspection are retained there. Public tool
+instructions/formats are documented in `docs/animation-authoring.md` and linked
+from the neural-assets guide and native acceptance matrix.
+
+Authored package: `zig-out/animation-authoring/dk3-neural-qualified.pk3`,
+2,196,082,586 bytes, SHA-256
+`5bb319d0b57183aea2690b3b49b62b39c1af91a1a50ecba13ba9dd07fd216162`.
+Authored IQM: `0572058547a3fa36c7053bda4b9bfca3bbfb2a27f6898d6ae1928be7c36fc822`.
+Native video: `fcaef7aae86e7370f912bd7c27cfc4bab11fd315513b5125e5a6d8cf2e3035b2`.
+Native runtime identity:
+`ec3118bb076a445601e4dfd208de20728297d410bf57880d46f51b35be95439f`.
+The normal installed generation remains `6ac17090…`; no candidate is activated.
+
+Useful failed attempts remain retained. Import qualification exposed a missing
+tool path, embedded SciPy ABI dependency, padded scene/frame ranges and FBX offset;
+repairs isolate Blender's NPZ writer and sample actual near-integer action bounds.
+Rendered review exposed bind-position floating props and applying one body atlas
+across the head; explicit prop/material policies repair these causes. The first
+studio lacked required navigation and used an entity class that did not dispatch
+cinematics; final AAS/trigger_script admission passes. Concurrent xvfb runs collided
+on one display and killed a capture; native jobs are now sequential. A final added
+test fixture initially used reserved `class` as a Python keyword; it is repaired,
+The last input-policy review also applies in-place/preserved travel to already
+retargeted motion, and checks grid bind/parents. Twenty-five focused checks pass;
+the affected aggregate is refreshed to 218. The final build reproduces every
+native-qualified payload byte, retaining those native/Blender passing runs instead
+of replaying identical assets. No broad suite follows the valid final aggregate;
+later edits are documentation/review evidence.
+
+Open: twelve original source failures, full temporal/visual story and campaign
+acceptance, contacts/acting beyond the selected samples, independent head/eye and
+masked layers, facial performance, new rigs, hardware rendering and footage
+reconstruction. FreeMoCap/CMU reference-video access is blocked as recorded above;
+the qualified BVH/FBX workflow does not depend on it. All models/data remain local.
+
+## Sequence 335 — coop-bot
+
+Implemented a scripted co-op player bot for headless end-to-end campaign
+verification ([coop-bot](../../docs/coop-bot.md)). A dedicated server runs the
+real native campaign at exact 50 ms frames without wall-clock pacing
+(`fixedtime 50`, `timedemo 1`; 13–22× real time). The bot is the single-player
+client in slot 0: admitted through the ordinary begin path after the spawn's
+settle frames, re-admitted after each full map load, playing only through user
+commands and the `use`/`save`/`load`/`attribute` client commands. It drains
+reliable commands and acknowledges regional world publication and patches after
+validating digests and the runtime identity, so resident-world admission and
+campaign travel run exactly as for a network client. Its snapshots are marked
+`SVF_BOT` each frame (a bot has no netchan to transmit them on).
+
+Unmodified Lua 5.4.7 is bundled under `engine/lua` (MIT, `engine/LUA-UPSTREAM.json`
+pins the archive SHA-256 and per-file hashes) and linked only into the server
+module. Routes (`dkq3/coop/`) are sandboxed: pure libraries only, no bytecode,
+64 MiB and 50 M instructions between yields. The route language yields typed
+actions (move/path/touch/use/shoot/pickup/ride/kill/clear/exit/cinematic/leap/…)
+that the native driver performs; staged level bodies record stage and completed
+actions in every game save, so death-checkpoint restorations resume in place.
+`advance`/`progress` operate reachable controls when the area graph has no route;
+`survey` and `dkq3/tools/coop_route_survey.py`/`coop_route_map.py` support authoring.
+
+The motor gained, from observed failures in this pass: waypoint commitment against
+adjacent-area oscillation; stall hops and navigation fallback for straight
+segments; sidestepping actors/props; never stepping into non-target exits, within
+48 units of lethal hazards, or into slime/lava/nitro; off-route steps only over
+supported floor; fire only on a settled view; aiming above the surface at wading
+targets; an ammunition reserve with melee for close enemies; threat-forecast
+dodging (projectile/missile closest approach, Thunderskeet spray forecasts)
+minimising expected splash at impact time; strafing and repositioning in held
+fights; surface swimming without splitting the stroke; breath timer; attribute
+spending (power first); health detours outside precise or held segments.
+Per-attempt variation makes a restored retry a new attempt.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| New Game → intro → e1m1a → e1m1b → e1m1c → e1m2a → e1m2b, continuous | Passed | `zig-out/reports/runtime-zig-335/newgame-e1m2b/` (final code: 0 deaths, 1208 s game / 100.1 s wall); earlier `newgame-final/` (through e1m2a's hatch) and `newgame-opening-6/` |
+| Thunderskeet bridge fight | Passed with retries | Earlier runs: 1–4 checkpoint restorations before the kill; final run killed it on the first attempt |
+| Death checkpoint resume at stage/action | Passed | e1m1b restorations resume at the saved stage after a full map load |
+| Lua sandbox, runner parsing, architecture | Passed (unit) | `engine/lua.zig` tests, `test_coop_bot.py` 4/4, `test_runtime_architecture.py` |
+| `zig build test-runtime` | Failed (unrelated) | All 223 tests pass when the binary runs directly; the step fails because the concurrent `domain/ragdoll.zig` test prints to stderr |
+| e1m2a (Sewer System) from its arrival save to e1m2b | Passed with restorations | `zig-out/reports/runtime-zig-335/e1m2a-sewers/` (6 deaths restored from the stage-9 checkpoint; 244 s game / 97 s wall) |
+| New Game → … → e1m2b → e1m3a arrival, continuous, Ronin | Passed | `zig-out/reports/runtime-zig-335/ronin-newgame-e1m3a/` (0 deaths, 1600 s game / 148 s wall) |
+| e1m3a from its arrival save | Implemented, unverified | Cell block, break-out panel, platdoor and the big platform routed; the shaft top to the e1m3b exit not yet |
+| e1m3b and later maps | Unrun | Placeholder `progress` bodies |
+
+e1m2a added (Sewer System; offline area-graph tooling and live probes drove the
+authoring): `coop_route_aas.py` (area/path/flood with door avoidance), liquid
+hatching in `coop_route_map.py`, `dk3.route`/`dk3.trace`/`dk3.pickups`, stage
+checkpoints taken in good health (`recover`), per-map death allowances. Motor and
+action fixes from observed failures: door controls found through event
+generators and from the floor below a button (not the bot's height), bodies
+ignored when judging a control's floor and sight, killtarget breakables as
+planner controls, progress measured toward a detour's control, horizontal and
+progress-based stalls (sliding along a shut door), riders steered straight and
+held still instead of chasing a departed lift, lift height judged by the lift,
+ladder-surface climbing, diving toward waypoints below, 9 s air budget, stepping
+off actors, aiming round a worker hiding part of a door, sludge globs and other
+actor missiles dodged, civilians that block a passage for 3 s shot, the Ion
+Blaster kept ready (C4 only beyond its splash), medkit detours limited to the
+same floor and dropped when a door control would be needed, destination-area
+lookup retried just above boundary origins. Each repair has an affected replay.
+
+e1m2b and the move to Ronin: the level's authored progression the area graph
+cannot see (a water chute off the gratings, a flooded tank modelled as a train
+of water, a drain whose drum fan strands a player on the far side, a valve on a
+walkway reached by an unlinked ladder, an end button that exists only in single
+player while its co-op twin opens the elevator) was found with the original
+designers' node files, the converted BSP, live hull/contents probes and the new
+`flood` authoring log. Motor and runtime-side additions, each from an observed
+failure with an affected replay: `dk3.contents`, ladder flag in `dk3.trace`,
+surfacing only under open air, no ion blaster into nearby water (its discharge
+hurts the shooter), C4 hysteresis then no automatic C4 (proximity charges went
+off under the bot later), dodging in shallow water it already wades in, no
+dodges from ladders or in mid-air, `shoot` with a named weapon, `cautious`
+moves that stand and fight, futile-fire detection, target stickiness, ranged
+weapons kept while ammunition lasts, backing off from brawlers in held fights,
+route look-ahead along the predicted route (thin parallel areas made the bot
+turn back and forth), saves no longer counted as stage actions (a restored
+checkpoint skipped the stage's first move), `recover` limited to packs on the
+same floor. Samurai's e1m2b fights stay out of reach: the sludgeminion data
+(275 hp, 10–30 per glob, 900 u/s, 650 range) matches the original.
+
+Failures retained: first runs looped e1m1a/e1m1b through the adjacent back exit
+(no route from the e1m1b landing); a turret control "pressed" by one hit; melee
+selected without a shot distance; ammunition exhausted on distant monsters and on
+wading Crox; spray deaths at the plateau edge and knockback into the laser;
+stage action counts leaking from the previous map; drops into slime and the river
+current. Each has a recorded repair above and an affected replay. No Git
+operations; original installations and saves untouched; engine runs use dkguard.
+
+## Sequence 336 — cinematic-reconstruction
+
+Owner requested original-model recordings, skeletal motion reconstruction and
+new authored cinematics while keeping original assets compatible. The pre-edit
+architecture note and exact commands are in `docs/cinematic-reconstruction.md`.
+Current code verifies original authoritative timing/network fields, optional IQM
+translation/blending, original MD3 fallback, attachments/ragdolls and bounded
+cinematic tasks. Native task 14 rotates the entire performer; independent head
+performance is baked offline in this slice. No native runtime source is changed.
+
+Connected tooling adds `cinematic_reconstruction.py`: bounded source inventory,
+exact round-trip/decompilation, checked original reference shot initialization,
+hash-pinned 3D surface-marker capture, temporal proper-rigid fitting, residual
+admission, separate deterministic scene packaging and original-set fixtures with
+exact rebuilt navigation. Manifest tools gain bind identity, stable field/source
+errors, check-only/idempotent publication and output/input path protection.
+Retargeting gains selected end-bone orientation transfer. Preview tools stage
+actual optional-package absence and validate console tokens before engine launch.
+Five `dkq3/animation/dojo-*.yaml` sources describe one character, three original
+clips and a separately named 16-second scene. Generated/private data stays local.
+
+Original source trajectories provide richer observations than single-camera
+video. This is reconstruction of supplied vertex animation, not new actor or
+video-only mocap. All 62 source cinematic programs round-trip byte for byte;
+intro remains its original 115 shots. The three reconstructed ranges are
+ambba 122–142 → 955–1017, lftlook 163–172 → 1018–1047 and lksadb 234–263 →
+1048–1137. Mapping FPS 0 retains authoritative duration; offline samples are
+30 Hz. Worst marker RMS is 0.94482 units (<1), serialized foot plant displacement
+0.16271 (<0.5), joint steps and fixed-length/anatomical/loop checks pass.
+
+| Scenario | State | Evidence under `zig-out/reports/cinematic-reconstruction-336/` |
+|---|---|---|
+| Original shots 12–14, original models, GL2 + active restore | Passed | `original-reference-nav/recording.json`, `original-video/video.json` |
+| New authored scene, optional IQM archive absent, GL2 + active restore | Passed | `retake-original/recording.json`, `retake-original-video/video.json` |
+| New scene, reconstructed IQM, GL2 + active restore and GL1 | Passed | `retake-skeletal-final/recording.json`, `retake-skeletal-video/video.json`, `retake-skeletal-gl1/recording.json` |
+| Source capture, serialized motion and original package preservation | Passed | `package-proof.json`, `native-clip-proof.json`; all three ranges observed; 940 entries, 937 exact; only cinematic IQM, mappings and metadata change |
+| Current-tool reproduction of tested payloads | Passed | `reproduction-proof.json`; all twelve surface/motion/IQM/manifest/table products byte exact |
+| Blender full-body/three-pose material inspection | Passed | `blender-job/result.json`, `full-body-preview/`; Blender 5.1.2 CPU, six front/side images, all actual head/body/original prop textures |
+| Paired browser/video controls and captures | Passed | `browser-review.json`, `review-browser.png`, `cinematic-review.html`; all three native videos decode; paired seek/play/half speed and three-shot frame selectors exercised |
+| Python aggregate | Passed | `aggregate-refreshed.log`: 239 tests, including 16 new reconstruction regressions; refreshed after adding JSON rejection before preview launch, earlier aggregate retained |
+| Zig 0.16 runtime/catalog and C contracts | Passed | `zig-runtime-final.log`: exit 0, 312/312 tests (225 native root); existing ragdoll stderr diagnostics produce a warning, not a failed step in this run |
+| Full opening/other scenes, campaign handoff | Unrun | Original programs retained; isolated entity fixture does not prove original campaign triggers or completion targets |
+| Artistic performance/head baseline/facial/hand-hilt fit | Unverified | Relative head rotation survives; absolute neutral-head pose differs from original; fingers/facial expression are not captured, props retain source channels |
+
+Exact native installation: `0b3f6bbb325cc304ec1be2254645af17afc34caf2e3273769a7d7ce80fb24b47`,
+runtime receipt `87c4af02a78616375e32d0bb3abf1c86eff356e7e3c78d07c0a1cbc72cf0adef`.
+All engine jobs are sequential dkguard software/headless runs in disposable homes.
+Original-only jobs exclude `zz-dk3-neural.pk3`; no empty mapping substitutes for
+absence. Native tests build current source separately; no replacement runtime is
+installed. Source MD3 SHA `0c0372e2d01e616ca20d51d4cfe194060d9e82f77da831633d42b7e71ca91a32`;
+frozen source IQM SHA `121333afb5f4cc6930c034b8635c25d4db61d0dc355a6e5c01742f49cf7f340a`.
+All mesh arrays, weights, triangles, bind channels and textures remain exact;
+retained 955 frames have at most 0.0003054-unit rigid position and 0.003086°
+rotation re-encoding error, scale zero.
+
+Local `zig-out/cinematic-reconstruction-336/final/dk3-neural-dojo.pk3` SHA
+`582ae87d5ac4dd41a0cb630a337183394d98595b5b4777a0c85384fab964ac03` passes
+existing closed admission. Separate scene-only `dk3-dojo-retake.pk3` SHA
+`b81331c7d227b8b9c2cdb20b67ae83ae70c3b3ffc78d64a78078d69fa5e26c56`
+preserves original MD3/.anim identifiers and voice paths; name conflict,
+missing dependencies and source/compiled mismatch fail. Source provenance is
+proprietary owner-supplied performance, local-only with no redistribution grant.
+No Git operations, ordinary installations, selectors or owner saves are written.
+
+Failures retained: first original fixture reused AAS after changing the BSP entity
+lump and failed NavigationLoad; repaired fixture recompiles navigation rather
+than weakening checksums. Initial mixed markers fail rigidity/contact criteria;
+corrected anatomical support passes the same thresholds. First skeletal capture
+received SIGTERM during restoration; the separate final capture and replay pass.
+The next slice is neutral-head/grip calibration and a complete multi-actor dojo
+block with original event/completion preservation. The full recreation remains
+open; cosmetic masked/additive layers are documented, not implemented.
+
+## Sequence 337 — native-multiplayer-map-japandm — host-memory faults diagnosed and bounded
+
+The owner reported two machine crashes during map asset work and asked for the
+cause rather than a retry. Kernel journal, not inference, decides it.
+
+`Out of memory: Killed process 1557333 (python3.14) total-vm:60115796kB,
+anon-rss:50802100kB` with `oom-kill:constraint=CONSTRAINT_NONE … global_oom` at
+Oct 07 01:21:42, and the same shape at 01:07:17. Two faults, one of them not a
+bug in the asset tool at all:
+
+1. Texture composition allocated ~47 GB for work that needs ~240 MB. NumPy
+   right-aligns broadcast axes, so mixing a flat `(H,W)` field with a
+   channel-added one silently produced `(H,W,W)` and `(H,W,W,3)` temporaries of
+   4–13 GB each at 1024². Guarded at the source: `put()` and `multiply()` now
+   validate rank and raise at the offending line, and fifteen sites that indexed
+   an already-2-D `Mask.plane()` with `[..., 0]` -- which had been taking the
+   last column, not the plane -- were corrected.
+2. Every process started from the desktop terminal is a child of the compositor;
+   `/proc/self/cgroup` on the working shell still reads
+   `/user.slice/user-1000.slice/user@1000.service/session.slice/niri.service`.
+   A `global_oom` victim taken from that cgroup marks the compositor's unit
+   failed, which is why the screen died instead of a build failing. A cap inside
+   the process cannot help here. What protects the session is a ceiling owned by
+   the run itself: `dkq3/tools/run_capped.py` starts the step in its own
+   `systemd-run --user --scope` with `MemoryMax` and `MemorySwapMax=0`, refuses
+   to start when the machine cannot afford it, and reads `memory.peak` from
+   inside the scope because the cgroup directory is gone by the time an outside
+   reader asks. Verified: a deliberate runaway is killed at its 1024 MiB ceiling
+   and reports `peak 1024 MiB` while the compositor stays alive; confined kills
+   in the journal read `CONSTRAINT_MEMCG`, the fatal ones read `CONSTRAINT_NONE`.
+
+Measured after the fix: all eighteen materials build with the process peaking at
+296 MiB including every plate held at once (was ~48 GB). GPU memory was never the
+fault -- a CUDA overrun raises inside the process and cannot take a session -- so
+`--need-vram-mib` is a preflight convenience, not the guard. `systemd-oomd` is
+active but ships no `.oomd` policy file, so it took no part. The separate Oct 06
+11:18 event is a pre-existing suspend failure (`amdgpu … isp_ip failed -19`,
+`PM: failed to suspend async: error -19`), unrelated to this work.
+
+Failures retained: the first full build after the plate fix died in its own
+report line, `float(array).mean()` instead of `float(array.mean())`, after
+building all eighteen images; and `/tmp` is tmpfs, so a crash discarded the
+processed plate tiles -- the raw samples survived only because they had been
+copied to persistent storage. Plate work now lives under `~/jdm_work`, and
+`qwen_studio.py --from-raw` rebuilds tiles from the saved samples without a GPU.
+
+That offline rebuild exposed a second, older defect: `crop_plate` chose arbitrary
+crop offsets inside the 2×2 mirror-fold, and only offsets symmetric about a fold
+axis wrap seamlessly. Measured on the seven tiling plates, arbitrary offsets
+scored seam 1.025–4.360 against a target below 1.0 -- a grid of hard lines across
+every surface that used a neural plate, which is the artifact the owner saw. The
+folded tiles now measure 0.000.
+
+Open and recorded, not fixed: the painted materials still break their own wrap
+(`tower_front` 8.695, `holo_pool` 8.759, `grate` 6.063, `crate` 3.931,
+`glass` 3.584, `roof_gravel` 2.626), because features are drawn without being
+repeated across the tile edge and `glass`/`tower_front` bake a vertical gradient
+into a texture that wraps vertically. Several read as dark blobby noise rather
+than the intended material. The map is not reinstalled until these are judged
+tile-by-tile.
+
+
+## Sequence 337 — cinematic-performance
+
+Continue the owner's cinematic reconstruction after the first slice. The
+pre-edit continuation note and current data flow are in
+`docs/cinematic-reconstruction.md`. All runtime authority/fallback paths remain
+as verified in sequence 336; native task 14 rotates the actor, so skeletal head
+performance is baked offline. This continuation changes Python tooling, source
+recipes and documentation only. No Git operation, delegated agent, normal
+installation activation, retail input or owner save write.
+
+Capture the complete two-actor dojo dialogue: original opening shots 15–25,
+eleven shots / 64.79999995 seconds. Hash-pinned original MD3 marker trajectories
+produce twelve Hiro and eleven Ebihara clips. Semantic face axes retain the
+original absolute heading. Unmapped finger/thumb controls inherit the hand;
+loop-aware transported elbow poles limit near-straight plane flips. Grouped
+katana parts preserve their geometry and source visibility. Source-world prop
+orientation prevents old wrist-relative channels tilting the staff. Its original
+shaft floor point and grip solve the arm while retaining fixed lengths. Planted
+feet flatten in their bind sole frame; actual skinned sole support corrects and
+validates height after serialization. Numerical limits are unchanged.
+
+Authoring adds explicit queued/cross-cut actions, clear and inherited movement
+mode rather than reinterpreting existing native fields. The separately named
+`dojo_dialogue` preserves original queues, sounds, actor transforms/classes,
+door use, clears/removes and timing. The consumed-field comparison excludes
+only newly authored camera curves and actual native ignored hints. Original
+negative-time empty animation is ignored; timed empty requests stay barriers.
+The fixture keeps `dojodoor1` brush/control records, original geometric lumps
+and exact rebuilt navigation. Trigger 4 is explicit. The final camera revision
+is staged after the checked fixture package.
+
+| Scenario | State | Evidence under `zig-out/reports/cinematic-performance-337/` |
+|---|---|---|
+| Original 11-shot reference, original models, GL2 + restore/replay | Passed | `original-recording/`, `original-video/`; first-shot original spawns byte exact |
+| New cameras, optional model archive absent, GL2 + restore/replay | Passed | `final-legacy/`, `final-legacy-video/` |
+| Final deterministic IQMs, GL2 + restore/replay and GL1 | Passed | `deterministic-skeletal/`, `deterministic-skeletal-video/`, `deterministic-skeletal-gl1/`; eleven shots and normal release |
+| Original actor/audio/use/timing contract | Passed | `performance-contract-final.json`; no consumed field differences |
+| Serialized clips, grip/sole/staff checks and frozen package data | Passed | `deterministic-package-proof.json`; all 23 clips, 936/940 entries exact; only two IQMs, table and provenance change |
+| Native mapping | Passed for observed clips | `native-clip-proof.json`; nineteen source ranges select exact declared targets at rate 0; four aliases are offline-only |
+| Fresh-process reproduction | Passed | `deterministic-reproduction-proof.json`; all 27 payloads plus receipt byte exact; `deterministic-scene-proof.json`, `manifest-idempotence-proof.json` preserve program bytes and unchanged manifest inode/mtime |
+| Headless full-body and native/browser review | Passed within technical scope | Two `*-deterministic-blender/` jobs, twelve CPU views; every native shot inspected; `browser-review.json` decodes three videos, paired seek/play/half speed and 22 capture-selector endpoint samples |
+| Tooling aggregate | Passed | `python-aggregate-deterministic.log`: 256 tests, including 17 focused continuation regressions |
+| Relevant runtime contracts | Retained pass | Sequence 336 exit-0 312/312 Zig/C results; no Zig/runtime source changes here, not a fresh verification of other concurrent work |
+| Full opening/other scenes and original campaign handoff | Unrun | Separate scene and isolated fixture only; original campaign unchanged |
+| Facial/eye, expressive fingers, cloth/body deformation and walking contact | Unverified | Fixed meshes/rigs/materials; stationary plants qualified, walking plants undeclared; final human artistic review pending |
+
+Final optional package:
+`zig-out/cinematic-performance-337/deterministic/dk3-neural-dialogue.pk3`,
+SHA-256 `907c6f6fcd9bb8e71a65c32577a0f1db4237ee33ec22e1cadef107a6d10622c8`.
+Scene package `final/dk3-dojo-dialogue.pk3`, SHA-256
+`6f3c11d9e0bdb3a6da60c49928481d43a40e681299c844acdf6004c52f30c9ed`.
+Maximum marker RMS 0.95385 Hiro / 0.82014 Ebihara (<1); max foot plant
+0.27778, skinned sole height 0.32942 and floor penetration 0.32423 (<0.5),
+grip 0.000801 (<0.02), staff floor 0.000817 (<0.1). Original 955/515 frames
+remain, with shared-channel re-encoding error below 0.001 units/0.004 degrees.
+All geometry, UVs, weights, bind, topology, normals and textures stay exact.
+
+Fresh guarded software runs use immutable generation `0b3f6bbb…`, runtime
+identity `87c4af02a78616375e32d0bb3abf1c86eff356e7e3c78d07c0a1cbc72cf0adef`.
+Original source/installation hashes are rechecked in `qualification.json`.
+`cinematic-review.html` and `implementation-report.md` provide the local review
+and ten-point implementation report. Original performance provenance/licensing
+is retained; generated private binaries remain ignored/local.
+
+Failures retained: mixed original marker supports, excessive thumb pose,
+noncyclic elbow pole and unsolved foot plants; parent-relative staff orientation,
+then staff floor penetration; ankle-only checks missed tilted boots and the first
+sole iteration missed the unchanged 0.5 limit. Fixed support/constraints and
+skinned sole iteration pass serialized checks. Fresh-process proof then exposed
+1e-15 constant-channel matrix residuals causing different IQM bytes. Generated
+channel rounding to twelve decimals/canonical zero fixes the cause without
+altering retained input frames or validation limits. An idempotent-scene probe
+assumed the wrong CLI contract: scene CLI requires fresh output; the manifest
+compiler owns unchanged-output preservation. Correct program/manifest checks
+pass. All earlier runs/proofs remain immutable. Next connected milestone is the
+rest of the opening, additional actors and moving contacts, with original
+campaign entry/exit verification. Full reconstruction is not claimed complete.
+
+## Sequence 338 — native-multiplayer-map-japandm — texture scale drift, plate grain, and a metric that could not see its own blind spot
+
+The owner approved "(b) then continue map textures fixing" after two GPU-rendered
+plates were re-shot. One stopper had to be cleared first: the previous session's
+`re.sub(..., flags=re.S)` had deleted the `CRAFT = {` line from
+`maps/japanDM/textures.py`, leaving the closing brace orphaned and the file an
+`IndentationError`. Damage was one line, not the twenty-entry dict the handoff
+feared; `git` could not help (the directory is untracked) and the repair was a
+single line insertion verified by `recipes_of` parsing eighteen recipes. The
+corrupt file was copied aside before touching it. Nothing was regenerated by
+guess.
+
+**The real defect was in `materials.py`, and it had been there the whole time.**
+One generated image covers `repeat` world units and `map_author` turns that into a
+UV scale by dividing by the texel width. `repeat` was authored in `textures.py` and
+hand-copied into `materials.py`, and the copies had diverged on twelve of eighteen
+materials -- in *both* directions. `neon_a` shipped `repeat=256` against the face
+survey's 64 on faces whose median width is 56 units, so every sign showed a 22 %
+crop of a kanji composition; that is the pink confetti the arena read as, and it was
+a scale bug wearing a taste complaint. The reverse case mattered just as much:
+DESIGN.md section 8 records a *measured* density decision that moved asphalt, plaza
+stone, concrete panel, roof gravel and lacquer to 128, and it had updated
+`materials.py` while leaving `textures.py` holding the superseded 256/192. Making
+`textures.py` authoritative without reading section 8 -- which is what the first
+attempt here did -- would have doubled those five again and reinstated the stucco.
+Caught by reading section 8 before the build finished, not after. `materials.py` now
+derives `texwidth` and `repeat` from `CRAFT` at import, `CRAFT` carries the measured
+128, and the exported `.map` was read back to confirm `neon_a` carries 0.1250 where
+it carried 0.5. Three materials additionally declared 512 texels while storing 1024,
+so `q3map_textureSize` was lying about three quarters of their pixels.
+
+**A "crush factor" that turned out to be correct arithmetic.** Graded materials
+carried both a mean and a `std` target; measured against natural spread, roof ballast
+looked crushed 4.3x and plaza stone amplified 2.8x. `grade(albedo, mean)` is exactly
+a linear scale by `mean / natural_mean`, so the standard deviation necessarily follows
+it -- predicted and actual agree to 1e-7 on three materials. A material darkened to a
+mean of 36 cannot keep a spread of 69. The `std` term was removed because it imposed
+an arbitrary second target over the drawn structure, not because the ratio was
+pathological, and the pin now says so: means are unchanged by this pass, every shipped
+tile measures its target to three decimals, so baked light energy is untouched and the
+light rig needed no re-tune.
+
+**What was genuinely wrong, and invisible to the gate.** A plate divided by its own
+mean still carries that plate's slow luminance swings, so borrowing it paints a bright
+column at a join and a bloom mid tile. The seam metric scores such a tile at 0.000,
+because a slow bright band is *continuous* across the wrap -- the metric was never
+blind by accident; it measures discontinuity, and this defect has none. That is the
+owner's screenshot. `borrow_detail` now divides by a wrap-blurred copy of the plate:
+low-frequency energy on plaza stone 0.0183 -> 0.0078 with grain 0.0547 -> 0.0467,
+bloom down 58 % for structure down 15 %. `pebbles` was rebuilt a layer lower for the
+same reason -- ballast is now irregular 5-7 sided polygons carrying their own grey and
+facet tilt, height from a barely-blurred coverage instead of a Gaussian crown, 420
+stones of up to 24 texels replaced by 1500 of up to 14, because the crown was the
+specific thing guaranteeing the foam read regardless of colour quality.
+
+**Not claimed fixed.** Plates are made tileable by mirror-symmetric folding, which
+scores a perfect 0.000 and leaves mirror *symmetry*, which the eye finds unaided. It is
+visible in a 2x2 view as a symmetric vignette; tightening the high-pass band from
+0.045 to 0.010 moves the low/high ratio 6.02 -> 5.80 and does not remove it, because it
+is content, not exposure. `tower_front` remains the worst seam at 1.58 (up/down 1.03).
+And the first rendered pass at `spawn_deck_w` shows `metal_deck` reading as brass scale
+armour rather than industrial tread -- the recipe deliberately exaggerates the emboss
+to 21 units because a real 1-unit lozenge cannot survive a 1024-texel tile, and the
+strong specular then blows it out to gold. That is a documented prior compromise being
+looked at critically, not a regression introduced here, so it is left standing with its
+two levers named (raise `cells` above 6, cut `spec` base 0.24 / gain 0.30) rather than
+quietly reversed at the end of a session.
+
+**State, not intention.** `zz-dk3-japandm.pk3` was absent from
+`play/current/share/dk3` at the start of this sequence: the play tree was rebuilt on
+Oct 06 20:18, after the map was packaged on Oct 05 23:13, and the loose package went
+with it -- so the map was not playable at all, contradicting the handoff's belief that
+a stale copy was installed. The build now runs author -> compile -> aas -> package ->
+install clean at `--quality`: 807 brushes, 98 entities, 0 defects, visibility and
+deluxe and lightgrid all true, 40 lightmap images, 10787 reachabilities, 116,759,028
+bytes installed. Gates: sightlines exit 0 with 14 spawns and 0 pairs in open sight and
+0 exposed beyond 640 u; spawn aim 0 of 14 starts with nothing to look at; view probe
+under opengl2 produced 14 captures spanning mean luma 0.062-0.261, the darkest roof
+0.068 against the 0.035 that motivated the sky light in the first place. Suite 233
+tests, 3 errors, all three the pre-existing `animation_manifest` import in the
+cinematic work stream.
+
+**New coverage.** `dkq3/tools/tests/test_craft_textures.py` (7 tests) pins what was
+argued rather than measured: grade as a pure re-centre, the removed `std` override,
+that a borrowed plate loses its slow swings while keeping its grain, that borrowing
+cannot move the level grade will set anyway, that the borrowed field wraps -- and the
+`multiply()` shape guard that stops the 47 GB allocation which killed the desktop.
+Its first fixture was wrong, not the code: white noise has an edge jump as large as its
+own interior gradient by construction, so the periodic fixture had to be whole cycles.
+
+**Two self-inflicted wounds, recorded because they are repeatable.** `pgrep -f` /
+`pkill -f` matched their own `bash -c` command line twice and killed the calling shell
+each time; bracketing the pattern (`map_buil[d].py`) makes the lookup self-excluding.
+Stopping a capped run is `systemctl --user stop <unit>`, which run_capped prints. Every
+heavy step in this sequence ran under `run_capped` and the largest peak was 618 MiB
+with the compositor alive throughout.
+
+## Sequence 340 — generic-navigation — navigation by intent, verified through e1m3b
+
+Owner request: co-op routes should state what to reach and do, not waypoints, on a
+generic navigation that multiplayer bots share and that survives map changes; and
+every game bug the bot meets is to be fixed. Design and limits:
+[navigation](../../docs/navigation.md#generic-navigation-sequence-340-generic-navigation),
+[co-op bot](../../docs/coop-bot.md); acceptance rows in
+[native acceptance](../../docs/native-acceptance.md). Evidence is local under
+`zig-out/reports/runtime-zig-340/`.
+
+Navigation: a coverage report (`dk3_runtime_navigation_coverage`,
+`runtime_navigation_coverage.py`) floods each map with the native hulls and checks
+every reachable floor for an area and a route. Bundled BSPC repairs found with it:
+native crouched hull and step from `dkq3/tools/dk3-aas.cfg`; hurt volumes as
+no-entry areas; only targeted pushes as jump pads; toggled walls as mover areas;
+sliding floor slabs; train lift links (up and down, entrances on the landings, rider
+column found in the train model); wider elevator exits; leak sealing; a fallback
+riser tolerance; falls into train shafts dropped. Live gates disable the areas of
+closed doors, standing walls, active hazards, displaced floors and unbroken
+breakables (lifts are never gates); a planner finds the control behind the first
+closed gate, nested. Ledgers: `engine/BSPC-CHANGES.json`, `engine/DEVELOPMENT.json`.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| All maps load and report coverage | Passed | `coverage/navcov-final/`: 84/84 (73 before). Uncovered 26,378 → 3,550 and unrouted 74,127 → 62,773 on the 73 comparable maps; e4m4c, e1m2b, e1dm2, e4m6b still route fewer floors. |
+| New Game → intro → … → e1m3a → e1m3b, continuous | Passed | `coop/final7-newgame/`: Ronin, regenerated navigation, no deaths, 1,719 s game / 171 s wall; e1m3a by objectives. |
+| e1m1a → … → e1m3b, continuous | Passed | `coop/final7-chain/`: no deaths, 1,117 s game. |
+| Deathtag e1dt1 | Regression fixed | `match/mp-long-new/` → `match/mp-final2/`: travel 593k (original 590k), one carrier (original three); no capture in any run including the original. |
+| `zig build test-runtime`, `zig build test -Dpython=/usr/bin/python3` | Passed | 225 runtime tests; 293 Python tests (`zig-build-test.log`). |
+| e1m3b onward | Unverified | The planner reaches e1m3b's controls; the map needs route work. |
+
+The e1m3a route states objectives (shoot the panel, use Access Granted, shoot the
+wires, the barrel, the computer, the access door and keyboard); moves stay explicit
+only for the acro-boost climb, the fan draught, the cell-block cage rides, the
+timed bridge door and the control-room plat.
+
+Game bugs found by the bot and fixed: a drained health station hit by a bolt crashed
+the server (`MissingComponent`, Debug trace in `coop/crash2/`); a hurt arrival
+replaced a healthy death checkpoint, so every restart died again (2 and 10 health);
+eleven maps did not load (satyr transition poses absent from the supplied model; a
+map naming scripts without an action program; an empty `spawnflags`); `AAS_AreaInfo`
+logged every area enumeration's end; a leftover test print failed the
+`test-runtime` step; four Python test modules imported a sibling by bare name.
+
+Bot fixes from the runs (each a reproduced stall or death): crouch in crouch-only
+areas and ducked step-ups; slim retrace for use-doors; firing positions by rays,
+bolt-sized sight and fire lanes, blast clearance; touch points for thin volumes and
+touchable exits; lift boarding by entrance, lift-carried buttons, never under a
+raised lift or plat; current leaning, narrow-footing walking, ceiling-edge diving,
+skipping a hop already stood on, breaking adjacent-area waypoint flips; health
+stations used within reach; detours that return and never during waits; self-hit
+fire holds; multiplayer gate waiting (bounded), lift riding and objective fallback.
+
+Failures retained in order: e3m2a lost 25,000 floors to a riser vertex 0.11 off its
+plane, and the first wide tolerance made e3m4a worse until it became a fallback;
+multiplayer bots idled at spawn behind a remote lift door until they learned to wait
+at the gate; shaft-fall dropping first removed the step onto a resting lift; the
+pipe-room and cage lifts failed through the wrong lift lookup, a dropped control and
+a train treated as already done; the chain then failed in turn at e1m1b's ford,
+e1m1c's swinging door and worker, e1m2b's chute edge, beam current, valve window and
+column sump, and e1m3a's guard cover and plat; each fix was followed by a rerun of the
+whole pair. The regenerated navigation (`dk3-navigation-340.pk3`) is not installed:
+the next asset build produces it from the bundled compiler, and the e1m3a objective
+route depends on it. `pgrep -f`/`pkill -f` again matched their own shell twice.
+
+## Sequence 341 — native-multiplayer-map-japandm — an authoring change that was never applied, and a sky recipe that had never once run
+
+Sequence 338 closed believing the texture motif retune had shipped and the prop pass
+had been judged.  Neither belief survived contact with the installed artifact.  The
+first action here was the one that had not been taken: open the probe JPEGs.  At
+`spawn_deck_w` the deck plate still read as brass scale armour, and every roof frame
+was one flat lavender value with no light pool anywhere on it.
+
+**The retune had never reached the shader.**  `japanDM.map` carried `metal_deck` and
+`metal_column` faces at face scale `0.1250`, which against their 1024-texel images is
+a 128-unit tile -- the number Sequence 338 believed it had replaced with 32.  Reading
+the table directly disagreed with the file: `materials._sync_from_craft()` loads
+`textures.py` and overwrites `repeat` and `texwidth` from `CRAFT`, so the live table
+says `32/1024 = 0.03125`.  The gap was `map_build.author()`'s staleness guard, which
+runs Blender only when a watched input is newer than the `.blend`.  It watched
+`materials.py`, `screen_styles.py` and `map_blender.py` by name -- and `_sync_from_craft`
+had just made `textures.py` an authoring input, exactly the failure the comment above
+that list exists to prevent, reproduced by the list written to prevent it.  `props.py`
+was missing from the same list, so a prop-table edit would have been dropped the same
+way.  `--stages author` therefore re-exported a scene modelled from the previous
+numbers, and `tree` staged new images for it, and the build reported the change as
+applied.
+
+Two changes, both in tooling: the guard now discovers every module in the map's
+source directory rather than naming them, and `author()` ends with a measured
+check -- `texture_scale_drift()` recomputes `face scale x texwidth` for every face
+in the exported `.map` and compares it with the tile the table declares.  Its first
+run caught a real drift (`wants 32 u, faces carry 31.9488 u`), which was its own bug:
+`.map` writes a face scale to four decimals, so a 32-unit tile quantises to 31.9488 and
+a correct map failed until the comparison admitted the format's quantisation
+(`5e-5 x texwidth`).  After a real remodel the drift list is empty and the compiled
+numbers are `metal_deck` 32, `metal_column` 32, `grate` 48, `cloth` 64 -- from 128,
+128, 256, 256.  The deck plate in a rendered frame now reads as factory tread.
+
+**The installed sky predated the sky recipe.**  `craft_textures.py --sky` had never
+completed once, and four bugs said so: `int(sky['panorama'])` on a `(width, height)`
+pair; `ramp()` raising `IndexError` on its own last row; and two `(rows, 1)` fields
+being broadcast onto a `(rows, columns, 3)` colour -- the city haze, the ground
+curtain, and the cos-weight in `sky_ambient()`.  `ramp` is worth its space.  Asked
+to clamp an index to stop 4 out of six, `np.clip` returned 6; rewritten as mask
+blends it still returned 5; only an in-guard report of the live values showed
+`searchsorted` answering 6 for a query whose maximum was 0.480 on an eight-megapixel
+array, while the identical arithmetic on a short array came back correct -- numpy
+1.26.4 under python3.14, a pairing that has already cost this machine two sessions.
+`ramp` now contains no `searchsorted`, no integer fancy-indexing and no `clip`: only
+comparisons against a float array and `where`, each checkable against the stop list
+by eye.  The sky builds in 6 s at a 1228 MiB peak.
+
+**The lamps were capped below their own sky.**  Every entity lamp carried `cap`
+60-120 while `q3map_skyLight 260` delivered more than that unaided, so the only
+light allowed to reach full strength was the sky -- one hue, no pools, which is the
+1999 read the owner keeps pointing at.  `CAP_GAIN = 1.9` on every cap, the horizon
+band dimmed `0.160/0.120/0.170 -> 0.112/0.104/0.134`, the three city light domes
+raised `0.115/0.085/0.060 -> 0.165/0.130/0.110` so the ambient arrives coloured by
+azimuth (magenta over the arcade, cyan off the dock, amber inland), and the
+worldspawn `_color` cooled less hard (`0.62 0.66 0.78 -> 0.72 0.69 0.74`).  At
+`spawn_garden` the sky is now a night sky with lit windows in it, the ballast reads
+grey instead of mould-purple, and the planters read green.
+
+**State.**  1070 brushes, 98 entities, 0 defects, bsp 25 s / vis 35 s / light 57 s,
+`zz-dk3-japandm.pk3` 116,358,020 bytes installed; 14 probe frames, none black.
+`map_spawn_aim` 0 of 14 starts with nothing to look at.  `map_sightlines` is green at
+`--grid 48 --max-exposed 640` (14 spawns, 0 pairs in open sight, 0 exposed beyond
+640 u) and *not* green at the tool's defaults, which find 4 exposed spawns and 4
+items beyond reach of any sampled walkable floor: the acceptance flags were never
+recorded in any earlier sequence, so the previous `rc=0` was not reproducible, and
+whether the map is accepted or the flags are wrong is still an open question.
+
+**Not claimed.**  The mid-scale authored kit is still missing, and it is the reason
+the map does not yet read as a built place: a large painted wall at `spawn_station`
+is the flattest thing in the frame, and the props this pass placed are absent from
+the spawn views that were inspected.  `detail` props still cast no shadows.  Plates
+still carry their mirror symmetry.  `tower_front` still has the worst seam at 1.58.
+
+**New coverage.** `dkq3/tools/tests/test_texture_scale.py` (8 tests) pins the chain
+rather than the intention: a `ramp` stop is honoured exactly, a query below the first
+stop takes the first colour, the top segment closes at the last stop instead of
+indexing past `colours`, and -- the reproduced failure -- a two-dimensional query
+whose maximum never reaches a stop cannot select it.  On the author side a face at
+its declared tile is not drift, a face carrying the previous scale is named with both
+numbers, a tool material that declares neither key defers to `map_author`'s defaults
+instead of being reported as wrong, and a shader outside the table is left alone.
+Its first draft was the test that was wrong, not the code: the fake face line put a
+scale in `rotate`, so `scaleT` read zero and two correct maps failed.
+
+## Sequence 342 — sidekick-pilot — companions fly the co-op bot's pilot; one loading bar; no entities withheld after a load
+
+**Change.**  The co-op motor is split into a body-agnostic pilot (`server/bot_pilot.zig`)
+and a client adapter (`coop_motor.zig`); evasion moves to `bot_evasion.zig` and the
+driver's aggressor/hold/approach/break-off and health-detour logic to `bot_survival.zig`.
+Companions replace `companions.goal` with `companion_brain.zig` (intent: validated
+follow spots, leader tether, health tiers 50 %/25 %, melee-only fallback, retrace or wait
+when off the area graph) and `companion_pilot.zig` (pilot at level 10, own player motor,
+weapon trigger handed to the companion weapon step).  Loading: one monotonic bar across
+client registration (35 %) and region admission, a fixed neighbour count with the
+initial hold, the engine's reset under the cvar name actually read, creature-physics
+config and parsed rigs cached, a 30 ms admission budget while held.  Saves: bounded
+configstring publication starts at the traveller's `ClientBegin` (a restore during map
+load is part of the gamestate) and its window resets on every gamestate.
+
+| Scenario | State | Evidence (`zig-out/reports/sidekick-pilot/`) |
+|---|---|---|
+| Co-op New Game regression (pilot split) | Passed | `baseline-newgame` vs `final-newgame`: event streams byte-identical; both stop at e1m1c `leap` (pre-existing in this tree's baseline) |
+| Superfly follow/fight e1m4a → e1m4b | Passed | `sidekick-e1m4a-2`: no companion deaths, fired and dodged; 27–532 u from the leader at 20 s samples (one baseline-build run: 117–770 u, its route failed earlier at the e1m4a touch; runs are not deterministic) |
+| Leader beyond the area graph (e1m4b pipe) | Passed | `sidekick-e1m4b-pipe-4`: waits with backoff instead of hopping in place (`-pipe-1`: 70 s of hopping) |
+| Steam-spray traps e1m6a | Passed | `sprays-1`: no hazard damage over the spray corridors; pilot refused entry to spray volume 197; hits only from guards |
+| Health tiers (diagnostic damage) | Passed within scope | `tiers-3`: 45 % → health detours taken (10→35, 11→61); finish-only fire when retreating; melee-only falls back. Death under two guards with injected damage and a scripted idle leader is not a defect claim |
+| Loading bar single fill | Passed | `loading-new`: 0 → 0.35 → 1.0 monotonic; `loading-old`: stale 1.0, reset, refill |
+| Load after companion death: enemies visible | Passed | `loading-new` `load_after_companion_death`: 0 withheld entities throughout; post-load patches 362 (old) → 90 |
+| Load time | Superseded below | 17.2 s → 16.2 s from bar/registration changes alone; dormant residents bring it to 9.6 s |
+| `zig build test -Dpython=/usr/bin/python3` | Zig passed; Python 1 failure | 469/469 Zig; `test_texture_scale` fails (sequence 341's tooling, untouched here) |
+| Mikiko, carrying (`mikikofly`), seam crossing, lift riding | Unrun | Not exercised in these scenarios |
+| Real-menu restore probe (`runtime_restore_ui_probe.py`) | Blocked | Engine window not found on the guarded display; console-driven `dkq3/tools/runtime_loading_probe.py --engine <generation> --save <sav> [--companion-death] --report …` used instead |
+
+**Dormant residents (follow-up).**  Maps outside the current region and the
+regions one exit away are now dormant: state captured in the resident record form,
+server world, context and publication released, namespace kept reserved; woken on
+prefetch/travel through saved-state admission; written back by every save.  A
+restore admits only the saved map's region before play.
+
+| Scenario | State | Evidence (`zig-out/reports/sidekick-pilot/`) |
+|---|---|---|
+| e1m4a save load time | Passed | `residents-new-2`: 9.6 s (`residents-old`: 17.4 s); region e1m3a/b, e1m4a/b/c restored, 8 maps dormant, e1m5a/b woken in the background |
+| Dormant map keeps its state | Passed | e1m2b woken: 26 actors, 11 dead, ids and health identical to the old full restore; identical again after a save/load round trip |
+| Demotion of a map left behind | Passed (diagnostic) | woken e1m2b released again within 2 s (`dormant=left-region`) |
+| Restored region state | Passed | e1m3a/b, e1m4a/b/c, e1m5a/b audits identical to the old full restore |
+| Saves during play carry dormant maps | Passed | `final-e1m4a/saves/coop-e1m4b-*.sav`: all 12 other maps present |
+| Co-op New Game regression | Passed | `final2-newgame`: event stream byte-identical to the baseline |
+| Demotion during ordinary multi-region travel | Unrun | No accepted route crosses regions far enough yet |
+
+**Open.**  The client keeps render worlds of released maps until the next map
+change (no client release call).  Hazards are scanned in the companion's own world
+only, so a hazard just across a seam is not seen.
+
+**Multiplayer bots on the pilot (follow-up).**  `bots.zig` keeps population, the
+ladder, goals and team coordination; locomotion, perception, aim and fire are the
+shared pilot's with match options (enemy players by team, gunfire alert, look-around,
+no ammunition hoarding, ally yielding, claimed-control coordination, 16-unit lethal
+margin). New ladder knobs: dodging from level 5, projectile lead and fire tolerance
+scaling with level; level 10 unchanged. Inside a lethal margin a step may now run
+alongside a volume but not close on it (co-op unaffected: event stream identical).
+
+| Scenario | State | Evidence (`zig-out/reports/mp-pilot/`) |
+|---|---|---|
+| Ladder e1dm2a 10/5/1 | Passed (sampled) | `final-ladder`: target-held 35/25/7 (`baseline-ladder` 15/26/4), blocked 0–2, edges 53–63, dodges at levels 10 and 5 only, 18 firing-stand samples |
+| CTF e1ctf1 | Passed | `final-ctf`: capture, all four fired and were hurt; 12 dodges (`baseline-ctf`: capture, 0 dodges) |
+| Deathtag e1dt1 | Comparable | `new-deathtag-4`: three carriers as the baseline, no capture in either; a 48-unit margin had made the bomb (28 units from a lethal beam) unreachable (`new-deathtag`, `-2`, `-3`) |
+| Deathmatch probe | Passed | `new-dm` as `baseline-dm` (the probe stops at the first death) |
+| Co-op regression | Passed | `coop-newgame-final`: byte-identical event stream |
+| Human play at low levels | Unrun | Balance of the new handling unreviewed |
+
+
+## Sequence 343 — ragdoll-joint-limits — anatomical cones, limb-following hinges, inelastic stops
+
+**Change.**  `domain/ragdoll.zig` bounds hips, shoulders and the neck with cones in the
+torso frame (hip pitch −25–120°, spread −20–50°; shoulder −55–200°, −35–90°; neck
+−35–50°, ±30°). A stop turns the whole limb about its joint and the rest of the body
+takes the reaction by mass, so a floor-pinned leg rolls the body rather than staying
+bent back. Changes to the other constraints:
+
+- Knee and elbow bend planes follow the limb.
+- The head-to-shoulder links are replaced by the neck cone.
+- Hands, elbows and feet stay outside a pelvis–chest capsule.
+- Static friction cancels only free motion, never joint corrections.
+- A stop met harder than 0.01 rad per side in one 120 Hz step damps both sides by
+  half for that step; resting on a stop does not, so a settled body still takes shoves.
+
+Robot/creature bodies (`creature_body.zig`) are unchanged.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Offline harness, 180 falls (floor, slope, wall; scratch harness, not checked in) | Passed (diagnostic) | Time out of range, before → after: shoulder 36.4 → 0.01 %, elbow 30.7 → 0.01 %, hip 23.5 → 4.6 %, neck 20.2 → 0 %, knee 17.5 → 0.06 %. Rest poses >10° outside a cone: hips 8/180 (thigh tucked past 120° flexion, at most 20°), others 0. Pelvis rebound median/max 3.7/45.8 → 1.3/8.6 units. 170/180 asleep after 10 s |
+| `ragdoll.zig` unit tests | Passed | 6/6, including the new "settled bodies keep … within anatomical range" and "joint stops absorb a landing …"; each new test fails with its mechanism disabled (cones off; stop damping off) |
+| Mishima guard death in e1m3b (GL2, `--physics --retain-body`) | Passed (smoke) | `zig-out/reports/ragdoll-limits/mishimaguard/`: Glock kill, 1,507 contacts, sleep after ~5 s, all 30 bones, alive restoration. The body slumps seated against the stair riser. The camera is too far to judge limb angles. |
+| Natural on-ground poses in ordinary play | Unrun | Needs owner review in play; limb angles not judged from close range |
+
+## Sequence 344 — sidekick-pickup-calm — a sidekick arms itself, stays put, and is not pinned by unseen hunters
+
+**Change.**  `companion_brain.zig`:
+
+- The item scan runs before the combat branches. A sidekick holding only a melee
+  weapon fetches a gun it is missing (up to 640 units, by route, even out of sight
+  and mid-fight).
+- The follow spot is no longer recomputed from the leader's facing alone. A sidekick
+  that is near the leader (48–192 units), level with it, on safe footing and out of
+  its 30-degree line of fire stays where it is. Otherwise it moves to the nearest
+  spot behind the leader, and it always steps out of the line of fire.
+
+`bot_survival.pick` takes `unseen_reach`. For sidekicks (384 units), a hunter out of
+sight and further away does not hold them.
+
+`companion_items.choose`:
+
+- It sees items through bodies, using the solid mask instead of the shot mask.
+- An item resting in a shallow recess counts as in view.
+
+The status line names the deciding branch (`why=`).
+
+| Scenario | State | Evidence (`zig-out/reports/sidekick-pickup/`) |
+|---|---|---|
+| Owner autosave e1m4a: Superfly with disruptor, ion blaster around a corner | Passed | `user-autosave-2` (before): scan never ran, no pickup. `search-1`: blaster fetched within 6 s, ion fire, the ragemaster killed (`killed=1`) |
+| Leader turning on the spot (45 degrees every 2 s, 60 s) | Passed (sampled) | `search-1`: settled at one spot for the last 60 s. `nervous-1` (before): goal circled the leader |
+| Unit: stays put while the leader turns, steps out of the line of fire | Passed | `companion_brain.zig` test; runtime 335/335 |
+| Ragemaster idle while the player is its target | Not changed | `robot-1`: stands 180 u away with sight while its target is the player; walks and strikes once Superfly is its target. Melee-only; likely no route wide enough for its 74-unit hull. Unreviewed against the original |
+| Floating body in the owner's screenshot | Unreproduced | The free-fall ragdoll test passes (new); `ragdolls-1` body at rest on the floor; the scene of the screenshot is unidentified |
+| Companion drawn tipped back when aiming high (owner screenshots) | Fixed; Passed (sampled) | `actors.zig` projects companions with yaw only, as players are; the server pose keeps the aim pitch for firing. `upright-3`: Superfly upright in every frame through the fight. The floating-body report was this, not a ragdoll |
+| Unarmed fetch routed past the melee robot | Open | `upright-3`: Superfly took the far blaster's route by the ragemaster, was struck repeatedly, gave up after 10 s and retreated with the disruptor |
+
+## Sequence 345 — coop-campaign — the co-op bot from e1m3b through e1m4c into e1m5a
+
+**Change.**  Routes for e1m3b (lift checkpoint to the exit with Superfly), e1m4a
+(console, dock: the exit hall cleared while Superfly waits, health handed to him,
+regroup), e1m4b (garage-door hall with the ceiling turret shot first; stock before
+the pipe floods the recess; the casket lift's three stops; the ladder, lip and
+crawlway past both fans; the keypad room, box, nest, ramp, tunnels, loop, coffin
+room, alley and the juncture door held open for Superfly) and e1m4c (the halls; the
+study climbed by table, sign, lamp and bookcase — the last two as short hops — to
+the vent; the vent walked to the grate over the room below, shot and dropped
+through; the incinerator's cage lift down to the exit). Episodes 2–4 have generic
+forward-exit chains to the credits (`episode2.lua`–`episode4.lua`).
+
+Game fixes found by the runs:
+
+- Reference sidekick teleport nodes (`NODETYPE_TELEPORTSIDEKICK`) were not
+  implemented. `sidekick_nodes.zig` reads them from the converted node graph
+  (`authored_nodes.zig`, `dk3/routes/<map>.json`): a player within 32 units of one
+  teleports the living party to its point once per map entry or restoration.
+- e1m4b's "sfdoor" (named, nothing targets it, the node graph walks Superfly
+  through it to his talk node in the keypad room) never opened, so Superfly could
+  never reach e1m4b's exit, which requires him. A door crossed by a ground-node
+  link, carrying an AI node name and an untargeted name, is now a party door:
+  companions open it on contact and navigation gates never hold it shut (only
+  e1m4b's sfdoor and e3m5a's death doors qualify).
+- Companions opened unnamed `func_door_rotating` doors, a class Daikatana does not
+  use; they now open `func_door_rotate`.
+- Damage between a player and a companion, and between companions, is halved as
+  in the reference's `com_Damage`.
+- A companion settled up to 192 units from its leader by an exit that counts it
+  only within 150; by such an exit it now closes to 112.
+- A route through a lift standing away that a companion may not call is planned
+  round the lift on foot when a way exists (the e1m4b casket lift, left at the top).
+- The lift planner judged a cage lift (walls and a roof) present by the top of its
+  box; it now finds the lift's floor (e1m4c's incinerator lift).
+- The co-op bot's client link took `dk3_world_cancel` for `dk3_world_data` (both
+  have `_` at index 9) and failed the run at e1m5a's arrival.
+
+Pilot: no blast weapon at an object (a grate) with one of the party in the lane or
+beside it while another weapon reaches, and no blast round at one without a clear
+muzzle lane and nobody of the party within its splash; no shot with one of the party
+inside a widening cone along the line of fire (the sight lane saw through bodies past
+96 units, so Superfly's pellets hit the player). Duck to shoot, futile-weapon
+rotation, muzzle-traced blast lanes, hazard leans, hover stalls, mover sidesteps,
+ride through intermediate stops, `leap` with `pace` for short hops.
+
+Navigation: nudged start areas, destination areas a little above, door gates that
+leave out crawl-under areas, hazard gates on thin side areas, stalls measured along
+botlib travel time, a `lifts` request flag that leaves lift links out.
+
+DSL and driver: `regroup`, `tend`, `sic`, `dk3.hostiles(radius, point)`, exits
+approached before healing, recovery at stations and trees; after a companion loss
+each reload sets the stage of the save it loads (the checkpoint's own, the resumed
+save's, else arrival), so a missing save's stage never leaks into the next reload.
+
+| Scenario | State | Evidence (scratch runs, not checked in) |
+|---|---|---|
+| e1m4b tunnels checkpoint → exit with Superfly | Passed | `e1m4b-88` (out stage reached; Superfly through sfdoor), `e1m4b-89` (`travelled to e1m4c`) |
+| Superfly out of the casket room with the lift raised | Passed | probe `twait`: from 1057,518,-528 through sfdoor to the player within 20 s; before: stuck 400+ s (`e1m4b-85`) |
+| Bot's rocket kills Superfly at the alley grate | Fixed; Passed once | `e1m4b-87` (before), `e1m4b-88` (after) |
+| Superfly pellets kill the bot in e1m4c | Fixed; Unverified at that encounter | `e1m4b-89` (before: deaths 1, 5, 7, 8); the halls stage has not been rerun since |
+| e1m4c study → vent → grate → exit | Passed | `e1m4c-4`, `e1m4c-6`: `travelled to e1m5a` |
+| e1m5a arrival (world cancel) | Fixed; Passed | `e1m4c-5` (before: MissingArgument on `dk3_world_cancel 1282`), `e1m4c-6` |
+| Teleport-sidekick node in play (e1m4b vent exit) | Implemented; Unverified | the runs started after the node; a run through e1m4b's "on" stage is needed |
+| Halved party damage, exit close-in, cage lift floor | Implemented; partly exercised | exit close-in and cage floor in `e1m4b-89`/`e1m4c-6`; damage halving not measured |
+| e1m5a → credits | Open | generic chains only |
+| Full New Game → credits chain | Open | |
+
+## Sequence 346 — native-multiplayer-map-japandm — the ramp is a tread between kerbs, and the model stage had been lying for two builds
+
+`frame_materials` ended three rounds of guessing at the "fish scale" the owner saw on
+`up_n`: **78.5 % of that frame is one material (`grate`) with its nearest hit 49 units
+away**, and the camera in the earlier report was *inside* the ramp it was photographing.
+`alias_measure` then put grate's modulation depth at 0.0069 × 0.0087 -- **below** asphalt's
+0.0095 × 0.0061, a surface the owner never complained about. So the defect was never
+aliasing, and **e41 and e42 spent two rounds tuning contrast on an surface whose problem
+was scale and monotony**: a 6-unit (~19 cm) perforation laid across the full 192 width of
+an inclined slab, which is ~100 px per hole at that distance with nothing beside it to
+measure against.
+
+Three changes, all scale and composition. `grate` repeat 48 -> **24** (a 3-unit / 10 cm bar
+pitch, the size a pedestrian grating is cut at) and `crate` 96 -> **32** (a metre of ply,
+not three). `sided_ramp` no longer lays one slab: it lays the middle half as a **raised
+tread plate in the climb's own material between two kerb channels 2 units lower in deck
+plate**, which is how an exterior steel ramp in Japan is actually built. The 2 is not
+styling -- it keeps the two top planes off each other (coplanar would z-fight), runs each
+flank 2 under the tread so the seam is inside a solid, and is a tenth of `ENGINE_STEP`, so
+the player walks over it and reads shadow. `DECK - 2` thickness, not `DECK`: the first cut
+dropped the flanks' undersides 4 below the tread's, which grew the ramp's bounding volume,
+cost `dock_crates_00` its place to stand at the north ramp's foot, and cascaded into eight
+placement defects in crates, planters and lanterns nowhere near a ramp. Six lamps were hung
+too: three per ramp **interpolated from the climb's own start/end** rather than typed, and
+one over each of the four darkest starts.
+
+**The model stage had been lying for two builds.** `map_build` re-models only when a `.py`
+is newer than the `.blend`, and the last genuine model run was 22:51; the 23:17 build
+exported that stale scene and reported success. Forcing a real re-model surfaced **eight
+placement defects that were already inside the installed map the owner is playing** -- a
+pallet stack parked wholly inside another pallet stack, `crates_w3` reaching 29 % into
+`crates_w2`, a roadworks barrier with its chevron 75 % inside an arcade column, the south
+deck planter grown over a billboard post, and two props anchored into the furniture that
+anchors them. All eight are fixed. `verify` now passes and the `.blend` saves for the first
+time since 22:51.
+
+Measured, from a fresh install, photographed with the ordinary client:
+
+| frame | before | after | dark pixels |
+|---|---|---|---|
+| `up_n` | 0.120 | **0.349** | 28 % -> 6 % |
+| `ramp_w_view` | 0.212 | **0.345** | 19 % -> 11 % |
+| `spawn_roof_n_w` | 0.100 | **0.340** | 73 % -> 16 % |
+| `spawn_dock` | 0.132 | **0.325** | 59 % -> 6 % |
+| `spawn_roof_e` | 0.188 | **0.355** | -- |
+| `spawn_w_lane_s` | 0.118 | **0.231** | 52 % -> 22 % |
+| `lane_view_e` | 0.149 | 0.191 | 52 % -> 34 % |
+
+No frame regressed (the other nine moved by <= 0.01). Authoring is 2234 brushes / 140
+entities, `defects: []`, bsp 6 644 664 B, aas 11 793 areas / 32 821 reachabilities, pk3
+134 458 855 B. Peak RSS 568 MiB for the build and 463 MiB for the probe under
+`run_capped`, which is the guard the owner asked for after two crashes.
+
+**What the numbers could not see**, read off the montages: the ramp now reads as a tread
+plate with kerbs and the scallop is gone, `spawn_dock` is a legible warm corridor instead
+of a void, and `roof_n_w` is a night roof with a lit window grid. Still bad and still
+open: `lane_view_e` is the darkest place on the map; `spawn_station` faces a blank plywood
+wall that fills 40 % of the frame; the `ad_board` billboards are still flat placeholder
+colour blocks, which is the one item that needs the 5090 and not the CPU; and street-level
+clutter is still 1999 density in the lanes. Machine health: `/home` sat at 17 G with
+**swap 7/7 G full and ten leaked `dk3ded` servers, two of them 9 h old**, each holding a
+RAM-backed `/tmp/dk3-coop-bot-*` homepath (1.3 G of tmpfs) -- that, not the GPU, is what
+crashed the box; the 4.9 G-per-install `zig-out/native-dev/play` copies have since been
+pruned to 138 G free. A `view angle reported back by the camera client` timeout
+(wanted 125, got 125.442) cost one probe run and passed unchanged on the next attempt:
+probe flakiness, not map geometry.
+
+## Sequence 345 — mover-riders — map-authored riders follow parents that spawn displaced (e1m4a console)
+
+**Defect (owner report).**  The e1m4a (Crematorium) console keys do nothing.
+- **Map setup.** Each key is a `func_button` riding by `parenttarget` on a START_OPEN keypad door. The keypad spawns slid 24 units into the desk.
+- **Cause.** The attachment offset was measured after mover spawn had displaced the parent. Riders follow their parent by movement deltas, so when the floor trigger slid a keypad out, its key ended up 24 units in front of the desk: an invisible strip at knee height. The player stood on it, and use on the visible keyboard hit the keypad door, which ignores use.
+
+**Change.**
+- `attachments.spawn` measures offsets from the parent's authored place (`movers.authoredPosition`). It carries the riders of displaced parents to where the parent rests, through the same assembly and publication as ordinary motion.
+- `attachments.reconcile` runs on every restore. It puts map-authored riders (`parenttarget` only) of sliding movers back at their map-relative place, so saves made before the fix load correctly. Consistent saves are unchanged.
+- **Unit tests:** carry, and old-save repair (runtime 338/338).
+
+| Scenario | State | Evidence (`zig-out/reports/console/`) |
+|---|---|---|
+| Owner autosave e1m4a (old code): keypad slides out, key stays in front | Reproduced | `walk-3`, `fixed-1`: key at y −24 after the keypad opened, player standing on it |
+| Same save, fixed build: keys ride with keypads | Passed | `fixed-4`: three keys restored at y 26 with their keypads; `fixed-6`: key at y 2 when out, use hits it (`region trace` target), monitor view starts |
+| Right key opens Superfly's bar gate; middle key opens the rotating dock door | Passed | `fixed-7`: `helpi` open (z 176), `muza` open, two monitor views |
+| Other save loads after `reconcile` (peer report of a panic in an intermediate build) | Passed | `e1m5a-load`: the co-op session's e1m5a arrival save loads; peer confirmed after rebuild |
+
+## Sequence 347–357 — vulkan-renderer — native Zig Vulkan renderer, now the default
+
+**Scope.** Owner request: a 2026-quality remaster path with Vulkan and optional ray
+tracing. Decisions: own hybrid renderer in Zig, Vulkan 1.3 baseline, RT optional;
+milestone 1 is GL parity. Proposal and roadmap: `docs/vulkan-remaster.md`. Mid-run owner
+additions: native resolution, and Vulkan as the default renderer.
+
+| # | Slug | State |
+|---|---|---|
+| 347 | `vulkan-renderer-build` | implemented: `build/renderer_vulkan.zig`, glslc SPIR-V embedded, staged Vulkan headers; exports only `GetRefAPI`/`ri` |
+| 348 | `vulkan-renderer-boot` | implemented, viewed: SDL Vulkan window, device pick (CPU device under `LIBGL_ALWAYS_SOFTWARE`), swapchain, timeline-paced frames, bindless set; `dkguard --headless` selects lavapipe; `CL_InitRef` falls back to OpenGL2 |
+| 349 | `vulkan-renderer-images-2d` | implemented, viewed: GL1 image loading order, box mips, picmip, software gamma; 2D, cinematic raw uploads |
+| 350 | `vulkan-renderer-materials` | implemented: tr_shader.c port (stages, sorts, implicit shaders, multitexture collapse, remaps, animMap, skies); `r_vkMaterialScan`/`vk_materialscan` report unknown keywords — not yet run |
+| 351 | `vulkan-renderer-world` | implemented, viewed: IBSP v46 staged admission, PVS/areas/frustum, sky box and cloud dome, GL1 dlight falloff |
+| 352 | `vulkan-renderer-resident-worlds` | implemented, viewed (preview): resident handles, inline models, aperture portals with a clip plane |
+| 353 | `vulkan-renderer-lightstyles-fog` | implemented, fog viewed: DKLS blocks; native client fog submission restored for all renderers |
+| 354 | `vulkan-renderer-models` | implemented: MD3 GPU frame lerp with LODs, IQM GPU skinning with dk3 live bones, skins, tags |
+| 355 | `vulkan-renderer-effects` | implemented: polys, sprites, marks, forward dlights; beams/rails/lightning not drawn |
+| 356 | `vulkan-renderer-capture` | implemented, viewed: TGA/JPEG, save previews, levelshots; AVI unverified |
+| 357 | `vulkan-renderer-acceptance` | partial; see docs/native-acceptance.md "Sequences 347–357" |
+
+Native resolution: high-DPI drawable, `r_mode -2` borderless desktop fullscreen, fullscreen
+toggles and settled drawable changes re-create the window. Evidence:
+`zig-out/reports/vulkan-renderer-357/` (scratch harness `vkrun.py` included). The owner
+stopped further headless visual comparisons to inspect in game directly.
+
+## Sequence 358–370 — vulkan-remaster — the remaster roadmap after milestone 1
+
+**Scope.** The owner asked to fix the missing models first, then drive the roadmap to
+completion without stopping. The models fix: the client passed its network world id
+as `refEntity.dk3World`, and that only matched the OpenGL renderers' world handles
+by accident (`client.zig`, now `owner.render`). The owner checks visuals in game, so
+each item got one lavapipe smoke run (`zig-out/reports/vulkan-remaster/<dir>/`).
+
+| # | Slug | State |
+|---|---|---|
+| 358 | `vulkan-renderer-hdr-pbr-core` | implemented: HDR target, float lightmaps, auto exposure, bloom, AgX, GGX with normal/specular maps or procedural bump |
+| 359 | `native-runtime-environment` | implemented: underwater composite from the eye's brush contents |
+| 360 | `vulkan-renderer-water` | implemented: liquid classification, refraction, absorption, SSR, foam, lava |
+| 361 | `vulkan-renderer-volumetrics` | implemented: froxel inject/integrate; persistent volume slots fixed (map loads reused the froxel descriptor) |
+| 362 | `vulkan-renderer-taa-fsr` | implemented: jittered TAA, separate scaled HDR depth, temporal upscale, CAS |
+| 363 | `vulkan-renderer-weather-gpu` | implemented: `CG_DK3_R_WEATHER_V1` (716) and `AddDk3WeatherToScene`, procedural drops/flakes/splashes, wet and snowy surfaces |
+| 364 | `vulkan-renderer-clustered-lights-shadows` | implemented: 16x9x24 light clusters (256 lights), shadow-atlas model shadows |
+| 365 | `material-sidecars` | implemented: `dkq3/tools/materialgen.py`, optional `zz-dk3-materials.pk3` in play-install |
+| 366 | `vulkan-renderer-rt-shadows-reflections` | implemented: BLAS per world and inline model, per-frame TLAS, ray-query shadows and reflections |
+| 367 | `vulkan-renderer-ddgi` | implemented: scrolling L1-SH probe field for model ambient |
+| 368 | `lightmap-rebake-directional` | implemented: progressive GPU deluxe bake from map light entities |
+| 369 | `vulkan-renderer-path-tracing` | implemented: RIS direct light, lightmap-cached bounce, temporal + à-trous denoise; instance facing flipped for Quake 3 winding |
+| 370 | `vulkan-renderer-m1-gaps` | beams/rails/lightning implemented; material scan passed (0 unknown keywords); AVI blocked by demo playback |
+
+Acceptance state and open items: docs/native-acceptance.md "Sequences 358–372".
+
+## Sequence 371 — vulkan-remaster — the owner's first in-game screenshots
+
+**Change.** Four screenshots from the RTX 5090: a blocky face and gi (the procedural bump
+carved the skin's painted shading into relief, texel by texel under magnification), rain
+streaks inside a cave, white speckles over wet walls, and an opaque green lid when looking
+up from under water. Fixes: model skins get no procedural bump and world textures fade it
+out once a texel spans screen pixels (`image.zig`, `stage.frag`); a top-down rain occlusion
+map of the world around the eye (`shadows.rainCamera`, `scene.renderRainMap`, lower half of
+the shadow atlas) hides drops, flakes and splashes under roofs, lands splashes on the stored
+surface and limits wet and snowy surfaces to exposed ones (`common.glsl` `rainSurface`,
+`rainExposure`); the baked-light specular lobe has a roughness floor of 0.28 and wet walls
+go glossy (0.3) instead of mirror-like; the sky column samples the froxel volume at the
+depth whose coverage matches the authored `fog_skyend` (`scene.skyFogDepth`); liquids seen
+from below show the world above through the waves. `renderView` kept a slice of the draw
+list across `buildViewData`; the rain-map pass appends enough surfaces to move the list,
+which segfaulted (found with gdb under dkguard), so the slice is taken again afterwards.
+
+| # | Slug | State |
+|---|---|---|
+| 371 | `vulkan-renderer-rain-occlusion` | implemented; lavapipe smoke `wx3/` composites a frame (`r_vkValidation 1` was set, but the validation layer was not installed on the host, so that proved nothing); in-game acceptance open |
+
+## Sequence 372 — vulkan-remaster — "everything is white"
+
+**Change.** The owner's second set of screenshots showed every lit surface washed toward
+white and grey (a white gi with no cloth detail, a textureless pale pillar, grey walls).
+Headless e1m1a measured the remaster at 3.6x the classic frame's mean luma with far lower
+saturation. Cause: remaster lightmaps were uploaded with the full x4 overbright range
+(radiance up to 21), while the original normalises each texel so its brightest channel caps
+at white; the models used the normalised grid, so world and models disagreed too. Fixes:
+`world.linearLight` normalises like `R_ColorShiftLightingBytes` with a quarter stop of
+headroom (both the static pages and the lightstyle blocks); dynamic lights add at that scale;
+the composite defaults to Khronos PBR Neutral without its black-level toe (`r_vkTonemap`
+0, AgX as 1), `r_vkSaturation` 1, auto exposure clamped to [0.75, 1.25]; the baked-light
+sheen gets a roughness floor of 0.5 (the pillar's pale blotches were that sheen through the
+normal map); authored fog coverage is remapped in stage.frag so partial coverage matches the
+original's display-space blend (a few percent of a bright fog colour was invisible there and
+a flat green wall here), with the dynamic-light glow integrated in its own froxel pair so the
+remap does not dim it; opaque model pixels write HDR alpha 0 and taa.comp trusts the new
+frame there (ghosted arms on an animating character). Headless e1m1a: mean luma 0.314 ->
+0.124 (classic 0.086), saturation 0.41 -> 0.38-0.68 (classic 0.62) across the two steps.
+
+| # | Slug | State |
+|---|---|---|
+| 372 | `vulkan-renderer-lighting-scale` | implemented; lavapipe smokes `wx4/`, `wx5/`; in-game acceptance open |
+
+**Validation.** No validation layer was installed on the host; the Fedora package was
+downloaded and extracted locally (`dnf download` + `rpm2cpio`, x86_64, manifest pointed at
+the absolute library path) and loaded through `VK_LAYER_PATH`. Core validation on the intro
+map (`val5/`) reported two device-creation omissions, both fixed in `vk.zig`: storage-image
+bindings were flagged update-after-bind without `descriptorBindingStorageImageUpdateAfterBind`,
+and glslc's Vulkan 1.3 `discard` needs `shaderDemoteToHelperInvocation`; the remaining
+message is the harmless "fragment output not consumed" of the depth-only shadow and rain-map
+pipelines. The intro map (the dojo cutscene, which the owner's screenshots show rendering on
+the RTX 5090) still faults on lavapipe in JIT shader code after the froxel passes, with core
+validation otherwise clean; `r_vkVolumetric 0` avoids it. GPU-assisted validation runs are
+recorded under `gpuav*/`; GPU-assisted validation (`gpuav6/`, confirmed active) reported
+nothing before the fault either.
+
+**Dynamic lights.** The owner's next screenshot (the dojo cutscene from above) showed Hiro
+pale and desaturated with grey hair while the room read correctly. The PBR dynamic-light
+falloff peaked at ~0.175 x radius (about 50x the light colour) at the source, so a lantern
+over a character painted a sheen not scaled by the texture over the whole model. It is now
+inverse square beyond a quarter radius and flat inside, never above the light's own colour,
+which is the original's projected-dlight ceiling (`stage.frag` `pbrDynamicLights`). The owner
+reported no effect, so the lamps were not the cause.
+
+**Probe ambient.** An OpenGL1 capture of the same cutscene shot (`cine-gl1b/c.jpg`, with
+`dk3_cinematics 1` overriding the harness's skip) gives the reference: a white gi, black hair,
+tan skin, the figure at ~1.9x the floor's brightness. The remaster showed grey hair, grey skin
+and ~2.7x: a white light not scaled by the texture. The model path let the ray-traced probe
+field replace 80% of the grid ambient, and probes beside the dojo's paper lanterns (emissive
+1.6 on top of their own lightmap) gather bright white light. Now the probe term may at most
+double the grid ambient's luminance and blends at 0.6; the probe gather counts emissive at
+most 0.5; model skins get specular 0.4 (their highlights are painted). `r_vkDebugView 6`
+shows texture colour only and 7 light only, so asset and lighting can be told apart in game.
+The intro map cannot be rendered on lavapipe (the fault above), so this is unverified here.
+The owner reported no effect again; the probe term was not the cause either.
+
+**Root causes, found on the RTX 5090** (`dkguard --gpu`, a 1280x720 window, cvars toggled
+live through the command pipe, `zig-out/reports/vulkan-remaster/gpu*/`, `wf*/`):
+- *Grazing specular.* A one-frame per-draw dump showed the overhead dojo shot draws
+  `models/cinematic/c_hiro_intr.dkm.md3` with `skins/c_hirodojo` (black hair, white gi), with
+  grid light ambient 183 and directed 252 of 255, identical with ray tracing on or off. Black
+  albedo cannot whiten through diffuse light; Schlick Fresnel rising to 1 at grazing angles
+  under a directed radiance of ~3 can, and a distant figure is mostly grazing pixels: every
+  object turned white with distance. Fresnel now rises toward
+  `(1 - roughness) * specular strength` (1 for metals) instead of white, and model skins get
+  specular 0 (their highlights are painted; the original lit them diffusely).
+- *Waterfalls as pools.* Vertical faces inside a water brush were classified as liquid surfaces
+  and drawn with the pool shading (opaque refraction and reflection, pale grey) instead of
+  their translucent scrolling stages; e1m1a's waterfall rendered as a grey slab with dark
+  blotches (the "white pillars" of the owner's jungle screenshots). Only faces with
+  |normal.z| >= 0.6 get liquid shading now.
+- Both verified on the GPU against an OpenGL1 capture of the same view (`gpu13/`, `wf3/`).
+- Also: `dk3 world config ... applied` and `dk3 path: ...` printed every frame and buried the
+  console; they now print only with `developer 1` (the probes run with it). `con_scale 0`
+  (new default) scales the console with the screen height; a saved `con_scale 1` keeps the
+  old size.
+- *Ion blaster flash.* Firing filled the screen with green: the froxel glow of dynamic lights
+  used a fixed minimum density (0.0015/unit, ~10x the jungle air) times 3. It now scatters by
+  the medium actually present, `min(sigma, 0.002) * fall^2 * phase * 4` (`fire1/`, GPU).
+- *Crash records.* A crash in the owner's run left nothing on disk: `crashlog.txt` was written
+  only by `Sys_Error`. Fatal signals (segfault, abort from a Zig panic) now write it too, with
+  the glibc backtrace and the console history (`Sys_CrashLog`, `engine/CHANGES.json`);
+  verified by sending SIGSEGV to a headless run (`crashtest/`). The crash itself is not
+  reproduced yet.
+
+## Sequence 373 — vulkan-remaster — realistic rain
+
+**Change.** Research (Garg & Nayar 2006, Tariq/NVIDIA 2007, Lagarde's Remember Me rain,
+Halder 2019, Wang/MSR) found the grey sheet came from unlit constant-grey streaks, constant
+alpha with widening far streaks, 90% of drops far away, 52-in streaks and TAA smearing.
+Implemented (`stage.vert` `weatherParticle`/`weatherLight`, `stage.frag` `weatherShape`,
+`weather.zig`, `froxel_inject.comp`, `taa.comp`, `vk.zig` `mark_motion`):
+- drops of 1-3 mm with Gunn-Kinzer terminal velocity (160-310 in/s), streak length = speed
+  x 1/30 s exposure, at least one pixel wide with coverage-preserving alpha, Gaussian profile
+  and a faint oscillation wobble;
+- per-drop light: light grid ambient (drops refract their surroundings), the grid's dominant
+  light and dynamic lights with a forward Henyey-Greenstein lobe (g 0.75: back-lit glints),
+  sky; drifting gust cells (x0.4-1.0); drops only within 800 units, twice the near density;
+- distant rain as froxel fog inside rain volumes where the occlusion map shows open sky
+  (7e-5/in x intensity, forward scattering, a mist band 24 in above the ground);
+- splashes are lit crowns 0.5-1.5 in across lasting 60-120 ms, none in puddles;
+- ripples: 8-in cells, rings up to 3 in, 0.6-1 s, up to four layers, only in puddles;
+  wet darkening by porosity (to x0.3 on rough dielectrics, none on metal);
+- rain lowers the HDR alpha (new pipeline blend `mark_motion`) so TAA keeps streaks crisp.
+GPU captures `rain1/`, `rain2/` (RTX 5090). Also `con_scale` in the dev home config set to 0
+(automatic) since the saved 1 overrode the new default.
+
+| # | Slug | State |
+|---|---|---|
+| 373 | `vulkan-renderer-rain-realism` | implemented; GPU smoke `rain2/`; owner acceptance open |
+
+## Sequence 374 — vulkan-remaster — ray traced lighting without lightmaps
+
+**Change.** The owner: modern lighting must not use the baked lightmaps (a tree stayed black;
+"in AAA games lights do not work that way"). New `r_vkLighting` (1 by default with ray
+tracing; menu Video > Lighting "Ray traced lighting"):
+- world surfaces and characters: direct light from the map's light entities in the receiver's
+  256-unit cell, the radiosity tool's model (light - distance, cosine, colour) and scale, the
+  four strongest with exact traced shadows and the rest scaled by their visible fraction
+  (deterministic, no denoiser; `shaders/rt_lighting.glsl`); indirect light from the DDGI field;
+  character shadows from the shadow atlas;
+- DDGI probes shade their hits from the same map lights (two traced shadows), the field itself
+  (multi-bounce over frames) and emissive surfaces, no lightmap; rays leaving the world see the
+  sky at the skybox's hue and the brightness the original radiosity gave it (80th percentile of
+  upward-facing lightmap texels, `world.calibrateSky`, since the converted shaders lost the sky
+  emission);
+- the directional lightmap bake is skipped in this mode; baked mode is the original lightmaps
+  again (the earlier ambient-floor patches were removed).
+GPU captures `dyn3/`, `dyn4/` (e1m1a), `dyn5/` (dojo). Path tracing mode still bounces off the
+lightmap radiance cache.
+
+| # | Slug | State |
+|---|---|---|
+| 374 | `vulkan-renderer-rt-lighting` | implemented; GPU smoke; owner acceptance open |
+
+Follow-up: rooms lit by their fixtures were dark ("lamps? no lights"). The original radiosity
+also emitted light from light textures, added the worldspawn `ambient` floor and bounced many
+times; e1m1c's spawn has only weak entity lights (`light 175` at 300+ units). Now emissive faces
+become lights (`rt.surfaceLights`: centroid, texture colour, reach from area), worldspawn
+`ambient` is added, START_OFF lights are skipped, the sky level uses the 90th percentile and
+8192 probes update per frame. Cells hold up to 63 lights (was an arbitrary 31; the dojo map
+reaches 45) and a full cell keeps its strongest. e1m1c spawn: mean linear luminance 0.0009
+ray traced vs 0.0010 baked (`cal4/`). Rain light halved, opacity 0.6 (`rain4/`).
+
+Further: foliage and other alpha-tested surfaces are in the ray tracing scene as non-opaque
+structures whose candidate hits are alpha-tested against their texture (`rt_common.glsl`
+`rtAlphaPass`, `rt.zig` `alpha_models`); characters (skeletal IQM and multi-frame MD3 within
+3000 units) are skinned by `rt_skin.comp` into a per-frame structure (instance mask 2, shadow
+rays only) so they cast and receive traced shadows (`r_vkRtCharacters`, menu "Ray traced
+characters"); static props stay out, since e1m4a's lamp models carry their light entity inside
+the shade (`lamp1/`: ray traced and baked match there). The froxel pass has a ray traced
+variant (`froxel_inject_rt.comp`) lit only by visible map lights and open sky (light shafts,
+`r_vkVolumetricShadows`); authored map fog is scaled by `r_vkMapFog` (0.3). Probe hysteresis
+0.97 and a per-ray firefly clamp against flicker. Menu: Atmosphere and a new Weather page.
+
+Green flicker ("soft green spots flickering around", every episode 1 map): probe noise. Each
+update traced 64 randomly rotated rays, and on open ground the few that reach the bright green
+sky swung a probe's light from update to update; probes 96 units apart blur that into soft
+moving spots. Measured on the RTX 5090 with the irradiance view (`r_vkDebugView 4`), static
+camera: open floor changed by up to 186 levels between frames (50 with probes off). Now 192 rays
+per update (3 per lane), hysteresis 0.98, a per-update change limit of 25% of the probe's light,
+a per-ray clamp at luminance 1.5 and self-feedback 0.7: floor change at most 17 (`probe2/`).
+Ray traced and baked lighting measured interleaved flicker the same otherwise (`flick3/`).
+
+Survey (`survey4/`, RTX 5090, 11 maps across the four episodes, two views each, ray traced vs
+baked): ray traced lighting is 1.1-19x brighter than baked and flatter. Outdoors (e1m6a snow,
+e2m1a, e2m2a, e3m1a) the sky term washes out the original's dark ledges and overhangs, since
+sky light arrives only through 96-unit probes with no per-pixel sky occlusion; indoors
+(e1m3a/b Solitary, e4m1a, e4m4a) probes leak bright bounce through walls and corners, and
+contact darkening is missing. The bake shader still used the old 32-entry light cell stride
+after the limit went to 63 (fixed); a mid-game baked-mode corruption from starting the
+directional bake could not be pinned down (it vanishes under the validation layer), so
+`r_vkDirectionalBake` now defaults to 0. Switching lighting modes mid-game can still
+occasionally show a dark baked frame; unresolved.
+
+## Sequence 375 — vulkan-remaster — ray traced lighting gaps (1-5)
+
+**Change.** From the survey:
+1. *Probe visibility.* The DDGI field stores L1 SH of hit distance and squared distance (two more
+   volumes); field lookups (stage.frag via `ddgi_sample.glsl`, probe-to-probe in ddgi.comp, path
+   tracing) weight each probe by a Chebyshev test, so light no longer passes through walls.
+2. *Per-pixel sky and occlusion.* In ray traced lighting the probes no longer carry sky light;
+   each world pixel and character traces four cosine rays (R2 sequence advanced per frame):
+   sky light = sky radiance x fraction escaping, bounce light x occlusion within 64 units.
+   Probe hits get their own sky ray.
+3. *Calibration.* Sky level from the 75th percentile of upward lightmap texels; auto exposure
+   may adapt 0.6-3x with ray traced lighting (was 0.75-1.25x), since nothing is designer-baked:
+   the owner asked for brightness to may differ but images to stay readable (`vis1/`).
+4. *Area lights.* Glowing faces become rectangles (`MapLight` 16 floats: two half-axes);
+   shadow rays aim at a per-frame point on them (soft shadows through TAA).
+5. *Per-pixel GI.* Path tracing mode's bounce hits are lit by map lights, the probe field and
+   emissive light instead of lightmaps (`r_vkPathTracing 1`), with its existing temporal and
+   a-trous denoise; no reservoir reuse (ReSTIR) yet.
+Debug views 12-14 show the direct, bounce and sky terms. Static-camera noise at e1m1a with
+probes settled: 2.10 ray traced vs 1.77 baked (blur-10 metric, rain dominated, `flick6/`).
+Mid-game the game's own region streaming shows its loading overlay ~40 s after a map loads,
+which earlier read as dark baked frames in surveys.
+
+| # | Slug | State |
+|---|---|---|
+| 375 | `vulkan-renderer-rt-lighting-gaps` | implemented; GPU smoke `vis1/`, `flick6/`; owner acceptance open |
+
+Follow-ups from the owner's play session:
+- *Crash.* The pasted console showed `ERROR: Zig client: MissingWorldSound` after
+  `sounds/superfly/death8.wav` failed to load: the Superfly sidekick's burning voice picked
+  death6-8, but Superfly recorded only death1-7 (`src/actors/companions.zig`, now death5-7, with
+  a test bounding every sidekick voice to its recorded set), and the client treated the
+  engine's default-sound handle as fatal (`world_admission.zig`, `resident_worlds.zig`: a
+  missing sound now only stays silent). An error exit is not a signal, hence no crash log.
+- *Rain intensity.* Base alpha 1.0, 0.035 drops per square unit near the eye, coverage falloff
+  `(D/width)^0.6`, rain fog 1.2e-4/in (`rain3/`).
+- *Waterfall top.* The underside of a liquid surface seen from outside the liquid is discarded
+  (ViewData `fogParams.y` = the eye's liquid); it rendered as a grey slab.
+- *Black tree.* The trunk's lightmap is black in the original radiosity too (OpenGL1 shows it at
+  ~9/255); world surfaces now take at least 0.2x the light grid there (`tree2/`).
+- *Menu.* Video now has six pages (Display, Remaster, Image, Lighting, Atmosphere, Surfaces)
+  with Prev/Next buttons and PgUp/PgDn (`ui/settings.zig` `page`, `video_pages`,
+  `display_scale`; `ui/menu.zig` `video_page`): remaster, ray tracing, path tracing and its
+  light, render scale, TAA, sharpening, bloom, exposure, filmic tone mapping, RT shadows and
+  reflections, probe GI, directional bake, character shadows, volumetric fog, air density,
+  scattering, weather, rain intensity, wetness, splashes, relief, shininess, saturation.
+  Restart-only ones say so. `runtime_ui_probe.py --scenario video --renderer vulkan` clicks
+  through all pages (`menu-video/`).
+
+## Sequence 376 — vulkan-renderer-rt-light-sources — every original light source is ray traced
+
+**Status.** implemented; GPU smokes `green*/`, `probe4c_fix/`, `survey13/`; owner acceptance open
+
+Every original light source is ray traced from its own data (docs/vulkan-remaster.md, "Ray
+traced light sources"):
+- **Surface lights.** `dkq3/tools/surface_lights.py` extracts each map's emitting faces
+  (SURF_LIGHT value plus extsurfinfo colour) and emitting sky into `maps/<map>.lights` in the
+  materials package: 84 maps, 40,722 faces, 56 skies. The surface walk equals the converted
+  surface count. The sidecars stay local:
+  - each records its surface count;
+  - `play.py install` regenerates all of them from the asset generation's `input` when any is
+    missing or stale, and fails when it cannot;
+  - verified by stripping every sidecar from a copy.
+- **Entity lights.** `cap`, normalised colours, `style` and START_OFF-with-style are handled.
+  Targets and cones were measured to be ignored by the original tool.
+- **Sun and styles.** Worldspawn sun keys are read. A per-frame style header sits in the light
+  buffer.
+- **Light cells.** Ranked by light inside the cell, culled by PVS, plus a GPU visibility cache
+  (`light_visibility.comp`, `r_vkLightVisibility`).
+- **Shadows.** Unbiased sampled shadow rays replace the "visible fraction of the strongest four"
+  scaling.
+- **Sky.** From the original emitting sky for the per-pixel term, probes and path tracer, at
+  value × 0.6 × visible sky in radiosity units.
+- **Self-light.** Emitting faces show their own light.
+- **Normals.** World and model shading normals face the viewer. `gl_FrontFacing` is false on
+  ordinary visible faces under the flipped viewport, so flipping on it inverted normals:
+  - e1m4c's shaft probe went from no light to 61, 41 and 13 raw from its step lights;
+  - e1m1a's swamp platform went from black to visible;
+  - earlier outdoor sky rays had escaped through the floor.
+- **Bounce.** Probe bounce and visible sky are summed with the direct light in radiosity units
+  before the single conversion, as the lightmaps were.
+
+Diagnosis of the owner's green room (e1m4a crematorium): the sky term used the green sky box's
+hue under an open roof. Baked e2m1a's mint is the original lightmaps (green/red 1.25 even
+600 units from the emitting water).
+
+Instrumentation:
+- `dk3_runtime_pacify_monsters` makes the world's monsters ignore the player (probe mode). The
+  first version removed them, which segfaulted e1m1a; that crash preceded the host freeze of
+  2026-10-10.
+- `dk3_runtime_place x y z [yaw [pitch]]` sets the view.
+- `r_vkDebugView` 15–19:
+  - 15 is direct light without shadows;
+  - 16 aims shadow rays at area-light centres;
+  - 17 shows the strongest light's shadow ray: clear, or blocked near, midway or far;
+  - 18 shows the blocker's albedo;
+  - 19 prints the centre pixel's four lights to the console. It enables `fragmentStoresAndAtomics`.
+- Harness note: `screenshotJPEG` captures after the next queued command, so captures need a
+  pause after them. The earlier survey ratios were inverted by this.
+
+Survey `survey13/` (auto exposure off, RT/baked luminance; two views per map):
+
+| Map | View 1 | View 2 |
+|---|---|---|
+| e1m3a | 1.15 | 1.28 |
+| e1m3b | 0.87 | 0.89 |
+| e1m2a | 0.84 | 0.83 |
+| e1m5a | 0.51 | 0.37 |
+| e1m6a | 1.65 | 1.11 |
+| e2m1a | 0.96 | 1.10 |
+| e2m2a | 0.52 | 0.81 |
+| e3m1a | 0.80 | 0.76 |
+| e3m3a | 0.99 | 0.89 |
+| e4m1a | 0.96 | 1.01 |
+| e4m4a | 0.87 | 0.94 |
+
+Median 0.89, before the facing and bounce fixes. Post-mortem:
+docs/vulkan-rt-lighting-postmortem.md. `zig build test`: 483/483 Zig tests pass. The Python suite has 12 errors, all
+environmental: no PIL for the system python3, and a SciPy rotation API change in the cinematic
+tools.
+
+## Sequence 348 — coop-campaign — the co-op bot through e1m5b, e1m6a and e1m6b
+
+**Change.**  Routes for e1m5b (catwalk, spiral, south; the console room: the doorway
+hold, the door-slab steps, the health east of it, the console and its monitor; the
+golden soul under the stair landing short of the freezer; the freezer: its deathsphere
+from the stair landing, then the lasergat from just inside; the shockwave; the great
+hall: doorway hold, its deathspheres, lasergat and guard hunted by name, the health
+on its floor), e1m6a (the decontamination door's delayed button, the blue card in the
+control room past the typing worker, the card room's station, the four-way door; the
+cryo lab: down its ladder shaft, the cryotechs shot across the nitrogen gap from its
+foot, a leap over the gap, the valve that drains the pool, the lift, the timed door,
+the exit console) and e1m6b (the megashield along the pipe; the ramp console and the
+deathspheres it releases; a running drop onto the platform in the nitrogen, its
+ladder and hatch, the hatch room's guards, the lift up; then four checkpointed legs
+round to the exit with the lower floor cleared before Superfly follows).
+
+Game and runtime fixes found by the runs:
+
+- Lethal liquids in movers and thin layers: `func_water` nitrogen (e1m6a's pool) is a
+  mover BSPC leaves out of the area graph, so routes walked off ledges into it. A
+  navigation gate kind `pool` now shuts the areas whose floor lies in a standing
+  func_water of nitro, lava or slime (contents sampled across its box) until it has
+  drained. The bundled BSPC classes `CONTENTS_DK3_NITRO` brushes as lava (they were
+  converted with the water bit and compiled as swimmable water). Regenerated
+  navigation for e1m6a–c only (scratch overlay; the installed package is older).
+- A jump or fall the route takes next whose landing has lethal liquid straight under
+  its centre shuts that landing area and replans (e1m6b's leap onto the rim of the
+  platform in the nitrogen, which in play ends short).
+- Plats rose only for a player standing on them; the reference's touch accepts bots,
+  so a sidekick now calls a plat too (e1m6a's lift up from the drained pool).
+- The kill hunt's held shift toward an unseen prey was overwritten by the prey's own
+  position, walking a held bot into the room it was holding; the shift now stands.
+  An arena narrower than a body across no longer trips `std.math.clamp`'s assertion
+  (a reproducible crash at e1m5b's freezer).
+- Seek probes: a goal below and off the platform underfoot is a step down, not a
+  descending lift (e1m5b's door-slab steps sent the bot across the room to their
+  button); climbing straight up, the probe looks overhead (a closed hatch over a
+  ladder); companions' door contact looks overhead too, so they open such hatches.
+- A civilian blocking the way became a shootable nuisance only after 3 s of
+  uninterrupted contact, which the unstick hops always broke (e1m6a's typing worker
+  between the card room's desks).
+- Riders keep to a moving lift's middle (a stride for the landing mid-ride walked to
+  the edge and was crushed against the landing's lip, e1m6b's plat).
+- A companion standing on the player's head steps off it (it pinned the player under
+  a ramp's ceiling in e1m5b).
+- Jump links are jumped from their takeoff, at running pace (the narrow-footing walk
+  does not apply to a jump's run-up).
+- Shockwave: nobody walks into a live sphere's or burst's reach (backs out to 420);
+  it is no longer chosen automatically (its bounces and rings killed the bot and
+  Superfly in e1m5b and e1m6c); blast weapons need 320 units minimum and nobody of the
+  party within their splash of the target.
+- The last 12 rounds are no longer held back while the bot is below 80 % health (it
+  stood holding the glove while guards shot it).
+- `move` takes `pace`; stage checkpoints also collect ammunition near by.
+
+| Scenario | State | Evidence (scratch runs, not checked in) |
+|---|---|---|
+| e1m5b console stage (steps, health, console, monitor) | Passed | `e1m5b-20` (stage 5 reached twice) |
+| e1m5b soul → freezer → hall → e1m6a | Passed | `e1m5b-21` (soul 56→156), `e1m5b-26` (freezer), `e1m5b-29`/`-30` (travelled to e1m6a, no deaths) |
+| e1m6a lab → valve → lift → exit | Passed with a reload | `e1m6a-17`, `e1m6a-18` (second attempt reaches e1m6b) |
+| e1m6b shield → ramp → platform → legs → e1m6c | Passed with reloads | `e1m6b-20` (ramp, platform, upper floor), `e1m6b-22` (legs), `e1m6b-25` (reaches e1m6c after 9 deaths at the lower floor's cryotechs) |
+| Pool gate drains open; sidekick on a plat | Implemented; Passed in play | `e1m6a-8`, `e1m6a-17` |
+| Landing-over-liquid replans | Implemented; exercised | `e1m6b-18` (areas 1425, 1465, 1512 shut) |
+| Shockwave not auto-chosen | Implemented; Unverified | — |
+| e1m6c → credits | Open | generic chains only |
+| Full New Game → credits chain | Open | |
+
+## Sequence 377 — vulkan-renderer-performance — 100+ FPS at the same quality
+
+**Status.** implemented; GPU benchmarks `final-*`, `perf46-*`; owner acceptance open
+
+The remaster renderer at the same image went from 25–34 fps to over 100 fps at 2560×1600 on
+four of five episode openers (RTX 5090 Laptop, AC power, `performance` profile, monsters
+pacified, uncapped, no vsync). Changes:
+- **Stage variants:** `stage.frag` is specialised per material kind (`STAGE_VARIANT`: world PBR,
+  model PBR, plain/weather, liquid; the full shader only for debug views). Register pressure
+  falls, and a new liquid no longer compiles the 13-second full shader mid-game.
+- **Depth pre-pass:** opaque surfaces shade once per pixel with an equal depth test.
+- **Rays:** helper invocations and discarded pixels skip their rays. Sampled shadow rays draw
+  only from lights outside the exact four (a regression that sampled every light made colour
+  speckle).
+- **Characters:** their acceleration structures are refitted, with a rebuild every 30 refits.
+- **Probes:** the DDGI budget is per time, not per frame.
+- **Fog:** froxels behind the farthest depth of their screen tile skip their rays
+  (`froxel_tiles.comp`).
+- **Frames:** three frames in flight and a presenter thread.
+- **Profiling:** GPU timestamp scopes and CPU sections (`r_vkStats`, `profile.zig`), frame pacing
+  in the report, pipeline statistics with `DK3_VK_PIPELINE_STATS`.
+
+| Map (2560×1600) | fps | GPU frame |
+|---|---|---|
+| e1m1a | 106 | 8.5 ms |
+| e1m4a | 94 | 9.8 ms |
+| e2m1a | 214 | 4.0 ms |
+| e3m1a | 199 | 4.1 ms |
+| e4m1a | 113 | 7.6 ms |
+
+## Sequence 378 — vulkan-renderer-frame-pacing — frames no longer step backwards
+
+**Status.** implemented; verified by screen capture `order-*`, pacing `pace5-*`; owner acceptance open
+
+The owner saw whole frames jump back and forth. A frame counter stamped into each presented
+image and read back from the compositor (grim, while turning) showed older frames reaching the
+screen after newer ones:
+- 5 backward steps in 3 runs presenting from a second queue of the family, 0 in 6 runs with one
+  queue. Presenting from a second queue reorders frames on NVIDIA's Wayland PRIME path, so
+  presents use the main queue again (the presenter thread stays).
+- Lightstyles recomposited every changed block on the CPU at each 10 Hz style step, a 10–15 ms
+  stall ten times a second at 90 fps. `lightstyle.comp` recomposites on the GPU from samples
+  uploaded at load (`world.zig recompositeStyles`). Turning on e1m4a, frame-time deviation fell
+  from 6.1 to 3.5 ms and lightstyle stalls from 50 to 0; screenshots match the CPU path
+  (MAE 0.7 %, the run-to-run noise).
+- Mailbox swapchains take four images.
+- Remaining, not changed: the 85 fps cap on a 120 Hz panel without VRR holds frames for one or two
+  refreshes; the game module's 4 ms frame runs before the client render every 50 ms; a new enemy
+  type decodes its 4096² skin on the main thread (0.6–0.8 s).
+
+## Sequence 379 — native-client-resident-sound-race — a sound event that arrives before its configstring is retried
+
+**Status.** implemented; unverified (the race was not reproduced)
+
+A resident world's newly used sound reaches the client through its acknowledged config patch,
+which can trail the snapshot carrying the event; the client read an empty name and ended the
+game (`InvalidSoundPath`, cambot alarm in e1m1b). `events.zig` now leaves such an event
+unmarked and retries it on later snapshots while it lives; loop sounds skip the frame.
+
+## Sequence 380 — vulkan-renderer-upscalers — FSR 3.1 bundled, DLSS as a user-installed plugin
+
+**Status.** implemented; GPU smokes `mv4/`, `q-*`, `dlss1/`, benchmarks `up-*`, `preset-*`, `dlssE-*`; owner acceptance open
+
+Motion vectors, AMD FSR 3.1 (bundled) and NVIDIA DLSS (user-installed), see
+docs/vulkan-remaster.md "Temporal upscaling".
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Motion vectors: still camera zero, yaw rotation pattern, view weapon moves with the camera | Passed | `mv4/` visualisation (since removed) |
+| Own resolve reprojects with motion vectors | Implemented; visually checked | `q-native` |
+| FSR 3.1 at half scale keeps detail near native | Passed (stills) | `q-fsr50` against `q-native`, `q-taa50` |
+| DLSS loads the driver NGX, finds the user module, evaluates and shuts down cleanly | Passed | `dlss1/` (Shutdown1 crashed at exit; Shutdown is used), `dlss2/` |
+| DLSS image at half scale | Passed (stills) | `presets.png`, `q-dlss50` |
+| Fallback without the DLSS module or NGX extensions | Implemented; unverified | — |
+| Vulkan validation of the FSR and DLSS passes | Blocked | VK_LAYER_KHRONOS_validation not installed |
+| Upscalers in motion: ghosting on moving monsters, rain | Unverified | stills only |
+
+Benchmarks at 3840×2400 fullscreen, half render scale: own resolve 105/98, FSR 113/85, DLSS
+preset E 114/108 fps on e1m1a/e1m4a (e4m1a DLSS 136). DLSS's transformer presets cost
+5.3 ms (K) and 9.0 ms (M, the runtime default for performance mode) at that output, so
+`r_vkDlssPreset` defaults to E (1.7 ms).
+
+Menu and defaults: Video → Performance (a new page 2 of 8) holds upscaling quality
+(`r_vkUpscaleQuality`, Auto by default: half scale at 4K-class, two thirds at 1440p/1600p,
+native below), upscaler, DLSS model (`values` map menu choices to cvar values), custom render
+scale and the frame rate limit. The DLSS module is looked up in `dlss/` under the game's home
+directory when no path is set. `runtime_ui_probe.py --scenario video` passes through all eight
+pages (`menu-video2/`). Defaults alone at 3840×2400 fullscreen chose DLSS at half scale:
+e1m4a 111, e1m1a 99 fps (`defaults-*`).
+
+Known gaps:
+- Vertex deforms use the current time for the previous position.
+- Portal and mirror surfaces take the camera's motion.
+- Two identical models standing together can swap their matches.
+- The FSR reactive mask covers weather and unmatched models only.
+
+## Sequence 381 — vulkan-renderer-near-rain — rain falls around the player
+
+**Status.** implemented; GPU smokes `rainbox*/`; owner acceptance open
+
+The owner saw rain missing around the player and appearing on looking up. Rain volumes spread
+their drops (the original 0.035 per square unit) over their whole height, 500–700 units in
+e1m1a's 30 boxes, about 3 drops per cubic metre. Looking down you see only the slab to the
+ground, nearly empty; looking up, the column above stacks into rain. A camera layer
+(`weather.zig nearRain`) adds drops at 1.5e-4 per cubic unit in a window from 192 below to
+320 above the eye, within 384 units, inside the same volume and rain occlusion map, scaled by
+"Rain intensity". `rainbox4/` (inside an e1m1a box at pitch 40, 0, -40) shows rain at all
+three; whole GPU frame 3.2 ms at 1600×1000. Not the upscalers: native built-in, DLSS and FSR
+rendered the same sparse rain (`rain-*`).
+
+Found while testing: `@min` with a comptime-known operand narrows its result type (the drop
+count became 17 bits and `count * 6` overflowed); the count is typed `u32`.
+
+The rain occlusion map and froxel rain took the first 8 weather boxes in registration order
+(`weather.max_view_boxes`); e1m1a has 30. They now take the 8 nearest the eye.
+
+## Sequence 382 — native-server-recycled-brush-slots — recycled slots never publish a stale brush flag
+
+**Status.** implemented; unit test extended; owner retest open
+
+The owner saw floating boxes with mirrored "trigger trigger" text (e1m4b garage), flat orange
+strips on the crematorium bridge fences and a translucent double of a C4 pack. The "trigger"
+texture belongs only to `trigger_*` brush entities (e1m4a/e1m4b BSP: every plain `trigger`
+face lies in a trigger model), which the server never sends. The engine's link sets
+`solid = SOLID_BMODEL` whenever the slot's `r.bmodel` is set (sv_world.c), and that flag
+survives the slot's release. Item spawns, including death drops (`items.spawnOne`), reset the
+entity state but not the shared part, so an item that reused a fired trigger's slot went out as
+a brush. The client then read its model index as inline model `*N` and drew that brush (often
+a trigger volume) instead. Item, cinematic performer, looping sound, multiplayer flag and
+model-less train spawns now zero the recycled projection. Item projections clear the brush
+flag on every update; the reuse test covers it. Not reproduced in a fresh session: it needs
+the slot history of real play.
+
+## Sequence 383 — native-weapon-ambient-idles — first-person weapon idles cycle like Gold
+
+**Status.** implemented; unit test added; e1m1a GPU smoke `idlerun/`; owner acceptance open
+
+The owner saw first-person weapons repeat one animation endlessly. The view looped the first
+idle (`idle[0]`) from the end of every animation. Gold (`weapon_funcs.cpp` "ambient",
+`client.cpp` ambient block, `frameUpdate`) holds the last frame of a finished animation. While
+the player stands still it draws one ambient uniformly from the populated slots, plays it once
+with its `SND_AMBIENT` sound and rests 2–8 s after it ends; selection starts the first rest.
+Only `WFL_LOOPAMBIENT_ANIM` weapons (venomous, trident) loop `amba`, even in motion; venomous
+hisses one of its three ambient sounds on 45% of still cycles. Discus skips ambients without
+ammunition. Profiles now carry `idle_loop`/`idle_needs_ammo`, and their lists match the Gold
+frame tables: kineticore, slugger, cordite and stavros have only `amba`; novabeam has none.
+The bolter, discus, ripgun, silverclaw and venomous ambient sounds were added. A disruptor held
+still for 45 s on e1m1a played 6 ambients mixing `amba` and `ambb`.
+
+## Sequence 384 — native-restore-hidden-event-generators — event generators stay hidden after a load
+
+**Status.** implemented; unit test added; owner save2 (e1m4b) GPU check passed `s4/`
+
+The owner's save2 (e1m4b garage) still showed the floating "trigger" box after 382. Logging
+each inline model the client drew and each server brush slot after restoration showed slot 97,
+`func_event_generator` *34, a 32×32×24 brush made only of "trigger" faces. Gold
+`func_event_generator` always sets `SVF_NOCLIENT`, and the native spawn (`world_actions`)
+publishes it hidden. Restoration (`persistence.projectEntity`) rebuilt visibility from a
+classname list without it, so every brush event generator reappeared after a load (also *4 in
+e1m4b). Spawn and restoration now share `brushes.hiddenClass`. After the fix, save2 loads
+without the box. Entry 382's recycled-slot hardening stands, but it was not the cause of this
+box. The e1m4a crematorium bridge strips remain open: e1m4a has no brush event generators.
+
+## Sequence 385 — native-restore-projection-audit — fresh-start versus restored projection audit
+
+**Status.** probe added; 62 of 63 single-player maps compared; owner saves dumped
+
+To find more problems of entry 384's kind, a probe command `dk3_runtime_projections` (probe
+mode 2) prints what each transported entity sends, keyed by persistent ID. For every
+single-player map the runs compared a dump 5 s after `devmap` with one right after `save` and
+`load`. A scan of all 85 converted BSPs listed every inline model whose faces are all
+invisible-volume textures (trigger, clip, nodraw, hint, skip, origin, areaportal).
+
+- With 384 applied, no brush with only invisible-volume faces is sent after a load (63 maps,
+  owner saves 1–4 and autosave). Before 384: 96 `func_event_generator` brushes.
+- Remaining load differences are benign. Weather volumes lose the `SetBrushModel` brush flag,
+  but their bounds travel in `origin2`/`angles2` and the client consumes them before the
+  inline path. Spawn-only companion triggers carry their spawn point as origin (no contents,
+  never sent). The rest are movers or actors in motion, and transient effects with new IDs.
+- Sent with only "trigger" faces before and after load: `func_monitor` e1m3a *31, e4m4c *46,
+  e4m6a *30 and `func_button` e2m5e *2. Gold sends these too (SOLID_BSP, no
+  `SVF_NOCLIENT`, texinfo flags 0), so they are left as authored. Visual check inconclusive.
+- e1m6b: the 5 s idle `devmap` player is killed by nearby death spheres, so its save is
+  refused (`CannotSaveDeadPlayer`) and the map was not compared.
+- Unrelated lead: e4m2a `monster_shark` at (-2966, 2654, -1696) (spawnflags 1) dies within
+  about 3 s of a fresh start without a recorded weapon hit. Cause open.
+- All projection reuse sites zero the slot before publishing.
+
+## Sequence 386 — native-sidekick-gait-and-follow-settle — sidekicks walk when slow and stop shuffling in front of the player
+
+**Status.** implemented; unit tests added; save1 (e1m4a) GPU run passed `gait4/`
+
+The owner saw Superfly play "run" while moving slowly. Two causes:
+
+1. **Run cycle at any speed.** Companion poses only had `run`, chosen whenever horizontal speed
+   exceeded 1 u/s. Gold selects `walk`/`walka`/`walkb` (or `walka` when carrying Mikiko)
+   outside its running state (AI_SelectWalkingAnimation; 200/400 u/s). Poses now load the
+   walk set. A gait filter on the runtime pilot entry picks idle below 16 u/s (resume above
+   28), walk below the midpoint of the definition's walk and run speeds (100/300 → 200), and
+   run above. A ±20% band and a 250 ms hold stop stop-and-go steering from flipping the cycle.
+2. **Shuffling while the leader stood still.** With the leader backed toward a wall, no follow
+   spot behind it was standable. `followPoint` then fell back to the leader's own position, so
+   the companion homed in front of the leader at 19–31 u/s indefinitely (`in_way` kept it
+   following). `chooseFollow` now also tries spots beside the leader, trail points in the line
+   of fire are skipped, and with nothing usable an in-the-way companion holds its spot.
+
+In save1, after backing toward the wall, Superfly stepped beside the player and stood still
+(speed 0) for 13 s. Before the fix she shuffled for the whole run. Frame sampling at 100 ms
+showed idle → walk → run → walk without flicker. `dk3_runtime_projections` now takes an
+optional class filter and prints `frame`. Mikiko uses the same code; not checked in-game.
+
+## Sequence 387 — native-authored-currents — conveyor belts and water currents push again
+
+**Change.** The owner stood on the e1m4b conveyor belt: its texture scrolled but nothing moved.
+The converter dropped Daikatana's `CONTENTS_CURRENT_*` brush bits as a recorded loss. They affect
+20 maps:
+
+- water currents in e1m1c, e1m2a/b, e2m1a–c, e2m2a–c, e2m4c, e2m5a–e, e3m1a, e3m2a and e4m5a;
+- conveyors in e1m4b, e1m5a/b and the intro.
+
+**Engine and converter.**
+- `surfaceflags.h` admits `CONTENTS_DK3_CURRENT_{0,90,180,270,UP,DOWN}` at the unused native bits
+  0x2, 0x4, 0x400, 0x1000, 0x2000 and 0x4000. The new digest is in `engine/DEVELOPMENT.json`.
+- `dk2q3.py` maps the six bits, and the asset generation was rebuilt
+  (`c78a6623…`, 84 maps converted).
+
+**Player motor (`player_move.zig`).** It follows Gold's PM_AddCurrents for players, bots and
+sidekicks:
+- a conveyor adds a wish of 100 u/s along the ground brush's current;
+- a water current adds 400 u/s, halved when wading on the ground;
+- the combined wish is clamped to the running speed.
+
+The client trace now fills `contents`, so prediction agrees with the server.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Differential movement replay without currents | Passed | `tests/movement.zig` |
+| Idle walker on a conveyor floor, swimmer in a CURRENT_180 volume | Passed | `tests/movement.zig` |
+| Converted e1m4b, e2m2a and e1m5b carry the current bits | Passed | shader lump inspection |
+| e1m4b belt carries the player | Open | owner checking in game |
+| Monsters on conveyors (Gold P_GetCurrent, 60 u/s) | Open | not implemented |
+
+## Sequence 388 — native-difficulty-and-default-scripts — Ronin scaling and working NPCs
+
+**Change.** `domain/actors.zig` `Table.parse` takes Gold's skill multiplier (AIATTRIBUTE_ParseData):
+0.75 on Ronin, 1 on Samurai, 1.25 on Shogun. It scales `health`, `basehealth`,
+`active_distance`, `run_speed`, `walk_speed`, `attack_speed`, `weapon1_speed`, and the base and
+random damage of weapons 1–3. The scaling is a field list on the aidata row reader
+(`tables.zig`); nothing is chosen per class.
+
+`scripts.zig` starts every actor's `default_aiscript` at map start, as Gold's AI_ParseEpairs does.
+In E1, 40 workers have typing, clipboard and kneeling loops. Civilian scripts already pause while
+the actor flees.
+
+Two guard edits made in this session (holding the attack pose between bursts, and pain) went into
+the shared `hostiles.zig` and catalog. They violate class ownership and are rewritten as class
+hooks in sequence 391.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Difficulty scales only the listed fields | Passed | `tables.zig` test |
+| Workers loop their authored work animations | Open | not yet observed in game |
+| Monsters weaker on Ronin | Open | not yet observed in game |
+
+## Sequence 389 — class-ownership-lint — shared modules may only lose class-specific logic
+
+**Change.** The owner rejected class logic placed in shared modules. The rule existed only as prose
+(`src/runtime/README.md`, `docs/runtime-zig.md`) and did not cover actors.
+
+- **The lint.** `dkq3/tools/class_ownership.py` counts, in every shared module:
+  - R1: actor kind comparisons;
+  - R2: switch arms naming actor kinds;
+  - R3: classname literals;
+  - R4: weapon ids;
+  - R5: reads of class policy or state;
+  - R6: a missing role header.
+
+  `tests/test_class_ownership.py`, run by `zig build test`, fails when a count rises above
+  `class_ownership_baseline.json` or falls without the baseline being lowered. The baseline is
+  R1 417, R2 105, R3 539, R4 73, R5 434 and R6 43, across 136 shared modules.
+- **Role headers.** Line 2 of every runtime, actor, weapon and item module now declares
+  `Shared mechanism:` or a class tag such as `actor-class: <policy>` or `weapon-class:`. The tag
+  is checked against existing class modules. The central dispatch modules state the rule in their
+  headers.
+- **Documents.**
+  - AGENTS.md has a "Class ownership" section.
+  - `docs/runtime-zig.md` has a "Class contract" section.
+  - `docs/class-porting.md` sets out the review sheet, animation inventory, class-owned
+    implementation, tests and acceptance steps. The first sheet is
+    `class-porting/mishima_guard.md`.
+  - The stale `src/weapons/types` text in `docs/weapons-zig.md` is corrected.
+- **Run log.** Entries 376–386 are converted to the section format.
+
+**Next stages:**
+- 390 `actor-class-registry`
+- 391 `actor-class-mishima-guard` (pilot)
+- 392 `actor-class-load`
+- 393 `actor-class-publish`
+- 394 `actor-class-step`
+- 395 `actor-class-mechanisms`
+- 396 `actor-class-snapshot`
+- 397 `weapon-class-hooks`
+- 398 `entity-class-registry`
+- 399 `render-tag-registry`
+- 400 `actor-class-state-union`
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Rule self-tests (comment and string exclusion included) | Passed | `test_class_ownership.py` |
+| Role headers name existing classes | Passed | `test_class_ownership.py` |
+| Tree matches the baseline | Passed | `zig build test` |
+
+## Sequence 390 — actor-class-registry — kinds have owners and declared traits
+
+**Change.** `src/actors/kinds.zig` holds `Kind`. Each policy that owns kinds declares
+`pub const classes = [_]traits.Class{ .{ .kind = …, .traits = … } }` (`src/actors/traits.zig`:
+`attack` none/ground/sequence, `pain_clips`, `ambient`, `aquatic`). The new `civilians.zig` owns
+`.civilian` (workers and plain prisoners).
+
+`catalog.traits_of` is built at comptime from the 55 owning policies. An unowned or doubly owned
+kind is a compile error. The predicates `sequenceAttack`, `groundAttack`, `painAnimation`, `ambient`
+and `aquatic` read the traits; their hard-coded kind lists are gone. A catalog test pins every
+kind's result to the reviewed lists, so the change is behaviour-neutral.
+
+The lint now reads kinds from `kinds.zig` and ignores top-level test blocks, since tests may use
+classes as fixtures. Baseline: R1 396, R2 104, R3 425, R4 60, R5 419, R6 43.
+
+Deviation from the plan: the server-side adapter registry arrives with its first adapter in 391,
+instead of as an unused scaffold here.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Trait predicates equal the reviewed lists for all 64 kinds | Passed | `actors/catalog.zig` test |
+| Ownership lint and baseline | Passed | `test_class_ownership.py` |
+
+## Sequence 391 — actor-class-mishima-guard — the guard is a class adapter, not a shared module
+
+**Change.**
+- **New shared mechanisms:**
+  - `server/actor_classes/frame.zig`: `Frame` for the step, `View` for presentation and `Load` for
+    animation loading.
+  - `server/actor_classes/registry.zig`: a comptime kind→adapter table built from each adapter's
+    `policy.classes`. Hook signatures are checked at compile time, and a doubly adapted kind is an
+    error. Dispatch goes through an inline jump table; kinds without an adapter take every default.
+- **The guard adapter.** `server/actor_classes/mishima_guard.zig` replaces `server/hostiles.zig`,
+  a generic name for a guard-only module. Its hooks:
+  - `attacks`, which was a `.mishima_guard` arm in `ensure`;
+  - `loadAnimations`, the reload clip;
+  - `spawn`, the per-guard roll seed, which `spawnOne` previously seeded on every actor;
+  - `think`, the previous controller, now using the shared `actor_pain.reacting` helper;
+  - `playback`, which replaces the guard pose and start-time branches in `publish`.
+- `Definition.guardTiming` moved into the adapter as `timing`.
+
+Behaviour is the same as sequence 388's patches, which now live where they belong: the attack
+pose holds between bursts, and a hit of 35 or more plays `hita` at the policy's 75%.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Registry and guard playback unit tests (492 Zig tests) | Passed | `zig build test` |
+| No `.mishima_guard`, guard pose or guard timing in shared modules | Passed | baseline R1 393, R5 412 (only the flat `Actor.guard` field and snapshot hooks remain, for 396 and 400) |
+| In-game guard (e1m1a fixture, 100 ms frame sampling) | Passed | `guard1/`: attack clips held between shots, 8 rounds, `reload` with its sound, attack again |
+
+## Sequence 392 — actor-class-load — every class loads its own clips, events and aidata
+
+**Change.**
+- **Every kind has an adapter.** `server/actor_classes/` holds one adapter per policy (55), and the
+  registry rejects a kind without one. Monster classnames spawned by other systems (wisp,
+  firefly, the path-corner marker) are `foreign` adapters, so the actor system no longer names
+  them.
+- **Loading is declarative.** `Actors.ensure` has no kind checks. Classes declare `attacks`,
+  `attackLoad` (optional clips such as the vermin leap and the satyr transitions, rows without
+  events, kept frame-0 second strikes, jump strikes, the spider's double-rate bite), `clips`
+  (named slots with fallbacks), `routes`, `requires`, `varied_idle` and `loadAnimations` for the
+  rest (worker cower poses, the companions' weapon poses, the harpy and thunderskeet clip checks,
+  hatch sounds). `Definition.vermin_has_leap` and `satyr_has_transitions` became the generic
+  `attack_present`.
+- **Aidata is class-owned.** `Table.parse` has no kind checks: each policy's `parseTuning` reads
+  its own weapons into its `ClassTuning` (`Definition.class`, read with `definition.tuning(policy)`)
+  and may override shared columns (`weapon.Tuning.primary` for the centurion, knight2 and vermin
+  melee). The rock turret's model-only row is `shared_tuning = false`.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| `ensure` and `Table.parse` have no kind checks | Passed | `server/actors.zig` R1 263 → 0; `domain/actors.zig` R1 32 → 0 |
+| Zig tests | Passed | `zig build test`: 493 passed |
+
+## Sequence 393 — actor-class-publish — what an actor shows comes from its class
+
+**Change.**
+- `Actors.playbackOf` is the shared mode mapping; a class `playback` hook replaces it, with
+  `View.open()` saying whether a death pose, pain reaction, melee strike or script pose takes
+  precedence. `decorate` sets render tags, loop sounds and model visibility. `upright` replaces the
+  companion yaw-only special case.
+- The companions' weapon-pose playback moved out of the actor system into their adapter, with
+  its pose sets in the adapter's `Store`. `actor_audio` follows the shown clip for classes that
+  declare `audio_follows_playback`.
+- `diagnose` appends class fields to the `dk3_runtime_actors` line (frog, skeeter, camera, worker,
+  crox and turret keys keep their names; probes read them by key).
+
+| Scenario | State | Evidence |
+|---|---|---|
+| `publish` has no kind checks | Passed | `server/actors.zig` R2 72 → 0, R5 208 → 1 (the shared stone ailment tag, for 399) |
+
+## Sequence 394 — actor-class-step — the step is a fixed sequence of class hooks
+
+**Change.**
+- `Actors.step` runs the same order as before through hooks: `die`, `mustGib`, `vanish_on_death`,
+  `own_death`, `sense`, the freeze check, `prepare`, `scriptable`/`follows`, `perceive`, `preempt`,
+  `pathMove`, `takeover`, `think`, `move` and `settle`. Each class's branches (the turrets'
+  self-run step, the hanging rotworm, the ghost's own death and fade, fliers on air routes,
+  swimming rats and crox, boss phases, the companions' brain and pilot) live in its adapter.
+  `common.zig` holds the defaults once: path perception, ground and air path steering, ground
+  motion, holding still, the two-way death roll and the attacker-facing test.
+- `ground_combat.zig` is a mechanism taking a class `Spec`: pain (generic handler or roll with a
+  heavy-hit clip), gate, reach, admission rolls, attack choice, transitions, moving clips, leaps
+  and strike events (`Events`, also used by the shark and the Dopefish).
+- Velocity is the working copy only from movement on; think hooks that launch the body write the
+  component, as before.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| `step`, `spawnOne` and `ground_combat` have no kind checks | Passed | `ground_combat.zig` R1 51 → 0, R2 13 → 0, R5 38 → 0 |
+| Old/new probe parity (silent, headless) | Passed | crox, rockgat, opening-actors, bridge, tree-settlement and trigger-bounds pass on both builds; frog-landing, civilians, guard, combat, melee, laser and arena-damage fail identically on both (stale fixtures and missing checkpoints) |
+
+## Sequence 395 — actor-class-mechanisms — damage, use, audio, perception and motion ask the class
+
+**Change.**
+- **Damage.** `admitDamage` (psyclaw spawn protection, column hammer-only, lycanthir Silverclaw,
+  buboid/Kage/Nharre invulnerability), `afterDamage` (Kage refund, ghost double player hits,
+  lycanthir collapse, buboid collapse, turret pain) and `immovable` replace eleven kind branches
+  in `damage.zig` and three in `weapon_damage.zig`.
+- **Use and scripts.** `use` with `use_after_scripts` (turret pop-up, lab monkey, protopod) and
+  `pausesScript` (fleeing civilians, working surgeon, companion in pain).
+- **Audio.** `idleVaries` (crox in water, cowering workers) and `frame_attack_audio`.
+- **Traits.** `bystander`, `party`, `bloodless`, `senses` (the protopod's level, all-round, 512-unit
+  notice) and `remains` (gib material, from `fragments.zig`'s kind list) replace kind lists in
+  perception, environment, impacts, bots, co-op routing and gibbing.
+- **Flight.** `actor_motion.Flee.settles` replaces the worker classname check; the civilians
+  adapter stops the worker when its flight settles. `State.panic` takes the duration; worker panic
+  rules are the civilians adapter's `panic`.
+- **Rockets.** Each launching policy declares `rocket_styles`; `missiles.zig` resolves a variant's
+  style through the catalog and owns its saved-state check.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Mechanism modules have no kind checks | Passed | baseline R1 46 → 0, R2 18 → 7 (remaining hits are non-actor enums sharing a tag name) |
+
+## Sequence 396 — actor-class-snapshot — class state saves itself
+
+**Change.** Each class `State` declares `rebase(delta)`, `validate(check)` and `remapIds(map)`
+using `src/actors/saved_time.zig`. `snapshot_time`, `snapshot` and `snapshot_ids` loop over the
+actor's fields and call whichever exist; `validate` learns whether the actor is of the state's class
+and can ask the kind of a referenced actor (a summoned ghost's owner must be Kage). The gunner
+burst validates itself.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| No per-class lines in the snapshot modules | Passed | `snapshot.zig` R5 79 → 0, R1 7 → 0 |
+| Old-build saves restore under the new build; new saves reload | Passed | `roundtrip.py` on e1m1b (27 actors), e1m2a (65), e1m3b (31): no refusals, actor counts equal |
+| Player saves in the probe harness | Parity only | both builds refuse save1/2/4/autosave (`SaveAssetMismatch`, harness profile) and save3 (`RegionRestorePreparationFailed`) identically; needs an in-game load |
+
+## Sequence 397 — weapon-class-hooks — weapons fire, fly, step and draw through their classes
+
+**Change.**
+- **Combat policies.** `Combat` keeps generic policies only: `projectile` (shared flight and
+  contact), `flown` (spawned shared, flown by the class's server adapter) and `owned` (fired by the
+  class's server adapter). The weapon-named variants are gone.
+- **Server weapon classes** (`server/weapon_classes/`, 14 adapters): `fire`, `fire_sound`,
+  `launch`, `prepareFlight`, `seeded`, `publishProjectile`, `decorateProjectile`, `step` (the
+  fourteen per-weapon calls in `world_systems`), slot `links`/`linked` for resident mirroring,
+  `lingering` (bots), `admitsDamage` (C4 charges) and `command` (detonate).
+- **Client weapon classes** (`client/weapon_classes/`): `drawEffect`, `drawSprite`, `drawMissile`,
+  `decorateMissile`, `viewEnd`.
+- **Descriptions.** `grants` (Slugger → Cordite), `aliases` (`weapon_c4viz`), `timer` (gas hands:
+  `catalog.timed`), `default_muzzle`/`parseValues` (Metamaser cube, flashlight battery),
+  `trainsSword`. The domain's discus and venom probes became generic `traceAhead`/`bodyContact`.
+  `catalog.count` replaces every 28/29.
+- **Motor currents.** The engine supplies the current content bits through
+  `Parameters.currents`; the motor no longer copies surfaceflags.h values.
+- **Lint.** Comparisons with id 0 no longer count as weapon ids, and catalog imports are
+  recognised as references (`@import("actor_catalog").psyclaw`), which revealed 52 hidden R4/R5
+  sites; the baseline records them.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| No weapon ids in shared code | Passed | R4 60 → 1 (a sound flag that reuses the `weapon` field) |
+| Zig tests | Passed | 493 passed |
+
+## Sequence 398 — entity-class-registry — map entities belong to their classes
+
+**Change.**
+- `server/entity_classes/` holds 50 adapters. World controls (chests, lights, triggers, timers,
+  pushes, teleports, secrets, music, consoles, speakers, healers, debris…) declare their control
+  variant and hooks; `world_controls.zig` is dispatch only. Authored brushes and triggers declare
+  `brush` (zeroed angles, contents, hidden, bound), `pass`/`prepare` and `useAuthored`;
+  `brushes.zig`, `world_actions.zig` and `targets.zig` name no class.
+- **Traits** replace classname checks in bots, navigation, interactions, campaign exits and
+  multiplayer objectives.
+- **Persistence and saves.** `persistence` projects and model-checks controls through their
+  classes. Control states rebase themselves; the snapshot decoder calls the classes' saved-state
+  validators through the game root (`saved_classes`), so the domain names no class.
+- **Registries.** The actor catalog keeps only the frozen save order; each policy defines its
+  classnames. Item classnames moved to `domain/item_classes.zig` (a class registry); key rules to
+  the keys class.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Classnames in shared code | Passed | R3 426 → 8 (after excluding `@import` names and bare prefixes) |
+| Probe parity, old vs new | Passed | crox, rockgat, opening-actors, bridge, tree-settlement, trigger-bounds pass; movement and lift fail identically on both builds (timing) |
+| Old-build saves restore | Passed | `roundtrip.py` on e1m1b, e1m2a, e1m3b, e1m4a, e2m1a |
+
+## Sequence 399 — render-tag-registry — the client draws classes through their tags
+
+**Change.** `client/render_classes/` (44 adapters) draws general entities by body tag (`generic1`)
+and overlay tag (`time2`): `drawEffect`, `decorate`, `overlay`, `inline_model`. The client loop
+keeps the shared steps (stone and frost ailments, players, items). The stone tag moved to
+`domain/ailments.zig`.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Presentation counters, old vs new | Passed | e1m1a, e1m3b, e2m1a: identical models, lamps, gibs, chunks |
+| Visual spot check | Passed | e1m1a screenshots match (rain, froginator, HUD) |
+
+## Sequence 400 — actor-class-state — each class owns its actor state slot
+
+**Change.** Instead of a save-breaking union, each policy declares `state_field` (its saved key)
+and its `State`; `domain/actors.zig` assembles the actor state from the shared fields and those
+slots at compile time. The saved layout is unchanged, so no migration is needed. `panic` became a
+free function.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| `domain/actors.zig` names no class | Passed | R5 82 → 34 (remaining: component and attack type registries, a few presentation links) |
+| Old-build saves restore | Passed | `roundtrip.py` on e1m1b, e1m2a, e4m1a |
+| Zig tests | Passed | 493 passed |
+
+## Sequence 401 — actor-attack-saves — attack payloads and emitters validate themselves
+
+**Change.**
+- Each `ActorAttack` payload (fireball, knight zap, rocket, spit, shaft, rock, glob, gunner burst,
+  meteor, wisp, Wyndrax zap and bolt, reaper, summon flare, psyclaw sphere) declares its own
+  `rebase`, `remapIds`, `validSaved` and `saved_components`. `domain/actor_attack.zig` loops over the
+  union; `snapshot`, `snapshot_time` and `snapshot_ids` have no per-attack arms left.
+- Relations to other entities moved to the launching class's adapter hook `validateSavedAttack`
+  (Nharre's held victim, Wyndrax's bolt parents), called through `saved_classes`.
+- Fireflies and the wisp swarm state their own source and carrier classnames.
+- New registry tests check classnames reach their entity classes, brushes and traits.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| `domain/snapshot.zig` names no class | Passed | R5 5 → 0; total R5 32 → 26 (with sequence 402: the monster bullet admission roll moved from the rockgat policy to the shared `weapon` mechanism) |
+| Old-build saves restore | Passed | `roundtrip.py` old → new on e1m2a, e2m1a, e3m6a, e4m6c |
+| Held-victim check | Passed | Adapter unit test in `actor_classes/nharre.zig` |
+
+## Sequence 402 — mishima-guard-goals — cover, side-steps, wander and do-not-move
+
+**Change.**
+- **Shared mechanisms.**
+  - `src/actors/spawnflags.zig` names the authored monster bits.
+  - `src/actors/cover.zig` holds the cover rules and saved state; `server/actor_cover.zig` holds
+    the shoulder visibility and hide-node choice. Hide nodes are flag 0x1000, within 768 units,
+    hidden from the enemy's centre and shoulder lines, and reachable through the navigation
+    service.
+  - `wander.Roam` holds a roam's home, leg and deadline.
+  - `actor_evasion.sidestep` gives a 52-unit step for blocked shots.
+  - The actor fields `cover` and `roam` sit beside `evasion`.
+  - The ground node graph is renamed from `water_routes` to `ground_routes` (`routes.ground`).
+- **Guard.**
+  - The policy gains the `cover` style: one `ataka` per 2 s, using no rounds. The cycle reports
+    `blocked`.
+  - Spawnflag 512 fights from cover and never chases. Spawnflags 1 and 4 walk node to node with
+    `walka`. Spawnflag 128 never moves. A blocked shot side-steps.
+  - The adapter's `move` steers to the cover, look or roam point without overwriting the enemy's
+    remembered position. Its `diagnose` prints the phase, rounds, cover, look, roam and side-step
+    state.
+  - The shared actor dump prints the current route waypoint.
+- **Probes.** The `guard` scenario checks unflagged guard 65's eight rounds and reload, and cover
+  guard 90's shots (no rounds, 2 s apart) and hide-node run. The `navigation` pursuit uses
+  unflagged guard 380: a cover guard no longer chases, and 65's fixture stalls on every build.
+- **Review sheet.** `docs/class-porting/mishima_guard.md` is updated, with the animation
+  inventory.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Policy and shared unit tests | Passed | 499 Zig tests (cover shots, blocked event, shoulders, look period, roam legs, spawnflags) |
+| Cover guard (e1m3b 90) | Passed | `--scenario guard`: rounds stay 8, shots ≥ 2 s apart, runs for hidden node 209,1065,-167. A run blocked by another guard on the stairs is given up |
+| Unflagged guard cycle (e1m3b 65) | Passed | `--scenario guard`: eight rounds, reload, player damaged |
+| Wander (e1m4b 119, flag 1) | Passed | Walks node to node at walk speed; projection frames 354–373 (`walka`), idle 77 (`amba`) |
+| Do-not-move (e1m4a 80, flag 128) | Passed | Holds 1184,-616 while firing eight rounds and reloading |
+| Pursuit (`--scenario navigation`) | Passed | Guard 380 |
+| Probe batch | Passed / unchanged | opening-actors, crox, rockgat, bridge, trigger-bounds and tree-settlement pass. combat, status-weapons, returning-fire, area-weapons and civilians fail identically on the pre-change build (stale fixtures after aidata difficulty scaling) |
+| Old-build saves restore | Passed | `roundtrip.py` old → new on e1m3b, e1m4b; actor-count drift identical old → old |
+| Side-step in game | Implemented, unverified | Not staged: needs a shot blocked at the fire frame |
+| Gold parity | Open | Thief, dwarf, fletcher, rocket gang and rocket MP cover reuse the mechanisms when their sheets are written; random wander (8) is not honoured for monsters (reference behaviour undefined) |
+
+## Sequence 403 — class-registries-and-hooks — shared modules no longer import or name classes
+
+**Change.**
+- **Lint.** `class_ownership.py` gains:
+  - R7: a shared module imports a class-owned module;
+  - R8: a switch arm names a class's union tag (an attack payload, flight or world control in a
+    switch over `.attack`, `.flight` or `.action`, or a class component in a switch over a
+    component id);
+  - R9: a shared module names a class-owned component type.
+
+  R4 now counts any named-weapon read. Registries may name classes but not compare weapon ids.
+  Hook-name strings and weapon-table columns are no longer read as classnames.
+- **Registries split from dispatch.** The class lists of the actor, entity, render and weapon
+  (server and client) registries moved to data-only `classes.zig` modules. Weapon descriptions
+  are listed and named in `weapons/classes.zig`; the catalog dispatches.
+- **Assembled unions.** These are built from class declarations, keeping their saved tags:
+  - attack payloads (`attack_payloads`);
+  - projectile flights (`flight_tag`, `ballistics.stateless`);
+  - world-control states (`controls`, `domain/control_classes.zig`).
+
+  The inline control states (timer, speaker, push, teleport, toggle, music, console, room,
+  secret, remove item) moved into class modules under `domain/controls/`.
+- **Hook registries** (see docs/runtime-zig.md "Class contract"):
+  - world systems: spawn and step phases in fixed order, plus mover arrivals;
+  - projection on restore and transfer;
+  - attack handlers;
+  - session: reset, defaults, camera, player release, view takeover, and the party provider;
+  - target use stages;
+  - prop roles and breakable brushes;
+  - hazards and entity-referencing tags;
+  - client presenters: reset, screen, server command, view offset;
+  - entity hooks: `passage`, `soundtrack` and `current`, and the traits `touch_once`,
+    `player_usable` and `decoration`;
+  - weapon adapters: `holds`, action ownership, effect links and probe printing;
+  - actor attack handlers: `holds`, `damaged`, `actionOwner` and `linkedOwner`.
+- **New shared mechanisms:**
+  - props (decorations, gibs, corpses, debris and explosion sprites share one body);
+  - locks (`keyname`);
+  - held victims;
+  - the psychic warp ailment;
+  - the lightstyle table;
+  - `Random`;
+  - the scorch-mark impact;
+  - `ballistics.aimDirection`;
+  - the generic `bolt` combat policy (formerly `.ion`).
+- **Snapshot code** (a forked agent, reviewed): class components and flight states declare `remapIds`, `rebase`, `validateSaved` (through a component-name `Check`), `holdsSaved`, `describe`, `saved_bodiless` and `saved_unarmed`; `snapshot*.zig` keep only shared arms. `Monitor` moved to `domain/monitor.zig`.
+- **Moved into classes:**
+  - the level exit's travel request;
+  - wall-breakage and explosive brush behaviour;
+  - ring wards (item registry);
+  - the health-pack episode model;
+  - death-bolt looks (`laser_look`);
+  - knight attack frames (an explicit enum);
+  - the earthquake view kick (client module renamed `earthquakes.zig`);
+  - seven weapon tests from the catalog into their descriptions;
+  - probe output (weapon, flight, chest, monitor, tree and hazard state).
+- **Party provider.** Shared code asks `session_classes.party` (membership, eye height, travel capture through `domain/party_class.zig`, pickups, bot summaries) instead of reading the `Companion` component.
+- **Incident.** A new module briefly overwrote `server/world_context.zig`; it was restored from `HEAD` with the owner's permission and its two later edits (role header, `enterMap`) reapplied. New files are now created only with the Write tool.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Zig and Python tests | Passed | 503 Zig tests; Python suite passes except the unrelated `texture_scale` ramp test (fails before and after) |
+| Lint | Passed | Every rule R1–R9 at zero; the baseline holds no shared module |
+| Old-build saves restore | Passed | `roundtrip.py` 402 build → new on e1m2a, e1m3b, e1m4b, e2m1a, e3m6a, e4m6c, no errors; actor counts equal except e1m4b's post-load drift, identical to sequence 402's old → old drift |
+| Probe scenarios | Passed / unchanged | opening-actors, crox, rockgat, bridge, trigger-bounds, tree-settlement, guard, navigation, secret pass. movement, rotation, ballistics, linked-projectiles, meteors, zeus, controllers, save, laser, shockwave and beams fail identically on the 402 build. Lift is flaky on both builds |
+
+## Sequence 404 — civilian-goals — workers hide and cower, prisoners wander when alerted
+
+**Change.**
+- **Review sheet** `docs/class-porting/civilians.md` from the reference workers and prisoners,
+  with the animation inventory and decisions on its undefined paths.
+- **Policy.** `civilians.roleOf` gives each classname a role (worker, runs from pain, cower clips,
+  thin voice, always gibs); witness ranges are the reference alert radii (150 workers, 300
+  prisoners). The classname checks in `workers.zig` are gone.
+- **Adapter.**
+  - Workers see a visible player (not while a work script acts, not with spawnflag 16) and hide:
+    voice, run, cower.
+  - The skinny worker runs from pain; the fat worker is alerted and hides when he sees his
+    attacker, then wanders through his cower (he has no cower clips).
+  - Plain prisoners never fear: hurt or witnessing, they are alerted and wander node to node.
+  - Spawnflags 1/4 make calm civilians wander; 128 keeps them in place (a hidden worker cowers at
+    once).
+- **Shared.** The guard's wander and steering became `common.roam` and `common.moveTo`;
+  `actor_audio` no longer silences bystanders' sight sounds (workers have none, prisoners call
+  out).
+- **Probes.** New scenarios `workers` (e1m3a) and `worker-wander` (e1m2b); new probe command
+  `dk3_runtime_hurt <id> <amount>`.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Policy and unit tests | Passed | 503 Zig tests (roles) |
+| Sight hide and cower (e1m3a 25) | Passed | `--scenario workers`: `flee` with `runa`, then `gambc` 720–727, hide voice |
+| Alerted prisoner (e1m3a 462, 318) | Passed | Same scenario: 462 walks legs with `walka` 260–279, never flees; 318 (spawnflag 128) alerted in place |
+| Node wander (e1m2b 51) | Passed | `--scenario worker-wander`: 57 units with `walka` 983–1001 |
+| Fat worker cycle (e1m2a 9) | Passed | Headless sampling: hide, wander through cower, hide again |
+| Regression batch (installed build) | Passed | workers, worker-wander, opening-actors, crox, rockgat, bridge, trigger-bounds, tree-settlement, guard, navigation, secret |
+| Working worker blind (e1m3a 145) | Passed | Headless sampling: stays calm beside the player |
+| Gold parity | Open | Caged prisoner 462's legs stay blocked by his cell. The probe's attack input does not fire the player's weapon on any build (combat, status-weapons, civilians scenarios) (cause: a spawned player's command clock starts at the server's time, about 800 ms ahead of the slow headless client's command stamps, so early or brief presses are dropped as stale; held after the client catches up, the Glock fires. In play the gap is a frame or two), so pain is staged with `dk3_runtime_hurt`. Shared `actor_perception` traces sight from the actor's origin, which a seated actor's chair can block |
+
+## Sequence 405 — e1-flyers-and-frogs — skeets, froginator, vermin and sludge minion reviewed
+
+**Change.**
+- **Review sheets** from the reference for `froginator`, `skeeter`, `thunderskeet`, `vermin` and
+  `sludge` (docs/class-porting/), each with its animation inventory.
+- **Shared.** `common.flinch(frame, chance)`: pain for classes without a pain controller (a hit
+  from the current enemy, not the acquiring one, flinches with `hita` at the class chance).
+- **Froginator.** Pain (20%, not in mid-leap; it decides afresh afterwards); spawnflags 1/4 and,
+  once it has seen the player, node wander with `walka`; spawnflag 128 attacks from its spot.
+- **Slaughterskeet.** Pain 75%; the dart strikes within reach + 32 (80); spawnflag 128.
+- **Thunderskeet.** A volley fires two globs (frames 28 and 32, the second alternate), not
+  four; pain 10%; spawnflag 128.
+- **Vermin and sludge minion.** The hit that acquires the enemy no longer flinches; pain
+  constants moved into the policies.
+- **Ownership.** Protopod hatching moved out of the skeeter's module (`server/protopods.zig`);
+  the fade overlay tag became a shared helper (`actors/fade.zig`) instead of Kage's; `workers.zig`
+  is part of the civilians class. New lint rule R10: a class module may not read another class's
+  policy.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 504 Zig tests (two-glob volley, dart margin, pain traits) |
+| Lint | Passed | R1–R10 at zero |
+| Frog pain (e1m1b 118) | Passed | Headless: diagnostic hits flinch with `hita` 108–119 after the acquiring hit |
+| Thunderskeet volley | Implemented, unverified in game | The e1m1b thunderskeet is absent at map start |
+| Regression batch | Passed | workers, worker-wander, opening-actors, crox, rockgat, trigger-bounds, tree-settlement, guard, navigation, secret. bridge timed out once on wave 3's aggressive release and passed twice on rerun (timing). guard failed once: it timed cover shots from 0.4 s phase samples; the guard's fire log now carries its time and the scenario reads it (shots exactly 2000 ms apart) |
+| Air wander (fliers) | Implemented, unverified in game | `common.airWander`: spawnflags 1/4, or once the player was seen, legs on the air graph at twice walk speed; the one flagged E1 skeet (e1m2a) is skill-filtered out of the probe run |
+| Gold parity | Open | The frog's wall-rebound sound |
+
+## Sequence 406 — e1-second-batch — twelve more Episode 1 classes reviewed; one shared acquiring rule for pain
+
+**Change.**
+- **Review sheets** from the reference for `surgeon`, `inmater`, `lasergat`, `protopod`,
+  `cambot`, `psyclaw`, `cryotech`, `crox`, `rockgat`, `battleboar`, `deathsphere` and
+  `ragemaster` (docs/class-porting/), each with its animation inventory.
+- **Shared pain rule.** `actor_pain.generic` takes the hurt receipt and the enemy before
+  perception: the hit that makes a player the enemy skips the first roll and keeps the second,
+  as the reference's generic handler does (`actor_pain.acquiring`). The ground-combat single
+  roll applies the same rule. Every caller passes it; vermin and sludge no longer skip both rolls
+  (a 405 error).
+- **Shared hide voice.** The worker family's hide voice moved from the civilians policy to
+  `actors/hide_voice.zig`; the surgeon uses it too.
+- **Surgeon.** A player's hit clears its indifference and it cowers in place (15 s hold; a 75%
+  stall restarts the cower once per pose clip). Afterwards it sees the player and hides like a
+  skinny worker: hide voice, runs off, cowers where it stops. The class keeps its saved key; new
+  fields default.
+- **Inmater.** No flinch on the acquiring hit; engages within its last weapon's reach (laser 800,
+  punch 160).
+- **Lasergat.** Fires at any range; out of sight it keeps turning; one shot per 500 ms on the
+  clip's own clock; hits from its enemy stall it 75% (100 ms pause, 500 ms lock).
+- **Protopod.** Hatches 100 ms after noticing its enemy (the reference's random delay is dead
+  code); the map's `sight` key is its range again.
+- **Cambot.** Spots only within 64 units of height and 1024 horizontally.
+- **Cryotech.** Generic pain (25%, limit 35); engages within its spray's reach (256).
+- **Crox.** Single-roll pain 20% (`common.flinch`, `pain_clips`); a strike frame passed while
+  turned away misses.
+- **Battleboar.** Its 25% roll stops it with `hita`; otherwise a hit outside its pain window plays
+  one of three hit clips while it keeps acting.
+- **Ragemaster.** Generic pain (5%, limit 65). **Deathsphere.** Acquiring rule on its stall.
+- **Diagnostics.** The actor dump shows `script=1` while a script acts; the surgeon dump shows its
+  phase; lasergats log `fired` and `stalled` with times. Probe scenarios `surgeon` and
+  `lasergat`.
+- **Found:** the reference animates monsters and sidekicks at 20 fps (`AI_InitMonster`
+  `FRAMETIME_FPS20`); native plays the converted 10 fps. Sequence 407.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 510 Zig tests (surgeon hide and stall, pod hatch, cambot range, inmater reach, boar hit clips, acquiring rule) |
+| Lint | Passed | R1–R10 at zero; `hide_voice` is a shared helper |
+| Surgeon (e1m3a 471) | Passed | `--scenario surgeon`: ignores the player, hurt cowers (`gambc` 569–575) from 3.8 s, at 13.6 s sees him within 300, runs (`runa` 576–580) and cowers again. Scripted surgeon 476 returns to work blind |
+| Lasergat (e1m4a fixture) | Passed | `--scenario lasergat`: 21 shots 500 ms apart; 5 stalls from diagnostic hits, each next shot 300 ms later |
+| Regression batch | Passed | surgeon, lasergat, workers, worker-wander, opening-actors, crox, rockgat, bridge, trigger-bounds, tree-settlement, guard, navigation, secret. Before the rockgat probe set the ion phase's health, a slow host let the turret, crox and frogs kill the player twice (same damage per hit, slower fire loop); opening-actors once refused a save during region admission and passed on rerun |
+| Inmater, protopod, cambot, psyclaw, cryotech, battleboar, ragemaster, deathsphere changes | Implemented, unverified in game | Unit-tested where policy; no class scenario yet |
+| Gold parity | Open | Monster clips at 20 fps (sequence 407); deathsphere pain-stall task restart; cambot nearest-corner patrol |
+
+## Sequence 407 — actor-clip-rate — monsters and sidekicks animate at the reference's 20 fps
+
+**Change.**
+- **Shared.** The reference's monster and sidekick initialisation sets a 50 ms frame time, so
+  their clips run at 20 fps; the converted model metadata carries the engine default 10.
+  `Actors.ensure` now retimes a class's metadata once (`animation.retime`) to its clip rate, the
+  registry value `clip_fps` (default 20). Every consumer reads that metadata: clip lookup,
+  attack strike and sound frames, idle choices, audio cues, script poses and companion poses.
+- **Lasergat** declares `clip_fps = 10`: its first turn drops its clip to 10 fps for good, and it
+  turns before it fires, so its 500 ms shot cycle is unchanged.
+- **Spider.** Its bite keeps its double rate on top (the reference advances that clip two
+  frames per step), now 40 fps.
+- **Neural models.** Clips with rate 0 in `neural-animations.cfg` are retimed to the
+  authoritative duration, so they follow; fixed-cadence human locomotion keeps its own clock.
+- **Diagnostics.** The projection dump ends with the entity's clip rate (`rate=`); the surgeon
+  scenario asserts 20.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 512 Zig tests (retimed metadata keeps clips, frames and names) |
+| Surgeon (e1m3a 471) | Passed | Projections report `rate=20`; `gambc` now cycles in 400 ms; hide still follows the 10 s reconsider |
+| Lasergat (e1m4a fixture) | Passed | Still 500 ms between shots at `clip_fps = 10` |
+| Regression batch | Passed | surgeon, lasergat, workers, worker-wander, opening-actors, crox, rockgat, bridge, trigger-bounds, tree-settlement, guard, navigation, secret, all on the 20 fps build |
+| Neural models | Passed | `runtime_neural_monsters_probe.py` on the play install: neural inmater (e1m3b) and cryotech (e1m6a) load and render posed |
+| Spider bite rate | Implemented, unverified in game | Kept at twice the clip rate (40 fps) after the reference spec confirmed its frame increment of 2 |
+| Gold parity | Open | One-shot neural clips' authored cadence was not reviewed frame by frame at the new rate |
+
+## Sequence 408 — class-cross-imports — no class module imports another class's code
+
+**Change.**
+- **Lint.** R10 now also counts a class module's `@import` of another class's module (it caught
+  24, from the thief's range test borrowed from the knights to Garroth launching Wyndrax's wisps).
+  A shared mechanism's own payload tags are no longer class tags.
+- **Shared mechanisms with class-declared styles** (the missile pattern): `shafts` (each launcher
+  declares `shaft_styles`: the reference's knife, axe and magic-bolt touches, spin, credited
+  class), `fireballs` (`fireball_styles`: scale, secondary blasts, raised launch, light, burning
+  trail), `venom_spit` (`spit_styles`), `bursts` (`burst_styles`: opening shot, shot limit or stop
+  frame, flash model and muzzle; the shotgun's pellets moved into the gunners). Saved payload
+  tags and variant names are unchanged.
+- **Shared mechanisms split out of classes:** `thrown_range` (melee-or-thrown range test),
+  `meteors` and `summon_effect` (boss payloads), `glow_particle` and `energy_swarm` (firefly and
+  wisp particles; the swarm's collection API that Wyndrax uses; delivery goes to whichever
+  consumer named itself instead of a classname check), `wisp_lightning` (boss wisps and lightning,
+  used by Wyndrax and Garroth), client `flame_particles` and `light_beams`.
+- **Map entities.** Party members open doors through the entity registry's new `openForParty`
+  hook, declared by the door classes; companions no longer test door classnames or mover state.
+  The blood cloud belongs to the fish class.
+- **Centurion** (E2 sheet pending): its pain is one 30% roll that skips the acquiring hit; it
+  engages within its current weapon's reach (punch 90 until it throws a spear, then 700).
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 512 Zig tests (centurion reach, thrown range, hit clips) |
+| Lint | Passed | R1–R10 at zero with the stricter R10; self-tests for import detection |
+| Regression batch | Passed | surgeon, lasergat, workers, worker-wander, opening-actors, crox, rockgat, bridge, trigger-bounds, tree-settlement, guard, navigation, secret |
+| Bosses, fireflies, wisps, companions' doors | Implemented, unverified in game | No scenario covers Wyndrax, Garroth, wisp collection or a companion opening a door in this sequence |
+
+## Sequence 409 — source-layout — the tree separates game-agnostic code, shared mechanisms and classes
+
+**Change.** The owner chose a layered layout with per-class folders, so the path decides ownership:
+- `src/engine` (ioquake3 ABI), `src/core` (game-agnostic: ECS, math, animation, collision,
+  navigation, save streams, tables, sprites, audio parameters, mover kinematics),
+  `src/mechanics` (shared Daikatana mechanisms: `domain`, `server`, `client`, `ui`, `policy`),
+  `src/game` (class registries, the component list), `src/classes/<actors|weapons|items|entities>/<class>/`
+  (a class's policy at its root, its adapters in `server/`, `client/`, `domain/`). Module roots and
+  catalogs moved to the top of `src/`; the C test fixtures to `src/tests`.
+- 783 files moved by a script that rewrote every relative import against the old tree (no
+  unresolved import); the build files, the rules identity (multiplayer version string: client
+  presentation still excluded), docs and AGENTS.md follow the new paths. Saves are unaffected: no
+  saved key, tag or field changed.
+- The engine layer no longer imports game code: save-name and size validation moved to
+  `core/domain/save_stream.zig`, sound paths and mover kinematics to `core/domain`, the player
+  state transport (game code) to `mechanics/player_state.zig`.
+- **Lint.** Ownership comes from the folder (a class module's header must name its folder); R11
+  rejects game code (mechanics, classes, game, catalogs) imported by `core` or `engine`. The
+  architecture test defines pure code by path shape (domain, ECS, policies, catalogs).
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Build and play install | Passed | All products, the play install and its packaged shader |
+| Unit tests | Passed | 512 Zig tests; lint and architecture tests on the new layout |
+| Regression batch | Passed | All 13 scenarios on the moved tree |
+
+## Sequence 410 — e2-review — Episode 2 classes reviewed; firefly completes Episode 1
+
+**Change.**
+- **Review sheets** for `centurion`, `cerberus`, `thief`, `spider` (with the small spider),
+  `skeleton`, `satyr`, `column`, `griffon`, `harpy`, `medusa` and `firefly`.
+- **Cerberus.** Of the Episode 2 weapons only the trident harms it (`admits`).
+- **Thief.** Attacks every think (the reference's one-second scheduling is a dead write).
+- **Spiders.** Pain: one 75% roll, never on the acquiring hit; the small spider no longer runs from
+  the acquiring hit and runs once a flinch ends; the e2m4b swarm wakes when its trigger uses it.
+- **Skeleton, satyr.** Generic pain (20% and 5%, limit 35) instead of one roll.
+- **Column.** Its own pain callback flinches on every admitted hammer hit, the acquiring one too
+  (`skips_acquiring = false` on the ground-combat roll).
+- **Griffon.** Its own 15% flinch shows only until the next think; the shared 10% roll skips the
+  acquiring hit.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 513 Zig tests (cerberus damage admission) |
+| Lint | Passed | R1–R11 at zero |
+| Episode 2 melee (e2m1a fixtures) | Passed | New `--scenario e2-melee`: a spawned spider and skeleton attack the player; diagnostic hits make them flinch with `hita` (spider 83–100, skeleton 244–253) |
+| Regression batch | Passed | All 13 scenarios on this build |
+| Wide-actor routing | Open | A spider spawned at (−460, 1272) on a step below the start chased with zero velocity and no route for 12 s; from (−580, 1272) it reached the player |
+| Other Episode 2 classes | Implemented, unverified in game | Cerberus, thief, centurion, column, satyr, griffon, harpy, medusa |
+
+## Sequence 411 — e3-e4-review — Episodes 3 and 4 reviewed; Gold clip timing, ally alerts and melee hit sounds
+
+**Change.**
+- **Review sheets** for Episode 3 (`dwarf`, `fletcher`, `knights`, `nharre`, `wyndrax`, `wisp`,
+  `garroth`, `lycanthir`, `rotworm`, `rats`, `doombat`, `dragon`, `buboid`) and Episode 4
+  (`chaingang`, `femgang`, `labmonkey`, `rocketgang`, `rocketmp`, `shark`, `gunners`).
+- **Clip event timing (shared).** The reference raises a frame's event as the clip advances past
+  it, and ends a clip (and a pain lock) on reaching its last frame. Strikes and attack sounds are
+  stored as the raising frame (table frame + 1); monster clip ends and pain locks use
+  `Sequence.lastFrameMs`. A leap's strike exists only when its row has a second sound frame, and
+  an empty second-attack cell never strikes (`keep_second_strike` removed from nine classes:
+  the seals' running shot and the Uzi's standing stream fired twice).
+- **Ally alerts (shared, `actor_alert.zig`).** A monster that takes a new enemy, keeps one in
+  sight while chasing (one second in ten) or dies passes it to the monsters within its `speak`
+  radius (0.15 × aidata active distance, or the map key), as the reference's enemy alerts do.
+- **Melee hit sound (shared).** The ground combat plays the clip's second sound when a strike's
+  trace hits anything (the reference's punch and bite).
+- **Navigation origin (shared).** Routes are asked from the player-hull origin over the actor's
+  floor; small actors (rats, spiders) found no start area before and stood still (the "wide-actor
+  routing" item of sequence 410).
+- **Cover (shared).** The guard's between-shots routine moved to `actor_cover.between` /
+  `destination`, and `actor_cover.cycle` adds the reference's cover fight (shoot while the enemy
+  is completely visible, rest 2–8 s, hide between shots): the seals (15 placed with 512) and the
+  rocket MP (4) fight from cover; the guard keeps its own cadence on the shared routine.
+- **Shared evasion:** `startBrief` caps a class's evasive action (lycanthir, femgang: 0.5 s).
+- **Classes.** Wyndrax and Garroth: one 5% pain roll. Knight2: punches running in place (`runa`).
+  Lycanthir: engages within its aidata jump distance (160), jump range from aidata, generic pain
+  15/35, evasion after clips, howl on its real death. Rotworm: no leap (the reference's jump
+  never flies), pain 75%, attacks only within the spit's reach. Rats: plague rat generic pain
+  25/35, pipe rat skips the acquiring hit, no `swima`. Doombat: walk × 2 flight until a blind
+  chase, five-step bob, fireball re-roll every 300 ms, corpse at twice gravity. Dragon: breath
+  1100–1950 ms, an interrupted attack replays. Buboid: 100 ms thinks, 1 s holy retry, no refill
+  at the end of its rise, forgets an enemy it melted away from. Chaingang: 2.2 s start-up,
+  acquiring rule, landing in place on timeout, takeoff/landing survive pain, corpse gravity.
+  Femgang: 0.5 s evasion. Lab monkey: led, unfaced strikes, 70 reach, keeps closing in.
+  Rocketdude: no rest between volleys, stationary ones fire at any range. Rocket MP: opens in
+  its chase attack, no cooldown gate under 120, 1 s chase-evade, stationary ones fire at any
+  range. Shark: generic pain 100/25, idles unless it wanders, wanders at twice walk, gives up an
+  unroutable chase. Gunners: the Uzi's inverted end test, chasing fire after a sidestep.
+  Deathsphere: a pain stall restarts its charge or attack. Dragon: its calls carry 2048 and
+  900–1024. Chaingang: jet blast and smoke, re-chases beyond its gun's reach. Mikiko (monster):
+  engages at her sword's reach (90), 0.75 swing volume, the aura lasts through her death clip,
+  dodges while turning.
+- **Gold quirk decisions:** Nharre's minions do not inherit his deathtarget (Gold opens the exit
+  early); Garroth's meteor keeps its Gold blast (radius = damage); Wyndrax's double-counted wisp
+  is kept.
+- **Probes.** New `--scenario e3-knights` (knight2 runs in place, punching) and
+  `--scenario e3-creatures` (lycanthir and plague rat fight and flinch); the melee fixture probes
+  now test one fixture at a time (a spider in front of the player blocked the skeleton's way).
+  The actor dump prints the hull's ground support and any cover run. New `--scenario seal-cover`
+  (a fixture spawned with spawnflag 512; `dk3_runtime_actor_spawn` takes optional spawnflags).
+  The probes' health requests respect the command's 10000 limit (100000 was refused).
+- `test_texture_scale`: the ramp test's bound was wrong (0.48 lies past the 0.44 stop).
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 517 Zig tests (clip timing, lycanthir jump range, doombat bob, cover rest, alert cadence); the Python suite including the corrected ramp test |
+| Lint | Passed | R1–R11 at zero |
+| Knight2 (e2m1a fixture) | Passed | New `--scenario e3-knights`: beside the player it holds its position, attacks and plays `runa` (211–221) |
+| Episode 3 creatures | Passed | New `--scenario e3-creatures`: lycanthir `hita` 227–233, plague rat `hita` 145–151 after attacking the player (the rat routes since the navigation-origin fix) |
+| Episode 4 fighters | Passed | New `--scenario e4-fighters`: lab monkey (`hita` 296–302), femgang (143–149) and rocketdude (200–206) attack and flinch |
+| Seal cover | Passed | New `--scenario seal-cover`: a spawnflag-512 seal girl fires at 3.2, 12.5 and 18.8 s (rests after each 2.85 s shot) and runs out to look between shots; no hide node qualified near the fixture |
+| Regression batch | Passed | Batch 24: all 17 scenarios (the new four plus e2-melee, surgeon, lasergat, workers, worker-wander, opening-actors, crox, rockgat, bridge, trigger-bounds, guard, navigation, secret) |
+| Play install | Passed | `zig build play-install` |
+| Mikiko (monster) changes | Implemented, unverified in game | Built after batch 24 |
+| Other Episode 3 and 4 classes | Implemented, unverified in game | Bosses, doombat, dragon, buboid, rotworm, pipe rat, dwarf, fletcher, knight1, chaingang, rocket MP, shark, seals' running fire |
+| Fake-death alerts | Open | A lycanthir's or buboid's collapse does not alert (the shared alert fires on real deaths) |
+
+## Sequence 412 — remaining-sheets — Kage, Stavros, armed prisoners, fish, seagull and Mikiko reviewed; shared skill tiers, ring wards and fake-death alerts
+
+**Change.**
+- **Review sheets** for `kage` (with its ghosts), `stavros`, `prisoners` (armed), `fish`,
+  `seagull` and `mikiko` (monster form, its fixes listed in sequence 411). Every actor class but the companions now has a sheet.
+- **Skill tiers (shared, `difficulty.zig`).** One mapping from `g_spSkill` (Ronin 1, Samurai 3,
+  Shogun 5) to the reference's three tiers, used by the aidata scaling, the aim error, Kage,
+  Garroth and the lycanthir. Kage and Garroth had their own mapping that gave Samurai the
+  Shogun tables.
+- **Ring wards (shared).** Damage from an actor's blast or bolt carries the actor's class, so the
+  rings of fire, lightning and the undead ward off Stavros's meteors, Wyndrax's zaps and
+  Nharre's reaper.
+- **Fake-death alerts (shared).** A lethal hit a class turns into a collapse (lycanthir,
+  buboid) calls nearby monsters, as a real death does.
+- **Flight obstructions (shared, `actor_flight.avoid`).** The doombat's four probes moved to the
+  shared flight code (movers recognised by component, not by name); the seagull uses them.
+- **Classes.** Kage: shielded 15 / 7.5 / 4.5 s after each recharge; ghosts leave the attack at
+  their weapon's reach, calls at 0.95 / 512–1024; feedback flares at 900–2048. Stavros: yaw-only
+  facing within reach, an unfaced strike frame is lost. Prisoners: the punch sounds on any trace
+  hit. Fish: no banking, wander timeout distance / walk + 1 s, the dopefish engages on a first
+  sighting within 175 and skips pain on the acquiring hit.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 518 Zig tests (skill tiers; Kage's tables now read at Samurai = 3) |
+| Lint | Passed | R1–R11 at zero |
+| Regression batch | Passed | Batch 25: all 17 scenarios, including the guard (shared cover and alerts), e3-creatures (lycanthir collapse paths), e4-fighters and seal-cover |
+| Play install | Passed | `zig build play-install` |
+| Kage recharge (e2m1a fixture) | Passed | New `--scenario kage`: Kage attacks; brought to 100 health he summons protector ghosts (7 within 6 s) and a 40 hit while recharging leaves him at 265 (25% of his 900 base plus the hit, the reference's refund) |
+| Stavros, fish, seagull, prisoners, Mikiko changes; Kage's smoke escape and shield | Implemented, unverified in game | |
+| Companions sheet | Open | The sidekick review is in progress |
+
+## Sequence 413 — companions-review — sidekick item permission, health, run-from rules; every actor class has a sheet
+
+**Change.**
+- **Review sheet** for `companions` (Superfly, Mikiko, Superfly carrying Mikiko); every actor
+  class now has one.
+- **Item permission.** The reference marks every authored item off-limits to both sidekicks and
+  lets an item's own spawnflags admit Superfly (1) or Mikiko (2); native read a different key
+  and treated the bits as exclusions, so sidekicks took items meant for the player. Ordered
+  pickups still ignore the marks; items that appear later are never sought.
+- **Health.** Superfly starts with his aidata 150 (Mikiko 100, skill-scaled): the reference sets
+  100 and then applies the aidata row. Sequence 283's reading of the order was wrong.
+- **Run-from rules.** A new `sidekicks` trait (`fight`, `avoid`, `refuse_melee`) declared by each
+  monster class: sidekicks always keep away from the column, medusa and cerberus, and refuse the
+  reference's list while holding only a close-quarters weapon (replacing a blanket retreat of
+  melee-only sidekicks from any hunter).
+- A hit ends a stay order; `trigger_sidekick` no longer disables the sidekick (the reference
+  only toggles a HUD panel).
+- **Probes.** New `--scenario kage` and `--scenario e4-gunfighters`.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 518 Zig tests (sidekick item permission by authored spawnflags) |
+| Lint | Passed | R1–R11 at zero |
+| Episode 4 gunfighters (e2m1a fixtures) | Passed | New `--scenario e4-gunfighters`: rocket MP (`hita` 140–146), white prisoner (310–316), seal captain (173–179) and chaingang (360–366) attack and flinch |
+| Kage recharge | Passed | `--scenario kage` (sequence 412) on this build |
+| Regression batch | Passed | Batch 26: all 19 scenarios |
+| Play install | Passed | `zig build play-install` |
+| Sidekick permission, health, run-from rules, stay and trigger changes | Implemented, unverified in game | The earlier sidekick probes ran from owner autosaves; with the corrected permission Superfly fetches only weapons authored for him |
+| Sidekick dialogue, commands, HUD, exit feedback | Open | See the companions sheet |
+
+## Sequence 414 — sidekick-talk — authored sidekick lines from the talk nodes
+
+**Change.**
+- **Talk nodes.** The authored node graph (`authored_nodes.zig`) now keeps the reference's
+  Superfly and Mikiko talk nodes (`NODETYPE_SUPERFLYTALK` / `MIKIKOTALK`, 117 across the
+  episodes) with their line. A sidekick that comes within 128 of one of its nodes (native
+  sidekicks route by area, not through the nodes) with its owner within 800 and in sight says
+  the line once a level (`companion_talk.zig`): full volume within 512 of the owner, fading to a
+  tenth by 1500; Superfly then keeps quiet 1 s, Mikiko 5 s. A said line is not saved.
+- **Sidekick health follows the selected profile**: retail Superfly 150 / Mikiko 100; the 1.3
+  profile's rows give 5000 (Superfly carrying Mikiko 10000), skill-scaled.
+- New `--scenario sidekick-talk`.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Unit tests | Passed | 519 Zig tests (talk volume and pauses) |
+| Lint | Passed | R1–R11 at zero |
+| Sidekick talk (e3m1a) | Passed | New `--scenario sidekick-talk`: with the player on talk node 85, Superfly says `e3m1_sf_01a` once (the converted line loads; the engine notes its sample rate) |
+| Regression batch | Passed | Batch 27: all 20 scenarios |
+| Play install | Passed | `zig build play-install` |
+| Mikiko's lines, the other maps' nodes | Implemented, unverified in game | |
+
+## Sequence 415 — save-port — earlier native saves load on the re-converted maps
+
+**Change.**
+- Saves 1–4 (made on Oct 7–11) were refused: every world in a save records its map's checksum,
+  and this branch's re-conversion changed the maps (a new contents shader for the water
+  currents, so the shader table, the brushes' and brush sides' shader numbers). Save 3 was also
+  refused for an idle pose saved at the old 10 fps clip rate.
+- **`dkq3/tools/save_port.py`.** For each world in a save (resident levels too) it finds the
+  converted map the save was made with among the kept asset generations (the engine's MD4 map
+  checksum), checks that entities, inline models, geometry, planes, nodes, leaves and brush-side
+  planes are unchanged, and re-stamps the checksum; a structural change is refused. It keeps
+  `<save>.pre-port`.
+- **Loader.** A saved idle pose is matched to the class's idle clip by its frames and re-bound to
+  the current clip (a clip-rate change no longer invalidates saves).
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Port check | Passed | All 13 worlds of each save: made with generation e7dbc2565c3c; only shaders and brushes (shader numbers) changed |
+| Loading the ported saves | Passed | `runtime_loading_probe.py` on copies: saves 1–4 load (about 9 s each); the user's saves were then ported in place, byte-identical to the tested copies, with `.pre-port` backups |
+| Unit tests | Passed | 519 Zig tests; `test_save_port` (MD4 vectors, brush-side comparison, record round trip) |
+
+## Sequence 416 — dormant-effects — leaving a map no longer fails on its lingering effects
+
+**Change.**
+- Owner report: after e1m2b's ending cinematic and the transfer to e1m3a, e1m2a and e1m2b went
+  dormant and the game stopped with "Lost entity collision owner".
+- **Cause.** Lingering client effects (impact sprites, marks, particles, lights, effect particles)
+  keep the render and collision world they were born in. When a resident map goes dormant the
+  server cancels its publication and the client releases that world; the next frame an effect
+  still alive from it selected the released world, which `Presentation.select` treats as fatal.
+- **Fix.** `Presentation.trySelect` returns nothing when either world has been released (keeping
+  the current one); the effect loops skip or drop such effects. Entity presentation and the
+  active-world paths stay strict.
+- New `--scenario dormant-effects`: from e1m2a into e1m2b (a resident world), shotcycler marks
+  all round, then the exit to e1m3a until e1m2b goes dormant.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Reproduction (fix disabled) | Failed as reported | `dormant-effects` on a build with `trySelect` acting as `select`: e1m2b dormant, then "ERROR: Lost entity collision owner" and the same server shutdown |
+| `dormant-effects` | Passed | Same path on the fixed build: e1m2b dormant, play continues |
+| Regression subset | Passed | guard, e2-melee, seal-cover, sidekick-talk |
+| Unit tests, lint | Passed | 519 Zig tests; R1–R11 at zero |
+| Older probes `impacts`, `combat`, `travel` | Failing, pre-existing | Last passed in sequences 228–232. They fail identically with ally alerts disabled: worker 10 now hides from the player (sequence 404), a Ripgun target survives, the laser field records no hit. Unrelated to this fix; to be repaired separately |
+
+## Sequence 417 — guard-aim — skeletal monsters bend toward enemies above or below
+
+**Change.**
+- Owner report: guards below the player shoot him without looking up, and they look odd.
+- **Reference.** Monsters turn by yaw alone; the guard's clips aim level, so the classic model
+  never looked up either.
+- **Remaster aim.** The server publishes, in the actor's `angles[0]`, the pitch from its chest
+  to the enemy it is attacking (attack or reload, seen within the last second, ±60°). A new
+  shared client mechanism, `mechanics/client/skeletal_aim.zig`, applies it to rigged humanoid
+  skeletal models. It poses the joints, turns the chest by 70% and the head by 30% of the pitch
+  about the model's left axis, and eases at 120°/s, so attacks ease in and out. Running bodies
+  keep their authored lean. Creature rigs, the dead and corpses are untouched. `cg_skeletalAim 0`
+  restores the authored pose. Presentation only; the simulation does not change.
+- **Finding (open).** The neural guard model's idle, ambient, reload, pain and stance clips are
+  one static pistol pose, and its attacks move about one unit (only walk, run, crouch-walk and
+  death move). `neural_human_motion.py` generates only locomotion for the five human NPCs
+  (guard, cryotech, surgeon and the two workers). Recorded on the guard sheet; a converter fix,
+  not a runtime one.
+- New `--scenario guard-aim`, on e1m3b: a do-not-move guard fixture below the walkway engages the
+  player above it, captured with the aim on and off, with the projected frames sampled.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| `guard-aim` | Implemented, visual check | `zig-out/reports/runtime-zig-417/guard-aim`: the fixture (rise 104) shows `ataka` frames 133–136. With the aim on, its face and helmet tilt up to the player; with it off, the helmet faces down. A chasing guard on the stairs keeps its run lean |
+| Regression subset | Passed | guard, e2-melee, seal-cover, sidekick-talk |
+| Unit tests, lint | Passed | Easing and the rotation about the pivot; Zig and Python suites; R1–R11 at zero |
+| Gameplay acceptance | Open | Needs the owner's view in play |
+
+## Sequence 418 — humanoid-motion — the neural humanoid enemies play their own original clips
+
+**Change.**
+- Owner request: give the guards proper animations, and fix any other human enemies with the same
+  problem.
+- **Audit.** For every Episode 1 neural model, I measured each clip's motion range on the frames
+  it actually plays.
+  - The five human NPCs (guard, cryotech, surgeon, fat and skinny worker) moved only in walk,
+    run, crouch-walk and death. Their other 23–66 clips each were one static pose.
+  - The inmater, ragemaster and sludge minion held one pose through idle, every attack and the
+    attack start/stop clips.
+  - The prisoners, the creatures and the characters move as their sources do.
+- **Retarget.** `neural_human_motion.py` replaces the generated clips. Each model's source vertex
+  animation is retargeted, frame by frame, onto its admitted bind rig through the cinematic
+  fitter's new `seeds` mode:
+  - joint landmarks per model on the source reference frame (`GOLD_LANDMARKS`);
+  - capsule supports, with limb priority over the torso;
+  - Tukey-robust rigid fits;
+  - shoulders and hips carried by the torso parts they join;
+  - limbs carrying the source's direction and joint bend relative to rest;
+  - a grip calibration for the cryotech's rifle;
+  - no prop attachment and no rescaling.
+
+  Source frame numbers play unchanged: the eight models' lines leave `neural-animations.cfg`.
+  Mesh, weights, atlases and size are byte-identical to the masters. Mean fit residuals are
+  0.55–2.43 units.
+- **Pipeline.** `neural_monsters.py package` and `compose` apply the retarget, and the new
+  `refresh` command rewrites an installed episode package. The installed package was refreshed
+  from the pre-retarget package, which is kept as `dk3-neural-episode.before-gold-motion.pk3`.
+- New `--scenario human-poses`, on e1m3b: a do-not-move fixture of each of the eight classes,
+  framed level after pacifying, with its projected frames sampled.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Offline paired renders | Implemented, visual check | `zig-out/reports/runtime-zig-418/offline` (source / previous / retargeted). Matches: guard aim, reload and pain; cryotech rifle carry; surgeon hands on hips; workers' cower and clipboard; deaths, walks, runs; the inmater, ragemaster and sludge minion attacks. Longer neural legs deepen the workers' squats |
+| `human-poses` | Implemented, visual check | `zig-out/reports/runtime-zig-418/human-poses`: all eight render on their own clips (sampled frames: guard 77/137–139, cryotech 63–75, surgeon 55–67, skinny worker 720–726, fat worker 51–67, inmater 32–53, ragemaster 161–173, sludge minion 116–132) |
+| Regression subset | Passed | guard, workers, surgeon, e2-melee, seal-cover, sidekick-talk, guard-aim |
+| Unit tests, lint | Passed | Robust fit, limb priority, bend carrying, landmark completeness; 341 Python tests, the Zig suite; R1–R11 at zero |
+| Gameplay acceptance | Open | Needs the owner's view in play |
+
+## Sequence 419 — joint-limits-and-physical-deaths — bounded retargets, collapsing ragdolls, fewer gibs
+
+**Change.**
+- Owner requests:
+  - bound the retargeted skeletons anatomically;
+  - improve the physics-driven deaths;
+  - humans burst into gibs too often.
+- **Retarget bounds** (`neural_assets`, seeded mode):
+  - anatomical swing and twist ranges per joint, and elbows folding at most 150°
+    (`limit_joints`);
+  - the root tilting at most 25° about its rest point (`upright_root`);
+  - the spine and neck taking half the bend between their neighbours (`spread_bends`);
+  - the pelvis following its hip ring plus the hip joints, with limb capsules having
+    priority over it.
+
+  `neural_human_motion.retarget` checks every frame of every model with
+  `joint_violations` and refuses to publish on any violation. The installed package
+  was refreshed. The pelvis change fixed two real faults:
+  - the guard's alternative attacks (pelvis tilt 64–74° → 3–4°, now upright as in the source);
+  - the fat worker's bows, which had seated the body and stretched the mesh into a sack.
+- **Physical deaths** (`core/domain/ragdoll.zig`, `mechanics/client/ragdolls.zig`):
+  - knees buckle and hips drop at death, so the body crumples rather than toppling as a plank;
+  - the trunk is two girdles joined by a spine cone (60° forward, 25° back, 30° to each
+    side), a 35° twist limit and soft links for passive stiffness;
+  - the whole trunk takes the death kick;
+  - the rendered spine bone takes half the girdles' turn, and the neck turns toward the
+    head point.
+- **Gibs.**
+  - Gold's rule is unchanged in form (`AI_GibLimit`): the killing hit at 30% of base
+    health, or health below -50%. Every ion-blaster kill of a guard met it.
+  - The fractions are now the cvars `gib_damage` and `gib_overkill`. The remaster default
+    is 1 and 1; 0.3 and 0.5 restore the reference.
+  - A thousandth-of-a-point slack absorbs f32 storage.
+- New `--scenario ragdoll-deaths`, on e1m3b: guard and skinny-worker fixtures, wounded and
+  then killed by a 30-point hit, with captures and sampled ragdoll pelvis heights, server
+  states and frames.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Retarget ranges | Passed | `joint_violations` empty on all eight models; the refresh admits them (fit residuals 0.60–2.60) |
+| Offline renders | Implemented, visual check | `zig-out/reports/runtime-zig-419/offline`: the guard's alternative attacks are upright; the fat worker's bows curve along the back |
+| `ragdoll-deaths` | Implemented, partly verified | Neither body bursts. Skinny worker: the ragdoll starts by 0.3 s, the pelvis drops 32 units by 0.7 s, and the body slumps against the wall. Guard: the first death reached the client 0.82 s late because the probe's dumps stall the client (frames 170–900 ms apart); not reproduced in play |
+| Solver tests | Passed | 9 ragdoll tests, including a new crumple test (the hips sink and both knees bend within 0.5 s) and spine bend and twist ranges over 8 pushes; the test pose's pelvis now stands 3 units above the hips, as in the rigs |
+| Regression | Passed | guard, workers, surgeon, e2-melee, seal-cover, sidekick-talk, human-poses; `runtime_physics_repair_probe --scenario network` |
+| Unit tests, lint | Passed | 344 Python tests, the Zig suite; R1–R11 at zero |
+| Gameplay acceptance | Open | Needs the owner's view in play |
+
+## Sequence 420 — humanoid-rerig-and-skeleton-fit — re-rigged human bodies, whole-skeleton source motion
+
+**Change.**
+- Owner report: the retargeted humanoids "look like a mess", with fat-worker sacks and a guard
+  in a wide lunge; the strategy was not working.
+- **Diagnosis** with plain test poses on the admitted masters, no source motion involved:
+  - The human rigs placed the spine and shoulders on the back surface: the fat worker's
+    shoulders sat 8 units behind its spine, the guard's spine ran along its back.
+  - Weights were straight-line distance to a bone, so the back belonged to the upper arms.
+  - Raising an arm or bending the trunk alone tore the back into the "sack".
+  - The per-bone capsule fits of seq 418/419, and their clamps, could not fix the rig, and
+    were themselves fragile where parts touch.
+- **Re-rig** (new `neural_humanoid_rig.py`), for the guard, both workers, surgeon and cryotech:
+  - joints on the medial axis from cross-sections of the voxelized body;
+  - bone-heat weights (Baran and Popovic): diffusion on the surface, each vertex heated by its
+    nearest bone visible through the interior;
+  - detached rigid parts keep their previous bone;
+  - mesh, UVs, normals, atlas, names and hardpoints unchanged.
+
+  The mechanical creatures keep their admitted rigid-panel rigs.
+- **Source skeleton** (new `neural_gold_motion.py`): each original vertex animation becomes a
+  fixed-length skeleton per frame, solved jointly as linear-blend skinning:
+  - robust Cauchy loss with graduated non-convexity;
+  - joint markers from each bone's own body;
+  - temporal smoothness and twist limits;
+  - weights re-chosen from whole-performance motion, then a second solve.
+
+  Per-model options:
+  - `props`: the cryotech's rifle surface is its own held bone;
+  - `hidden`: the fat worker's pelvis and hips own no surface. Its pelvis keeps its offset from
+    the tracked knees and its reference orientation, and in transfer takes half of the
+    trunk's tilt about the hip centre, so bows fold at the hips over planted legs.
+- **Transfer** with anatomical bounds (`bound`):
+  - parent first, each child keeps its world rotation;
+  - twist clamping moves no joint;
+  - knees and elbows are hinges: -5° to 150° minus the bind's own bend, at most 15–20° off
+    the hinge;
+  - root travel scales with leg length, and the lowest foot keeps the source's clearance.
+- **Cleanup.** The seq 418/419 seeded path in `neural_assets.cinematic` (capsule supports,
+  Tukey fits, root clamp, spine spread, limb targets, post-hoc limiter) is removed. The
+  `joint_violations` admission check stays.
+- **Environment finding.** The system `python3` pairs NumPy 1.26.4 with Python 3.14.
+  - Temporary elision silently overwrites large local arrays in place: `u*v` clobbers `u`, and
+    trimesh's remeshing returns wrong meshes.
+  - The new modules avoid the pattern at the affected spots, and their outputs are identical
+    under that interpreter and the neural-tools Python 3.12 / NumPy 2.5.
+  - Other system-Python tooling is not audited.
+
+- **Validation corrections.** The owner found the first sequence-420 package unvalidated: the
+  bowing fat worker's legs leaned back and its feet were unplanted. Full-size source/new sheets
+  of every model then showed six more faults, all fixed:
+  - Shoulders were placed 60–120 units outside the body: an arm section re-centred into the
+    trunk.
+  - Foot bones were steep and toes sat on the ankle (the floor read from the voxel grid's
+    margin), so feet stood on their toes.
+  - The cryotech's legs were off-centre (the trunk midline assumed y = 0).
+  - Hips were hidden in the belly and dropped with it (the fat worker's legs leaned back).
+  - Thigh twist was clamped at 45° while Gold's kneels and deaths turn the hip out further, so
+    knees bent sideways.
+  - A knock-kneed standing stance read as a turned hip (the thighs twisted 50°).
+
+  New guards:
+  - the rig `check` (joints inside the body, mirrored, foot bone forward);
+  - `hinge_violations` in admission, using the same decomposition as the clamp;
+  - a hinge penalty in the source solve.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Re-rigged binds | Passed, visual check | `zig-out/reports/runtime-zig-420/validation/rerig-binds-*.png`: joints on the medial axis, shoulders in the deltoids, feet along the soles; `check` passes all five |
+| Source/new sheets | Passed, visual check | `validation/v-*.png`, front and side at full size, 4–8 frames per model across idles, attacks, reloads, pain, cower, bows, sits, kneels, deaths, walks, runs. Remaining differences: proportions (the robots' sculpted knee armour, the fat worker's longer thighs), the cryotech's left hand off its shorter rifle, the surgeon's clipboard |
+| Admission checks | Passed | the refresh admits all eight models with `joint_violations` and `hinge_violations` empty on every frame; packaged IQMs byte-identical to the validated ones |
+| Package | Installed | `dk3-neural-episode.pk3` rebuilt from `before-gold-motion`; seq 419 package kept as `dk3-neural-episode.seq419.pk3`; `zig build play-install` |
+| In-game `human-poses`, `ragdoll-deaths` | Passed (final install) | models load and pose; no gibs; skinny-worker ragdoll from 0.3 s; the guard's ragdoll sample again started late (2.0 s) under probe load |
+| Unit tests | Passed | 342 Python tests and the Zig suite; `test_neural_rig.py` adds heat falloff, section centroid, bow recovery and a sideways knee turned into its hinge without moving the foot |
+| Gameplay acceptance | Open | Needs the owner's view in play |
+
+**Second owner review (sequence 420, continued).** The owner's check of the cryotech sheet
+found more faults: the death hunch (440) leaned back, the kneels (230 and 300) stretched the
+back leg, and the hit and run frames leaned too little. A fitted-skeleton overlay on the
+source showed the source fit itself was wrong:
+- The cryotech's "pelvis" region was mostly hose and tank (its centre sat 10 units behind
+  the body).
+- The source skeleton had no waist, so a waist bend dragged the hips 15 units forward.
+- The root started from the body's centroid.
+
+Fixes:
+- vertices steer the skeleton by mesh piece and rigidity (`rigid_members`, `claim`);
+- props extend over their rigid pieces;
+- a waist joint;
+- a root started from the pelvis's own vertices;
+- re-weighting only among neighbouring bones.
+
+Five further experiments were measured and reverted because sheets or metrics got worse:
+- joint slack;
+- an own-vertex orientation term;
+- vertex-ring guides;
+- section-refined landmarks (they pulled arms into the torso);
+- far-accessory exclusion.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Source/new sheets, all eight | Passed with noted gaps, visual check | `zig-out/reports/runtime-zig-420/validation/v-*.png`. The cryotech death hunch, hit, run and kneels now follow the source; the kneeling back leg is a lunge-kneel in the source vertices themselves (thigh back and down). Gaps: the fat worker's squats (239, 600) are shallower; the inmater crouches more at 60 and 150 |
+| Admission, package | Passed, installed | `joint_violations` and `hinge_violations` empty on every frame; packaged IQMs byte-identical to the validated ones |
+| Probes, tests | Passed | `human-poses`, `ragdoll-deaths`; 342 Python tests and the Zig suite |
+| Gameplay acceptance | Open | Needs the owner's view in play |
+
+## Sequence 421 — authored-enemy-actions — sequences 418–420 rejected; authored action clips on the earlier motion
+
+**Change.**
+- **Owner rejection.** The owner tried the sequence 420 package in play (the twisted worker, the cryotech's arm and its
+  death) and judged the earlier animations much better. The source-fitted clips of sequences 418–420 are withdrawn.
+  The rejected tools (`neural_gold_motion.py`, `neural_humanoid_rig.py` and the retargeting `neural_human_motion.py`) are
+  removed from the tree and kept in `zig-out/reports/runtime-zig-420/rejected-tools/`. The sequence 420 package is kept
+  as `dk3-neural-episode.seq420.pk3`.
+- **Earlier approach recovered.** The liked motion was authored from scratch, not fitted. The 5 October human-motion tool
+  (`human_clips`) was rebuilt from the Codex session's patches. Its SHA-256 `8869bbee…` equals the hash the sequence 417
+  package records, and it reproduces that package's five human NPC models byte for byte from their masters. It is
+  restored as `neural_human_motion.py` and called by `neural_monsters.py package` again.
+- **Authored actions.** New `neural_actions.py` authors the sequences the procedural kinds rendered as a static stance:
+  attacks, pain, reload, cowers, work loops, seated poses and strikes (29 sequences on eight models). Each action is a
+  few key poses of semantic controls, solved by the shared fixed-length IK. Gold supplied only each sequence's meaning,
+  length and event frames. Authored sequences leave the shared-clip mapping (19 lines). Every other frame is unchanged
+  apart from requantization (at most 1.2×10⁻⁵ units). See docs/neural-monsters.md "Humanoid enemy motion (sequence 421)".
+- `joint_violations` checks twist on every joint again. The inmater's packaged hands, which predate the shared wrist
+  solver, are exempt only where an action keeps them.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Tool recovery | Passed | `human_clips` output equals the sequence 417 package's guard, cryotech, surgeon and worker IQMs byte for byte |
+| Gold/new sheets, all eight | Implemented, visual check | `zig-out/reports/runtime-zig-421/review/<model>.png`. Reworked after review: the skinny worker's floor work now on all fours, the fat worker's stool sitting and bent-over cower, and a reload that starts and ends aimed. The ragemaster's punches and the cryotech's flinch are milder than Gold's |
+| Admission, package | Passed, installed | No joint-range violations; mesh, bind, weights and atlases unchanged; installed package equals `dk3-neural-episode.actions.pk3` |
+| `human-poses`, `ragdoll-deaths` | Passed | `zig-out/reports/runtime-zig-421/`: the guard was sampled on its authored attacks (frames 132–142) and the inmater on `ataka`; the skinny worker was out of frame in this capture |
+| Tests | Passed | `zig build test`: 525 Zig tests, 344 Python tests (new `test_neural_actions.py`; the restored `human_clips` test) |
+| Gameplay acceptance | Open | Needs the owner's view in play |
+
+## Sequence 422 — sidekick-hud — sidekick flaps, the command window and Gold's sidekick orders
+
+**Change.**
+- **Status.** The owner asked whether the sidekick HUD worked: it had never been implemented. The party's new `status`
+  session hook packs each member's presence, view (PVS), health %, armour % of the worn armour's capacity
+  (`item_classes.armorCapacity`) and ammunition gauge into player-state stats 8–11 (unused by the engine).
+- **Flaps and window.** `companions/client/companion_hud.zig` draws Mikiko's flap bottom left and Superfly's bottom right
+  (Gold art, fades, health and armour bars, gauge) and the command window (portrait, GET/COME/STAY/ATTACK/BACK OFF,
+  selection). New client registry hooks: `console_commands`, `console`, `hud`, `holdsInventoryColumn` (the weapon list
+  yields its column while the window is open).
+- **Orders.** New `come` (a spot 64 units in front of the owner, then follow) and `backoff` (follow, start no fight)
+  orders; attack with nothing aimed at makes the sidekick willing to fight again; voice acknowledgements in the owner's
+  PVS (`cmd_mi_*`, `cmd_su_*`). `server.zig` dispatches party commands through `party.handles`/`party.command` instead
+  of a `sidekick` literal. The default binds' `companion follow|wait|attack|pickup` never reached any handler; they now
+  work. New default keys Z/X/V (`sidekick_next`, `sidekick_apply`, `sidekick_swap`) and seven Controls menu entries.
+- **Default binds not yet shipped.** `basegame.py` carries the new binds, but the installed asset generation's
+  `dk3-base.pk3` is hash-pinned and keeps the old `default.cfg` until the next asset regeneration. (An in-place
+  replacement was tried and reverted: the current generation's packages are symlinks into `e7dbc256…`.)
+
+| Scenario | State | Evidence |
+|---|---|---|
+| `sidekick-hud` (e3m1a) | Passed, visual check | `zig-out/reports/runtime-zig-422/sidekick-hud`: both flaps; Mikiko's hurt face and shorter health bar after a 2000-point hit; window open, STAY selected and given to Mikiko (`why=stay`); swap to Superfly, COME moved him about 80 units; `companion follow` ordered both |
+| `sidekick-talk` | Passed | Superfly's authored line still plays |
+| Tests, lint | Passed | `zig build test`: Zig suite, 344 Python tests, ownership lint |
+| Voice acknowledgements, ammunition gauge in play | Implemented, unverified | Not heard or seen in a probe; the probe's sidekicks were unarmed |
+| Gameplay acceptance | Open | Needs the owner's view in play |
+
+## Sequence 423 — guard-pistol-save-previews-difficulty — the guard's pistol, save pictures and times, difficulty in play
+
+**Change.**
+- **Guard pistol.** The neural Mishima guard was sculpted without his gun. The guard adapter's `decorate` tags the living
+  guard (render tag 10045) and `mishima_guard/client/render_mishima_guard.zig` draws a pistol model
+  (`models/e4/a_glock.dkm`) at the right hand's `tag_weapon`, barrel forward and handle down (measured axes and grip in
+  the class policy). The original model, which carries its own gun, is left alone.
+- **Save pictures and times.** Every save's `<slot>.info` sidecar now also records the wall-clock time (raw and local
+  "YYYY-MM-DD HH:MM"), the difficulty and a picture name. After a save the server sends `dk3_saveshot <name> <clean|hud>`
+  and the client (`save_preview.zig`) writes `screenshots/<name>.jpg`; a save the player asked for leaves the HUD out
+  (three frames before the screenshot command and four after), an autosave keeps it so play never flickers. Picture
+  names alternate a/b per slot so a cached image is never shown for a newer save. The Load and Save pages show each
+  row's date and the selected save's picture, date, map, difficulty and level; loading lists the newest first.
+- **Difficulty in play.** Extra Options has a Difficulty choice (Ronin, Samurai, Shogun = `g_spSkill` 1, 3, 5). The
+  server follows the cvar each frame (`actors.followDifficulty`, also in resident worlds): the aidata difficulty columns
+  already parsed (health, speeds, sight and call range, first weapon damage) and every living actor's health scale by
+  the new/old factor, keeping each actor's share of health. Values read at run time follow at once; which entities a
+  skill admitted at spawn stays.
+- New UI console command `dk3_menu_page <n>` (probes and diagnostics); the player probe gains `--renderer vulkan`,
+  `DK3_PROBE_KEEP_HOME` and the `save-preview` and `difficulty` scenarios.
+
+| Scenario | State | Evidence |
+|---|---|---|
+| Guard pistol | Implemented, offline visual check | Offline render of the packaged guard with the pistol at `tag_weapon` through idle, aims, kneel, pain, reload and walk; in-game framing of the guard was not captured this run |
+| `save-preview` (e1m3b, OpenGL 1) | Passed with a limit | `zig-out/reports/runtime-zig-423/save-preview`: both saves write info and pictures; the Load page lists newest first with picture, date, map, difficulty, level. The first save's picture is HUD-free; the second still shows the HUD because OpenGL renderers read the screenshot back before the frame draws (an older buffer under the headless software driver) |
+| Vulkan save pictures | Implemented, unverified | Vulkan captures the finished frame synchronously; software Vulkan crashes under the headless guard here even without these changes (`baseline-vulkan`) |
+| `difficulty` (e1m3b) | Passed | A 50-health Samurai guard becomes 63 on Shogun and 38 on Ronin; Options shows the Difficulty choice |
+| Tests, lint | Passed | `zig build test`: Zig suite (Table.rescale, save info parsing), 348 Python tests, ownership lint |
+| Gameplay acceptance | Open | Needs the owner's view in play |

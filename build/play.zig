@@ -4,14 +4,38 @@ const assets = @import("assets.zig");
 
 pub fn declare(b: *std.Build, packages: assets.Assets, guard: *std.Build.Step.Compile) void {
     const install = b.step("play-install", "Prepare and verify an independent dk3 development installation");
+    if (std.mem.eql(u8, b.install_path, b.pathFromRoot("zig-out")) or std.mem.eql(u8, b.install_path, b.pathFromRoot("zig-out/online"))) {
+        const failure = &b.addFail("Use --prefix zig-out/native-dev for native development; preserved installations must not be overwritten").step;
+        install.dependOn(failure);
+        b.step("play", "Launch the independent dk3 development game with supplied assets").dependOn(failure);
+        return;
+    }
     const prepare = b.addSystemCommand(&.{ packages.python, "-B" });
     prepare.addFileArg(b.path("dkq3/tools/play.py"));
     prepare.addArgs(&.{ "install", "--prefix", b.install_path, "--assets", packages.directory });
+    prepare.addArgs(&.{ "--hd-textures-fallback", b.pathFromRoot("zig-out/hd-textures/dkq3-textures_hd.pk3") });
     if (b.option([]const u8, "hd-textures", "Optional locally produced HD texture PK3")) |path| {
         prepare.addArgs(&.{ "--hd-textures", path });
     }
+    prepare.addArgs(&.{ "--materials-fallback", b.pathFromRoot("zig-out/materials/dk3-materials.pk3") });
+    if (b.option([]const u8, "materials", "Optional materialgen.py remaster material PK3")) |path| {
+        prepare.addArgs(&.{ "--materials", path });
+    }
+    prepare.addArgs(&.{ "--neural-assets-fallback", b.pathFromRoot("zig-out/neural-assets/dk3-neural.pk3") });
+    if (b.option([]const u8, "neural-assets", "Optional locally converted skeletal character PK3")) |path| {
+        prepare.addArgs(&.{ "--neural-assets", path });
+    }
+    prepare.addArgs(&.{ "--hd-weapons-fallback", b.pathFromRoot("zig-out/hd-weapons/dk3-hd-weapons.pk3") });
+    if (b.option([]const u8, "hd-weapons", "Accepted local HD weapon PK3")) |path| {
+        prepare.addArgs(&.{ "--hd-weapons", path });
+    }
+    if (b.option([]const u8, "hd-weapons-preview", "Explicit isolated unverified HD weapon review PK3")) |path| {
+        prepare.addArgs(&.{ "--hd-weapons-preview", path });
+    }
     prepare.has_side_effects = true;
-    prepare.step.dependOn(packages.step);
+    // Supplying source data explicitly requests conversion. Routine play uses
+    // the last completed asset generation and only rebuilds changed code.
+    if (packages.convert) prepare.step.dependOn(packages.step);
     prepare.step.dependOn(b.getInstallStep());
     install.dependOn(&prepare.step);
     const play = b.step("play", "Launch the independent dk3 development game with supplied assets");
@@ -19,8 +43,9 @@ pub fn declare(b: *std.Build, packages: assets.Assets, guard: *std.Build.Step.Co
     launch.addFileArg(b.path("dkq3/tools/play.py"));
     launch.addArgs(&.{ "launch", "--prefix", b.install_path, "--dkguard" });
     launch.addArtifactArg(guard);
+    if (b.option(bool, "headless", "Launch play with software rendering on a virtual display") orelse false) launch.addArg("--headless");
+    launch.addArgs(&.{ "--", "+set", "dk3_runtime_probe", "2" });
     if (b.args) |args| {
-        launch.addArg("--");
         launch.addArgs(args);
     }
     launch.has_side_effects = true;

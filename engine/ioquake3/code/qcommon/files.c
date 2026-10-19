@@ -32,6 +32,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "q_shared.h"
 #include "qcommon.h"
 #include "unzip.h"
+#include <pthread.h>
 
 /*
 =============================================================================
@@ -259,7 +260,7 @@ static	cvar_t		*fs_basepath;
 static	cvar_t		*fs_basegame;
 static	cvar_t		*fs_gamedirvar;
 static	searchpath_t	*fs_searchpaths;
-static	int			fs_readCount;			// total bytes read
+static	uint64_t	fs_readCount;			// total bytes read; HD media exceeds 2 GiB during ordinary reloads
 static	int			fs_loadCount;			// total files read
 static	int			fs_loadStack;			// total files in memory
 static	int			fs_packFiles = 0;		// total number of files in packs
@@ -289,6 +290,8 @@ typedef struct {
 } fileHandleData_t;
 
 static fileHandleData_t	fsh[MAX_FILE_HANDLES];
+
+#include "fs_background.inc"
 
 // TTimo - https://zerowing.idsoftware.com/bugzilla/show_bug.cgi?id=540
 // wether we did a reorder on the current search path when joining the server
@@ -1505,7 +1508,9 @@ int FS_Read( void *buffer, int len, fileHandle_t f ) {
 	}
 
 	buf = (byte *)buffer;
-	fs_readCount += len;
+	if ( len > 0 ) {
+		fs_readCount += (uint64_t)len;
+	}
 
 	if (fsh[f].zipFile == qfalse) {
 		remaining = len;

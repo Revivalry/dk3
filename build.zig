@@ -4,7 +4,6 @@ const std = @import("std");
 const toolchain = @import("build/toolchain.zig");
 const manifest = @import("build.zig.zon");
 const engine = @import("build/ioq3.zig");
-const qvm = @import("build/qvm.zig");
 const assets = @import("build/assets.zig");
 const game = @import("build/game.zig");
 const play = @import("build/play.zig");
@@ -12,20 +11,24 @@ const bspc = @import("build/bspc.zig");
 
 pub fn build(b: *std.Build) void {
     toolchain.enforce(manifest.minimum_zig_version, @import("builtin").zig_version);
+    // The historical default contains the preserved playable installation.
+    // Ordinary native builds, including `zig build play`, use their own prefix.
+    if (std.mem.eql(u8, b.install_path, b.pathFromRoot("zig-out")))
+        b.resolveInstallPrefix(b.pathFromRoot("zig-out/native-dev"), .{});
     const target = b.standardTargetOptions(.{ .default_target = .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu } });
     const optimize = b.option(std.builtin.OptimizeMode, "optimize", "Optimization mode") orelse .ReleaseSafe;
     @import("build/online.zig").declare(b, target, optimize);
-    @import("build/compatibility.zig").declare(b);
+    _ = b.option(enum { zig }, "game-runtime", "Native Zig runtime (the only supported runtime)");
+    const rules_identity = @import("build/compatibility.zig").declare(b);
     const guard = b.addExecutable(.{ .name = "dkguard", .root_module = b.createModule(.{
         .root_source_file = b.path("src/dkguard/main.zig"),
         .target = target,
         .optimize = optimize,
     }) });
     b.installArtifact(guard);
-    b.installFile("src/cgame/dk3-projectile-weather.shader", "share/dk3/scripts/dk3-projectile-weather.shader");
-    if (engine.declare(b, target, optimize)) |products| game.declare(b, target, optimize, products);
-    qvm.declare(b, optimize);
+    if (engine.declare(b, target, optimize)) game.declare(b, target, optimize, rules_identity);
     const checks = b.step("test", "Run the existing published component checks");
+    checks.dependOn(@import("build/runtime.zig").declareTests(b, optimize));
     checks.dependOn(&b.top_level_steps.get("test-online").?.step);
     checks.dependOn(&b.top_level_steps.get("test-codec").?.step);
     checks.dependOn(&b.addFmt(.{ .paths = &.{ "build.zig", "build.zig.zon", "build", "src" }, .check = true }).step);

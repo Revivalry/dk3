@@ -225,6 +225,9 @@ static int numModelLoaders = ARRAY_LEN(modelLoaders);
 model_t	*R_GetModelByHandle( qhandle_t index ) {
 	model_t		*mod;
 
+    mod = R_ResidentInlineModel(index);
+    if (mod) return mod;
+
 	// out of range gets the defualt model
 	if ( index < 1 || index >= tr.numModels ) {
 		return tr.models[0];
@@ -286,6 +289,8 @@ qhandle_t RE_RegisterModel( const char *name ) {
 		ri.Printf( PRINT_ALL, "Model name exceeds MAX_QPATH\n" );
 		return 0;
 	}
+
+    if (name[0] == '*') return R_WorldInlineModel(name);
 
 	//
 	// search the currently loaded models

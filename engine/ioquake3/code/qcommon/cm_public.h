@@ -25,6 +25,19 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 void		CM_LoadMap( const char *name, qboolean clientload, int *checksum);
 void		CM_ClearMap( void );
+/* Owner-thread resident collision worlds. Zero is an invalid handle. The
+ * generation changes on release, including a full map reset. */
+unsigned int CM_CurrentWorld(void);
+qboolean CM_SelectWorld(unsigned int world);
+unsigned int CM_LoadWorldBytes(const char *name, const void *bytes, int length);
+qboolean CM_ReleaseWorld(unsigned int world);
+size_t CM_WorldBytes(unsigned int world);
+int CM_WorldChecksum(unsigned int world);
+const char *CM_WorldName(unsigned int world);
+unsigned int CM_RequestWorld(const char *name);
+/* -1 failed/stale, 0 reading, 1 collision ready. Poll admits at most this world;
+ * it never changes the caller's selected world. */
+int CM_PollWorld(unsigned int world);
 clipHandle_t CM_InlineModel( int index );		// 0 = world, 1 + are bmodels
 clipHandle_t CM_TempBoxModel( const vec3_t mins, const vec3_t maxs, int capsule );
 
@@ -47,6 +60,7 @@ void		CM_TransformedBoxTrace( trace_t *results, const vec3_t start, const vec3_t
 						  const vec3_t origin, const vec3_t angles, int capsule );
 
 byte		*CM_ClusterPVS (int cluster);
+byte        *CM_ClusterPHS (int cluster);
 
 int			CM_PointLeafnum( const vec3_t p );
 

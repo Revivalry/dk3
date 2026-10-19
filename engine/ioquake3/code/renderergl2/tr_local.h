@@ -442,6 +442,7 @@ typedef struct {
 
 typedef struct shader_s {
 	char		name[MAX_QPATH];		// game path, including extension
+    unsigned int worldRegistration; /* scope map shader bindings */
 	int			lightmapIndex;			// for a shader to match, both name and lightmapIndex must match
 
 	int			index;					// this shader == tr.shaders[index]
@@ -901,6 +902,7 @@ typedef struct drawSurf_s {
 // as soon as it is called
 typedef struct srfPoly_s {
 	surfaceType_t	surfaceType;
+    unsigned int worldRegistration;
 	qhandle_t		hShader;
 	int				fogIndex;
 	int				numVerts;
@@ -1529,6 +1531,7 @@ typedef struct {
 
 	int						frameSceneNum;	// zeroed at RE_BeginFrame
 
+    unsigned int worldRegistration;
 	qboolean				worldMapLoaded;
 	qboolean				worldDeluxeMapping;
 	vec2_t                  autoExposureMinMax;
@@ -1996,6 +1999,7 @@ void		RE_Shutdown( qboolean destroyWindow );
 qboolean	R_GetEntityToken( char *buffer, int size );
 
 model_t		*R_AllocModel( void );
+model_t *R_ResidentInlineModel(qhandle_t handle);
 
 void    	R_Init( void );
 void		R_UpdateSubImage( image_t *image, byte *pic, int x, int y, int width, int height, GLenum picFormat );
@@ -2538,6 +2542,16 @@ void RE_TakeVideoFrame( int width, int height,
 void R_ConvertTextureFormat( const byte *in, int width, int height, GLenum format, GLenum type, byte *out );
 
 
-#endif //TR_LOCAL_H
 
 void R_UpdateDkLightstyles(const refdef_t *view);
+
+/* Resident map ownership, shared by native preparation and authored travel. */
+unsigned int RE_RequestWorld(const char *name);
+int RE_PollWorld(unsigned int world);
+qboolean RE_SelectWorld(unsigned int world);
+const refEntity_t *R_ResidentPortal(const surfaceType_t *surface);
+unsigned int RE_CurrentWorld(void);
+void R_ClearResidentWorlds(void);
+qhandle_t R_WorldInlineModel(const char *name);
+
+#endif //TR_LOCAL_H

@@ -2,31 +2,20 @@
 
 An open-source project to bring **Daikatana to the ioquake3 engine**, built with Zig.
 
-**Playable development build; the game rewrite is incomplete.**
+**Native Zig runtime under development; gameplay is incomplete.**
 
-[![Shotcycler equipped on e1dm1 in the native dk3 build](docs/screenshots/shotcycler-ready.jpg)](docs/screenshots/shotcycler-ready.jpg)
+The old gameplay runtime has been removed. The only game/client/UI implementation
+is now the native Zig runtime in `src/`, built on the bundled ioquake3 engine. Weapon definitions,
+movement, ECS world systems, movers, pickups, all 28 weapon controllers, episode
+actors, scripts, cinematics, companions, saves and multiplayer modes are connected.
+The consolidated native implementation still requires gameplay verification and
+repairs; no complete episode is accepted. Development stays on
+`rewrite/native-zig-runtime`; `main` preserves the working pre-rewrite game.
 
-*Shotcycler equipped on e1dm1 in the current native development build.*
-
-| The marsh (e1m1a) | Native menu |
-| --- | --- |
-| [![Rain and green waterfalls in the opening marsh](docs/screenshots/marsh.jpg)](docs/screenshots/marsh.jpg) | [![Daikatana difficulty selection in the native dk3 menu](docs/screenshots/menu.jpg)](docs/screenshots/menu.jpg) |
-
-Actual development captures using locally supplied game data and HD textures.
-Click any image for full size. [Capture details](docs/screenshots/README.md).
-
-The checkout includes
-the bundled ioquake3 engine, both renderers, independent native game/client/UI modules,
-all 28 selectable weapons implemented in Zig, and asset conversion/install tooling.
-The private 1.3 profile converts all 84 maps and 97 navigation variants. Recorded
-campaign traversal reaches partway into e1m2b; no complete episode is verified.
-
-The latest weapon correction pass verifies all 28 firing paths, representative combat,
-underwater attacks, multiplayer volleys and mid-action saves. The ReleaseSafe build
-and broad suite pass. Full campaign progression, companion behavior, multiplayer
-acceptance and Gold visual/audio parity remain open. See the
-[current completion state](docs/status.md) for what is implemented, verified and
-still missing, and the [roadmap](docs/rewrite-roadmap.md) for the full accepted scope.
+See the [native architecture and progress](docs/runtime-zig.md),
+[current acceptance](docs/native-acceptance.md), and [full roadmap](docs/rewrite-roadmap.md).
+Earlier screenshots and gameplay results describe the retired runtime and are
+historical evidence, not acceptance of this runtime.
 
 ## Build the engine and tools
 
@@ -37,20 +26,20 @@ pkg-config. Python 3.10+ is needed for archive tools and synthetic checks.
 git clone https://github.com/dmytrogajewski/dk3.git
 cd dk3
 zig build
-./zig-out/bin/dkguard --help
+./zig-out/native-dev/bin/dkguard --help
 ```
 
 The repository includes the engine, native game/client/UI modules, asset converters,
 and build/install tools together. It is a development snapshot, not a completed game port.
 
-The client and server are `zig-out/bin/dk3` and `zig-out/bin/dk3ded`. The engine source
+The client and server are `zig-out/native-dev/bin/dk3` and `zig-out/native-dev/bin/dk3ded`. The engine source
 is included under `engine/ioquake3`; no separate ioq3 or Gold checkout is required.
 See [building](docs/building.md) for products, optional QVM tools, and dependencies.
 
 `dkguard` runs commands with memory limits, timeouts, and optional headless graphics. For example:
 
 ```sh
-./zig-out/bin/dkguard --mem 512M --timeout 30s -- python3 --version
+./zig-out/native-dev/bin/dkguard --mem 512M --timeout 30s -- python3 --version
 ```
 
 No game assets, GPU, ioquake3 checkout, or Python packages are needed for this example.
@@ -64,12 +53,63 @@ with `dkq3/tools/requirements.txt`, and ffmpeg 7:
 ```sh
 python3 -m venv .venv-convert
 .venv-convert/bin/python -m pip install -r dkq3/tools/requirements.txt
-zig build play-install -DDK_DATA=/path/to/data -Dasset-profile=retail -Dpython=.venv-convert/bin/python
-zig build play -DDK_DATA=/path/to/data -Dasset-profile=retail -Dpython=.venv-convert/bin/python
+zig build assets -DDK_DATA=/path/to/data -Dasset-profile=retail -Dpython=.venv-convert/bin/python
+zig build play
 ```
 
-`play-install` includes conversion and verifies the installed files; `assets` selects conversion
-alone. ffmpeg 7 must be available on `PATH`. Use `-Dasset-profile=1.3` for the documented
+After the first conversion, `zig build play` rebuilds the current checkout and launches
+it using the completed asset cache. It needs no repeated data path or conversion
+environment. Extra engine arguments follow `--`, for example `zig build play -- +map e1m3b`.
+Builds default to `zig-out/native-dev`; settings and saves remain under that prefix's
+`play/home` and `play/state` directories. The preserved installation is untouched.
+Use `-Dassets-dir=/path/to/cache` for a different converted cache or `-Dheadless=true`
+for a software-rendered test on a virtual display.
+
+Normal launches use the Vulkan renderer at the display's native resolution
+(`r_mode -2`; fullscreen is borderless at desktop size). Without a Vulkan 1.3 device
+the client falls back to OpenGL2 automatically. To choose a renderer explicitly, pass
+`-- +set cl_renderer opengl2` or `-- +set cl_renderer opengl1`.
+
+The Vulkan renderer's remaster path (`r_vkRemaster 1`, the default) adds:
+- HDR lighting with PBR materials;
+- shaded water, volumetric fog, TAA and render scaling;
+- GPU rain and snow with wet and snowy surfaces;
+- shadow-mapped model shadows.
+
+On hardware with ray queries it adds ray-traced shadows and reflections,
+traced-probe global illumination and directional lightmaps; `r_vkPathTracing 1`
+switches on the path-tracing mode. `r_vkRemaster 0` restores the classic OpenGL1
+look. The features and their settings are listed in
+[the remaster design](docs/vulkan-remaster.md). Run
+`python3 dkq3/tools/materialgen.py --textures <dk3-textures.pk3> --shaders
+<dk3-shaders.pk3> --normals --out zig-out/materials/dk3-materials.pk3` once to give
+the remaster material data; `play-install` then includes it.
+
+Press **Escape** during a cinematic to skip it and continue its authored exit.
+Outside cinematics, Escape opens or closes the pause menu.
+
+HD textures are used at full resolution automatically when the local package is
+available in `zig-out/hd-textures` or the build prefix's `hd-textures` directory.
+See [HD texture setup](docs/getting-started.md) for package overrides.
+
+The optional [local neural character package](docs/neural-assets.md) adds skeletal
+Hiro, Mikiko, Superfly, Mishima/Kage and Usagi models, gameplay clips, converted
+cinematic motion, multiplayer appearances and physical ragdoll deaths with joint
+limits and world collision. Once generated locally, it is
+included by `play-install` and `play` automatically.
+
+Native New Game, save/load and multiplayer menus are connected; their current
+acceptance is recorded in the matrix. Development uses an isolated prefix/profile
+and does not update the preserved game or saves.
+
+A save records the checksum of each map it holds, and a re-converted map refuses it.
+When only surface or contents flags changed, `dkq3/tools/save_port.py` re-stamps the
+saves (it finds the original maps in the kept asset generations, refuses any structural
+change, and keeps `<save>.pre-port`).
+
+`play-install` builds and verifies the installed files without launching. Supplying
+`-DDK_DATA` to either play command also requests conversion; `assets` selects conversion
+alone. Conversion requires ffmpeg 7 on `PATH`. Use `-Dasset-profile=1.3` for the documented
 1.3 overrides. That private profile has been converted and installed; the retail profile and
 complete new-game-to-ending path still require verification. See
 [asset inputs and installation](docs/assets.md). Original and converted assets stay local
@@ -83,11 +123,13 @@ default Internet-server trust, see [RPM packaging](docs/rpm.md).
 ```text
 engine/ioquake3/   Bundled engine, upstream foundations, and third-party notices
 engine/bspc/       Bundled navigation compiler and its notices
-src/game/         Independent authoritative game and campaign systems
-src/cgame/        Client presentation and shared prediction integration
-src/ui/           Native menus and input configuration
-src/shared/       Shared state, weapons, movement contracts and text layout
-src/weapons/      Native Zig weapon types, prediction, combat and presentation
+src/engine/       ioquake3 ABI adapters (syscalls, services, projections)
+src/core/         Game-agnostic runtime: ECS, math, animation, collision, navigation, saves
+src/mechanics/    Shared Daikatana mechanisms (domain, server, client, ui, policy helpers)
+src/game/         Class registries and the component list
+src/classes/      One folder per actor, weapon, item and map-entity class
+src/network/      Zig protocol and security
+src/online/       Room services and operator tools
 src/dkguard/       Process runner and its existing checks
 dkq3/tools/        Asset conversion, archive tools and installation
 build/            Engine, modules, navigation, assets and launcher build graph

@@ -551,6 +551,9 @@ intptr_t CL_CgameSystemCalls( intptr_t *args ) {
 	case CG_S_STARTLOCALSOUND:
 		S_StartLocalSound( args[1], args[2] );
 		return 0;
+	case CG_DK3_STOP_LOCAL_SOUND_V1:
+		S_StopLocalSound(args[1]);
+		return 0;
 	case CG_S_CLEARLOOPINGSOUNDS:
 		S_ClearLoopingSounds(args[1]);
 		return 0;
@@ -576,7 +579,64 @@ intptr_t CL_CgameSystemCalls( intptr_t *args ) {
 		return 0;
 	case CG_R_LOADWORLDMAP:
 		re.LoadWorld( VMA(1) );
-		return 0; 
+		return 0;
+    case CG_DK3_COLLISION_REQUEST_V1:
+        return CM_RequestWorld(VMA(1));
+    case CG_DK3_COLLISION_POLL_V1:
+        return CM_PollWorld(args[1]);
+    case CG_DK3_COLLISION_RELEASE_V1:
+        return CM_ReleaseWorld(args[1]);
+    case CG_DK3_COLLISION_CHECKSUM_V1:
+        return CM_WorldChecksum(args[1]);
+    case CG_DK3_COLLISION_SELECT_V1:
+        return CM_SelectWorld(args[1]);
+    case CG_DK3_COLLISION_CURRENT_V1:
+        return CM_CurrentWorld();
+    case CG_DK3_GAMESTATE_SELECT_V1: {
+        const gameState_t *source = VMA(1);
+        gameState_t *next;
+        int i;
+        if (!source || source->dataCount < 1 || source->dataCount > MAX_GAMESTATE_CHARS || source->stringData[0]) return 0;
+        for (i = 0; i < MAX_CONFIGSTRINGS; ++i) {
+            int offset = source->stringOffsets[i];
+            if (offset < 0 || offset >= source->dataCount ||
+                !memchr(source->stringData + offset, 0, source->dataCount - offset)) return 0;
+        }
+        next = Z_Malloc(sizeof(*next));
+        next->dataCount = 1;
+        for (i = 0; i < MAX_CONFIGSTRINGS; ++i) {
+            const gameState_t *owner = source;
+            const char *value;
+            int length;
+            if (i == CS_SERVERINFO || i == CS_SYSTEMINFO || (i >= CS_PLAYERS && i < CS_PLAYERS + MAX_CLIENTS)) owner = &cl.gameState;
+            value = owner->stringData + owner->stringOffsets[i];
+            length = strlen(value);
+            if (!length) continue;
+            if (next->dataCount + length + 1 > MAX_GAMESTATE_CHARS) { Z_Free(next); return 0; }
+            next->stringOffsets[i] = next->dataCount;
+            memcpy(next->stringData + next->dataCount, value, length + 1);
+            next->dataCount += length + 1;
+        }
+        cl.gameState = *next;
+        Z_Free(next);
+        return 1;
+    }
+    case CG_DK3_COLLISION_MODELS_V1: {
+        unsigned int previous = CM_CurrentWorld();
+        int count;
+        if (!CM_SelectWorld(args[1])) return 0;
+        count = CM_NumInlineModels();
+        CM_SelectWorld(previous);
+        return count;
+    }
+    case CG_DK3_WORLD_REQUEST_V1:
+        return re.RequestWorld(VMA(1));
+    case CG_DK3_WORLD_POLL_V1:
+        return re.PollWorld(args[1]);
+    case CG_DK3_WORLD_SELECT_V1:
+        return re.SelectWorld(args[1]);
+    case CG_DK3_WORLD_CURRENT_V1:
+        return re.CurrentWorld();
 	case CG_R_REGISTERMODEL:
 		return re.RegisterModel( VMA(1) );
 	case CG_R_REGISTERSKIN:
@@ -650,6 +710,11 @@ intptr_t CL_CgameSystemCalls( intptr_t *args ) {
     case CG_DK3_R_FOG_V1:
         re.SetDk3Fog(VMA(1), VMF(2), VMF(3), VMF(4));
         return 0;
+    case CG_DK3_R_WEATHER_V1:
+        if ( !re.AddDk3WeatherToScene ) {
+            return qfalse;
+        }
+        return re.AddDk3WeatherToScene( args[1], args[2], VMA(3), VMA(4), args[5] );
 	case CG_GETSERVERCOMMAND:
 		return CL_GetServerCommand( args[1] );
 	case CG_GETCURRENTCMDNUMBER:
@@ -809,7 +874,10 @@ void CL_InitCGame( void ) {
 	// init for this gamestate
 	// use the lastExecutedServerCommand instead of the serverCommandSequence
 	// otherwise server commands sent just before a gamestate are dropped
-	VM_Call( cgvm, CG_INIT, clc.serverMessageSequence, clc.lastExecutedServerCommand, clc.clientNum );
+    // Preserve ordinary reliable commands as before. The native client also
+    // receives the gamestate boundary so obsolete resident-world commands cannot
+    // select resources destroyed by this map restart.
+	VM_Call( cgvm, CG_INIT, clc.serverMessageSequence, clc.lastExecutedServerCommand, clc.clientNum, clc.gamestateCommandSequence );
 
 	// reset any CVAR_CHEAT cvars registered by cgame
 	if ( !clc.demoplaying && !cl_connectedToCheatServer )

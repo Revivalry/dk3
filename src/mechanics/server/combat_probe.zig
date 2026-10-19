@@ -1,0 +1,317 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+//! Shared mechanism: Explicit development-only target fixture; never used for authored actors.
+const std = @import("std");
+const data = @import("../../game/domain/components.zig");
+const ecs = @import("../../core/ecs/world.zig");
+const abi = @import("../../engine/abi.zig");
+const engine = @import("../../engine/server.zig");
+const Slots = @import("../../engine/slots.zig").Slots;
+const v = @import("../../core/domain/vector.zig");
+const c = abi.c;
+pub fn command(name: []const u8, world: *data.World, slots: *Slots, projections: []abi.EntityProjection, player: ?ecs.Entity, table: *const @import("../domain/weapons.zig").Table, now: i64) !bool {
+    if (std.mem.eql(u8, name, "dk3_runtime_actor_motion")) {
+        var argument: [64]u8 = undefined;
+        const identity = try std.fmt.parseInt(u32, engine.argv(1, &argument), 10);
+        try @import("navigation_probe.zig").actorMotion(world, identity);
+        return true;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_region_weapons")) {
+        try @import("weapon_probe.zig").inspect(world, slots);
+        return true;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_target_model")) {
+        var argument: [96]u8 = undefined;
+        const identity = try std.fmt.parseInt(u32, engine.argv(1, &argument), 10);
+        const target = @import("region_access.zig").find(world, identity) orelse return error.MissingProbeTarget;
+        if (!std.mem.eql(u8, (try target.get(data.MapObject)).classname, "runtime_target")) return error.NotProbeTarget;
+        const context = @import("region_access.zig").contextFor(target.world) orelse return error.MissingProbeOwner;
+        const scope = try context.select();
+        defer scope.deinit();
+        const before = context.resources.models.count;
+        const model = try @import("resources.zig").model(engine.argv(2, &argument));
+        const binding = try target.get(data.Binding);
+        binding.model = model;
+        context.projection[binding.slot].state.modelindex = model;
+        var output: [160]u8 = undefined;
+        engine.print(try std.fmt.bufPrintZ(&output, "dk3 region target model: identity={d} model={d} added={d} world={d}\n", .{ identity, model, @intFromBool(context.resources.models.count > before), context.network_id }));
+        return true;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_region_trace")) {
+        const owner = player orelse return error.MissingPlayer;
+        const pose = (try world.get(owner, data.Transform)).*;
+        const eye = @import("../domain/combat.zig").eye(pose.position, (try world.get(owner, data.Player)).view_height);
+        const hit = try @import("region_collision.zig").trace(.{ .start = eye, .end = v.add(eye, v.scale(v.basis(pose.angles).forward, 2000)), .mins = @splat(0), .maxs = @splat(0), .slot = (try world.get(owner, data.Binding)).slot, .mask = c.MASK_SHOT });
+        const target = @import("region_access.zig").victim(world, slots, hit);
+        const context = if (hit.world != 0) @import("region_access.zig").byHandle(@enumFromInt(hit.world)) else null;
+        var output: [256]u8 = undefined;
+        engine.print(try std.fmt.bufPrintZ(&output, "dk3 region trace: world={d} map={s} target={d} slot={d} fraction={d:.4} solid={d} end={d:.3},{d:.3},{d:.3}\n", .{ hit.world, if (context) |value| std.mem.sliceTo(&value.map_name, 0) else "local", if (target) |value| try value.id() else 0, hit.entity, hit.fraction, @intFromBool(hit.start_solid or hit.all_solid), hit.end[0], hit.end[1], hit.end[2] }));
+        return true;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_ion_aim")) {
+        const owner = player orelse return error.MissingPlayer;
+        const pose = (try world.get(owner, data.Transform)).*;
+        const eye = v.add(pose.position, .{ 0, 0, (try world.get(owner, data.Player)).view_height });
+        const slot = (try world.get(owner, data.Binding)).slot;
+        const ion = @import("weapon_catalog").classes.ion;
+        const tuning = table.entries[ion.id];
+        const radius = ion.spec.combat.bolt.radius;
+        const forward = v.basis(pose.angles).forward;
+        const service = engine.collisionService();
+        const muzzle = try service.trace(.{ .start = eye, .end = @import("../domain/combat.zig").muzzle(eye, pose.angles, tuning.muzzle), .mins = @splat(-radius), .maxs = @splat(radius), .slot = slot, .mask = c.MASK_SHOT });
+        const aim = try service.trace(.{ .start = eye, .end = v.add(eye, v.scale(forward, 2000)), .mins = @splat(0), .maxs = @splat(0), .slot = slot, .mask = c.MASK_SHOT });
+        const direction = @import("weapon_catalog").ballistics.aimDirection(muzzle.end, aim.end);
+        const flight = try service.trace(.{ .start = muzzle.end, .end = v.add(muzzle.end, v.scale(direction, tuning.speed * 0.05)), .mins = @splat(-radius), .maxs = @splat(radius), .slot = slot, .mask = c.MASK_SHOT | c.MASK_WATER });
+        const hit_id = if (aim.entity < slots.occupants.len) if (slots.occupants[aim.entity]) |entity| try world.persistentId(entity) else 0 else 0;
+        const flight_id = if (flight.entity < slots.occupants.len) if (slots.occupants[flight.entity]) |entity| try world.persistentId(entity) else 0 else 0;
+        var output: [512]u8 = undefined;
+        engine.print(try std.fmt.bufPrintZ(&output, "dk3 ion aimtrace: now={d} target={d} muzzle={d:.3},{d:.3},{d:.3} aim={d:.3},{d:.3},{d:.3} dot={d:.3} direction={d:.3},{d:.3},{d:.3} muzzle_solid={d} flight_target={d} flight_fraction={d:.3} flight_solid={d}\n", .{ now, hit_id, muzzle.end[0], muzzle.end[1], muzzle.end[2], aim.end[0], aim.end[1], aim.end[2], v.dot(v.subtract(aim.end, muzzle.end), forward), direction[0], direction[1], direction[2], @intFromBool(muzzle.start_solid), flight_id, flight.fraction, @intFromBool(flight.start_solid) }));
+        return true;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_beams")) {
+        if (player) |owner| {
+            const loadout = (try world.get(owner, data.Weapons)).*;
+            var output: [96]u8 = undefined;
+            engine.print(try std.fmt.bufPrintZ(&output, "dk3 zig beam owner: weapon={d} ammo={d}\n", .{ loadout.weapon, loadout.ammo[@intCast(loadout.weapon)] }));
+        }
+        for (slots.occupants) |occupant| if (occupant) |entity| {
+            inline for (weapon_adapters) |A| if (@hasDecl(A, "probeBeam")) try A.probeBeam(world, entity, now);
+        };
+        engine.print("dk3 zig beam states complete\n");
+        return true;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_area_weapons")) {
+        var query = world.queryAccess(data.World.mask(.{data.Transform}), 0, 0);
+        defer query.deinit();
+        while (query.next()) |view| for (view.entities()) |entity| {
+            inline for (weapon_adapters) |A| if (@hasDecl(A, "probeArea")) try A.probeArea(world, entity, now);
+        };
+        engine.print("dk3 zig area weapon states complete\n");
+        return true;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_ailments")) {
+        for (slots.occupants) |occupant| {
+            const target = occupant orelse continue;
+            const status = world.get(target, data.Ailments) catch continue;
+            if (status.mask & 7 == 0) continue;
+            var output: [240]u8 = undefined;
+            engine.print(try std.fmt.bufPrintZ(&output, "dk3 zig ailment state: id={d} mask={d} freeze={d:.3} poison_remaining={d} poison_next={d}\n", .{ try world.persistentId(target), status.mask, status.freeze_level, if (status.poison) |value| value.until_ms - now else 0, if (status.poison) |value| value.next_ms - now else 0 }));
+        }
+        engine.print("dk3 zig ailment states complete\n");
+        return true;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_progression")) {
+        const owner = player orelse return error.MissingPlayer;
+        const state = (try world.get(owner, data.Character)).*;
+        const loadout = (try world.get(owner, data.Weapons)).*;
+        var output: [192]u8 = undefined;
+        engine.print(try std.fmt.bufPrintZ(&output, "dk3 zig progression state: experience={d} sword={d} level={d} points={d}\n", .{ state.experience, loadout.dk3SwordExperience, state.level, state.points }));
+        return true;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_projectiles")) {
+        for (slots.occupants) |occupant| {
+            const entity = occupant orelse continue;
+            inline for (@import("../../game/server/hazard_classes.zig").classes) |Class| if (@hasDecl(Class, "probe")) {
+                _ = try Class.probe(world, entity, now);
+            };
+            const projectile = world.get(entity, data.Projectile) catch continue;
+            const lifetime = world.get(entity, data.Lifetime) catch null;
+            const velocity = (try world.get(entity, data.Velocity)).linear;
+            const position = (try world.get(entity, data.Transform)).position;
+            var output: [300]u8 = undefined;
+            engine.print(try std.fmt.bufPrintZ(&output, "dk3 zig projectile state: id={d} weapon={d} stuck={d} resting={d} age={d} remaining={d} velocity={d:.2},{d:.2},{d:.2} position={d:.2},{d:.2},{d:.2}\n", .{ try world.persistentId(entity), projectile.weapon, @intFromBool(projectile.stuck), @intFromBool(projectile.resting), now - projectile.born_ms, if (lifetime) |value| value.expires_ms - now else 0, velocity[0], velocity[1], velocity[2], position[0], position[1], position[2] }));
+            // Each weapon's flight state prints its own line.
+            switch (projectile.flight) {
+                inline else => |*flight| if (comptime @import("../domain/snapshot_time.zig").classState(@TypeOf(flight.*), "probeLine")) {
+                    engine.print(try flight.probeLine(&output, try world.persistentId(entity), now - projectile.born_ms, if (world.get(entity, data.Health) catch null) |health| health.current else 0));
+                },
+            }
+        }
+        engine.print("dk3 zig projectile states complete\n");
+        return true;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_probe_health")) {
+        var target_argument: [24]u8 = undefined;
+        const target_text = engine.argv(2, &target_argument);
+        const Ref = @import("../domain/world_references.zig").Ref;
+        const owner: Ref = if (target_text.len == 0) .{ .world = world, .entity = player orelse return error.MissingPlayer } else @import("region_access.zig").find(world, try std.fmt.parseInt(u32, target_text, 10)) orelse return error.MissingTarget;
+        var argument: [16]u8 = undefined;
+        const value = try std.fmt.parseInt(i32, engine.argv(1, &argument), 10);
+        if (value < 1 or value > 10000) return error.InvalidProbeHealth;
+        (try owner.get(data.Health)).current = value;
+        var output: [112]u8 = undefined;
+        engine.print(try std.fmt.bufPrintZ(&output, "dk3 probe health: id={d} health={d}\n", .{ try owner.id(), value }));
+        return true;
+    }
+    // `dk3_runtime_hurt <id> <amount>`: the player hurts an entity through the normal damage path.
+    if (std.mem.eql(u8, name, "dk3_runtime_hurt")) {
+        const owner = player orelse return error.MissingPlayer;
+        var target_argument: [24]u8 = undefined;
+        const target = @import("region_access.zig").find(world, try std.fmt.parseInt(u32, engine.argv(1, &target_argument), 10)) orelse return error.MissingTarget;
+        var argument: [16]u8 = undefined;
+        const amount = try std.fmt.parseInt(i32, engine.argv(2, &argument), 10);
+        if (amount < 1 or amount > 10000) return error.InvalidProbeDamage;
+        const result = try @import("damage.zig").apply(target.world, target.entity, amount, now, .{ .source = try world.persistentId(owner) });
+        var output: [112]u8 = undefined;
+        engine.print(try std.fmt.bufPrintZ(&output, "dk3 probe hurt: id={d} amount={d} blood={d}\n", .{ try target.id(), amount, result.blood }));
+        return true;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_spawn_item")) {
+        const owner = player orelse return error.MissingPlayer;
+        var buffer: [64]u8 = undefined;
+        const classname = engine.argv(1, &buffer);
+        if (@import("../domain/items.zig").classify(classname) == null) return error.UnknownItemClass;
+        const owned_name = try world.allocator.dupe(u8, classname);
+        const pose = (try world.get(owner, data.Transform)).*;
+        const position = v.add(pose.position, v.scale(v.basis(pose.angles).forward, 48));
+        const item = try @import("items.zig").spawnDynamic(world, slots, projections, owned_name, .{ .position = position }, now, 1);
+        engine.print(try std.fmt.bufPrintZ(&buffer, "dk3 fixture item: id={d}\n", .{try world.persistentId(item)}));
+        return true;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_corpses")) {
+        var buffer: [384]u8 = undefined;
+        for (slots.occupants) |maybe| {
+            const entity = maybe orelse continue;
+            const health = world.get(entity, data.Health) catch continue;
+            if (health.current > 0) continue;
+            const retained = if (world.get(entity, data.Scenery) catch null) |state| state.corpse != null else false;
+            if (!retained and (world.get(entity, data.Player) catch null) == null) continue;
+            const hurt = (try world.get(entity, data.Hurt)).*;
+            const point = (try world.get(entity, data.Transform)).position;
+            engine.print(try std.fmt.bufPrintZ(&buffer, "dk3 corpse: id={d} slot={d} retained={d} health={d} gibbed={d} impulse={d} pos={d:.3},{d:.3},{d:.3}\n", .{ try world.persistentId(entity), (try world.get(entity, data.Binding)).slot, @intFromBool(retained), health.current, @intFromBool(hurt.feedback.gibbed), hurt.impulse_serial, point[0], point[1], point[2] }));
+        }
+        engine.print("dk3 corpses complete\n");
+        return true;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_shot_lanes")) {
+        const owner = player orelse return error.MissingPlayer;
+        const slot = (try world.get(owner, data.Binding)).slot;
+        const eye = v.add((try world.get(owner, data.Transform)).position, .{ 0, 0, 22 });
+        var best: f32 = 0;
+        var angles: v.Vec3 = @splat(0);
+        for ([_]f32{ 0, -15, -30 }) |pitch| for (0..24) |index| {
+            const candidate: v.Vec3 = .{ pitch, @as(f32, @floatFromInt(index)) * 15, 0 };
+            const hit = try engine.collisionService().trace(.{ .start = eye, .end = v.add(eye, v.scale(v.basis(candidate).forward, 2048)), .mins = @splat(0), .maxs = @splat(0), .slot = slot, .mask = c.MASK_SHOT });
+            if (!hit.start_solid and hit.fraction * 2048 > best) {
+                best = hit.fraction * 2048;
+                angles = candidate;
+            }
+        };
+        var output: [120]u8 = undefined;
+        engine.print(try std.fmt.bufPrintZ(&output, "dk3 zig shot lane: yaw={d:.1} pitch={d:.1} clearance={d:.1}\n", .{ angles[1], angles[0], best }));
+        return true;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_face_target")) {
+        const owner = player orelse return error.MissingPlayer;
+        var argument: [32]u8 = undefined;
+        const id = try std.fmt.parseInt(u32, engine.argv(1, &argument), 10);
+        const target = world.find(id) orelse return error.MissingTarget;
+        const owner_slot = (try world.get(owner, data.Binding)).slot;
+        const target_slot = (try world.get(target, data.Binding)).slot;
+        const brush = projections[target_slot].shared.bmodel != 0;
+        const target_position = if (brush) v.scale(v.add(projections[target_slot].shared.absmin, projections[target_slot].shared.absmax), 0.5) else (try world.get(target, data.Transform)).position;
+        const target_body = (try world.get(target, data.Body)).*;
+        var radius_argument: [32]u8 = undefined;
+        const radius_text = engine.argv(2, &radius_argument);
+        const first_radius = if (radius_text.len == 0) 96 else try std.fmt.parseFloat(f32, radius_text);
+        if (!std.math.isFinite(first_radius) or first_radius < 32 or first_radius > 256) return error.InvalidTargetDistance;
+        var minimum_argument: [32]u8 = undefined;
+        const minimum_text = engine.argv(3, &minimum_argument);
+        const minimum_radius = if (minimum_text.len == 0) 0 else try std.fmt.parseFloat(f32, minimum_text);
+        if (!std.math.isFinite(minimum_radius) or minimum_radius < 0 or minimum_radius > 256) return error.InvalidTargetDistance;
+        var reports: usize = 0;
+        const heights: []const f32 = if (brush) &.{ 56, 0, -64, -128, -192 } else &.{target_body.mins[2] + 56};
+        for (heights) |height| for ([_]f32{ first_radius, 64, 160, 256 }) |radius| for (0..8) |direction| {
+            if (radius < minimum_radius) continue;
+            const angle = @as(f32, @floatFromInt(direction)) * (std.math.pi / 4.0);
+            const candidate = v.add(target_position, .{ @cos(angle) * radius, @sin(angle) * radius, height });
+            const floor = try engine.collisionService().trace(.{ .start = candidate, .end = v.add(candidate, .{ 0, 0, -96 }), .mins = .{ -15, -15, -24 }, .maxs = .{ 15, 15, 32 }, .slot = owner_slot, .mask = c.MASK_PLAYERSOLID });
+            if (floor.start_solid or floor.all_solid or floor.fraction == 1 or floor.normal[2] < 0.7) continue;
+            const eye = v.add(floor.end, .{ 0, 0, 22 });
+            const aim = try engine.collisionService().trace(.{ .start = eye, .end = v.add(target_position, .{ 0, 0, 8 }), .mins = @splat(0), .maxs = @splat(0), .slot = owner_slot, .mask = c.MASK_SHOT });
+            if (aim.fraction < 1 and aim.entity != target_slot) {
+                if (brush and reports < 24) {
+                    reports += 1;
+                    var output: [200]u8 = undefined;
+                    engine.print(try std.fmt.bufPrintZ(&output, "dk3 zig fixture blocked: at={d:.2},{d:.2},{d:.2} hit={d} fraction={d:.3} target_slot={d}\n", .{ floor.end[0], floor.end[1], floor.end[2], if (aim.entity < slots.occupants.len) (if (slots.occupants[aim.entity]) |blocker| try world.persistentId(blocker) else 0) else 0, aim.fraction, target_slot }));
+                }
+                continue;
+            }
+            (try world.get(owner, data.Transform)).position = floor.end;
+            (try world.get(owner, data.Velocity)).linear = @splat(0);
+            (try world.get(owner, data.Player)).ground_entity = floor.entity;
+            var output: [180]u8 = undefined;
+            engine.print(try std.fmt.bufPrintZ(&output, "dk3 zig combat: fixture player={d:.3},{d:.3},{d:.3} target={d}\n", .{ floor.end[0], floor.end[1], floor.end[2], id }));
+            return true;
+        };
+        return error.NoTargetSpace;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_equip")) {
+        const owner = player orelse return error.MissingPlayer;
+        var buffer: [16]u8 = undefined;
+        const id = try std.fmt.parseInt(u5, engine.argv(1, &buffer), 10);
+        if (@import("weapon_catalog").find(id) == null) return error.UnknownWeapon;
+        const loadout = try world.get(owner, data.Weapons);
+        _ = loadout.acquire(table, id, table.entries[id].ammoMax);
+        loadout.weapon = id;
+        loadout.weaponTime = 0;
+        loadout.weaponstate = 0;
+        loadout.dk3GlockClip = 10;
+        if (id == @import("weapon_catalog").timed.id) loadout.gas_until_ms = (try @import("weapon_catalog").timed.timer.extend(loadout.gas_until_ms, now, table.entries[id].lifetime)) orelse loadout.gas_until_ms;
+        return true;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_target")) {
+        const owner = player orelse return error.MissingPlayer;
+        const pose = (try world.get(owner, data.Transform)).*;
+        const height = (try world.get(owner, data.Player)).view_height;
+        const start = @import("../domain/combat.zig").eye(pose.position, height);
+        const binding = (try world.get(owner, data.Binding)).*;
+        const hit = try engine.collisionService().trace(.{ .start = start, .end = v.add(start, v.scale(v.basis(pose.angles).forward, 120)), .mins = @splat(-12), .maxs = @splat(12), .slot = binding.slot, .mask = c.MASK_SHOT });
+        if (hit.start_solid or hit.fraction < 0.5) return error.NoTargetSpace;
+        const target = try world.create(null, .{ data.Transform{ .position = hit.end }, data.Health{}, data.Body{ .mins = @splat(-12), .maxs = @splat(12), .contents = c.CONTENTS_BODY }, data.MapObject{ .classname = "runtime_target" } });
+        errdefer world.destroy(target) catch unreachable;
+        const slot = try slots.acquire(target, null);
+        errdefer slots.release(slot, target) catch unreachable;
+        try world.put(target, data.Binding{ .slot = slot });
+        const projection = &projections[slot];
+        projection.* = std.mem.zeroes(abi.EntityProjection);
+        projection.state.number = slot;
+        projection.state.eType = c.ET_DK3_ITEM;
+        projection.state.modelindex = try @import("resources.zig").model("models/e1/a_ion.dkm");
+        projection.state.pos = @import("../../engine/trajectory.zig").stationary(hit.end);
+        projection.shared.currentOrigin = hit.end;
+        projection.shared.mins = @splat(-12);
+        projection.shared.maxs = @splat(12);
+        projection.shared.contents = c.CONTENTS_BODY;
+        projection.shared.ownerNum = c.ENTITYNUM_NONE;
+        engine.link(projection);
+        engine.print("dk3 zig combat: target fixture created\n");
+        return true;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_clear_targets")) {
+        const occupants = slots.occupants;
+        for (occupants, 0..) |occupant, slot| {
+            const entity = occupant orelse continue;
+            const object = world.get(entity, data.MapObject) catch continue;
+            if (!std.mem.eql(u8, object.classname, "runtime_target")) continue;
+            engine.unlink(&projections[slot]);
+            try slots.release(@intCast(slot), entity);
+            try world.destroy(entity);
+        }
+        return true;
+    }
+    if (std.mem.eql(u8, name, "dk3_runtime_targets")) {
+        var targets = @import("region_access.zig").Damageables.init(world, slots);
+        while (targets.next()) |entity| {
+            const object = entity.get(data.MapObject) catch continue;
+            if (!std.mem.eql(u8, object.classname, "runtime_target")) continue;
+            const pose = (try entity.get(data.Transform)).position;
+            const context = @import("region_access.zig").contextFor(entity.world);
+            var output: [256]u8 = undefined;
+            engine.print(try std.fmt.bufPrintZ(&output, "dk3 zig combat: target={d} health={d} map={s} slot={d} pos={d:.3},{d:.3},{d:.3}\n", .{ try entity.id(), (try entity.get(data.Health)).current, if (context) |value| std.mem.sliceTo(&value.map_name, 0) else "local", (try entity.get(data.Binding)).slot, pose[0], pose[1], pose[2] }));
+        }
+        engine.print("dk3 region targets complete\n");
+        return true;
+    }
+    return false;
+}
+const weapon_adapters = @import("../../game/server/weapon_classes/classes.zig").adapters;

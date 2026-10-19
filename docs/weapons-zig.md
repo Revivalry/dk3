@@ -5,10 +5,12 @@ for this subsystem. Both native modules link Zig 0.16 weapon implementations.
 The engine's existing C ABI provides collision, entities, snapshots, renderer,
 audio, filesystem, generic model animation and damage services.
 
-Every selectable weapon is a concrete type under `src/weapons/types`. Its methods
-own prediction, firing, projectile contact and lifecycle, presentation, inventory
-exceptions and restoration. `registry.zig` resolves IDs and checks the interface at
-compile time. Shared Zig components implement mechanisms; they do not choose an
+Every selectable weapon is a description module in its class folder, `src/classes/weapons/<weapon>/<weapon>.zig`
+(`//! weapon-class: <name>`). It owns its data (`spec`) and the hooks for prediction,
+firing, projectile contact and lifecycle, presentation, inventory exceptions and
+restoration. `src/weapon_catalog.zig` aggregates the descriptions, dispatches optional
+hooks with `@hasDecl`, and checks the required ones at compile time. The ownership
+lint (docs/runtime-zig.md "Class contract") rejects weapon ids in shared code. Shared Zig components implement mechanisms; they do not choose an
 attack from a weapon ID. There is no C combat implementation or C behavior-plan
 interpreter in the build.
 

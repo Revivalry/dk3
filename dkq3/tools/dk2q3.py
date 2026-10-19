@@ -68,10 +68,11 @@ CONTENTS = (
     (0x00000008, 'LAVA', Q.CONTENTS_LAVA), (0x00000010, 'SLIME', Q.CONTENTS_SLIME), (0x00000020, 'WATER', Q.CONTENTS_WATER),
     (0x00000040, 'MIST', 0), (0x00000080, 'CLEAR', Q.CONTENTS_SOLID), (0x00000100, 'NOTSOLID', 0),
     (0x00000200, 'NOSHOOT', Q.CONTENTS_PLAYERCLIP | Q.CONTENTS_MONSTERCLIP), (0x00000400, 'FOG', Q.CONTENTS_FOG),
-    (0x00000800, 'NITRO', 0), (0x00008000, 'AREAPORTAL', Q.CONTENTS_AREAPORTAL),
+    (0x00000800, 'NITRO', Q.CONTENTS_DK3_NITRO), (0x00008000, 'AREAPORTAL', Q.CONTENTS_AREAPORTAL),
     (0x00010000, 'PLAYERCLIP', Q.CONTENTS_PLAYERCLIP), (0x00020000, 'MONSTERCLIP', Q.CONTENTS_MONSTERCLIP),
-    (0x00040000, 'CURRENT_0', 0), (0x00080000, 'CURRENT_90', 0), (0x00100000, 'CURRENT_180', 0),
-    (0x00200000, 'CURRENT_270', 0), (0x00400000, 'CURRENT_UP', 0), (0x00800000, 'CURRENT_DOWN', 0),
+    (0x00040000, 'CURRENT_0', Q.CONTENTS_DK3_CURRENT_0), (0x00080000, 'CURRENT_90', Q.CONTENTS_DK3_CURRENT_90),
+    (0x00100000, 'CURRENT_180', Q.CONTENTS_DK3_CURRENT_180), (0x00200000, 'CURRENT_270', Q.CONTENTS_DK3_CURRENT_270),
+    (0x00400000, 'CURRENT_UP', Q.CONTENTS_DK3_CURRENT_UP), (0x00800000, 'CURRENT_DOWN', Q.CONTENTS_DK3_CURRENT_DOWN),
     (0x01000000, 'ORIGIN', Q.CONTENTS_ORIGIN), (0x02000000, 'MONSTER', Q.CONTENTS_BODY),
     (0x04000000, 'DEADMONSTER', Q.CONTENTS_CORPSE), (0x08000000, 'DETAIL', Q.CONTENTS_DETAIL),
     (0x10000000, 'TRANSLUCENT', Q.CONTENTS_TRANSLUCENT), (0x20000000, 'LADDER', 0),
@@ -312,7 +313,7 @@ class Converter:
         import struct
         trailer = b'DKLS' + struct.pack('<I', len(self.style_blocks)) + b''.join(self.style_blocks)
         trailer += b'DKLT' + struct.pack('<I', len(trailer))
-        return q3bsp.encode(lumps) + trailer, q3bsp.encode(dict(lumps, entities=self.projection.lump)), self.report(lumps)
+        return q3bsp.encode(lumps) + self.hearing + trailer, q3bsp.encode(dict(lumps, entities=self.projection.lump)), self.report(lumps)
 
     # ------------------------------------------------------------------ limits
     def fail(self, error, detail):
@@ -564,9 +565,13 @@ class Converter:
 
     # ------------------------------------------------------------ visibility
     def build_vis(self):
-        """Decompressed PVS rows (CM_DecompressVis semantics) under ioquake3's dvis header: numClusters, clusterBytes
-        (cm_load.c:455-477); the PHS rows are dropped."""
+        """Preserve both authored visibility and hearing; stock engines ignore hearing."""
         rows = self.b.pvs_rows()
+        hearing = self.b.phs_rows()
+        self.losses['phs_overruns'] = sum(overruns for _, overruns in hearing)
+        payload = b'DKPH' + VIS_HEADER.pack(len(hearing), (len(hearing) + 7) >> 3)
+        payload += b''.join(row for row, _ in hearing)
+        self.hearing = payload + b'DKPT' + struct.pack('<I', len(payload))
         self.clusters = len(rows)
         self.losses['vis_overruns'] = sum(overruns for _, overruns in rows)
         if not rows:

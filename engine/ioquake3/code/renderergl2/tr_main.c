@@ -1016,14 +1016,37 @@ be moving and rotating.
 Returns qtrue if it should be mirrored
 =================
 */
+/* An admitted resident aperture names its own quad, not every coplanar
+ * engine portal. The original mirror matching remains unchanged. */
+const refEntity_t *R_ResidentPortal(const surfaceType_t *surface) {
+    const srfPoly_t *poly;
+    vec3_t center, delta;
+    int i, j;
+    if (!surface || *surface != SF_POLY) return NULL;
+    poly = (const srfPoly_t *)surface;
+    if (poly->numVerts != 4) return NULL;
+    VectorClear(center);
+    for (i = 0; i < poly->numVerts; ++i) VectorAdd(center, poly->verts[i].xyz, center);
+    VectorScale(center, 0.25f, center);
+    for (j = 0; j < tr.refdef.num_entities; ++j) {
+        const refEntity_t *entity = &tr.refdef.entities[j].e;
+        if (entity->reType != RT_PORTALSURFACE || !entity->dk3PortalWorld) continue;
+        VectorSubtract(center, entity->origin, delta);
+        if (VectorLengthSquared(delta) < 0.0001f) return entity;
+    }
+    return NULL;
+}
+
 qboolean R_GetPortalOrientations( drawSurf_t *drawSurf, int entityNum, 
 							 orientation_t *surface, orientation_t *camera,
-							 vec3_t pvsOrigin, qboolean *mirror ) {
+							 vec3_t pvsOrigin, qboolean *mirror, unsigned int *residentWorld ) {
 	int			i;
 	cplane_t	originalPlane, plane;
 	trRefEntity_t	*e;
 	float		d;
 	vec3_t		transformed;
+
+    *residentWorld = 0;
 
 	// create plane axis for the portal we are seeing
 	R_PlaneForSurface( drawSurf->surface, &originalPlane );
@@ -1060,10 +1083,23 @@ qboolean R_GetPortalOrientations( drawSurf_t *drawSurf, int entityNum,
 			continue;
 		}
 
+        if (e->e.dk3PortalWorld && R_ResidentPortal(drawSurf->surface) != &e->e) continue;
+
 		d = DotProduct( e->e.origin, originalPlane.normal ) - originalPlane.dist;
 		if ( d > 64 || d < -64) {
 			continue;
 		}
+
+        if (e->e.dk3PortalWorld) {
+            /* Reviewed identity seam: no camera translation or reflection.
+             * The separately supplied PVS point is inside the far corridor. */
+            VectorCopy(e->e.origin, surface->origin);
+            *camera = *surface;
+            VectorCopy(e->e.oldorigin, pvsOrigin);
+            *mirror = qfalse;
+            *residentWorld = e->e.dk3PortalWorld;
+            return qtrue;
+        }
 
 		// get the pvsOrigin from the entity
 		VectorCopy( e->e.oldorigin, pvsOrigin );
@@ -1142,6 +1178,9 @@ static qboolean IsMirror( const drawSurf_t *drawSurf, int entityNum )
 	trRefEntity_t	*e;
 	float		d;
 
+    /* Resident apertures never use distance-alpha fading. */
+    if (R_ResidentPortal(drawSurf->surface)) return qtrue;
+
 	// create plane axis for the portal we are seeing
 	R_PlaneForSurface( drawSurf->surface, &originalPlane );
 
@@ -1208,6 +1247,9 @@ static qboolean SurfIsOffscreen( const drawSurf_t *drawSurf, vec4_t clipDest[128
 	int i;
 	unsigned int pointAnd = (unsigned int)~0;
 
+    cplane_t polygonPlane;
+    if (*drawSurf->surface == SF_POLY) R_PlaneForSurface(drawSurf->surface, &polygonPlane);
+
 	R_RotateForViewer();
 
 	R_DecomposeSort( drawSurf->sort, &entityNum, &shader, &fogNum, &dlighted, &pshadowed );
@@ -1264,7 +1306,8 @@ static qboolean SurfIsOffscreen( const drawSurf_t *drawSurf, vec4_t clipDest[128
 			shortest = len;
 		}
 
-		R_VaoUnpackNormal(tNormal, tess.normal[tess.indexes[i]]);
+		if (*drawSurf->surface == SF_POLY) VectorCopy(polygonPlane.normal, tNormal);
+        else R_VaoUnpackNormal(tNormal, tess.normal[tess.indexes[i]]);
 
 		if ( DotProduct( normal, tNormal ) >= 0 )
 		{
@@ -1304,6 +1347,10 @@ qboolean R_MirrorViewBySurface (drawSurf_t *drawSurf, int entityNum) {
 	viewParms_t		oldParms;
 	orientation_t	surface, camera;
 
+    unsigned int residentWorld = 0, previousWorld = RE_CurrentWorld();
+    int savedPshadowCount = tr.refdef.num_pshadows;
+    byte savedAreaMask[MAX_MAP_AREA_BYTES];
+
 	// don't recursively mirror
 	if (tr.viewParms.isPortal) {
 		ri.Printf( PRINT_DEVELOPER, "WARNING: recursive mirror/portal found\n" );
@@ -1327,7 +1374,7 @@ qboolean R_MirrorViewBySurface (drawSurf_t *drawSurf, int entityNum) {
 	newParms.zFar = 0.0f;
 	newParms.flags &= ~VPF_FARPLANEFRUSTUM;
 	if ( !R_GetPortalOrientations( drawSurf, entityNum, &surface, &camera, 
-		newParms.pvsOrigin, &newParms.isMirror ) ) {
+		newParms.pvsOrigin, &newParms.isMirror, &residentWorld ) ) {
 		return qfalse;		// bad portal, no portalentity
 	}
 
@@ -1345,8 +1392,24 @@ qboolean R_MirrorViewBySurface (drawSurf_t *drawSurf, int entityNum) {
 
 	// OPTIMIZE: restrict the viewport on the mirrored view
 
-	// render the mirror view
-	R_RenderView (&newParms);
+    // Resident backend tables are scoped across the complete queued view.
+    // Ordinary engine mirrors retain their existing path.
+    if (residentWorld) {
+        if (!RE_SelectWorld(residentWorld)) ri.Error(ERR_DROP, "Lost resident portal destination");
+        // These maps were rendered in the source world's coordinates. Do not
+        // project them onto an unrelated resident destination's geometry.
+        tr.refdef.num_pshadows = 0;
+        Com_Memcpy(savedAreaMask, tr.refdef.areamask, sizeof(savedAreaMask));
+        Com_Memset(tr.refdef.areamask, 0, sizeof(tr.refdef.areamask));
+        tr.refdef.areamaskModified = qtrue;
+    }
+    R_RenderView(&newParms);
+    if (residentWorld) {
+        if (!RE_SelectWorld(previousWorld)) ri.Error(ERR_DROP, "Lost resident portal source");
+        tr.refdef.num_pshadows = savedPshadowCount;
+        Com_Memcpy(tr.refdef.areamask, savedAreaMask, sizeof(savedAreaMask));
+        tr.refdef.areamaskModified = qtrue;
+    }
 
 	tr.viewParms = oldParms;
 
@@ -1554,6 +1617,7 @@ static void R_AddEntitySurface (int entityNum)
 	tr.currentEntityNum = entityNum;
 
 	ent = tr.currentEntity = &tr.refdef.entities[tr.currentEntityNum];
+	if (!(tr.refdef.rdflags & RDF_NOWORLDMODEL) && ent->e.dk3World != tr.worldRegistration) return;
 
 	ent->needDlights = qfalse;
 
@@ -1865,7 +1929,10 @@ void R_RenderPshadowMaps(const refdef_t *fd)
 	{
 		trRefEntity_t *ent = &tr.refdef.entities[i];
 
-		if((ent->e.renderfx & (RF_FIRST_PERSON | RF_NOSHADOW)))
+		// Resident worlds reuse coordinates. Only the current owner may cast
+		// into this world's shadow maps; foreign entities have their own view.
+		if(ent->e.dk3World != tr.worldRegistration ||
+		   (ent->e.renderfx & (RF_FIRST_PERSON | RF_DEPTHHACK | RF_NOSHADOW)))
 			continue;
 
 		//if((ent->e.renderfx & RF_THIRD_PERSON))
@@ -1885,16 +1952,26 @@ void R_RenderPshadowMaps(const refdef_t *fd)
 
 			if (ent->e.nonNormalizedAxes)
 			{
-				scale = VectorLength( ent->e.axis[0] );
+				scale = MAX(VectorLength(ent->e.axis[0]),
+				            MAX(VectorLength(ent->e.axis[1]), VectorLength(ent->e.axis[2])));
 			}
 
 			switch (model->type)
 			{
 				case MOD_MESH:
 				{
-					mdvFrame_t *frame = &model->mdv[0]->frames[ent->e.frame];
-
-					radius = frame->radius * scale;
+					mdvModel_t *mesh = model->mdv[0];
+					int frame = ent->e.frame, oldframe = ent->e.oldframe;
+					// Shadow admission precedes R_AddMD3Surfaces' validation.
+					if (ent->e.renderfx & RF_WRAP_FRAMES) {
+						frame %= mesh->numFrames;
+						oldframe %= mesh->numFrames;
+					}
+					if (frame < 0 || frame >= mesh->numFrames || oldframe < 0 || oldframe >= mesh->numFrames)
+						frame = oldframe = 0;
+					// Include both animation poses and their local centers.
+					radius = MAX(mesh->frames[frame].radius + VectorLength(mesh->frames[frame].localOrigin),
+					             mesh->frames[oldframe].radius + VectorLength(mesh->frames[oldframe].localOrigin)) * scale;
 				}
 				break;
 
@@ -1910,14 +1987,23 @@ void R_RenderPshadowMaps(const refdef_t *fd)
 				break;
 				case MOD_IQM:
 				{
-					// FIXME: never actually tested this
 					iqmData_t *data = model->modelData;
 					vec3_t diag;
-					float *framebounds;
-
-					framebounds = data->bounds + 6*ent->e.frame;
-					VectorSubtract( framebounds+3, framebounds, diag );
-					radius = 0.5f * VectorLength( diag );
+					int frames[2] = { ent->e.frame, ent->e.oldframe };
+					int f, axis;
+					if (!data->bounds || data->num_frames <= 0)
+						break;
+					for (f = 0; f < 2; f++) {
+						float *bounds;
+						if (ent->e.renderfx & RF_WRAP_FRAMES)
+							frames[f] %= data->num_frames;
+						if (frames[f] < 0 || frames[f] >= data->num_frames)
+							frames[f] = 0;
+						bounds = ent->e.dk3BoneCount == data->num_joints && data->num_joints <= 64 ? &ent->e.dk3BoneBounds[0][0] : data->bounds + 6 * frames[f];
+						for (axis = 0; axis < 3; axis++)
+							diag[axis] = MAX(fabsf(bounds[axis]), fabsf(bounds[axis + 3]));
+						radius = MAX(radius, VectorLength(diag) * scale);
+					}
 				}
 				break;
 
@@ -2042,6 +2128,10 @@ void R_RenderPshadowMaps(const refdef_t *fd)
 		if (DotProduct(lightDir, lightDir) < 0.9f)
 			VectorSet(lightDir, 0.0f, 0.0f, 1.0f);
 #endif
+		// Model shadows anchor objects to their surroundings. Floor-level or
+		// downward light-grid samples must not project the silhouette skyward.
+		lightDir[2] = MAX(lightDir[2], 0.5f);
+		VectorNormalize(lightDir);
 
 		if (shadow->viewRadius * 3.0f > shadow->lightRadius)
 		{
@@ -2144,8 +2234,10 @@ void R_RenderPshadowMaps(const refdef_t *fd)
 
 				dest->projectionMatrix[2] = 0;
 				dest->projectionMatrix[6] = 0;
-				dest->projectionMatrix[10] = 2 / (zfar - znear);
-				dest->projectionMatrix[14] = 0;
+				// Standard orthographic depth: near -> 0, far -> 1 after
+				// viewport mapping. The receiver compares against this depth.
+				dest->projectionMatrix[10] = -2 / (zfar - znear);
+				dest->projectionMatrix[14] = -(zfar + znear) / (zfar - znear);
 
 				dest->projectionMatrix[3] = 0;
 				dest->projectionMatrix[7] = 0;

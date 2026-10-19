@@ -61,7 +61,7 @@ typedef struct aas_tracestack_s
 	int nodenum;		//node found after splitting with planenum
 } aas_tracestack_t;
 
-int numaaslinks;
+#define numaaslinks (aasworld.numaaslinks)
 
 //===========================================================================
 //
@@ -74,7 +74,8 @@ void AAS_PresenceTypeBoundingBox(int presencetype, vec3_t mins, vec3_t maxs)
 	int index;
 	//bounding box size for each presence type
 	vec3_t boxmins[3] = {{0, 0, 0}, {-15, -15, -24}, {-15, -15, -24}};
-	vec3_t boxmaxs[3] = {{0, 0, 0}, { 15,  15,  32}, { 15,  15,   8}};
+	//dk3: the native player ducks to maxs z 4 (player_move.zig)
+	vec3_t boxmaxs[3] = {{0, 0, 0}, { 15,  15,  32}, { 15,  15,   4}};
 
 	if (presencetype == PRESENCE_NORMAL) index = 1;
 	else if (presencetype == PRESENCE_CROUCH) index = 2;
@@ -107,7 +108,7 @@ void AAS_InitAASLinkHeap(void)
 #endif
 		if (max_aaslinks < 0) max_aaslinks = 0;
 		aasworld.linkheapsize = max_aaslinks;
-		aasworld.linkheap = (aas_link_t *) GetHunkMemory(max_aaslinks * sizeof(aas_link_t));
+		aasworld.linkheap = (aas_link_t *) GetMemory(max_aaslinks * sizeof(aas_link_t));
 	} //end if
 	//link the links on the heap
 	aasworld.linkheap[0].prev_ent = NULL;
@@ -188,7 +189,7 @@ void AAS_InitAASLinkedEntities(void)
 {
 	if (!aasworld.loaded) return;
 	if (aasworld.arealinkedentities) FreeMemory(aasworld.arealinkedentities);
-	aasworld.arealinkedentities = (aas_link_t **) GetClearedHunkMemory(
+	aasworld.arealinkedentities = (aas_link_t **) GetClearedMemory(
 						aasworld.numareas * sizeof(aas_link_t *));
 } //end of the function AAS_InitAASLinkedEntities
 //===========================================================================
@@ -1366,7 +1367,11 @@ int AAS_AreaInfo( int areanum, aas_areainfo_t *info )
 		return 0;
 	if (areanum <= 0 || areanum >= aasworld.numareas)
 	{
-		botimport.Print(PRT_ERROR, "AAS_AreaInfo: areanum %d out of range\n", areanum);
+		//dk3: callers enumerate areas until this fails; report like AAS_EnableRoutingArea
+		if (botDeveloper)
+		{
+			botimport.Print(PRT_ERROR, "AAS_AreaInfo: areanum %d out of range\n", areanum);
+		} //end if
 		return 0;
 	} //end if
 	settings = &aasworld.areasettings[areanum];
