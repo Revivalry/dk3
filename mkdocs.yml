@@ -1,6 +1,6 @@
-site_name: dk3 · Engine field manual
+site_name: dk3 documentation
 site_url: https://dmytrogajewski.github.io/dk3/
-site_description: The dk3 engine, native Zig runtime, Vulkan renderer, game systems, and evidence of what works.
+site_description: Build and play dk3, configure the engine, and understand its native Zig runtime.
 repo_url: https://github.com/dmytrogajewski/dk3
 repo_name: dmytrogajewski/dk3
 edit_uri: edit/main/docs/
@@ -9,7 +9,6 @@ site_dir: zig-out/docs-site
 strict: true
 theme:
   name: material
-  custom_dir: docs_site/overrides
   logo: assets/brand.svg
   favicon: assets/brand.svg
   font: false
@@ -35,6 +34,7 @@ extra_css:
 markdown_extensions:
   - admonition
   - attr_list
+  - def_list
   - md_in_html
   - tables
   - toc:
@@ -43,42 +43,34 @@ markdown_extensions:
       anchor_linenums: true
   - pymdownx.superfences
 nav:
-  - Overview: index.md
-  - Start here:
-      - Getting started: getting-started.md
-      - Current game state: status.md
-      - Building: building.md
-      - Assets and installation: assets.md
-      - Documentation directory: documentation.md
-  - Engine:
-      - Architecture: engine.md
-      - Native runtime: runtime-zig.md
-      - Vulkan and remaster: vulkan-remaster.md
-      - Resident worlds: seamless-worlds.md
-      - Wire protocol: protocol.md
-      - Save format: save-format.md
-      - Navigation: navigation.md
-      - Component provenance: provenance.md
-  - Game systems:
-      - Acceptance ledger: native-acceptance.md
-      - Weapons: weapons-zig.md
-      - Class porting contract: class-porting.md
-      - Multiplayer: multiplayer.md
-      - Online architecture: multiplayer-zig.md
-      - Multiplayer bots: bots-zig.md
-      - Campaign driver: coop-bot.md
-      - Roadmap: rewrite-roadmap.md
-  - Asset workshop:
-      - Animation authoring: animation-authoring.md
-      - Neural characters: neural-assets.md
-      - Enemy motion: neural-monsters.md
-      - HD weapon pipeline: hd-weapons.md
-      - Cinematic reconstruction: cinematic-reconstruction.md
-      - Cinematic authored motion: cinematic-authored-motion.md
-      - Cinematic performance: cinematic-performance-pivot.md
-      - Generated dojo: generated-dojo-model.md
-  - Development:
-      - Development workflow: development-workflow.md
-      - Publication boundaries: publication.md
-      - RPM packaging: rpm.md
-      - Site maintenance: site-maintenance.md
+  - Home: index.md
+  - Tutorials:
+      - Build the engine: tutorials/build-engine.md
+      - Start your first game: tutorials/first-game.md
+  - How-to guides:
+      - Choose a renderer: how-to/select-renderer.md
+      - Configure video: how-to/configure-video.md
+      - Update an installation: how-to/update-installation.md
+      - Host a multiplayer game: how-to/host-multiplayer.md
+      - Run without a display: how-to/headless.md
+      - Troubleshoot: how-to/troubleshoot.md
+      - Add or change a class: how-to/extend-class.md
+  - Reference:
+      - Build commands: reference/build.md
+      - Files and directories: reference/paths.md
+      - Renderer settings: reference/rendering.md
+      - Console commands: reference/console.md
+      - dkguard: reference/guard.md
+      - Asset conversion: reference/assets.md
+      - Networking: reference/network.md
+      - Save format: reference/saves.md
+      - Glossary: reference/glossary.md
+  - Explanation:
+      - Engine architecture: explanation/architecture.md
+      - Rendering: explanation/rendering.md
+      - Connected worlds: explanation/worlds.md
+      - Assets and installations: explanation/assets.md
+  - Project:
+      - Development status: project/status.md
+      - Contributing: project/development.md
+      - Licensing: project/licensing.md

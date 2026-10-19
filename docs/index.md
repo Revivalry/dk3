@@ -1,46 +1,40 @@
----
-template: home.html
-title: dk3 — Engine field manual
-description: Explore the engine, build the native runtime, and follow the evidence behind the game.
-hide:
-  - navigation
-  - toc
----
+# dk3 documentation
 
-## Read the machinery
+dk3 brings Daikatana to a modified ioquake3 engine with a native Zig runtime.
+It includes Vulkan and OpenGL renderers, game and menu modules, multiplayer
+services, and tools for converting your own game data.
 
-dk3 is an independent Daikatana rebuild on a bundled, modified ioquake3 engine.
-Game, client and UI behavior run in Zig 0.16. The project includes a native Vulkan
-renderer, OpenGL alternatives, campaign systems, multiplayer and local asset tools.
-This manual publishes the design, build instructions and verification limits together.
+dk3 is under development. See [Development status](project/status.md) for supported
+setups and current limitations.
 
-<div class="manual-links" markdown>
+## Get started
 
-[**01 / Build & play**<br>Dependencies, source build, legally acquired assets and an isolated installation.](getting-started.md)
+Follow [Build the engine](tutorials/build-engine.md) to compile the client and
+tools on Linux. Then [Start your first game](tutorials/first-game.md) walks
+through converting Daikatana data, installing it and launching the game.
 
-[**02 / Inside the engine**<br>The build graph, ECS, native ABI, renderer, worlds, network and persistence.](engine.md)
+## Use the engine
 
-[**03 / State of the game**<br>Implemented systems, focused passing scenarios and remaining campaign acceptance.](status.md)
+- [Choose a renderer](how-to/select-renderer.md) or [configure video](how-to/configure-video.md).
+- [Update your installation](how-to/update-installation.md) after rebuilding or converting new data.
+- [Host a multiplayer game](how-to/host-multiplayer.md).
+- [Run without a display](how-to/headless.md).
+- [Troubleshoot startup and loading](how-to/troubleshoot.md).
 
-[**04 / The reference library**<br>Browse every guide, class review and historical engineering record.](documentation.md)
+## Look up a setting or format
 
-</div>
+The reference covers [build commands](reference/build.md), [renderer settings](reference/rendering.md),
+[console commands](reference/console.md), [file locations](reference/paths.md),
+[asset conversion](reference/assets.md), [networking](reference/network.md) and
+the [save format](reference/saves.md).
 
-## A complete world is the goal
+## Understand and extend dk3
 
-All four episodes, companions, cinematics, deathmatch, CTF and deathtag are in scope.
-All 28 weapon classes have native implementations. Focused checks cover many systems;
-no complete episode or full campaign has passed end-to-end acceptance.
+Read [Engine architecture](explanation/architecture.md) for the module layout and
+frame flow. The explanations of [rendering](explanation/rendering.md),
+[connected worlds](explanation/worlds.md) and [asset installations](explanation/assets.md)
+describe how those systems fit together.
 
-The [current assessment](status.md) separates source implementation, recorded scenarios
-and fresh checks. The [acceptance ledger](native-acceptance.md) retains failures and
-superseded results. A green component suite establishes build and regression health.
-Campaign completion needs gameplay evidence.
-
-## Bring your own world data
-
-Source builds do not require proprietary game data or private reference code.
-Playing requires legally acquired Daikatana assets converted locally. Original and
-converted assets, generated character packages and saves are not shipped here.
-See [asset setup](assets.md), [component provenance](provenance.md) and
-[copyright and licensing](../COPYRIGHT.md).
+To change gameplay, start with [Add or change a class](how-to/extend-class.md).
+For the development workflow and documentation commands, see
+[Contributing](project/development.md).
