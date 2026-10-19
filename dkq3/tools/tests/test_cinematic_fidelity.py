@@ -165,7 +165,7 @@ class PerformanceFidelityTests(unittest.TestCase):
     def test_captured_prop_uses_original_orientation_and_discrete_visibility(self):
         m=model();motion.attach(m,'prop_30','hand_l',[0,0,0]);sample=motion.from_model(m,0,0,10)
         sample.world=np.repeat(sample.world,3,axis=0);sample.travel=np.zeros((3,3))
-        world=np.repeat(np.eye(4)[None],3,axis=0);world[:,:3,:3]=Rotation.from_euler('y',[60,65,70],degrees=True).as_matrix();world[:,:3,3]=[2,3,4]
+        world=np.repeat(np.eye(4)[None],3,axis=0);world[:,:3,:3]=Rotation.from_euler('y',[[60],[65],[70]],degrees=True).as_matrix();world[:,:3,3]=[2,3,4]
         sample.metadata['source_props']={'prop_30':dict(world=world.tolist(),visible=[True,False,True],reference_frame=0,surface='sword',rms_max=.02)}
         sampled=motion.resample(sample,30,count=5)
         recipe=dict(props={'prop_30':dict(mode='captured')},source_frames=[0,2])
@@ -241,7 +241,7 @@ class SourceModelTests(unittest.TestCase):
                     4:np.array([[0,1,0,0]]*3),5:np.array([[128,127,0,0]]*3)},
                    [('body','body',0,3,0,1)],np.array([[0,1,2]]),['pelvis','spine'],[-1,0],
                    np.array([[0,0,0,0,0,0,1,1,1,1],[0,0,2,0,0,0,1,1,1,1]],float),np.zeros((6,2,10)))
-        m.frames[:]=m.bind;m.frames[:,1,3:7]=Rotation.from_euler('y',[0,10,20,-20,-10,0],degrees=True).as_quat()
+        m.frames[:]=m.bind;m.frames[:,1,3:7]=Rotation.from_euler('y',[[0],[10],[20],[-20],[-10],[0]],degrees=True).as_quat()
         observed=sk.skin(m,m.frames);world=sk.matrices(m.frames,m.parents)
         weights,report=rebuild.learn_weights(m,m.arrays[0],observed,world,np.arange(6))
         np.testing.assert_allclose(weights[:,0],128/255,atol=1e-7)

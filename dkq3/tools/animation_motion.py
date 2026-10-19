@@ -631,7 +631,7 @@ def solve_contacts(model,motion,intervals,adjust_root=False,floor_height=None):
                 j=model.names.index(bone);parent=model.parents[j]
                 forward=world[:,j,:3,:3]@bind[j,:3,:3].T@np.array([1.,0,0])
                 yaw=np.arctan2(forward[:,1],forward[:,0])
-                desired=Rotation.from_euler('z',yaw).as_matrix()@bind[j,:3,:3]
+                desired=Rotation.from_euler('z',yaw[:,None]).as_matrix()@bind[j,:3,:3]
                 rotation=world[:,parent,:3,:3].swapaxes(-1,-2)@desired
                 local[mask,j,3:7]=Rotation.from_matrix(rotation[mask]).as_quat()
                 toe=model.names.index('toe_'+bone[-1]);local[mask,toe,3:7]=model.bind[toe,3:7]

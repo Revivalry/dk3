@@ -27,7 +27,7 @@ from tests.test_animation_author import model, document
 class SourceCaptureTests(unittest.TestCase):
     def test_observations_recover_known_rigid_motion_and_anchor(self):
         rest=np.array([[0.,0,0],[2,0,0],[0,3,0],[0,0,4],[1,1,1]])
-        angles=[0,30,70];rot=Rotation.from_euler('z',angles,degrees=True).as_matrix()
+        angles=[[0],[30],[70]];rot=Rotation.from_euler('z',angles,degrees=True).as_matrix()
         shift=np.array([[0.,0,0],[3,1,2],[5,2,3]])
         points=np.einsum('fij,vj->fvi',rot,rest)+shift[:,None]
         anchor=np.array([.5,.6,.7]);capture,metrics=reconstruction.rigid_capture(rest,points,anchor,0)
@@ -71,7 +71,7 @@ class SourceCaptureTests(unittest.TestCase):
 
     def test_head_orientation_survives_retarget_without_bind_mutation(self):
         m=model();before=m.bind.copy();m.frames=np.repeat(m.bind[None],3,axis=0)
-        j=m.names.index('head');m.frames[:,j,3:7]=Rotation.from_euler('z',[0,40,80],degrees=True).as_quat()
+        j=m.names.index('head');m.frames[:,j,3:7]=Rotation.from_euler('z',[[0],[40],[80]],degrees=True).as_quat()
         sampled=motion.from_model(m,0,2,10)
         bones={n:n for n in m.names if not n.startswith(('tag_','prop_','hp_','ctf_','fingers_','thumb_','clavicle_'))}
         recipe=dict(bones=bones,forward='x',up='z')

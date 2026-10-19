@@ -61,7 +61,7 @@ class MeasuredOrientationTests(unittest.TestCase):
 
     def test_unmapped_fingers_inherit_the_hand_instead_of_counter_rotating(self):
         target=model();target.frames=np.repeat(target.bind[None],3,axis=0);j=target.names.index('hand_l')
-        target.frames[:,j,3:7]=Rotation.from_euler('y',[10,35,60],degrees=True).as_quat()
+        target.frames[:,j,3:7]=Rotation.from_euler('y',[[10],[35],[60]],degrees=True).as_quat()
         sample=motion.from_model(target,0,2,30);bones={n:n for n in target.names if not n.startswith(('tag_','prop_','fingers_','thumb_','clavicle_'))}
         recipe=dict(bones=bones,forward='x',up='z',rotation_bones=['hand_l'],bind_bones=['fingers_l','thumb_l'])
         result=motion.retarget(target,sample,recipe)
@@ -97,11 +97,12 @@ class ContactTests(unittest.TestCase):
             additions={0:points,1:np.zeros((3,2)),2:np.tile([0,0,1],(3,1)),4:np.tile([foot,0,0,0],(3,1)),5:np.tile([255,0,0,0],(3,1))}
             for key,data in additions.items():target.arrays[key]=np.vstack((target.arrays[key],data))
             target.triangles=np.vstack((target.triangles,[start,start+1,start+2]))
-        target.meshes=[('body','body',0,9,0,3)];sample=motion.from_model(target,0,0,30)
+        target.meshes=[('body','body',0,9,0,3)]
+        target.frames=np.repeat(target.frames[:1],3,axis=0);sample=motion.from_model(target,0,2,30)
         for side in ('l','r'):
             for bone in ('foot','toe'):
-                j=target.names.index(bone+'_'+side);sample.world[:,j,:3,:3]=Rotation.from_euler('y',35,degrees=True).as_matrix()@sample.world[:,j,:3,:3]
-        intervals={n:[[0,0]] for n in ('foot_l','foot_r')};floor=float(target.arrays[0][:,2].min());recipe=dict(contacts=intervals,contact_floor=floor)
+                j=target.names.index(bone+'_'+side);sample.world[:,j,:3,:3]=Rotation.from_euler('y',[[15],[25],[35]],degrees=True).as_matrix()@sample.world[:,j,:3,:3]
+        intervals={n:[[0,2]] for n in ('foot_l','foot_r')};floor=float(target.arrays[0][:,2].min());recipe=dict(contacts=intervals,contact_floor=floor)
         raw=motion.solve_contacts(target,sample,intervals,True)
         before=motion.validate(target,raw,recipe);self.assertFalse(before['passed'])
         self.assertTrue(any(f['code']=='ANIM_ATTACHMENT_ERROR' for f in before['failures']))
@@ -115,7 +116,7 @@ class ContactTests(unittest.TestCase):
         target=model();motion.attach(target,'prop_staff','hand_l',[0,0,0]);target.frames=np.repeat(target.frames[:1],3,axis=0)
         prop=target.names.index('prop_staff');hand=target.names.index('hand_l')
         sample=motion.from_model(target,0,2,30);original=sample.world[:,prop,:3,:3].copy()
-        sample.world[:,hand,:3,:3]=Rotation.from_euler('x',[30,50,70],degrees=True).as_matrix()
+        sample.world[:,hand,:3,:3]=Rotation.from_euler('x',[[30],[50],[70]],degrees=True).as_matrix()
         contact=dict(prop='prop_staff',members=['prop_staff'],pivot=[0,0,0],parent='hand_l',position=[0,0,0],orientation='source_world')
         recipe=dict(source_frames=[0,2],prop_contacts=[contact]);result=motion.prop_policy(target,sample,recipe)
         np.testing.assert_allclose(result.world[:,prop,:3,:3],original,atol=1e-10)
