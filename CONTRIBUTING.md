@@ -1,39 +1,54 @@
 # Contributing to dk3
 
-Welcome! The public repository contains development tools while the game runtime is being
-replaced. See the [roadmap](docs/rewrite-roadmap.md) before starting gameplay work.
+Bug reports, code and documentation improvements are welcome. Start with the
+[build tutorial](docs/tutorials/build-engine.md) to set up the development tools.
+Read [Engine architecture](docs/explanation/architecture.md) before changing the
+runtime and [Add or change a class](docs/how-to/extend-class.md) for gameplay work.
 
 ## Build and check a change
 
-Use Linux x86-64, Zig 0.16.x, Python 3.10+, and Make:
+Use Linux x86-64 and Zig 0.16.x. From the repository root, with the tutorial's
+Python environment installed:
 
 ```sh
-make build
-make lint
+zig build -Dpython=.venv/bin/python
+zig build test -Dpython=.venv/bin/python
 ```
 
-`make lint` runs formatting checks and the existing component checks. `make fmt` formats Zig
-source. For headless process checks, install `xvfb-run` and `xauth`; on Debian/Ubuntu those come
-from `xvfb` and `xauth`. Without them, the display-dependent check is explicitly skipped.
+`zig build test` runs the component checks, including formatting, class ownership,
+codec/security and asset-tool fixtures. `make lint` and `make test` invoke the
+same suite. Use `make fmt` to format Zig source.
+
+Implement connected behavior before systematic gameplay verification. Use
+`dkguard` for engine runs and `--headless` for software rendering without a
+display. See [Headless runs](docs/how-to/headless.md) and the
+[development workflow](docs/development-workflow.md).
+
+For documentation-only changes, build and check the site with `make docs-site`.
+See [Contributing to the documentation](docs/project/development.md#change-documentation)
+for dependencies and preview commands.
 
 ## Report a problem
 
-Open an [issue](https://github.com/dmytrogajewski/dk3/issues) with the command you ran, what you
-expected, what happened, your OS, and `zig version`. Include relevant log excerpts after checking
-for personal paths or credentials. Do not attach retail files, extracted assets, or saved games.
+Open an [issue](https://github.com/dmytrogajewski/dk3/issues) with the command you
+ran, expected and actual behavior, OS, `zig version` and relevant log excerpts.
+Remove personal paths and credentials. Do not attach retail files or extracted
+assets. For vulnerabilities, follow [SECURITY.md](SECURITY.md).
 
 ## Submit a change
 
-Fork the repository, make a focused branch, and open a pull request. Describe the behavior changed
-and the checks you ran. Update the relevant documentation when commands or requirements change.
-Use a descriptive title such as `fix: reject a truncated archive directory`.
+Fork the repository, make a focused branch and open a pull request. Describe the
+behavior change and checks run. Update the relevant documentation when commands,
+formats or requirements change.
 
-Submit only code you have the right to contribute under GPL-2.0-or-later. Preserve existing
-copyright and license notices. A contribution does not transfer copyright; no separate CLA or
-sign-off is required. Discuss third-party code and its license before adding it.
+Submit code you have the right to contribute under GPL-2.0-or-later. Preserve
+copyright and license notices. Contributions do not transfer copyright; no
+separate CLA or sign-off is required. Discuss third-party code and its license
+before adding it.
 
-Do not copy or mechanically translate unlicensed Gold implementation code. New runtime components
-need an original implementation, a documented interface, and behavior checked against synthetic
-fixtures or observations. Proprietary strings and artwork belong in locally supplied game data.
+Do not copy or mechanically translate unlicensed Gold implementation code. Use
+original implementations and check behavior against synthetic fixtures or
+observations. Proprietary strings and artwork belong in locally supplied game data.
 
-Treat other contributors respectfully. Questions and small documentation fixes are welcome.
+Treat other contributors respectfully. Questions and small documentation fixes
+are welcome.

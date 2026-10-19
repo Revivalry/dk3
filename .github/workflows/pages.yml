@@ -1,4 +1,4 @@
-name: Engine manual
+name: Documentation
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: engine-manual-${{ github.ref }}
+  group: documentation-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

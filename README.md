@@ -1,162 +1,68 @@
 # dk3
 
-An open-source project to bring **Daikatana to the ioquake3 engine**, built with Zig.
+dk3 brings Daikatana to a modified ioquake3 engine with a native Zig runtime.
+It includes Vulkan and OpenGL renderers, single-player systems, multiplayer,
+and tools for converting your own game data.
 
-**Native Zig runtime under development; gameplay is incomplete.**
+**Development build:** campaign completion and multiplayer still have limitations.
+See [Development status](docs/project/status.md) before playing.
 
-The old gameplay runtime has been removed. The only game/client/UI implementation
-is now the native Zig runtime in `src/`, built on the bundled ioquake3 engine. Weapon definitions,
-movement, ECS world systems, movers, pickups, all 28 weapon controllers, episode
-actors, scripts, cinematics, companions, saves and multiplayer modes are connected.
-The consolidated native implementation still requires gameplay verification and
-repairs; no complete episode is accepted. The native rewrite was merged into
-`main` on 19 October 2026; the separate preserved installation and saves stay local.
+[Documentation](https://dmytrogajewski.github.io/dk3/) ·
+[Build tutorial](docs/tutorials/build-engine.md) ·
+[Engine architecture](docs/explanation/architecture.md)
 
-**[Engine field manual](https://dmytrogajewski.github.io/dk3/)** ·
-[Current game assessment](docs/status.md) · [Engine architecture](docs/engine.md)
+## Build
 
-See the [native architecture and progress](docs/runtime-zig.md),
-[current acceptance](docs/native-acceptance.md), and [full roadmap](docs/rewrite-roadmap.md).
-Earlier screenshots and gameplay results describe the retired runtime and are
-historical evidence, not acceptance of this runtime.
-
-## Build the engine and tools
-
-You need Linux x86-64, Zig 0.16.x, Make, and SDL2 development files discoverable by
-pkg-config, Vulkan development files, `glslc`, and SQLite3 development files.
-Python 3.11+ with `dkq3/tools/requirements-test.txt` is needed for component checks.
+Use Linux x86-64, Zig 0.16.x, Make, `pkg-config`, SDL2, SQLite3 and Vulkan
+development files, and `glslc`. See the [build tutorial](docs/tutorials/build-engine.md)
+for distribution packages and troubleshooting.
 
 ```sh
 git clone https://github.com/dmytrogajewski/dk3.git
 cd dk3
-zig build
-./zig-out/native-dev/bin/dkguard --help
+python3 -m venv .venv
+.venv/bin/python -m pip install -r dkq3/tools/requirements-test.txt
+zig build -Dpython=.venv/bin/python
+./zig-out/native-dev/bin/dkguard --mem 512M --timeout 30s -- .venv/bin/python --version
 ```
 
-The repository includes the engine, native game/client/UI modules, asset converters,
-and build/install tools together. It is a development snapshot, not a completed game port.
+The client, dedicated server and tools are in `zig-out/native-dev/bin/`.
+Game modules are in `zig-out/native-dev/lib/dk3/`. The checkout includes the
+engine; you do not need a separate ioquake3 repository or game data to build it.
 
-The client and server are `zig-out/native-dev/bin/dk3` and `zig-out/native-dev/bin/dk3ded`. The engine source
-is included under `engine/ioquake3`; no separate ioq3 or Gold checkout is required.
-See [building](docs/building.md) for build products and dependencies. Zig is the only game/client/UI runtime.
+## Play
 
-`dkguard` runs commands with memory limits, timeouts, and optional headless graphics. For example:
+You need legally acquired Daikatana data and FFmpeg 7 on your `PATH`.
+Replace the example path with the directory containing `pak1.pak` through `pak4.pak`:
 
 ```sh
-./zig-out/native-dev/bin/dkguard --mem 512M --timeout 30s -- python3 --version
+zig build assets -Dpython=.venv/bin/python -DDK_DATA=/path/to/daikatana/data -Dasset-profile=retail
+zig build play -Dpython=.venv/bin/python
 ```
 
-No game assets, GPU, ioquake3 checkout, or Python packages are needed for this example.
-See [getting started](docs/getting-started.md) for setup and format-tool examples.
+Choose **Single Player**, then a difficulty. Subsequent `zig build play` commands
+reuse the converted assets. Settings and saves are in the build prefix's
+`play/home/` and `play/state/` directories.
 
-## Supply assets and play the development build
+For the 1.3 input profile, save/load instructions and the first launch, follow
+[Start your first game](docs/tutorials/first-game.md). To change graphics, see
+[Choose a renderer](docs/how-to/select-renderer.md) and
+[Configure video](docs/how-to/configure-video.md).
 
-Development commands require **your own legally acquired Daikatana game data**, Python
-with `dkq3/tools/requirements.txt`, and ffmpeg 7:
+## Contribute
 
-```sh
-python3 -m venv .venv-convert
-.venv-convert/bin/python -m pip install -r dkq3/tools/requirements.txt
-zig build assets -DDK_DATA=/path/to/data -Dasset-profile=retail -Dpython=.venv-convert/bin/python
-zig build play
-```
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks and submission requirements.
+The [architecture guide](docs/explanation/architecture.md) describes the source
+layout; [Add or change a class](docs/how-to/extend-class.md) covers gameplay work.
+Report reproducible problems in the [issue tracker](https://github.com/dmytrogajewski/dk3/issues).
 
-After the first conversion, `zig build play` rebuilds the current checkout and launches
-it using the completed asset cache. It needs no repeated data path or conversion
-environment. Extra engine arguments follow `--`, for example `zig build play -- +map e1m3b`.
-Builds default to `zig-out/native-dev`; settings and saves remain under that prefix's
-`play/home` and `play/state` directories. The preserved installation is untouched.
-Use `-Dassets-dir=/path/to/cache` for a different converted cache or `-Dheadless=true`
-for a software-rendered test on a virtual display.
-
-Normal launches use the Vulkan renderer at the display's native resolution
-(`r_mode -2`; fullscreen is borderless at desktop size). Without a Vulkan 1.3 device
-the client falls back to OpenGL2 automatically. To choose a renderer explicitly, pass
-`-- +set cl_renderer opengl2` or `-- +set cl_renderer opengl1`.
-
-The Vulkan renderer's remaster path (`r_vkRemaster 1`, the default) adds:
-- HDR lighting with PBR materials;
-- shaded water, volumetric fog, TAA and render scaling;
-- GPU rain and snow with wet and snowy surfaces;
-- shadow-mapped model shadows.
-
-On hardware with ray queries it adds ray-traced shadows and reflections,
-traced-probe global illumination and directional lightmaps; `r_vkPathTracing 1`
-switches on the path-tracing mode. `r_vkRemaster 0` restores the classic OpenGL1
-look. The features and their settings are listed in
-[the remaster design](docs/vulkan-remaster.md). Run
-`python3 dkq3/tools/materialgen.py --textures <dk3-textures.pk3> --shaders
-<dk3-shaders.pk3> --normals --out zig-out/materials/dk3-materials.pk3` once to give
-the remaster material data; `play-install` then includes it.
-
-Press **Escape** during a cinematic to skip it and continue its authored exit.
-Outside cinematics, Escape opens or closes the pause menu.
-
-HD textures are used at full resolution automatically when the local package is
-available in `zig-out/hd-textures` or the build prefix's `hd-textures` directory.
-See [HD texture setup](docs/getting-started.md) for package overrides.
-
-The optional [local neural character package](docs/neural-assets.md) adds skeletal
-Hiro, Mikiko, Superfly, Mishima/Kage and Usagi models, gameplay clips, converted
-cinematic motion, multiplayer appearances and physical ragdoll deaths with joint
-limits and world collision. Once generated locally, it is
-included by `play-install` and `play` automatically.
-
-Native New Game, save/load and multiplayer menus are connected; their current
-acceptance is recorded in the matrix. Development uses an isolated prefix/profile
-and does not update the preserved game or saves.
-
-A save records the checksum of each map it holds, and a re-converted map refuses it.
-When only surface or contents flags changed, `dkq3/tools/save_port.py` re-stamps the
-saves (it finds the original maps in the kept asset generations, refuses any structural
-change, and keeps `<save>.pre-port`).
-
-`play-install` builds and verifies the installed files without launching. Supplying
-`-DDK_DATA` to either play command also requests conversion; `assets` selects conversion
-alone. Conversion requires ffmpeg 7 on `PATH`. Use `-Dasset-profile=1.3` for the documented
-1.3 overrides. That private profile has been converted and installed; the retail profile and
-complete new-game-to-ending path still require verification. See
-[asset inputs and installation](docs/assets.md). Original and converted assets stay local
-and are not covered by the project's GPL license.
-
-For a private RPM containing an existing converted installation, HD textures and
-default Internet-server trust, see [RPM packaging](docs/rpm.md).
-
-## Project layout
-
-```text
-engine/ioquake3/   Bundled engine, upstream foundations, and third-party notices
-engine/bspc/       Bundled navigation compiler and its notices
-src/engine/       ioquake3 ABI adapters (syscalls, services, projections)
-src/core/         Game-agnostic runtime: ECS, math, animation, collision, navigation, saves
-src/mechanics/    Shared Daikatana mechanisms (domain, server, client, ui, policy helpers)
-src/game/         Class registries and the component list
-src/classes/      One folder per actor, weapon, item and map-entity class
-src/network/      Zig protocol and security
-src/online/       Room services and operator tools
-src/dkguard/       Process runner and its existing checks
-dkq3/tools/        Asset conversion, archive tools and installation
-build/            Engine, modules, navigation, assets and launcher build graph
-docs/             Setup, provenance, publication boundaries, and rewrite roadmap
-build.zig         Engine and reviewed component build
-```
-
-The [rewrite roadmap](docs/rewrite-roadmap.md) separates implemented systems from verified
-gameplay. [Publication notes](docs/publication.md) explain how reviewed source is
-separated from the local playable workspace.
-
-## Contributing
-
-Bug reports, original implementations, and documentation improvements are welcome.
-Start with [CONTRIBUTING.md](CONTRIBUTING.md). Maintained by
-[@dmytrogajewski](https://github.com/dmytrogajewski).
+Maintained by [@dmytrogajewski](https://github.com/dmytrogajewski).
 
 ## License
 
-Original project code is **GPL-2.0-or-later**; see [LICENSE](LICENSE) and
-[COPYRIGHT.md](COPYRIGHT.md). The target engine, [ioquake3](https://ioquake3.org/), is GPL software.
-Bundled third-party sources retain their own terms. No engine license grants rights to
-Daikatana's original code or assets. This is an independent
-community project, unaffiliated with the original game's rights holders.
-
-<!-- README structure informed by https://github.com/RichardLitt/standard-readme -->
+Original project code is **GPL-2.0-or-later**. See [LICENSE](LICENSE),
+[COPYRIGHT.md](COPYRIGHT.md) and the [licensing guide](docs/project/licensing.md)
+for bundled components and their notices. Original and converted game assets
+are supplied locally and are not distributed under the source-code license.
+This independent community project is unaffiliated with the original game's
+rights holders.
