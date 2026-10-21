@@ -1,8 +1,8 @@
 # Licensing and game data
 
 dk3 code is licensed under **GPL-2.0-or-later**. See the
-[license](https://github.com/dmytrogajewski/dk3/blob/main/LICENSE) and
-[copyright notices](https://github.com/dmytrogajewski/dk3/blob/main/COPYRIGHT.md).
+[license](https://github.com/Revivalry/dk3/blob/main/LICENSE) and
+[copyright notices](https://github.com/Revivalry/dk3/blob/main/COPYRIGHT.md).
 
 ## Game data
 
@@ -25,6 +25,6 @@ The source-code license does not relicense that artwork.
 The upstream LCC tools have separate terms and are not required for the native
 game runtime. NVIDIA DLSS/NGX binaries and SDK headers are not distributed with dk3.
 
-The [component provenance record](https://github.com/dmytrogajewski/dk3/blob/main/docs/provenance.md)
+The [component provenance record](https://github.com/Revivalry/dk3/blob/main/docs/provenance.md)
 lists origins and dispositions. Daikatana and Quake names identify compatibility
 and belong to their respective owners.

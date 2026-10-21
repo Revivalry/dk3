@@ -30,7 +30,7 @@ for dependencies and preview commands.
 
 ## Report a problem
 
-Open an [issue](https://github.com/dmytrogajewski/dk3/issues) with the command you
+Open an [issue](https://github.com/Revivalry/dk3/issues) with the command you
 ran, expected and actual behavior, OS, `zig version` and relevant log excerpts.
 Remove personal paths and credentials. Do not attach retail files or extracted
 assets. For vulnerabilities, follow [SECURITY.md](SECURITY.md).

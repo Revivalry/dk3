@@ -28,11 +28,11 @@ Campaign completion and broader multiplayer behavior are still being worked on.
   the source build and may have visual or animation limitations.
 
 Use [Troubleshooting](../how-to/troubleshoot.md) for common failures. Report other
-reproducible problems through the [issue tracker](https://github.com/dmytrogajewski/dk3/issues).
+reproducible problems through the [issue tracker](https://github.com/Revivalry/dk3/issues).
 
 ## Development records
 
-The repository keeps the [detailed state assessment](https://github.com/dmytrogajewski/dk3/blob/main/docs/status.md),
-[scenario records](https://github.com/dmytrogajewski/dk3/blob/main/docs/native-acceptance.md)
-and [roadmap](https://github.com/dmytrogajewski/dk3/blob/main/docs/rewrite-roadmap.md)
+The repository keeps the [detailed state assessment](https://github.com/Revivalry/dk3/blob/main/docs/status.md),
+[scenario records](https://github.com/Revivalry/dk3/blob/main/docs/native-acceptance.md)
+and [roadmap](https://github.com/Revivalry/dk3/blob/main/docs/rewrite-roadmap.md)
 for contributors following implementation work.
