@@ -2,6 +2,10 @@
 
 **Daikatana, rebuilt on ioquake3 with native Zig game modules.**
 
+[![Watch the DK3 gameplay showcase](https://img.youtube.com/vi/ZPMNmPttKrw/maxresdefault.jpg)](https://youtu.be/ZPMNmPttKrw)
+
+*Gameplay showcase: Daikatana running on DK3. Watch on YouTube.*
+
 [Documentation](https://dmytrogajewski.github.io/dk3/) · [Build tutorial](docs/tutorials/build-engine.md) · [Engine architecture](docs/explanation/architecture.md) · [Development status](docs/project/status.md) · [Contributing](CONTRIBUTING.md)
 
 DK3 is an open-source project bringing **Daikatana (2000)** to a modified **ioquake3** engine. Its game simulation, client prediction and UI run in native Zig modules. The project includes Vulkan and OpenGL rendering, single-player systems, multiplayer modes, and tools for converting legally owned Daikatana game data.
