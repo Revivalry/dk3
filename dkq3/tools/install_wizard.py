@@ -15,7 +15,6 @@ import subprocess
 import sys
 
 import assets
-import play
 
 
 def verify_bundle(bundle: Path) -> None:
@@ -224,7 +223,11 @@ def install(bundle: Path, source: Path, destination: Path, profile: str, stages:
                     '--bspc', str(bundle_tool(bundle, 'bspc'))], check=True)
     hd = generate_hd(bundle, python, destination, assets_dir, stages) if stages else None
     copy_products(bundle, destination)
-    play.install(destination, assets_dir, hd_textures=hd)
+    command = [str(python), '-B', str(destination / 'tools/play.py'), 'install',
+               '--prefix', str(destination), '--assets', str(assets_dir)]
+    if hd is not None:
+        command += ['--hd-textures', str(hd)]
+    subprocess.run(command, check=True)
     write_launcher(destination)
     print(f'Installed dk3 at {assets.current_generation(destination / "play")}')
     print('Original Daikatana files were read only. Settings and saves use this dk3 installation.')

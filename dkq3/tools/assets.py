@@ -171,7 +171,11 @@ class Pipeline:
             inputs.pop('bspc', None)
         normalized = []
         for index, argument in enumerate(command):
-            if index and command[index - 1] in ('--bspc', '--dkguard'):
+            if index == 2:
+                # A new bootstrap extraction has a different temporary path;
+                # converter contents are already fingerprinted above.
+                normalized.append('$TOOLS/' + Path(argument).name)
+            elif index and command[index - 1] in ('--bspc', '--dkguard', '--ffmpeg'):
                 normalized.append(command[index - 1])
             elif index and command[index - 1] in ('--workers', '--jobs'):
                 # Parallelism changes scheduling, not these deterministic products.

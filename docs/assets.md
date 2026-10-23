@@ -21,6 +21,8 @@ retain their skybox; missing named cloud images report the map and image path.
 Completed deterministic conversion stages can be reused across worker-count
 changes. Interpreter, input content, profile, converter code and relevant encoding
 options still identify a stage; changing only concurrency does not rebuild AAS.
+Moving an unchanged installer bundle to a new temporary extraction directory also
+preserves completed stages; converter and encoder content hashes remain checked.
 
 ```sh
 zig build
