@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! NVIDIA DLSS Super Resolution (r_vkUpscaler 2) through the NGX runtime that ships with the
-//! NVIDIA driver (libnvidia-ngx.so.1, loaded at run time). The DLSS module itself
-//! (libnvidia-ngx-dlss.so.*) is proprietary and is never distributed with dk3: a user who
+//! NVIDIA driver (libnvidia-ngx.so.1 on Linux, _nvngx.dll on Windows). The DLSS module itself
+//! (libnvidia-ngx-dlss.so.* or nvngx_dlss.dll) is proprietary and is never distributed with dk3: a user who
 //! installs it puts it in dlss/ under the game's home directory, or points r_vkDlssPath or
 //! DK3_DLSS_PATH at its directory. Nothing from NVIDIA's SDK is linked or included; the few NGX
 //! entry points, structures and parameter names used here are declared below. Without the
@@ -42,7 +42,8 @@ const ParameterTable = extern struct {
     get_i: *const fn (*Parameter, [*:0]const u8, *c_int) callconv(.c) u32,
 };
 
-const PathList = extern struct { path: [*]const [*:0]const u32, length: c_uint };
+const Wide = if (builtin.os.tag == .windows) u16 else u32;
+const PathList = extern struct { path: [*]const [*:0]const Wide, length: c_uint };
 const LoggingInfo = extern struct { callback: ?*const anyopaque = null, minimum_level: c_int = 0, disable_other_sinks: bool = false };
 const FeatureCommonInfo = extern struct { paths: PathList, internal: ?*anyopaque = null, logging: LoggingInfo = .{} };
 
@@ -62,7 +63,7 @@ const Resource = extern struct {
 
 const Handle = opaque {};
 const Api = struct {
-    init: *const fn (u64, [*:0]const u32, c.VkInstance, c.VkPhysicalDevice, c.VkDevice, c.PFN_vkGetInstanceProcAddr, c.PFN_vkGetDeviceProcAddr, c_int, *const FeatureCommonInfo) callconv(.c) u32,
+    init: *const fn (u64, [*:0]const Wide, c.VkInstance, c.VkPhysicalDevice, c.VkDevice, c.PFN_vkGetInstanceProcAddr, c.PFN_vkGetDeviceProcAddr, c_int, *const FeatureCommonInfo) callconv(.c) u32,
     shutdown: *const fn () callconv(.c) u32,
     capabilities: *const fn (*?*Parameter) callconv(.c) u32,
     allocate: *const fn (*?*Parameter) callconv(.c) u32,
@@ -84,17 +85,57 @@ var feature_display: [2]u32 = .{ 0, 0 };
 var feature_quality: Quality = .dlaa;
 var feature_preset: c_int = 0;
 
-fn symbol(comptime T: type, name: [*:0]const u8) ?T {
-    if (builtin.os.tag == .windows) return null;
-    const pointer = std.c.dlsym(library, name) orelse return null;
-    return @ptrCast(pointer);
+fn symbol(comptime T: type, name: [:0]const u8) ?T {
+    return @ptrCast(c.SDL_LoadFunction(library, name) orelse return null);
 }
 
-/// Widens an ASCII path for NGX (wchar_t is 32 bits on Linux).
-fn wide(out: []u32, text: []const u8) [*:0]const u32 {
-    const n = @min(text.len, out.len - 1);
-    for (text[0..n], 0..) |ch, k| out[k] = ch;
-    out[n] = 0;
+fn loadNgx(name: [*:0]const u8) ?*anyopaque {
+    const lib = c.SDL_LoadObject(name) orelse return null;
+    if (c.SDL_LoadFunction(lib, "NVSDK_NGX_VULKAN_Init_Ext2") == null) {
+        c.SDL_UnloadObject(lib);
+        return null;
+    }
+    return lib;
+}
+
+/// SDL supplies the shared dynamic loader. On Windows, the driver records its NGX core
+/// location in the registry; the SDK-compatible nvngx.dll name remains a fallback.
+fn openRuntime() ?*anyopaque {
+    if (builtin.os.tag == .windows) {
+        const registry = struct {
+            extern "advapi32" fn RegGetValueW(?*anyopaque, [*:0]const u16, [*:0]const u16, u32, ?*u32, ?*anyopaque, *u32) callconv(.winapi) i32;
+        };
+        var directory: [1024]u16 = undefined;
+        var size: u32 = @sizeOf(@TypeOf(directory));
+        const root: ?*anyopaque = @ptrFromInt(0x80000002); // HKEY_LOCAL_MACHINE
+        if (registry.RegGetValueW(root, std.unicode.utf8ToUtf16LeStringLiteral("SOFTWARE\\NVIDIA Corporation\\Global\\NGXCore"), std.unicode.utf8ToUtf16LeStringLiteral("FullPath"), 0x2, null, &directory, &size) == 0) {
+            const units = @min(@as(usize, size) / @sizeOf(u16), directory.len);
+            const length = std.mem.indexOfScalar(u16, directory[0..units], 0) orelse 0;
+            var path_text: [4096]u8 = undefined;
+            const used = std.unicode.utf16LeToUtf8(&path_text, directory[0..length]) catch 0;
+            var filename: [4120]u8 = undefined;
+            if (used != 0) {
+                const full = std.fmt.bufPrintZ(&filename, "{s}\\_nvngx.dll", .{path_text[0..used]}) catch null;
+                if (full) |path| if (loadNgx(path)) |lib| return lib;
+            }
+        }
+        return loadNgx("nvngx.dll") orelse loadNgx("_nvngx.dll");
+    }
+    return loadNgx("libnvidia-ngx.so.1");
+}
+
+/// NGX uses native wchar_t: UTF-16 on Windows, UTF-32 on Linux.
+fn wide(out: []Wide, value: []const u8) ?[*:0]const Wide {
+    if (value.len >= out.len) return null;
+    const length = if (builtin.os.tag == .windows)
+        std.unicode.utf8ToUtf16Le(out, value) catch return null
+    else blk: {
+        var iterator = (std.unicode.Utf8View.init(value) catch return null).iterator();
+        var index: usize = 0;
+        while (iterator.nextCodepoint()) |point| : (index += 1) out[index] = point;
+        break :blk index;
+    };
+    out[length] = 0;
     return @ptrCast(out.ptr);
 }
 
@@ -112,9 +153,8 @@ fn modulePath(buffer: []u8) ?[]const u8 {
 /// Loads NGX and asks it whether DLSS can run here; once per renderer.
 fn start() void {
     tried = true;
-    if (builtin.os.tag == .windows) return;
     if (!vk.s.capabilities.ngx or vk.s.device == null) return;
-    library = std.c.dlopen("libnvidia-ngx.so.1", .{ .NOW = true });
+    library = openRuntime();
     if (library == null) return;
     api = .{
         .init = symbol(@FieldType(Api, "init"), "NVSDK_NGX_VULKAN_Init_Ext2") orelse return,
@@ -128,13 +168,14 @@ fn start() void {
     };
     const ngx = api.?;
     var path_text: [512]u8 = undefined;
-    var module_wide: [512]u32 = undefined;
-    var data_wide: [8]u32 = undefined;
+    var module_wide: [512]Wide = undefined;
+    var data_wide: [1024]Wide = undefined;
     const module = modulePath(&path_text);
-    var paths = [1][*:0]const u32{wide(&module_wide, module orelse ".")};
+    var paths = [1][*:0]const Wide{wide(&module_wide, module orelse ".") orelse return};
     const info: FeatureCommonInfo = .{ .paths = .{ .path = &paths, .length = 1 } };
     // Any application id serves for DLSS Super Resolution outside NVIDIA's app profiles.
-    const result = ngx.init(0x6b3d6b33, wide(&data_wide, "."), vk.s.instance, vk.s.physical, vk.s.device, vk.getInstanceProcAddr(), vk.i.GetDeviceProcAddr, sdk_version, &info);
+    const home = common.span(common.ri.Cvar_Get.?("fs_homepath", "", 0).*.string);
+    const result = ngx.init(0x6b3d6b33, wide(&data_wide, if (home.len != 0) home else ".") orelse return, vk.s.instance, vk.s.physical, vk.s.device, vk.getInstanceProcAddr(), vk.i.GetDeviceProcAddr, sdk_version, &info);
     if (result != result_success) {
         common.developer("dlss: NGX init failed ({x})\n", .{result});
         return;
@@ -282,8 +323,6 @@ pub fn shutdown() void {
     supported = false;
     tried = false;
     api = null;
-    if (builtin.os.tag != .windows) {
-        if (library) |lib| _ = std.c.dlclose(lib);
-    }
+    if (library) |lib| c.SDL_UnloadObject(lib);
     library = null;
 }

@@ -9,9 +9,10 @@ setups and current limitations.
 
 ## Get started
 
-Follow [Build the engine](tutorials/build-engine.md) to compile the client and
-tools on Linux. Then [Start your first game](tutorials/first-game.md) walks
-through converting Daikatana data, installing it and launching the game.
+Use the [release installer](how-to/release-installer.md) with your own Daikatana
+data, or follow [Build the engine](tutorials/build-engine.md) to compile the
+client and tools. [Start your first game](tutorials/first-game.md) covers local
+asset conversion and launch.
 
 ## Use the engine
 

@@ -75,11 +75,11 @@ def fill(bundle: Path, repository: Path, prefix: Path, platform: str,
     for name in ('requirements.txt', 'requirements-hd.txt'):
         copy_file(tools / name, bundle / 'dkq3/tools' / name)
     if platform == 'windows-x64':
-        (bundle / 'install.cmd').write_bytes(b'@echo off\r\n"%~dp0runtime\\python\\python.exe" "%~dp0dkq3\\tools\\install_wizard.py" --bundle "%~dp0." %*\r\n')
+        (bundle / 'install.cmd').write_bytes(b'@echo off\r\n"%~dp0runtime\\python\\python.exe" -B "%~dp0dkq3\\tools\\install_wizard.py" --bundle "%~dp0." %*\r\n')
     else:
         launcher = bundle / 'install.sh'
         launcher.write_text('#!/bin/sh\nset -eu\nroot=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\n'
-                            'exec "$root/runtime/python/bin/python3" "$root/dkq3/tools/install_wizard.py" '
+                            'exec "$root/runtime/python/bin/python3" -B "$root/dkq3/tools/install_wizard.py" '
                             '--bundle "$root" "$@"\n')
         launcher.chmod(0o755)
     (bundle / 'README.txt').write_text(

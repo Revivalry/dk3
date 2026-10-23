@@ -56,7 +56,6 @@ venv/
 .promptkit.yaml
 /AGENTS.md
 /HANDOVER.md
-/install.sh
 
 # Independent game/client/UI source belongs in the public tree after review.
 # Legacy common libraries and Gold patch generators remain excluded.

@@ -51,7 +51,13 @@ zig build play -Dpython=.venv/bin/python
 
 Choose **Single Player** and a difficulty. Converted assets are reused on subsequent runs. Settings and saves live under the build prefix's `play/home/` and `play/state/` directories. See [Start your first game](docs/tutorials/first-game.md) and [Choose a renderer](docs/how-to/select-renderer.md) for additional instructions.
 
-Prebuilt release bundles provide a terminal installer (`install.sh` or `install.cmd`). It finds Steam data or accepts another directory, converts assets locally, and can generate optional HD textures after an explicit download prompt. See [Release installer](docs/how-to/release-installer.md) for packaging and installation.
+Prebuilt Linux and Windows release bundles provide a terminal installer. On Linux, download and start the latest signed build with:
+
+```sh
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/Revivalry/dk3/main/install.sh)"
+```
+
+The wizard finds Steam data or accepts another directory, converts assets locally, and can generate optional HD textures after an explicit download prompt. Windows users can download the ZIP from [Releases](https://github.com/Revivalry/dk3/releases) and run `install.cmd`. See [Release installer](docs/how-to/release-installer.md) for verification and packaging.
 
 ## Where DK3 is going
 

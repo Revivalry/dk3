@@ -195,8 +195,8 @@ pub fn register() void {
     vkDlssPath = get("r_vkDlssPath", "", c.CVAR_ARCHIVE | c.CVAR_LATCH);
     vkDlssPreset = get("r_vkDlssPreset", "5", c.CVAR_ARCHIVE);
     common.ri.Cvar_SetDescription.?(vkDlssPreset, "DLSS model preset: 5 E (CNN; the default: a third of the transformer cost at 4K output), 11 K (transformer), 13 M, 0 the runtime default");
-    common.ri.Cvar_SetDescription.?(vkDlssPath, "Directory holding NVIDIA's DLSS runtime (libnvidia-ngx-dlss.so.*), installed by the user and not distributed with dk3; empty searches DK3_DLSS_PATH, then dlss/ in the game's home directory");
-    common.ri.Cvar_SetDescription.?(vkUpscaler, "Remaster temporal upscaler: 0 built-in, 1 AMD FSR 3.1, 2 NVIDIA DLSS (user-installed runtime), -1 auto (DLSS, else FSR, when r_vkRenderScale < 1)");
+    common.ri.Cvar_SetDescription.?(vkDlssPath, "Directory holding NVIDIA's DLSS feature library (libnvidia-ngx-dlss.so.* on Linux, nvngx_dlss.dll on Windows); empty searches DK3_DLSS_PATH, then dlss/ in the game's home directory");
+    common.ri.Cvar_SetDescription.?(vkUpscaler, "Remaster temporal upscaler: 0 built-in, 1 AMD FSR 3.1, 2 NVIDIA DLSS (requires NVIDIA driver and feature library), -1 auto (DLSS, else FSR, when r_vkRenderScale < 1)");
     common.ri.Cvar_SetDescription.?(vkTAA, "Remaster temporal anti-aliasing");
     common.ri.Cvar_SetDescription.?(vkSharpen, "Remaster contrast-adaptive sharpening strength (0 off)");
     common.ri.Cvar_SetDescription.?(vkRenderScale, "Remaster world render resolution relative to the window with r_vkUpscaleQuality 6, temporally upscaled (0.33-1)");

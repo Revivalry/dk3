@@ -4,7 +4,19 @@ The terminal installer reads the owner's Daikatana archives. It does not ship
 original or converted game assets, and it keeps the original installation and
 saves untouched. A completed dk3 installation keeps its own settings and saves.
 
-## Install a release bundle
+## Install the latest release on Linux
+
+```sh
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/Revivalry/dk3/main/install.sh)"
+```
+
+The bootstrap downloads the latest Linux x86-64 bundle and `SHA256SUMS`, checks
+the archive digest, then starts the interactive wizard. If GitHub CLI is
+installed, it also verifies the signed GitHub build attestation. The command
+keeps the terminal connected to the wizard so it can ask for your asset source
+and installation directory. It does not need root privileges.
+
+## Install a downloaded bundle
 
 Extract a platform bundle and run `install.sh` on Linux or `install.cmd` on
 Windows. Choose a Steam installation or enter the directory containing
@@ -24,14 +36,31 @@ also off by default; enable them in Options for the next map load.
 
 ## Build a bundle
 
-First build the selected target with Zig 0.16:
+On every push to `main`, the [release workflow](https://github.com/Revivalry/dk3/blob/main/.github/workflows/release.yml)
+builds Linux and Windows x86-64 bundles, generates SHA-256 checksums, signs
+build provenance through GitHub artifact attestations, and publishes both ZIPs
+in a commit-tagged release. No original game data or NVIDIA DLLs are included.
+To verify a downloaded archive and its provenance:
+
+```sh
+sha256sum -c SHA256SUMS
+gh attestation verify dk3-installer-linux-x64.zip -R Revivalry/dk3
+```
+
+When you download only one archive, compare its line in `SHA256SUMS` instead
+of running the full `sha256sum -c` command. Use the Windows archive name in
+the `gh` command for a Windows download.
+
+For a local bundle, first build the selected target with Zig 0.16:
 
 ```sh
 zig build -Doptimize=ReleaseSafe
 zig build -Dtarget=x86_64-windows-gnu -Doptimize=ReleaseSafe
 ```
 
-For each target, supply a redistributable, relocatable Python runtime with
+The workflow obtains a digest-checked Python 3.12 standalone runtime, a
+platform-matched NumPy wheel, and FFmpeg 7 from the imageio-ffmpeg wheel for
+each target. For manual packaging, supply a redistributable, relocatable Python runtime with
 `venv` and `pip`, a static FFmpeg 7 binary and its license text, and a wheelhouse with
 the pinned NumPy wheel matching that Python and target. The packager checks
 required products and creates a ZIP without retail assets:
