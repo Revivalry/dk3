@@ -13,9 +13,9 @@ zig build play -- +set cl_renderer opengl2
 zig build play -- +set cl_renderer opengl1
 ```
 
-Vulkan is the default and supports the remaster effects and upscalers. OpenGL2 and
-OpenGL1 provide alternative rendering paths. Use OpenGL1 when comparing against
-the classic presentation or diagnosing a Vulkan-specific problem.
+Vulkan is the default, with classic presentation and ray tracing off. The remaster
+effects and upscalers are available as options. OpenGL2 and OpenGL1 provide
+alternative rendering paths.
 
 If you use a virtual environment, add `-Dpython=.venv/bin/python` before `--`.
 
@@ -31,14 +31,15 @@ vid_restart
 Replace `opengl2` with the renderer you want. `vid_restart` reloads the renderer
 without restarting the game process.
 
-## Use classic presentation in Vulkan
+## Enable remaster presentation in Vulkan
 
 ```text
-r_vkRemaster 0
+r_vkRemaster 1
 vid_restart
 ```
 
-To restore the remaster pipeline, set `r_vkRemaster 1` and run `vid_restart` again.
+To return to the default classic pipeline, set `r_vkRemaster 0` and run
+`vid_restart` again. Ray tracing remains off until `r_vkRayTracing 1` is set.
 
 ## If Vulkan fails
 

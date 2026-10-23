@@ -8,6 +8,7 @@
 //! runtime, the module or an NVIDIA GPU, DLSS reports itself unavailable and the renderer
 //! upscales with FSR (fsr.zig) or its own resolve (taa.zig).
 const std = @import("std");
+const builtin = @import("builtin");
 const c = @import("c.zig").c;
 const common = @import("common.zig");
 const cvars = @import("cvars.zig");
@@ -84,6 +85,7 @@ var feature_quality: Quality = .dlaa;
 var feature_preset: c_int = 0;
 
 fn symbol(comptime T: type, name: [*:0]const u8) ?T {
+    if (builtin.os.tag == .windows) return null;
     const pointer = std.c.dlsym(library, name) orelse return null;
     return @ptrCast(pointer);
 }
@@ -110,6 +112,7 @@ fn modulePath(buffer: []u8) ?[]const u8 {
 /// Loads NGX and asks it whether DLSS can run here; once per renderer.
 fn start() void {
     tried = true;
+    if (builtin.os.tag == .windows) return;
     if (!vk.s.capabilities.ngx or vk.s.device == null) return;
     library = std.c.dlopen("libnvidia-ngx.so.1", .{ .NOW = true });
     if (library == null) return;
@@ -279,6 +282,8 @@ pub fn shutdown() void {
     supported = false;
     tried = false;
     api = null;
-    if (library) |lib| _ = std.c.dlclose(lib);
+    if (builtin.os.tag != .windows) {
+        if (library) |lib| _ = std.c.dlclose(lib);
+    }
     library = null;
 }

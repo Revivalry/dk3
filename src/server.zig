@@ -24,6 +24,7 @@ const checkpoint_rules = @import("mechanics/domain/checkpoint.zig");
 var checkpoint: checkpoint_rules.State = .{};
 var autosave: checkpoint_rules.Autosave = .{};
 var resident_worlds: @import("mechanics/server/resident_worlds.zig").State = .{};
+var resident_enabled = false;
 var demote_ms: i64 = 0;
 var progression: @import("mechanics/server/region_progression.zig").State = .{};
 /// Scripted co-op verification bot; module-global so it survives region travel.
@@ -74,6 +75,8 @@ fn shutdown(restart: bool) void {
 fn init(now: i64, restart: bool) !void {
     shutdown(restart);
     engine.register("dk3_runtime_probe", "0", 0);
+    engine.register("g_residentWorlds", "0", c.CVAR_ARCHIVE);
+    resident_enabled = engine.integer("g_residentWorlds") != 0;
     if (engine.integer("dk3_runtime_probe") < 1 or engine.integer("dk3_runtime_probe") > 2) return error.ReplacementGameplayNotQualified;
     var defaults: [12]u8 = undefined;
     const worker_default = try std.fmt.bufPrintZ(&defaults, "{d}", .{Pool.defaultWorkers()});
@@ -169,10 +172,10 @@ fn init(now: i64, restart: bool) !void {
         }
     }
     try rooms.init();
-    if (engine.integer("dk3_runtime_probe") == 2) try progression.init();
+    if (engine.integer("dk3_runtime_probe") == 2 and resident_enabled) try progression.init();
     // A save restores its map's own seamless region before play; the other
     // maps it carries stay dormant until travel or prefetch wants them.
-    if (active.restore_pending) |*saved| if (progression.manifest.count != 0) try resident_worlds.retainRegion(saved, &progression.manifest);
+    if (active.restore_pending) |*saved| if (resident_enabled and progression.manifest.count != 0) try resident_worlds.retainRegion(saved, &progression.manifest);
     // Publish the saved resource registry while the engine is still loading the
     // map. The initial gamestate must contain these identities; replacing them
     // at ClientBegin can overflow reliable commands before any acknowledgement.
@@ -203,7 +206,12 @@ fn restore(loaded: *@import("mechanics/domain/snapshot.zig").Loaded, visit: bool
     try loaded.rebase(clock.now_ms);
     var staged_campaign = if (!visit) try campaign_module.State.fromArchives(loaded.visited) else null;
     errdefer if (staged_campaign) |*state| state.deinit();
-    try resident_worlds.restoreMembers(loaded, clock.now_ms);
+    if (!resident_enabled) {
+        if (staged_campaign) |*state| try state.absorbResidents(loaded.residents);
+        for (loaded.residents) |*member| member.deinit(std.heap.c_allocator);
+        loaded.residents = &.{};
+    }
+    if (resident_enabled) try resident_worlds.restoreMembers(loaded, clock.now_ms);
     for (&active.projection) |*entity| if (entity.shared.linked != 0) engine.unlink(entity);
     active.world.?.deinit();
     if (active.restored_arena) |strings| {
@@ -681,6 +689,10 @@ fn depart(request: @import("mechanics/domain/travel.zig").Request) !void {
         progression.pending = null; // The cinematic/ending owns subsequent dispatch.
         return;
     };
+    if (!resident_enabled) {
+        try campaign_module.departPrepared(&campaign, &active.world.?, &active.clients, &active.targets, &active.systems, journey, clock.now_ms);
+        return;
+    }
     const edge = try progression.edge(active, request.exit);
     if (!std.mem.eql(u8, progression.manifest.names[edge.destination], journey.destination)) return error.RegionAuthoringMismatch;
     if (!(try progression.ready(&resident_worlds, &initial_context, journey.destination, false))) {
@@ -796,16 +808,16 @@ export fn vmMain(command: c_int, arg0: isize, arg1: isize, arg2: isize, arg3: is
                 coop.pump();
                 defer coop.finishFrame(&active.projection);
                 if (active.clients.entities[0] == null and engine.integer("g_gametype") == c.GT_SINGLE_PLAYER) return 0;
-                resident_worlds.step(clock.now_ms, &active.clients.weapon_table) catch |err| runtimeFailure(err);
+                if (resident_enabled) resident_worlds.step(clock.now_ms, &active.clients.weapon_table) catch |err| runtimeFailure(err);
                 if (active.restore_pending) |*pending| {
-                    if (active.clients.entities[0] == null or !(resident_worlds.restorationReady(pending) catch |err| runtimeFailure(err))) return 0;
+                    if (active.clients.entities[0] == null or (resident_enabled and !(resident_worlds.restorationReady(pending) catch |err| runtimeFailure(err)))) return 0;
                     var saved = pending.*;
                     active.restore_pending = null;
                     restore(&saved, restoring_visit) catch |err| runtimeFailure(err);
                     engine.send(0, "dk3_region_wait 0");
                     engine.print("dk3 region: restoration committed\n");
                 }
-                if (progression.initial_pending) {
+                if (resident_enabled and progression.initial_pending) {
                     resident_worlds.legacy_archives = campaign.visited;
                     resident_worlds.traveler_id = active.world.?.persistentId(active.clients.entities[0] orelse return 0) catch |err| runtimeFailure(err);
                     resident_worlds.initial_namespace = @intCast(active.world.?.id_first >> 24);
@@ -815,11 +827,13 @@ export fn vmMain(command: c_int, arg0: isize, arg1: isize, arg2: isize, arg3: is
                     progression.hold(false);
                     engine.print("dk3 region: initial admission committed\n");
                 }
-                _ = progression.ready(&resident_worlds, &initial_context, std.mem.sliceTo(&active.map_name, 0), true) catch |err| runtimeFailure(err);
-                progression.publishPortals() catch |err| runtimeFailure(err);
+                if (resident_enabled) {
+                    _ = progression.ready(&resident_worlds, &initial_context, std.mem.sliceTo(&active.map_name, 0), true) catch |err| runtimeFailure(err);
+                    progression.publishPortals() catch |err| runtimeFailure(err);
+                }
                 // Maps left behind (beyond the current region and the next
                 // exits) give their memory back and keep their state dormant.
-                if (progression.pending == null and !progression.held and clock.now_ms >= demote_ms) {
+                if (resident_enabled and progression.pending == null and !progression.held and clock.now_ms >= demote_ms) {
                     demote_ms = clock.now_ms + 2000;
                     _ = resident_worlds.demote(&progression.manifest, std.mem.sliceTo(&active.map_name, 0), active) catch |err| runtimeFailure(err);
                 }

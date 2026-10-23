@@ -2,13 +2,23 @@
 //! HTTPS adapter using the engine's existing libcurl dependency. Zig 0.16's
 //! Certificate.verifyHostName omits iPAddress SANs, so it cannot verify IP sites.
 const std = @import("std");
+const builtin = @import("builtin");
 const api = @import("api.zig");
 const c = @cImport({
     @cDefine("CURL_DISABLE_TYPECHECK", "1");
     @cInclude("curl/curl.h");
 });
+const Library = if (builtin.os.tag == .windows) struct {
+    fn open(_: []const u8) !@This() {
+        return error.LibcurlUnavailable;
+    }
+    fn close(_: *@This()) void {}
+    fn lookup(_: *@This(), comptime T: type, _: [:0]const u8) ?T {
+        return null;
+    }
+} else std.DynLib;
 const Curl = struct {
-    library: std.DynLib,
+    library: Library,
     global_init: @TypeOf(&c.curl_global_init),
     global_cleanup: @TypeOf(&c.curl_global_cleanup),
     easy_init: @TypeOf(&c.curl_easy_init),
@@ -20,7 +30,7 @@ const Curl = struct {
     slist_free_all: @TypeOf(&c.curl_slist_free_all),
     version_info: @TypeOf(&c.curl_version_info),
     fn open() !Curl {
-        var library = std.DynLib.open("libcurl.so.4") catch return error.LibcurlUnavailable;
+        var library = Library.open("libcurl.so.4") catch return error.LibcurlUnavailable;
         errdefer library.close();
         var result: Curl = undefined;
         result.library = library;

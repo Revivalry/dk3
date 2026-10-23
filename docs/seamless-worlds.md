@@ -1,7 +1,10 @@
 # Seamless connected worlds
 
 Sequences 297–308 implement connected owners on `rewrite/native-zig-runtime`.
-**The feature is incomplete. Ordinary campaign exits now use resident ownership.**
+**The feature is incomplete and opt-in.** Ordinary campaign exits use classic
+map loading. Set `g_residentWorlds 1` in Options to enable resident worlds on
+the next map; the default is `0`. Classic travel retains visited-map progress
+in cold archives while releasing the previous live map context.
 Automatic handoff is not acceptance of portal views or cross-world combat.
 
 ## Accepted outcome

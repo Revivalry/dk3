@@ -69,8 +69,8 @@ pub const entries = [_]Setting{
     .{ .group = .video, .page = 1, .label = "DLSS model", .name = "r_vkDlssPreset", .initial = "5", .maximum = 2, .choices = &.{ "Fast (CNN)", "Transformer K", "Transformer M" }, .values = &.{ 5, 11, 13 } },
     .{ .group = .video, .page = 1, .label = "Custom scale (restart)", .name = "r_vkRenderScale", .initial = "1", .minimum = 0.33, .maximum = 1, .step = 0.05 },
     .{ .group = .video, .page = 1, .label = "Frame rate limit", .name = "com_maxfps", .initial = "0", .maximum = 6, .choices = &.{ "Off", "60", "85", "120", "144", "165", "240" }, .values = &.{ 0, 60, 85, 120, 144, 165, 240 } },
-    .{ .group = .video, .page = 2, .label = "Remaster (restart)", .name = "r_vkRemaster", .initial = "1", .choices = on_off },
-    .{ .group = .video, .page = 2, .label = "Ray tracing (restart)", .name = "r_vkRayTracing", .initial = "1", .choices = on_off },
+    .{ .group = .video, .page = 2, .label = "Remaster (restart)", .name = "r_vkRemaster", .initial = "0", .choices = on_off },
+    .{ .group = .video, .page = 2, .label = "Ray tracing (restart)", .name = "r_vkRayTracing", .initial = "0", .choices = on_off },
     .{ .group = .video, .page = 2, .label = "Path tracing", .name = "r_vkPathTracing", .initial = "0", .choices = on_off },
     .{ .group = .video, .page = 2, .label = "Ray traced light level", .name = "r_vkPtLightScale", .initial = "0.5", .minimum = 0.1, .maximum = 2, .step = 0.05 },
     .{ .group = .video, .page = 3, .label = "Anti-aliasing (TAA)", .name = "r_vkTAA", .initial = "1", .choices = on_off },
@@ -101,6 +101,7 @@ pub const entries = [_]Setting{
     .{ .group = .options, .label = "HUD size", .name = "cg_hudScale", .initial = "1", .minimum = 0.75, .maximum = 1.5, .step = 0.05 },
     .{ .group = .options, .label = "Shiny weapons", .name = "cg_shinyWeapons", .initial = "1", .maximum = 2, .choices = &.{ "Off", "Original", "Enhanced" } },
     .{ .group = .options, .label = "Show weapon", .name = "cg_drawGun", .initial = "1", .choices = on_off },
+    .{ .group = .options, .label = "Resident worlds (next map)", .name = "g_residentWorlds", .initial = "0", .choices = on_off },
     .{ .group = .joystick, .label = "Enable joystick", .name = "in_joystick", .initial = "0", .choices = on_off },
     .{ .group = .joystick, .label = "Dead zone", .name = "joy_threshold", .initial = "0.15", .minimum = 0.05, .maximum = 0.3, .step = 0.05 },
 };

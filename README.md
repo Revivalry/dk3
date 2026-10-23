@@ -25,7 +25,7 @@ See the [architecture overview](docs/explanation/architecture.md) for subsystem 
 
 ## Requirements
 
-Current development target: **Linux x86-64 GNU**. Build requirements include Zig **0.16.x**, Make, `pkg-config`, SDL2, SQLite3, Vulkan development files, `glslc`, Python and the dependencies described in the [build tutorial](docs/tutorials/build-engine.md).
+Development builds target **Linux x86-64 GNU** and cross compile to **Windows x86-64 GNU**. Build requirements include Zig **0.16.x**, Make, `pkg-config`, SDL2, SQLite3, Vulkan development files, `glslc`, Python and the dependencies described in the [build tutorial](docs/tutorials/build-engine.md).
 
 ## Build
 
@@ -50,6 +50,8 @@ zig build play -Dpython=.venv/bin/python
 ```
 
 Choose **Single Player** and a difficulty. Converted assets are reused on subsequent runs. Settings and saves live under the build prefix's `play/home/` and `play/state/` directories. See [Start your first game](docs/tutorials/first-game.md) and [Choose a renderer](docs/how-to/select-renderer.md) for additional instructions.
+
+Prebuilt release bundles provide a terminal installer (`install.sh` or `install.cmd`). It finds Steam data or accepts another directory, converts assets locally, and can generate optional HD textures after an explicit download prompt. See [Release installer](docs/how-to/release-installer.md) for packaging and installation.
 
 ## Where DK3 is going
 

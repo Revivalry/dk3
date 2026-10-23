@@ -1,7 +1,9 @@
 # Build reference
 
-Run build commands from the repository root. The supported game target is Linux
-x86-64 GNU, using Zig 0.16.x.
+Run build commands from the repository root. Native development targets Linux
+x86-64 GNU; `-Dtarget=x86_64-windows-gnu` cross compiles the Windows client,
+server, renderers, tools and native modules. Use Zig 0.16.x. The default prefixes
+are `zig-out/native-dev` and `zig-out/windows-x64` respectively.
 
 ## Targets
 

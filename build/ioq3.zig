@@ -13,7 +13,7 @@ pub fn declare(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     b.getInstallStep().dependOn(all);
     const settings = options(b);
     if (!config.inTargetMatrix(target.result.cpu.arch, target.result.os.tag, target.result.abi)) {
-        const failure = &b.addFail("dk3 supports x86_64-linux-gnu; select -Dtarget=x86_64-linux-gnu").step;
+        const failure = &b.addFail("dk3 supports x86_64-linux-gnu and x86_64-windows-gnu").step;
         all.dependOn(failure);
         server_step.dependOn(failure);
         return false;
@@ -26,14 +26,15 @@ pub fn declare(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
         const artifact = addProduct(b, target, optimize, settings, product);
         const installed = switch (product) {
             .client, .server => &b.addInstallArtifact(artifact, .{}).step,
-            else => &b.addInstallFileWithDir(artifact.getEmittedBin(), .bin, installPath(product)).step,
+            else => &b.addInstallFileWithDir(artifact.getEmittedBin(), .bin, installPath(product, target.result.os.tag)).step,
         };
         all.dependOn(installed);
         if (product == .server) server_step.dependOn(installed);
     }
-    // The optional Vulkan renderer is native Zig; OpenGL2 stays the default renderer.
+    // The Vulkan renderer is native Zig and is the default at runtime.
     const vulkan = @import("renderer_vulkan.zig").addProduct(b, target, optimize, settings);
-    all.dependOn(&b.addInstallFileWithDir(vulkan.getEmittedBin(), .bin, "renderer_vulkan.so").step);
+    all.dependOn(&b.addInstallFileWithDir(vulkan.getEmittedBin(), .bin, if (target.result.os.tag == .windows) "renderer_vulkan.dll" else "renderer_vulkan.so").step);
+    if (target.result.os.tag == .windows) all.dependOn(&b.addInstallFileWithDir(b.path("engine/ioquake3/code/thirdparty/libs/win64/SDL2.dll"), .bin, "SDL2.dll").step);
     return true;
 }
 
@@ -60,7 +61,16 @@ fn name(product: config.Product) []const u8 {
     };
 }
 
-fn installPath(product: config.Product) []const u8 {
+fn installPath(product: config.Product, os_tag: std.Target.Os.Tag) []const u8 {
+    if (os_tag == .windows) return switch (product) {
+        .client => "dk3.exe",
+        .server => "dk3ded.exe",
+        .renderer_opengl1 => "renderer_opengl1.dll",
+        .renderer_opengl2 => "renderer_opengl2.dll",
+        .qagame => "baseq3/qagame.dll",
+        .cgame => "baseq3/cgame.dll",
+        .ui => "baseq3/ui.dll",
+    };
     return switch (product) {
         .client => "dk3",
         .server => "dk3ded",
@@ -82,7 +92,7 @@ pub fn addProduct(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
     const generated = b.addWriteFiles();
     var seen: std.StringHashMapUnmanaged(void) = .empty;
     const root = b.build_root.join(b.allocator, &.{source_root}) catch @panic("OOM");
-    for (config.productSources(b.allocator, product, settings) catch @panic("OOM")) |path| {
+    for (config.productSources(b.allocator, product, settings, target.result.os.tag) catch @panic("OOM")) |path| {
         // Protocol messages are owned by the Zig network module. Keep the
         // licensed upstream C codec as a differential test reference only.
         if ((product == .client or product == .server) and std.mem.eql(u8, path, "code/qcommon/msg.c")) continue;
@@ -115,21 +125,25 @@ pub fn addProduct(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
         module.addCMacro(macro.name, macro.value);
     for (config.productSystemLibraries(b.allocator, product, settings) catch @panic("OOM")) |library|
         @import("system_library.zig").add(b, module, target, library);
-    for ([_][]const u8{ "dl", "m", "pthread" }) |library| module.linkSystemLibrary(library, .{});
+    if (target.result.os.tag == .windows) {
+        for ([_][]const u8{ "ws2_32", "winmm", "psapi" }) |library| module.linkSystemLibrary(library, .{});
+        if (product == .client and settings.use_http) module.linkSystemLibrary("wininet", .{});
+    } else for ([_][]const u8{ "dl", "m", "pthread" }) |library| module.linkSystemLibrary(library, .{});
     const artifact = switch (product) {
         .client, .server => b.addExecutable(.{ .name = name(product), .root_module = module }),
         else => b.addLibrary(.{ .name = name(product), .linkage = .dynamic, .root_module = module }),
     };
     if (product == .client or product == .server) {
         const network_module = b.createModule(.{ .root_source_file = b.path("src/network_engine.zig"), .target = target, .optimize = optimize, .link_libc = true });
+        if (target.result.os.tag == .windows) network_module.addCMacro("_FORTIFY_SOURCE", "0");
         network_module.addIncludePath(b.path("engine/ioquake3/code/qcommon"));
         network_module.addIncludePath(b.path("engine/ioquake3/code/thirdparty/curl-8.15.0/include"));
         @import("header_inputs.zig").track(b, network_module, &.{source_root});
         const network = b.addLibrary(.{ .name = "dk3-network", .linkage = .static, .root_module = network_module });
         artifact.root_module.linkLibrary(network);
     }
-    artifact.lto = .full;
-    if (product == .client) artifact.linker_allow_shlib_undefined = true;
+    if (target.result.os.tag != .windows) artifact.lto = .full;
+    if (product == .client and target.result.os.tag != .windows) artifact.linker_allow_shlib_undefined = true;
     return artifact;
 }
 

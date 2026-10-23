@@ -46,6 +46,10 @@ pub const system_sources = [_][]const u8{ "code/sys/con_log.c", "code/sys/sys_au
 
 /// `SYSTEM_PLATFORM_SOURCES` on Linux, cmake/platforms/unix.cmake:7 and :12 (not Emscripten).
 pub const unix_system_sources = [_][]const u8{ "code/sys/sys_unix.c", "code/sys/con_tty.c" };
+pub const windows_system_sources = [_][]const u8{"code/sys/sys_win32.c"};
+pub const windows_server_sources = [_][]const u8{"code/sys/con_win32.c"};
+pub const windows_client_sources = [_][]const u8{"code/sys/con_passive.c"};
+pub const windows_http_sources = [_][]const u8{"code/client/cl_http_windows.c"};
 
 /// `ASM_SOURCES` for GCC and Clang, cmake/compilers/gnu.cmake:9-12.
 pub const asm_sources = [_][]const u8{ "code/asm/ftola.c", "code/asm/snapvector.c" };

@@ -21,7 +21,7 @@ class RuntimeArchitectureTest(unittest.TestCase):
         root = Path(REPO_ROOT)
         # `root` is the dependency-inversion hook: a game module's root may supply class hooks
         # (domain/snapshot.zig `class_validators`), so pure layers still name no adapter.
-        named = {'std', 'root', 'inventory_rules', 'weapon_catalog', 'item_catalog', 'actor_catalog', 'appearance_catalog'}
+        named = {'std', 'builtin', 'root', 'inventory_rules', 'weapon_catalog', 'item_catalog', 'actor_catalog', 'appearance_catalog'}
         files = [path for path in (root / 'src').rglob('*.zig') if self.pure(root, path)]
         self.assertGreater(len(files), 200)
         for path in files:

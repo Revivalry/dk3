@@ -173,11 +173,13 @@ pub const Product = enum { server, client, renderer_opengl1, renderer_opengl2, c
 
 /// Every source of `product` for `config`, in the order of its CMake link line. `renderer_opengl2`
 /// lists each GLSL file where CMake links the C source generated from it (see `isShader`).
-pub fn productSources(arena: std.mem.Allocator, product: Product, config: Config) error{OutOfMemory}![]const []const u8 {
+pub fn productSources(arena: std.mem.Allocator, product: Product, config: Config, os_tag: std.Target.Os.Tag) error{OutOfMemory}![]const []const u8 {
     var paths: std.ArrayList([]const u8) = .empty;
     switch (product) {
-        .server => try paths.appendSlice(arena, &lists.server_binary_sources),
-        .client => try appendClientSources(arena, &paths, config),
+        .server => if (os_tag == .windows) {
+            try paths.appendSlice(arena, &(lists.server_sources ++ lists.null_sources ++ lists.common_sources ++ lists.botlib_sources ++ lists.system_sources ++ lists.windows_system_sources ++ lists.windows_server_sources ++ lists.asm_sources ++ lists.zlib_sources));
+        } else try paths.appendSlice(arena, &lists.server_binary_sources),
+        .client => try appendClientSources(arena, &paths, config, os_tag),
         .renderer_opengl1 => try appendRendererSources(arena, &paths, &lists.renderer_gl1_sources, &.{}),
         .renderer_opengl2 => try appendRendererSources(arena, &paths, &lists.renderer_gl2_sources, try shaderPaths(arena)),
         .cgame => try appendGameModuleSources(arena, &paths, &lists.cgame_sources, &lists.cgame_binary_sources),
@@ -190,11 +192,18 @@ pub fn productSources(arena: std.mem.Allocator, product: Product, config: Config
 /// `CLIENT_BINARY_SOURCES`, cmake/client.cmake:69-77. `CLIENT_PLATFORM_SOURCES` ends `CLIENT_SOURCES`
 /// (client.cmake:39); `CLIENT_ASM_SOURCES` is never set; `CLIENT_LIBRARY_SOURCES` collects the internal
 /// libraries in the include order of cmake/libraries/all.cmake:10-18.
-fn appendClientSources(arena: std.mem.Allocator, paths: *std.ArrayList([]const u8), config: Config) error{OutOfMemory}!void {
+fn appendClientSources(arena: std.mem.Allocator, paths: *std.ArrayList([]const u8), config: Config, os_tag: std.Target.Os.Tag) error{OutOfMemory}!void {
     try paths.appendSlice(arena, &(lists.server_sources ++ lists.client_sources));
-    if (config.use_http) try paths.appendSlice(arena, &lists.http_sources); // cmake/platforms/unix.cmake:15-17
-    try paths.appendSlice(arena, &(lists.common_sources ++ lists.botlib_sources ++ lists.system_sources ++
-        lists.unix_system_sources ++ lists.asm_sources));
+    if (os_tag == .windows) {
+        try paths.appendSlice(arena, &lists.windows_client_sources);
+        if (config.use_http) try paths.appendSlice(arena, &lists.windows_http_sources);
+        try paths.appendSlice(arena, &(lists.common_sources ++ lists.botlib_sources ++ lists.system_sources ++
+            lists.windows_system_sources ++ lists.asm_sources));
+    } else {
+        if (config.use_http) try paths.appendSlice(arena, &lists.http_sources);
+        try paths.appendSlice(arena, &(lists.common_sources ++ lists.botlib_sources ++ lists.system_sources ++
+            lists.unix_system_sources ++ lists.asm_sources));
+    }
     if (config.use_codec_vorbis) try paths.appendSlice(arena, &lists.ogg_sources); // ogg.cmake:1-3, :17
     if (config.use_codec_opus) try paths.appendSlice(arena, &(lists.opus_sources ++ lists.opusfile_sources)); // opus.cmake:1-3, :22
     if (config.use_codec_vorbis) try paths.appendSlice(arena, &lists.vorbis_sources); // vorbis.cmake:1-3, :17
@@ -386,11 +395,11 @@ pub fn pkgConfigDirectory(stdout: []const u8) ?[]const u8 {
 }
 
 /// The target matrix, `x86_64-linux-gnu` only (SPEC R1 and Non-goals).
-pub const target_matrix = "x86_64-linux-gnu";
+pub const target_matrix = "x86_64-linux-gnu, x86_64-windows-gnu";
 
 /// Whether a target is in `target_matrix`.
 pub fn inTargetMatrix(arch: std.Target.Cpu.Arch, os: std.Target.Os.Tag, abi: std.Target.Abi) bool {
-    return arch == .x86_64 and os == .linux and abi == .gnu;
+    return arch == .x86_64 and abi == .gnu and (os == .linux or os == .windows);
 }
 
 /// `text` as a C string literal: quoted, with `\` and `"` escaped.

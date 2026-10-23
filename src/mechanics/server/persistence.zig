@@ -56,8 +56,7 @@ pub fn save(world: *data.World, clients: *const @import("clients.zig").Clients, 
     const second = if (previous) |text| std.mem.indexOf(u8, text, "-a\"") != null else false;
     const shot_name = if (preview == .none) "" else try std.fmt.bufPrint(&shot, "dk3save-{s}-{s}", .{ slot, if (second) "b" else "a" });
     var date: [32]u8 = undefined;
-    var now_wall: std.c.timespec = undefined;
-    const unix: i64 = if (std.c.clock_gettime(std.c.CLOCK.REALTIME, &now_wall) == 0) now_wall.sec else 0;
+    const unix: i64 = wallTime();
     const metadata = try std.fmt.bufPrint(&info, "dk3_save_info 2\nmap \"{s}\"\nhealth {d}\nlevel {d}\nnative_schema {d}\ntime {d}\ndate \"{s}\"\nskill {d}\nshot \"{s}\"\n", .{ mapName(&map), health, character.level, format.schema, unix, localDate(unix, &date), engine.integer("g_spSkill"), shot_name });
     storage.write(slot, metadata, true) catch engine.print("dk3 save: saved world; preview metadata could not be written\n");
     if (preview != .none) {
@@ -65,12 +64,25 @@ pub fn save(world: *data.World, clients: *const @import("clients.zig").Clients, 
         engine.send(0, try std.fmt.bufPrintZ(&command, "dk3_saveshot {s} {s}", .{ shot_name, @tagName(preview) }));
     }
 }
-const tm = extern struct { sec: c_int, min: c_int, hour: c_int, mday: c_int, mon: c_int, year: c_int, wday: c_int, yday: c_int, isdst: c_int, gmtoff: c_long, zone: ?[*:0]const u8 };
+const is_windows = @import("builtin").os.tag == .windows;
+const tm = if (is_windows) extern struct { sec: c_int, min: c_int, hour: c_int, mday: c_int, mon: c_int, year: c_int, wday: c_int, yday: c_int, isdst: c_int } else extern struct { sec: c_int, min: c_int, hour: c_int, mday: c_int, mon: c_int, year: c_int, wday: c_int, yday: c_int, isdst: c_int, gmtoff: c_long, zone: ?[*:0]const u8 };
 extern "c" fn localtime_r(timer: *const i64, result: *tm) ?*tm;
+extern "c" fn _localtime64_s(result: *tm, timer: *const i64) c_int;
+extern "c" fn time(timer: *i64) i64;
+fn wallTime() i64 {
+    if (is_windows) {
+        var result: i64 = 0;
+        return time(&result);
+    }
+    var now_wall: std.c.timespec = undefined;
+    return if (std.c.clock_gettime(std.c.CLOCK.REALTIME, &now_wall) == 0) now_wall.sec else 0;
+}
 /// The save's wall-clock time in the player's time zone, "2026-10-12 14:03".
 fn localDate(unix: i64, buffer: []u8) []const u8 {
     var local: tm = undefined;
-    if (localtime_r(&unix, &local) == null) return "";
+    if (is_windows) {
+        if (_localtime64_s(&local, &unix) != 0) return "";
+    } else if (localtime_r(&unix, &local) == null) return "";
     return std.fmt.bufPrint(buffer, "{d:0>4}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}", .{ @as(u32, @intCast(local.year + 1900)), @as(u32, @intCast(local.mon + 1)), @as(u32, @intCast(local.mday)), @as(u32, @intCast(local.hour)), @as(u32, @intCast(local.min)) }) catch "";
 }
 pub fn prepare(slot: []const u8, previous: bool) !format.Loaded {

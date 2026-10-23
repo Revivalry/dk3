@@ -27,6 +27,22 @@ pub const State = struct {
         result.visited = entries;
         return result;
     }
+    /// A save made with resident worlds may be opened in classic loading mode.
+    /// Preserve every other map as a cold visited archive before discarding its
+    /// live resident context.
+    pub fn absorbResidents(self: *State, residents: []const snapshot.Loaded) !void {
+        if (residents.len == 0) return;
+        const memory = self.arena.allocator();
+        var entries: std.ArrayList(snapshot.Archive) = .empty;
+        try entries.appendSlice(memory, self.visited);
+        const buffer = try memory.alloc(u8, snapshot.world_limit);
+        for (residents) |*resident| {
+            if (entries.items.len >= snapshot.archive_limit) return error.ArchiveCapacity;
+            const bytes = try snapshot.capture(memory, buffer, @constCast(&resident.world), resident.map, resident.skill, resident.header);
+            try entries.append(memory, .{ .map = try memory.dupe(u8, resident.map), .bytes = try memory.dupe(u8, bytes) });
+        }
+        self.visited = entries.items;
+    }
 };
 fn clone(memory: std.mem.Allocator, archive: snapshot.Archive) !snapshot.Archive {
     return .{ .map = try memory.dupe(u8, archive.map), .bytes = try memory.dupe(u8, archive.bytes) };
