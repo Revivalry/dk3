@@ -361,9 +361,9 @@ fn createSwapchain() void {
 /// work behind it. The main thread hands the image over and only waits for the present when it
 /// next needs the queue or the swapchain (`presenterIdle`).
 const Presenter = struct {
-    mutex: std.c.pthread_mutex_t = .{},
-    cond: std.c.pthread_cond_t = .{},
-    thread: ?std.c.pthread_t = null,
+    mutex: ?*c.SDL_mutex = null,
+    cond: ?*c.SDL_cond = null,
+    thread: ?*c.SDL_Thread = null,
     pending: bool = false,
     stop: bool = false,
     image_index: u32 = 0,
@@ -372,17 +372,17 @@ const Presenter = struct {
 };
 var presenter: Presenter = .{};
 
-fn presenterLoop(_: ?*anyopaque) callconv(.c) ?*anyopaque {
+fn presenterLoop(_: ?*anyopaque) callconv(.c) c_int {
     while (true) {
-        pthreadCheck(std.c.pthread_mutex_lock(&presenter.mutex), "pthread_mutex_lock");
-        while (!presenter.pending and !presenter.stop) pthreadCheck(std.c.pthread_cond_wait(&presenter.cond, &presenter.mutex), "pthread_cond_wait");
+        sdlCheck(c.SDL_LockMutex(presenter.mutex), "SDL_LockMutex");
+        while (!presenter.pending and !presenter.stop) sdlCheck(c.SDL_CondWait(presenter.cond, presenter.mutex), "SDL_CondWait");
         if (presenter.stop) {
-            pthreadCheck(std.c.pthread_mutex_unlock(&presenter.mutex), "pthread_mutex_unlock");
-            return null;
+            sdlCheck(c.SDL_UnlockMutex(presenter.mutex), "SDL_UnlockMutex");
+            return 0;
         }
         const image_index = presenter.image_index;
         const semaphore = presenter.semaphore;
-        pthreadCheck(std.c.pthread_mutex_unlock(&presenter.mutex), "pthread_mutex_unlock");
+        sdlCheck(c.SDL_UnlockMutex(presenter.mutex), "SDL_UnlockMutex");
         const info = std.mem.zeroInit(c.VkPresentInfoKHR, .{
             .sType = c.VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             .waitSemaphoreCount = 1,
@@ -394,19 +394,20 @@ fn presenterLoop(_: ?*anyopaque) callconv(.c) ?*anyopaque {
         vk.lockQueue();
         const result = vk.d.QueuePresentKHR.?(vk.s.queue, &info);
         vk.unlockQueue();
-        pthreadCheck(std.c.pthread_mutex_lock(&presenter.mutex), "pthread_mutex_lock");
+        sdlCheck(c.SDL_LockMutex(presenter.mutex), "SDL_LockMutex");
         presenter.result = result;
         presenter.pending = false;
-        pthreadCheck(std.c.pthread_cond_broadcast(&presenter.cond), "pthread_cond_broadcast");
-        pthreadCheck(std.c.pthread_mutex_unlock(&presenter.mutex), "pthread_mutex_unlock");
+        sdlCheck(c.SDL_CondBroadcast(presenter.cond), "SDL_CondBroadcast");
+        sdlCheck(c.SDL_UnlockMutex(presenter.mutex), "SDL_UnlockMutex");
     }
 }
 
 /// Waits for the handed-over present; returns its result.
 fn presenterIdle() c.VkResult {
-    pthreadCheck(std.c.pthread_mutex_lock(&presenter.mutex), "pthread_mutex_lock");
-    defer pthreadCheck(std.c.pthread_mutex_unlock(&presenter.mutex), "pthread_mutex_unlock");
-    while (presenter.pending) pthreadCheck(std.c.pthread_cond_wait(&presenter.cond, &presenter.mutex), "pthread_cond_wait");
+    if (presenter.mutex == null) return c.VK_SUCCESS;
+    sdlCheck(c.SDL_LockMutex(presenter.mutex), "SDL_LockMutex");
+    defer sdlCheck(c.SDL_UnlockMutex(presenter.mutex), "SDL_UnlockMutex");
+    while (presenter.pending) sdlCheck(c.SDL_CondWait(presenter.cond, presenter.mutex), "SDL_CondWait");
     const result = presenter.result;
     presenter.result = c.VK_SUCCESS;
     return result;
@@ -414,29 +415,39 @@ fn presenterIdle() c.VkResult {
 
 fn presenterStart(image_index: u32, semaphore: c.VkSemaphore) bool {
     if (presenter.thread == null) {
+        if (presenter.mutex == null) presenter.mutex = c.SDL_CreateMutex() orelse return false;
+        if (presenter.cond == null) presenter.cond = c.SDL_CreateCond() orelse return false;
         presenter.stop = false;
-        var thread: std.c.pthread_t = undefined;
-        if (std.c.pthread_create(&thread, null, presenterLoop, null) != .SUCCESS) return false;
-        presenter.thread = thread;
+        presenter.thread = (if (@import("builtin").os.tag == .windows)
+            c.SDL_CreateThread(presenterLoop, "dk3-present", null, null, null)
+        else
+            c.SDL_CreateThread(presenterLoop, "dk3-present", null)) orelse return false;
     }
-    pthreadCheck(std.c.pthread_mutex_lock(&presenter.mutex), "pthread_mutex_lock");
+    sdlCheck(c.SDL_LockMutex(presenter.mutex), "SDL_LockMutex");
     presenter.image_index = image_index;
     presenter.semaphore = semaphore;
     presenter.pending = true;
-    pthreadCheck(std.c.pthread_cond_broadcast(&presenter.cond), "pthread_cond_broadcast");
-    pthreadCheck(std.c.pthread_mutex_unlock(&presenter.mutex), "pthread_mutex_unlock");
+    sdlCheck(c.SDL_CondBroadcast(presenter.cond), "SDL_CondBroadcast");
+    sdlCheck(c.SDL_UnlockMutex(presenter.mutex), "SDL_UnlockMutex");
     return true;
 }
 
 fn presenterStop() void {
-    const thread = presenter.thread orelse return;
-    _ = presenterIdle();
-    pthreadCheck(std.c.pthread_mutex_lock(&presenter.mutex), "pthread_mutex_lock");
-    presenter.stop = true;
-    pthreadCheck(std.c.pthread_cond_broadcast(&presenter.cond), "pthread_cond_broadcast");
-    pthreadCheck(std.c.pthread_mutex_unlock(&presenter.mutex), "pthread_mutex_unlock");
-    _ = std.c.pthread_join(thread, null);
-    presenter.thread = null;
+    if (presenter.thread) |thread| {
+        _ = presenterIdle();
+        sdlCheck(c.SDL_LockMutex(presenter.mutex), "SDL_LockMutex");
+        presenter.stop = true;
+        sdlCheck(c.SDL_CondBroadcast(presenter.cond), "SDL_CondBroadcast");
+        sdlCheck(c.SDL_UnlockMutex(presenter.mutex), "SDL_UnlockMutex");
+        c.SDL_WaitThread(thread, null);
+        presenter.thread = null;
+    }
+    if (presenter.cond) |cond| c.SDL_DestroyCond(cond);
+    if (presenter.mutex) |mutex| c.SDL_DestroyMutex(mutex);
+    presenter.cond = null;
+    presenter.mutex = null;
+    presenter.pending = false;
+    presenter.result = c.VK_SUCCESS;
 }
 
 fn destroySwapchainViews(handle: c.VkSwapchainKHR) void {
@@ -1043,6 +1054,6 @@ pub fn minimize() void {
     if (window) |w| c.SDL_MinimizeWindow(w);
 }
 
-fn pthreadCheck(rc: std.c.E, what: []const u8) void {
-    if (rc != .SUCCESS) common.fail(c.ERR_FATAL, "renderer_vulkan: {s} failed ({s})", .{ what, @tagName(rc) });
+fn sdlCheck(rc: c_int, what: []const u8) void {
+    if (rc != 0) common.fail(c.ERR_FATAL, "renderer_vulkan: {s} failed: {s}", .{ what, common.span(c.SDL_GetError()) });
 }

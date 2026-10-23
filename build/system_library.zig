@@ -4,6 +4,15 @@ const std = @import("std");
 const config = @import("ioq3_config.zig");
 
 pub fn add(b: *std.Build, module: *std.Build.Module, target: std.Build.ResolvedTarget, library: config.SystemLibrary) void {
+    if (target.result.os.tag == .windows and std.mem.eql(u8, library.package, "sdl2")) {
+        // The reviewed ioquake3 source bundle includes matching Windows SDL2
+        // headers, import libraries and the runtime DLL.
+        module.addSystemIncludePath(b.path("engine/ioquake3/code/thirdparty/SDL2-2.32.8/include"));
+        module.addLibraryPath(b.path("engine/ioquake3/code/thirdparty/libs/win64"));
+        module.linkSystemLibrary("SDL2main", .{ .use_pkg_config = .no });
+        module.linkSystemLibrary("SDL2", .{ .use_pkg_config = .no });
+        return;
+    }
     const pkg_config = b.graph.environ_map.get("PKG_CONFIG") orelse "pkg-config";
     var paths: [2][]const u8 = undefined;
     for ([_][]const u8{ "includedir", "libdir" }, &paths) |variable, *path| {

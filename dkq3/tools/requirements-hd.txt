@@ -1,0 +1,8 @@
+numpy==2.4.3
+pillow>=12.3,<13
+torch>=2.5,<3
+diffusers>=0.31,<1
+transformers>=4.46,<5
+accelerate>=1.1,<2
+bitsandbytes>=0.50,<1
+huggingface-hub>=0.34,<2

@@ -12,7 +12,7 @@ pub fn declare(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     }
     for ([_]config.Product{ .qagame, .cgame, .ui }) |product| {
         const artifact = @import("runtime.zig").addProduct(b, target, optimize, product, rules_identity);
-        const install = b.addInstallFileWithDir(artifact.getEmittedBin(), .lib, b.fmt("dk3/{t}.so", .{product}));
+        const install = b.addInstallFileWithDir(artifact.getEmittedBin(), .lib, b.fmt("dk3/{t}{s}", .{ product, if (target.result.os.tag == .windows) @as([]const u8, ".dll") else ".so" }));
         step.dependOn(&install.step);
     }
     step.dependOn(&b.addInstallFile(b.path("src/mechanics/client/dk3-projectile-weather.shader"), "share/dk3/scripts/dk3-projectile-weather.shader").step);

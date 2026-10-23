@@ -4344,4 +4344,8 @@ const char *FS_GetCurrentGameDir(void)
 	return com_basegame->string;
 }
 
+#ifdef _WIN32
+#include "dk3_save_win.inc"
+#else
 #include "dk3_save.inc"
+#endif

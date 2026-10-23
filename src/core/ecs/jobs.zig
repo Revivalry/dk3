@@ -2,6 +2,55 @@
 //! Shared mechanism: Persistent bounded workers. Only the owner starts batches and joins them.
 const std = @import("std");
 const assert = std.debug.assert;
+const windows = std.os.windows;
+const is_windows = @import("builtin").os.tag == .windows;
+extern "kernel32" fn SleepConditionVariableSRW(*windows.CONDITION_VARIABLE, *windows.SRWLOCK, u32, u32) callconv(.winapi) windows.BOOL;
+const Mutex = if (is_windows) struct {
+    raw: windows.SRWLOCK = windows.SRWLOCK_INIT,
+    fn lock(self: *@This()) void {
+        windows.ntdll.RtlAcquireSRWLockExclusive(&self.raw);
+    }
+    fn unlock(self: *@This()) void {
+        windows.ntdll.RtlReleaseSRWLockExclusive(&self.raw);
+    }
+} else struct {
+    raw: std.c.pthread_mutex_t = .{},
+    fn lock(self: *@This()) void {
+        assert(std.c.pthread_mutex_lock(&self.raw) == .SUCCESS);
+    }
+    fn unlock(self: *@This()) void {
+        assert(std.c.pthread_mutex_unlock(&self.raw) == .SUCCESS);
+    }
+    fn deinit(self: *@This()) void {
+        assert(std.c.pthread_mutex_destroy(&self.raw) == .SUCCESS);
+    }
+};
+const Condition = if (is_windows) struct {
+    raw: windows.CONDITION_VARIABLE = windows.CONDITION_VARIABLE_INIT,
+    fn wait(self: *@This(), mutex: *Mutex) void {
+        assert(SleepConditionVariableSRW(&self.raw, &mutex.raw, 0xffffffff, 0).toBool());
+    }
+    fn signal(self: *@This()) void {
+        windows.ntdll.RtlWakeConditionVariable(&self.raw);
+    }
+    fn broadcast(self: *@This()) void {
+        windows.ntdll.RtlWakeAllConditionVariable(&self.raw);
+    }
+} else struct {
+    raw: std.c.pthread_cond_t = .{},
+    fn wait(self: *@This(), mutex: *Mutex) void {
+        assert(std.c.pthread_cond_wait(&self.raw, &mutex.raw) == .SUCCESS);
+    }
+    fn signal(self: *@This()) void {
+        assert(std.c.pthread_cond_signal(&self.raw) == .SUCCESS);
+    }
+    fn broadcast(self: *@This()) void {
+        assert(std.c.pthread_cond_broadcast(&self.raw) == .SUCCESS);
+    }
+    fn deinit(self: *@This()) void {
+        assert(std.c.pthread_cond_destroy(&self.raw) == .SUCCESS);
+    }
+};
 pub const Job = struct {
     run: *const fn (*anyopaque) anyerror!void,
     context: *anyopaque,
@@ -12,9 +61,9 @@ pub const Pool = struct {
     owner: std.Thread.Id,
     threads: [8]std.Thread = undefined,
     thread_count: usize = 0,
-    mutex: std.c.pthread_mutex_t = .{},
-    wake: std.c.pthread_cond_t = .{},
-    done: std.c.pthread_cond_t = .{},
+    mutex: Mutex = .{},
+    wake: Condition = .{},
+    done: Condition = .{},
     stopping: bool = false,
     active: bool = false,
     jobs: []Job = &.{},
@@ -34,10 +83,10 @@ pub const Pool = struct {
         return self;
     }
     fn lock(self: *Pool) void {
-        assert(std.c.pthread_mutex_lock(&self.mutex) == .SUCCESS);
+        self.mutex.lock();
     }
     fn unlock(self: *Pool) void {
-        assert(std.c.pthread_mutex_unlock(&self.mutex) == .SUCCESS);
+        self.mutex.unlock();
     }
     pub fn run(self: *Pool, jobs: []Job) !void {
         if (std.Thread.getCurrentId() != self.owner) return error.WrongThread;
@@ -56,8 +105,8 @@ pub const Pool = struct {
             self.jobs = jobs;
             self.next = 0;
             self.remaining = jobs.len;
-            assert(std.c.pthread_cond_broadcast(&self.wake) == .SUCCESS);
-            while (self.remaining != 0) assert(std.c.pthread_cond_wait(&self.done, &self.mutex) == .SUCCESS);
+            self.wake.broadcast();
+            while (self.remaining != 0) self.done.wait(&self.mutex);
             self.jobs = &.{};
             self.next = 0;
             self.active = false;
@@ -71,7 +120,7 @@ pub const Pool = struct {
         defer self.unlock();
         while (true) {
             while (!self.stopping and self.next >= self.jobs.len)
-                assert(std.c.pthread_cond_wait(&self.wake, &self.mutex) == .SUCCESS);
+                self.wake.wait(&self.mutex);
             if (self.stopping) return;
             const index = self.next;
             self.next += 1;
@@ -82,19 +131,21 @@ pub const Pool = struct {
             };
             self.lock();
             self.remaining -= 1;
-            if (self.remaining == 0) assert(std.c.pthread_cond_signal(&self.done) == .SUCCESS);
+            if (self.remaining == 0) self.done.signal();
         }
     }
     pub fn destroy(self: *Pool) void {
         assert(self.owner == std.Thread.getCurrentId() and !self.active);
         self.lock();
         self.stopping = true;
-        assert(std.c.pthread_cond_broadcast(&self.wake) == .SUCCESS);
+        self.wake.broadcast();
         self.unlock();
         for (self.threads[0..self.thread_count]) |thread| thread.join();
-        assert(std.c.pthread_cond_destroy(&self.wake) == .SUCCESS);
-        assert(std.c.pthread_cond_destroy(&self.done) == .SUCCESS);
-        assert(std.c.pthread_mutex_destroy(&self.mutex) == .SUCCESS);
+        if (!is_windows) {
+            self.wake.deinit();
+            self.done.deinit();
+            self.mutex.deinit();
+        }
         self.allocator.destroy(self);
     }
 };

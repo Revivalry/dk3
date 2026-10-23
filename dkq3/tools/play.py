@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """Assemble and launch the independent game; never discover or invoke legacy binaries."""
 import argparse
-import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import zipfile
 
-from assets import digest, write_json
+from assets import current_generation, digest, write_json
+from portable_lock import locked
 
-BINARIES = ('dk3', 'dk3ded', 'renderer_opengl1.so', 'renderer_opengl2.so', 'renderer_vulkan.so')
-MODULES = ('qagame.so', 'cgame.so', 'ui.so')
+if os.name == 'nt':
+    BINARIES = ('dk3.exe', 'dk3ded.exe', 'renderer_opengl1.dll', 'renderer_opengl2.dll', 'renderer_vulkan.dll', 'SDL2.dll')
+    MODULES = ('qagame.dll', 'cgame.dll', 'ui.dll')
+else:
+    BINARIES = ('dk3', 'dk3ded', 'renderer_opengl1.so', 'renderer_opengl2.so', 'renderer_vulkan.so')
+    MODULES = ('qagame.so', 'cgame.so', 'ui.so')
 LEGACY_RUNTIME_MEDIA = ('scripts/dk3-projectile-weather.shader',)
 ONLINE_METADATA = ('rules.json', 'compatibility.json')
 RUNTIME_MEDIA = (*LEGACY_RUNTIME_MEDIA, 'rules.json')
@@ -96,11 +101,11 @@ def install(prefix, assets, hd_textures=None, *, hd_textures_fallback=None,
             neural_assets=None, neural_assets_fallback=None, hd_weapons=None, hd_weapons_fallback=None,
             hd_weapons_preview=None,
             materials=None, materials_fallback=None):
-    if not (assets / 'current' / 'manifest.json').is_file():
+    if not (current_generation(assets) / 'manifest.json').is_file():
         raise ValueError(f'no completed asset generation in {assets}; run zig build assets '
                          '-DDK_DATA=/path/to/data -Dasset-profile=retail first, '
                          'or select an existing cache with -Dassets-dir=/path/to/cache')
-    source = (assets / 'current').resolve(strict=True)
+    source = current_generation(assets).resolve(strict=True)
     manifest = checked_assets(source)
     files = {f'bin/{name}': prefix / 'bin' / name for name in BINARIES}
     files.update({f'share/dk3/{name}': prefix / 'lib' / 'dk3' / name for name in MODULES})
@@ -195,8 +200,7 @@ def install(prefix, assets, hd_textures=None, *, hd_textures_fallback=None,
     key = hashlib.sha256(json.dumps(records, sort_keys=True).encode()).hexdigest()
     root = prefix / 'play'
     root.mkdir(exist_ok=True)
-    with (root / '.lock').open('w') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with locked(root / '.lock'):
         destination = root / key
         if not (destination / 'installation.json').is_file():
             if destination.exists():
@@ -210,10 +214,13 @@ def install(prefix, assets, hd_textures=None, *, hd_textures_fallback=None,
                     raise ValueError(f'{path} changed while installing; rerun play-install')
             write_json(destination / 'installation.json', dict(format=2, files=records,
                        asset_profile=manifest['profile'], asset_generation=manifest['key'], gameplay='incomplete'))
-        current, temporary = root / 'current', root / 'current.partial'
-        temporary.unlink(missing_ok=True)
-        temporary.symlink_to(destination.name, target_is_directory=True)
-        temporary.replace(current)
+        if os.name == 'nt':
+            write_json(root / 'current.json', {'key': destination.name})
+        else:
+            current, temporary = root / 'current', root / 'current.partial'
+            temporary.unlink(missing_ok=True)
+            temporary.symlink_to(destination.name, target_is_directory=True)
+            temporary.replace(current)
         (root / 'home').mkdir(exist_ok=True)
     print(f'play-install: {destination}\nplay-install: independent runtime; campaign gameplay incomplete')
     if 'share/dk3/zz-dk3-textures-hd.pk3' in records:
@@ -227,7 +234,7 @@ def install(prefix, assets, hd_textures=None, *, hd_textures_fallback=None,
 
 
 def launch(prefix, guard, extra, headless=False):
-    directory = (prefix / 'play' / 'current').resolve(strict=True)
+    directory = current_generation(prefix / 'play').resolve(strict=True)
     manifest = json.loads((directory / 'installation.json').read_text())
     if manifest.get('format') not in (1, 2):
         raise ValueError('unsupported installation manifest')
@@ -249,7 +256,7 @@ def launch(prefix, guard, extra, headless=False):
     print(f'play: development profile {prefix / "play"}', flush=True)
     command = [str(Path(guard).resolve(strict=True)), *(['--headless'] if headless else []),
                '--mem', '8G', '--timeout', '43200', '--',
-               str(directory / 'bin' / 'dk3'), '+set', 'fs_basepath', str(directory / 'share'),
+               str(directory / 'bin' / BINARIES[0]), '+set', 'fs_basepath', str(directory / 'share'),
                '+set', 'fs_homepath', str(prefix / 'play' / 'home'), '+set', 'com_basegame', 'dk3',
                '+set', 'fs_homedatapath', str(prefix / 'play' / 'home'),
                '+set', 'fs_homestatepath', str(prefix / 'play' / 'state'),
@@ -258,6 +265,8 @@ def launch(prefix, guard, extra, headless=False):
                *(['+set', 'r_picmip', '0'] if any(name in manifest['files'] for name in
                  ('share/dk3/zz-dk3-textures-hd.pk3', 'share/dk3/zz-dk3-neural.pk3',
                   'share/dk3/zz-dk3-hd-weapons.pk3')) else []), *extra]
+    if os.name == 'nt':
+        return subprocess.run(command, check=False).returncode
     os.execv(command[0], command)
 
 
@@ -292,7 +301,7 @@ def main(argv=None):
                     hd_weapons_preview=arguments.hd_weapons_preview,
                     materials=arguments.materials, materials_fallback=arguments.materials_fallback)
         else:
-            launch(prefix, arguments.dkguard, extra[1:] if extra[:1] == ['--'] else extra, arguments.headless)
+            return launch(prefix, arguments.dkguard, extra[1:] if extra[:1] == ['--'] else extra, arguments.headless)
         return 0
     except (OSError, ValueError, KeyError, zipfile.BadZipFile) as error:
         print(f'play: {error}', file=sys.stderr)

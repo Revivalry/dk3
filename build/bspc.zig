@@ -61,24 +61,31 @@ const sources = [_][]const u8{
     "deps/qcommon/unzip.c",
 };
 
-pub fn declare(b: *std.Build, optimize: std.builtin.OptimizeMode) *std.Build.Step.Compile {
-    const module = b.createModule(.{ .target = b.graph.host, .optimize = optimize, .link_libc = true });
+pub fn declare(b: *std.Build, optimize: std.builtin.OptimizeMode, target: std.Build.ResolvedTarget) *std.Build.Step.Compile {
+    const host = addProduct(b, optimize, b.graph.host);
+    const compiler = if (target.result.os.tag == .windows) addProduct(b, optimize, target) else host;
+    const install = b.addInstallArtifact(compiler, .{});
+    b.getInstallStep().dependOn(&install.step);
+    b.step("navigation-compiler", "Build and install the bundled GPL BSP-to-AAS compiler").dependOn(&install.step);
+    return host;
+}
+
+fn addProduct(b: *std.Build, optimize: std.builtin.OptimizeMode, target: std.Build.ResolvedTarget) *std.Build.Step.Compile {
+    const module = b.createModule(.{ .target = target, .optimize = optimize, .link_libc = true });
     @import("header_inputs.zig").track(b, module, &.{"engine/bspc"});
     module.addCSourceFiles(.{ .root = b.path("engine/bspc"), .files = &sources, .flags = &.{ "-std=gnu99", "-fno-strict-aliasing" } });
     module.addIncludePath(b.path("engine/bspc"));
     module.addIncludePath(b.path("engine/bspc/deps"));
-    module.addCMacro("stricmp", "strcasecmp");
+    module.addCMacro("stricmp", if (target.result.os.tag == .windows) "_stricmp" else "strcasecmp");
     module.addCMacro("Com_Memcpy", "memcpy");
     module.addCMacro("Com_Memset", "memset");
     module.addCMacro("MAC_STATIC", "");
     module.addCMacro("QDECL", "");
-    module.addCMacro("LINUX", "1");
+    if (target.result.os.tag == .linux) module.addCMacro("LINUX", "1");
     module.addCMacro("BSPC", "1");
-    module.linkSystemLibrary("m", .{});
-    module.linkSystemLibrary("pthread", .{});
-    const compiler = b.addExecutable(.{ .name = "bspc", .root_module = module });
-    const install = b.addInstallArtifact(compiler, .{});
-    b.getInstallStep().dependOn(&install.step);
-    b.step("navigation-compiler", "Build and install the bundled GPL BSP-to-AAS compiler").dependOn(&install.step);
-    return compiler;
+    if (target.result.os.tag == .linux) {
+        module.linkSystemLibrary("m", .{});
+        module.linkSystemLibrary("pthread", .{});
+    }
+    return b.addExecutable(.{ .name = "bspc", .root_module = module });
 }

@@ -40,6 +40,7 @@ pub fn addProduct(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
         .optimize = optimize,
         .link_libc = true,
     });
+    if (target.result.os.tag == .windows) module.addCMacro("_FORTIFY_SOURCE", "0");
     @import("header_inputs.zig").track(b, module, &.{source_root});
     // The OpenGL2 product's reviewed flag and sanitizer rules cover the same decoder files.
     for (c_sources) |path| module.addCSourceFile(.{ .file = b.path(b.pathJoin(&.{ source_root, path })), .flags = config.sourceFlags(.renderer_opengl2, path) });
@@ -56,7 +57,7 @@ pub fn addProduct(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
     @import("system_library.zig").add(b, module, target, config.sdl2);
     module.addSystemIncludePath(vulkanHeaders(b));
     addShaders(b, module);
-    for ([_][]const u8{ "dl", "m", "pthread" }) |library| module.linkSystemLibrary(library, .{});
+    if (target.result.os.tag != .windows) for ([_][]const u8{ "dl", "m", "pthread" }) |library| module.linkSystemLibrary(library, .{});
     const artifact = b.addLibrary(.{ .name = "renderer_vulkan", .linkage = .dynamic, .root_module = module });
     return artifact;
 }

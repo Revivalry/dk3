@@ -128,10 +128,10 @@ pub fn register() void {
     flares = get("r_flares", "0", c.CVAR_ARCHIVE);
     vkDevice = get("r_vkDevice", "-1", archive_latch);
     vkValidation = get("r_vkValidation", "0", c.CVAR_LATCH);
-    vkRayTracing = get("r_vkRayTracing", "1", archive_latch);
+    vkRayTracing = get("r_vkRayTracing", "0", archive_latch);
     vkMaterialScan = get("r_vkMaterialScan", "0", c.CVAR_TEMP);
     vkStats = get("r_vkStats", "0", c.CVAR_TEMP);
-    vkRemaster = get("r_vkRemaster", "1", archive_latch);
+    vkRemaster = get("r_vkRemaster", "0", archive_latch);
     vkExposure = get("r_vkExposure", "0", c.CVAR_ARCHIVE);
     vkAutoExposure = get("r_vkAutoExposure", "1", c.CVAR_ARCHIVE);
     vkBloom = get("r_vkBloom", "0.05", c.CVAR_ARCHIVE);

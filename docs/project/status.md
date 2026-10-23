@@ -1,6 +1,7 @@
 # Development status
 
-dk3 is a development build of Daikatana for Linux x86-64. Campaign systems, the
+dk3 is a development build of Daikatana for Linux x86-64. Windows x86-64 cross
+compilation succeeds; Windows installation and gameplay remain unverified. Campaign systems, the
 weapon set, actor classes, companions, saves and multiplayer modes are present.
 Campaign completion and broader multiplayer behavior are still being worked on.
 
@@ -9,6 +10,7 @@ Campaign completion and broader multiplayer behavior are still being worked on.
 | Component | Support |
 | --- | --- |
 | Operating system | Linux x86-64 GNU |
+| Windows build | x86-64 GNU cross build succeeds; runtime acceptance open |
 | Compiler | Zig 0.16.x |
 | Renderers | Vulkan 1.3, OpenGL2, OpenGL1 |
 | Game data | Locally converted retail or 1.3 data |
@@ -17,8 +19,9 @@ Campaign completion and broader multiplayer behavior are still being worked on.
 
 ## Limitations to keep in mind
 
-- **Loading:** connected regions prepare several maps before releasing control.
-  Save/load is refused while region admission is in progress.
+- **Loading:** classic map reload is the default. Resident worlds are an opt-in
+  Options setting and still incomplete. Save/load is refused while resident
+  region admission is in progress.
 - **Saves:** original Daikatana saves are incompatible. Converted map changes can
   also invalidate a native save. Back up the profile before changing installations.
 - **Networking:** clients and servers need matching builds and content identities.

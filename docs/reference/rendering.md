@@ -61,7 +61,7 @@ included with dk3.
 
 | Variable | Default | Meaning | Restart |
 | --- | --- | --- | --- |
-| `r_vkRemaster` | `1` | HDR/material/post-processing pipeline; `0` selects classic presentation | Yes |
+| `r_vkRemaster` | `0` | HDR/material/post-processing pipeline; `0` selects classic presentation | Yes |
 | `r_gamma` | `1` | Display brightness curve | Reload textures with `vid_restart` |
 | `r_picmip` | `1` | Texture mip reduction; lower values retain more detail | Yes |
 | `r_textureMode` | `GL_LINEAR_MIPMAP_LINEAR` | Texture filtering mode | No |
@@ -98,7 +98,7 @@ These settings apply while running and do not require a renderer restart.
 
 | Variable | Default | Meaning | Restart |
 | --- | --- | --- | --- |
-| `r_vkRayTracing` | `1` | Enable ray-query features when the device supports them | Yes |
+| `r_vkRayTracing` | `0` | Enable ray-query features when the device supports them | Yes |
 | `r_vkLighting` | `1` | `0` baked lightmaps; `1` map lights with traced shadows and probe lighting | No |
 | `r_vkRtShadows` | `1` | Ray-traced shadows for dynamic lights | No |
 | `r_vkRtReflections` | `1` | Traced reflections on liquid, smooth and wet surfaces | No |

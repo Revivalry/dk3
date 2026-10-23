@@ -108,7 +108,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define Q_UNUSED_VAR __attribute__((unused))
 #define Q_NO_RETURN __attribute__((noreturn))
 
-#ifdef __MINGW32__
+#if defined(__MINGW32__) && !defined(__clang__)
 // For some reason MinGW wants both gnu_printf and ms_printf
 #define Q_PRINTF_FUNC(fmt, va) \
 	__attribute__((format(gnu_printf, fmt, va))) \

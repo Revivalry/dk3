@@ -3,7 +3,7 @@
 import argparse
 import ast
 import contextlib
-import fcntl
+from portable_lock import locked
 import hashlib
 import json
 import os
@@ -28,6 +28,27 @@ TOOLS = Path(__file__).resolve().parent
 STAGE_INPUTS = {'textures': ('images',), 'maps': ('images', 'textures'),
                 'shaders': ('maps', 'images', 'textures'), 'models': ('images',),
                 'sprites': ('images',), 'hud': ('images',), 'navigation': ('maps',)}
+
+
+def link_input(target, source):
+    """Keep source files read only; Windows installations need no symlink privilege."""
+    if os.name != 'nt':
+        target.symlink_to(source)
+        return
+    try:
+        os.link(source, target)
+    except OSError:
+        shutil.copy2(source, target)
+
+
+def current_generation(directory):
+    pointer = Path(directory) / 'current.json'
+    if pointer.is_file():
+        key = json.loads(pointer.read_text())['key']
+        if not isinstance(key, str) or len(key) != 64 or any(c not in '0123456789abcdef' for c in key):
+            raise ValueError(f'{pointer}: invalid generation key')
+        return Path(directory) / key
+    return Path(directory) / 'current'
 
 
 def converter_sources(script):
@@ -104,14 +125,14 @@ def prepare(directory, archives, loose, profile):
                 with archive.open(matches[0]) as inp, target.open('wb') as out:
                     shutil.copyfileobj(inp, out)
         else:
-            target.symlink_to(source)
+            link_input(target, source)
         with contextlib.closing(dkpak.Pak(target)) as archive:
             for entry in archive.order:
                 asset_source.asset_name(entry)
     for name, source in loose.items():
         target = directory / name
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.symlink_to(source)
+        link_input(target, source)
     write_json(directory / asset_source.PROFILE_FILE,
                dict(format=FORMAT, profile=profile, archives=[name for name, _ in archives]))
 
@@ -164,11 +185,14 @@ class Pipeline:
                         if argument.startswith(str(previous / 'packages') + '/')]
             if any(not path.is_file() for path in packages):
                 continue
-            (self.root / name).symlink_to(previous / name, target_is_directory=True)
+            if os.name == 'nt':
+                shutil.copytree(previous / name, self.root / name)
+            else:
+                (self.root / name).symlink_to(previous / name, target_is_directory=True)
             for path in packages:
                 target = self.packages / path.name
                 target.unlink(missing_ok=True)
-                target.symlink_to(path)
+                link_input(target, path)
             print(f'assets: {name} (reused completed conversion)', flush=True)
             return True
         return False
@@ -302,8 +326,7 @@ def main(argv=None):
                       converters={p.name: digest(p) for p in sorted(TOOLS.glob('*.py'))})
         key = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
         args.out.mkdir(parents=True, exist_ok=True)
-        with (args.out / '.lock').open('w') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        with locked(args.out / '.lock'):
             root = args.out / key
             root.mkdir(exist_ok=True)
             if not (root / 'manifest.json').is_file():
@@ -320,11 +343,14 @@ def main(argv=None):
                             for p in sorted((root / 'packages').glob('*.pk3'))}
                 write_json(root / 'manifest.json', dict(format=FORMAT, profile=args.profile, key=key,
                                                        maps=maps, packages=packages, gameplay='incomplete'))
-            current = args.out / 'current'
-            temporary = args.out / 'current.partial'
-            temporary.unlink(missing_ok=True)
-            temporary.symlink_to(root.name, target_is_directory=True)
-            temporary.replace(current)
+            if os.name == 'nt':
+                write_json(args.out / 'current.json', {'key': root.name})
+            else:
+                current = args.out / 'current'
+                temporary = args.out / 'current.partial'
+                temporary.unlink(missing_ok=True)
+                temporary.symlink_to(root.name, target_is_directory=True)
+                temporary.replace(current)
             print(f'assets: generation {root}\nassets: {root / "manifest.json"}', flush=True)
         return 0
     except (OSError, ValueError, dkpak.PakError, zipfile.BadZipFile) as error:

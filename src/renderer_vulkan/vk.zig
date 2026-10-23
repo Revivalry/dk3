@@ -480,6 +480,7 @@ pub fn createDevice(candidate: Candidate, want_ray_tracing: bool) !void {
     try check(i.CreateDevice.?(s.physical, &create, null, &s.device), "vkCreateDevice");
     loadTable(Device, &d, i.GetDeviceProcAddr.?, s.device);
     d.GetDeviceQueue.?(s.device, s.family, 0, &s.queue);
+    queue_mutex = c.SDL_CreateMutex() orelse common.fail(c.ERR_FATAL, "renderer_vulkan: SDL_CreateMutex failed", .{});
 
     for ([_]c.VkFormat{ c.VK_FORMAT_D32_SFLOAT, c.VK_FORMAT_X8_D24_UNORM_PACK32, c.VK_FORMAT_D16_UNORM }) |format| {
         var format_properties: c.VkFormatProperties = undefined;
@@ -494,18 +495,20 @@ pub fn createDevice(candidate: Candidate, want_ray_tracing: bool) !void {
 pub fn destroyDevice() void {
     if (s.device != null) d.DestroyDevice.?(s.device, null);
     s.device = null;
+    if (queue_mutex) |mutex| c.SDL_DestroyMutex(mutex);
+    queue_mutex = null;
 }
 
 /// The queue (and swapchain host access) is shared with the presenter thread (window.zig):
 /// every queue operation, acquire and present included, holds this lock.
-var queue_mutex: std.c.pthread_mutex_t = .{};
+var queue_mutex: ?*c.SDL_mutex = null;
 
 pub fn lockQueue() void {
-    pthreadCheck(std.c.pthread_mutex_lock(&queue_mutex), "pthread_mutex_lock");
+    if (c.SDL_LockMutex(queue_mutex) != 0) common.fail(c.ERR_FATAL, "renderer_vulkan: SDL_LockMutex failed", .{});
 }
 
 pub fn unlockQueue() void {
-    pthreadCheck(std.c.pthread_mutex_unlock(&queue_mutex), "pthread_mutex_unlock");
+    if (c.SDL_UnlockMutex(queue_mutex) != 0) common.fail(c.ERR_FATAL, "renderer_vulkan: SDL_UnlockMutex failed", .{});
 }
 
 pub fn waitIdle() void {
@@ -1728,10 +1731,6 @@ pub fn pipeline(key: PipelineKey) c.VkPipeline {
     reportPipeline(created, "graphics program/variant", @as(u16, key.program) * 10 + key.variant);
     pipelines.put(common.gpa, key, created) catch @panic("OOM");
     return created;
-}
-
-fn pthreadCheck(rc: std.c.E, what: []const u8) void {
-    if (rc != .SUCCESS) common.fail(c.ERR_FATAL, "renderer_vulkan: {s} failed ({s})", .{ what, @tagName(rc) });
 }
 
 var pipeline_stats = false;

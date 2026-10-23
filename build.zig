@@ -11,16 +11,21 @@ const bspc = @import("build/bspc.zig");
 
 pub fn build(b: *std.Build) void {
     toolchain.enforce(manifest.minimum_zig_version, @import("builtin").zig_version);
+    const target = b.standardTargetOptions(.{ .default_target = .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu } });
     // The historical default contains the preserved playable installation.
     // Ordinary native builds, including `zig build play`, use their own prefix.
     if (std.mem.eql(u8, b.install_path, b.pathFromRoot("zig-out")))
-        b.resolveInstallPrefix(b.pathFromRoot("zig-out/native-dev"), .{});
-    const target = b.standardTargetOptions(.{ .default_target = .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu } });
+        b.resolveInstallPrefix(b.pathFromRoot(if (target.result.os.tag == .windows) "zig-out/windows-x64" else "zig-out/native-dev"), .{});
     const optimize = b.option(std.builtin.OptimizeMode, "optimize", "Optimization mode") orelse .ReleaseSafe;
     @import("build/online.zig").declare(b, target, optimize);
     _ = b.option(enum { zig }, "game-runtime", "Native Zig runtime (the only supported runtime)");
     const rules_identity = @import("build/compatibility.zig").declare(b);
-    const guard = b.addExecutable(.{ .name = "dkguard", .root_module = b.createModule(.{
+    const guard = if (target.result.os.tag == .windows) blk: {
+        const module = b.createModule(.{ .target = target, .optimize = optimize, .link_libc = true });
+        module.addCSourceFile(.{ .file = b.path("src/dkguard/windows.c"), .flags = &.{"-std=c11"} });
+        module.linkSystemLibrary("shell32", .{});
+        break :blk b.addExecutable(.{ .name = "dkguard", .root_module = module });
+    } else b.addExecutable(.{ .name = "dkguard", .root_module = b.createModule(.{
         .root_source_file = b.path("src/dkguard/main.zig"),
         .target = target,
         .optimize = optimize,
@@ -60,7 +65,7 @@ pub fn build(b: *std.Build) void {
     if (!has_xvfb) process_checks.step.dependOn(&b.addSystemCommand(&.{ "echo", "dkguard: skipping display check because xvfb-run is missing" }).step);
     checks.dependOn(&process_checks.step);
     const python = b.option([]const u8, "python", "Python 3.10+ interpreter") orelse "python3";
-    const navigation = bspc.declare(b, optimize);
+    const navigation = bspc.declare(b, optimize, target);
     const packages = assets.declare(b, host_guard, python, navigation);
     play.declare(b, packages, host_guard);
     const bootstrap =
