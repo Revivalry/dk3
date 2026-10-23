@@ -10030,3 +10030,20 @@ uses `runtime_bugfix_probe.run`, NativeInput and `runtime_view_probe.admitted` u
 The website publishes checked-in docs only. Private packages, saves, original assets
 and reports remain local. Local code checks already passed542 Zig and350 Python tests;
 this documentation pass uses its separate lightweight build and CI.
+
+## Sequence 428 — steam-retail-installer — recognize the supplied three-archive Steam data
+
+24 October 2026. The release wizard rejected the owner's correct Steam game and
+data directories because both discovery and conversion required `pak4.pak`.
+The installed Steam copy supplies `pak1.pak`, `pak2.pak`, and `pak3.pak`.
+Retail conversion now requires those three archives and includes optional numbered
+updates when present. Discovery uses the same requirement and checks actual files.
+The 1.3 profile retains its existing `pak4.pak`, `pak6.pak`, and pak5 requirements.
+Updated the installer diagnostic and input-profile documentation.
+
+| Scenario | State | Evidence / limits |
+| --- | --- | --- |
+| Three-archive Steam detection and input preparation | Passed locally | Actual installed Steam copy selected from either game or data directory; retail inventory and private input preparation read 12,320 entries and 83 maps without changing the source |
+| Existing 1.3 installation | Passed locally, inventory | Correct profile and archive priority detected; original files and saves unchanged |
+| Installer, stage identity, and play installation regression checks | Passed | `python3 -B -m unittest tests.test_install_wizard tests.test_stage_identity tests.test_play_install` from `dkq3/tools`: 13 tests, including three-archive preparation, optional pak4, missing required archives, and unchanged 1.3 requirements |
+| Published release installer and complete Steam conversion/gameplay | Unrun | Local fix only; the downloaded release still requires pak4. The existing complete 1.3 data directory is a compatible input for that bundle. No release was published and no game run is claimed |

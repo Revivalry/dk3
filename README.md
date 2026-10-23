@@ -42,7 +42,7 @@ The client, dedicated server and tools are under `zig-out/native-dev/bin/`. Game
 
 ## Play with your own game data
 
-To play, supply legally acquired Daikatana data and install **FFmpeg 7** on your `PATH`. Point `DK_DATA` to a directory containing `pak1.pak` through `pak4.pak`:
+To play, supply legally acquired Daikatana data and install **FFmpeg 7** on your `PATH`. Point `DK_DATA` to a directory containing `pak1.pak` through `pak3.pak` (the standard Steam data); `pak4.pak` is optional for retail data:
 
 ```sh
 zig build assets -Dpython=.venv/bin/python -DDK_DATA=/path/to/daikatana/data -Dasset-profile=retail

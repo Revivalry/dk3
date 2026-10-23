@@ -7,7 +7,7 @@ single-player game.
 
 Complete [Build the engine](build-engine.md). You also need:
 
-- A legally acquired Daikatana data directory containing `pak1.pak` through `pak4.pak`.
+- A legally acquired Daikatana data directory containing `pak1.pak` through `pak3.pak` (standard Steam data).
 - FFmpeg 7 on your `PATH`, with PCM and Vorbis support.
 - A graphical session with a Vulkan 1.3 or OpenGL-capable driver.
 

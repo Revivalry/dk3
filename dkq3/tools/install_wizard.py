@@ -38,7 +38,8 @@ def game_data(root: Path) -> Path | None:
     if not root.is_dir():
         return None
     for candidate in (root, *[child for child in root.iterdir() if child.is_dir() and child.name.lower() == 'data']):
-        if all(any(p.name.lower() == f'pak{i}.pak' for p in candidate.iterdir()) for i in range(1, 5)):
+        names = {p.name.lower() for p in candidate.iterdir() if p.is_file()}
+        if all(name in names for name in assets.REQUIRED_ARCHIVES):
             return candidate.resolve()
     return None
 
@@ -109,7 +110,8 @@ def source_selection() -> Path:
         path = Path(input('Directory containing Daikatana or its data folder: ').strip().strip('"')).expanduser()
         if source := game_data(path):
             return source
-        print('No pak1.pak through pak4.pak found there. The original game is unchanged.')
+        print('Could not find all three game archives: pak1.pak, pak2.pak, and pak3.pak.\n'
+              'Choose the Daikatana folder or its data subfolder. The original game is unchanged.')
 
 
 def profile_for(source: Path) -> str:

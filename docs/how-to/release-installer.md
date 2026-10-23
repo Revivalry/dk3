@@ -20,7 +20,8 @@ and installation directory. It does not need root privileges.
 
 Extract a platform bundle and run `install.sh` on Linux or `install.cmd` on
 Windows. Choose a Steam installation or enter the directory containing
-`pak1.pak` through `pak4.pak`. The wizard detects the retail or 1.3 asset profile,
+`pak1.pak` through `pak3.pak`, as supplied by Steam. Retail `pak4.pak` is optional.
+The wizard detects the retail or 1.3 asset profile,
 asks for a separate destination, and converts assets locally. After installation,
 run `play.sh` or `play.cmd` in that destination.
 

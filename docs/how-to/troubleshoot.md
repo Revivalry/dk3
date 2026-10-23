@@ -33,7 +33,8 @@ the selected interpreter without the required modules.
 
 Check that `-DDK_DATA` points to the directory containing the PAK files, rather
 than its parent. Check the selected [asset profile](../reference/assets.md#input-profiles).
-Retail needs `pak1.pak` through `pak4.pak`; the 1.3 profile needs additional archives.
+Retail needs `pak1.pak` through `pak3.pak`; `pak4.pak` is optional. The 1.3 profile
+also needs `pak4.pak`, `pak6.pak`, and either `pak5.pak` or `pak5.zip`.
 
 ## There is no completed asset generation
 

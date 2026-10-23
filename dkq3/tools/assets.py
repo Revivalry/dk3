@@ -19,7 +19,9 @@ import pk3
 
 FORMAT = 1
 PROFILES = ('retail', '1.3')
-REQUIRED_ARCHIVES = ('pak1.pak', 'pak2.pak', 'pak3.pak', 'pak4.pak')
+# The unpatched Steam installation contains these three archives. pak4 is an
+# optional retail update, and remains required alongside the other 1.3 inputs.
+REQUIRED_ARCHIVES = ('pak1.pak', 'pak2.pak', 'pak3.pak')
 REJECTED_IMAGES = ('fonts/statbar_font.bmp', 'pics/misc/we_mflash2.bmp', 'skins/colormap.wal')
 MISSING_TEXTURES = ('textures/ctf1/navytrim10', 'textures/e1m7/blueglss',
                     'textures/e4m5\\labfloorshiny', 'textures/e4m9/subplate4', 'textures/protex\\region')
@@ -97,7 +99,7 @@ def inventory(root, profile):
             top[key] = path
     missing = [str(root / name) for name in REQUIRED_ARCHIVES if name not in top]
     if profile == '1.3':
-        missing += [str(root / 'pak6.pak')] if 'pak6.pak' not in top else []
+        missing += [str(root / name) for name in ('pak4.pak', 'pak6.pak') if name not in top]
         if not any(name in top for name in ('pak5.pak', 'pak5.zip')):
             missing.append(str(root / 'pak5.pak') + ' or pak5.zip containing pak5.pak')
     if missing:
