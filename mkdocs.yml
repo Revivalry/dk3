@@ -48,6 +48,7 @@ nav:
       - Build the engine: tutorials/build-engine.md
       - Start your first game: tutorials/first-game.md
   - How-to guides:
+      - Install a release: how-to/release-installer.md
       - Choose a renderer: how-to/select-renderer.md
       - Configure video: how-to/configure-video.md
       - Update an installation: how-to/update-installation.md

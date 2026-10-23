@@ -1,0 +1,68 @@
+name: Release bundles
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+jobs:
+  bundle:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: 0.16.0
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev pkg-config libvulkan-dev glslc
+      - name: Build Linux and Windows products
+        run: |
+          zig build -Doptimize=ReleaseSafe
+          zig build -Dtarget=x86_64-windows-gnu -Doptimize=ReleaseSafe
+      - name: Fetch verified portable inputs
+        run: |
+          python3 dkq3/tools/release_inputs.py --platform linux-x64 --out build/release-inputs/linux-x64
+          python3 dkq3/tools/release_inputs.py --platform windows-x64 --out build/release-inputs/windows-x64
+      - name: Package both installers
+        run: |
+          python3 dkq3/tools/release_bundle.py --platform linux-x64 \
+            --prefix zig-out/native-dev --python-runtime build/release-inputs/linux-x64/python \
+            --ffmpeg build/release-inputs/linux-x64/ffmpeg \
+            --ffmpeg-license build/release-inputs/linux-x64/ffmpeg-license.txt \
+            --wheelhouse build/release-inputs/linux-x64/wheels --out artifacts/dk3-installer-linux-x64.zip
+          python3 dkq3/tools/release_bundle.py --platform windows-x64 \
+            --prefix zig-out/windows-x64 --python-runtime build/release-inputs/windows-x64/python \
+            --ffmpeg build/release-inputs/windows-x64/ffmpeg.exe \
+            --ffmpeg-license build/release-inputs/windows-x64/ffmpeg-license.txt \
+            --wheelhouse build/release-inputs/windows-x64/wheels --out artifacts/dk3-installer-windows-x64.zip
+          cd artifacts
+          sha256sum dk3-installer-linux-x64.zip dk3-installer-windows-x64.zip > SHA256SUMS
+      - name: Sign build provenance for release files
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: artifacts/*
+      - name: Publish release for this main commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="snapshot-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          gh release create "$tag" artifacts/dk3-installer-linux-x64.zip \
+            artifacts/dk3-installer-windows-x64.zip artifacts/SHA256SUMS \
+            --target "$GITHUB_SHA" --title "dk3 build ${GITHUB_SHA:0:12}" \
+            --notes 'Built from main. Both installers contain no retail game data. Verify with gh attestation verify <archive> -R Revivalry/dk3.' \
+            --latest

@@ -40,7 +40,10 @@ pub fn addProduct(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
         .optimize = optimize,
         .link_libc = true,
     });
-    if (target.result.os.tag == .windows) module.addCMacro("_FORTIFY_SOURCE", "0");
+    if (target.result.os.tag == .windows) {
+        module.addCMacro("_FORTIFY_SOURCE", "0");
+        module.linkSystemLibrary("advapi32", .{});
+    }
     @import("header_inputs.zig").track(b, module, &.{source_root});
     // The OpenGL2 product's reviewed flag and sanitizer rules cover the same decoder files.
     for (c_sources) |path| module.addCSourceFile(.{ .file = b.path(b.pathJoin(&.{ source_root, path })), .flags = config.sourceFlags(.renderer_opengl2, path) });

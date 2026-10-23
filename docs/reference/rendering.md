@@ -54,8 +54,10 @@ upscaler selection uses DLSS when available, otherwise FSR, when rendering below
 native resolution. A requested unavailable DLSS path falls back to FSR.
 
 An empty `r_vkDlssPath` checks `DK3_DLSS_PATH`, then `dlss/` in the game's home
-directory. The expected library is `libnvidia-ngx-dlss.so.*`. DLSS binaries are not
-included with dk3.
+directory. The expected feature library is `libnvidia-ngx-dlss.so.*` on Linux
+or `nvngx_dlss.dll` on Windows. NGX is loaded from the NVIDIA driver at runtime;
+DLSS is available only when the driver, GPU, Vulkan extensions and feature
+library support it. DLSS binaries are not included with dk3.
 
 ## Image and material settings
 
