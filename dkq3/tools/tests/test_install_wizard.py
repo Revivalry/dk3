@@ -1,4 +1,5 @@
 """Focused installer checks using synthetic retail data and release products."""
+from contextlib import closing
 import json
 from pathlib import Path
 import tempfile
@@ -6,6 +7,9 @@ import unittest
 from unittest import mock
 
 import install_wizard
+import assets
+import asset_source
+import dkpak
 import hd_plan
 import postfx
 import release_bundle
@@ -23,12 +27,12 @@ class InstallerTests(unittest.TestCase):
         import numpy as np
         self.assertEqual(postfx.light_spread(np.zeros((4, 4, 3), dtype=np.uint8)), 0.0)
 
-    def test_steam_and_custom_sources_require_four_original_paks(self):
+    def test_steam_and_custom_sources_accept_three_original_paks(self):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
             game = home / '.steam/steam/steamapps/common/Daikatana/data'
             game.mkdir(parents=True)
-            for index in range(1, 5):
+            for index in range(1, 4):
                 (game / f'PAK{index}.PAK').write_bytes(b'owner data')
             with mock.patch.object(Path, 'home', return_value=home):
                 self.assertEqual(install_wizard.steam_sources(), [game.resolve()])
@@ -37,8 +41,43 @@ class InstallerTests(unittest.TestCase):
             (game / 'pak6.pak').write_bytes(b'patch')
             (game / 'pak5.zip').write_bytes(b'patch')
             self.assertEqual(install_wizard.profile_for(game), '1.3')
-            (game / 'PAK4.PAK').unlink()
+            (game / 'PAK2.PAK').unlink()
             self.assertIsNone(install_wizard.game_data(game.parent))
+
+    def test_retail_conversion_prepares_three_paks_and_optional_update(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / 'data'
+            data.mkdir()
+            for index in range(1, 4):
+                dkpak.write_pak(str(data / f'PAK{index}.PAK'),
+                               {'tables/example.vsc': f'archive {index}'.encode()})
+            archives, loose, records = assets.inventory(data, 'retail')
+            self.assertEqual([name for name, _ in archives], ['pak1.pak', 'pak2.pak', 'pak3.pak'])
+            self.assertEqual(len(records), 3)
+            prepared = root / 'prepared'
+            assets.prepare(prepared, archives, loose, 'retail')
+            self.assertEqual(asset_source.archive_order(prepared), ['pak3.pak', 'pak2.pak', 'pak1.pak'])
+            with closing(dkpak.Pak(prepared / 'pak3.pak')) as archive:
+                self.assertEqual(archive.read('tables/example.vsc'), b'archive 3')
+            dkpak.write_pak(str(data / 'pak4.pak'), {'tables/example.vsc': b'optional update'})
+            archives, loose, _ = assets.inventory(data, 'retail')
+            self.assertEqual([name for name, _ in archives], ['pak1.pak', 'pak2.pak', 'pak3.pak', 'pak4.pak'])
+            (data / 'PAK2.PAK').unlink()
+            with self.assertRaisesRegex(ValueError, 'missing required input: .*pak2.pak'):
+                assets.inventory(data, 'retail')
+
+    def test_13_conversion_still_requires_its_update_archives(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            data = Path(temporary)
+            for index in (1, 2, 3, 5, 6):
+                (data / f'pak{index}.pak').write_bytes(b'owner data')
+            with self.assertRaisesRegex(ValueError, 'missing required input: .*pak4.pak'):
+                assets.inventory(data, '1.3')
+            (data / 'pak4.pak').write_bytes(b'update')
+            archives, _, _ = assets.inventory(data, '1.3')
+            self.assertEqual([name for name, _ in archives],
+                             ['pak1.pak', 'pak2.pak', 'pak3.pak', 'pak4.pak', 'pak6.pak', 'pak5.pak'])
 
     def test_release_bundle_contains_launchers_and_no_game_data(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -29,9 +29,10 @@ zig build play-install
 zig build play
 ```
 
-`retail` requires pak1.pak through pak4.pak. It reads present numbered archives in
+`retail` requires pak1.pak through pak3.pak, matching the standard Steam installation;
+pak4.pak is optional. It reads present numbered archives in
 ascending priority (pak0 through pak9), then loose game assets. `1.3` additionally
-requires pak6.pak and either pak5.pak or pak5.zip containing exactly one pak5.pak;
+requires pak4.pak, pak6.pak and either pak5.pak or pak5.zip containing exactly one pak5.pak;
 pak5 overrides the other archives, matching the existing 1.3 asset installation.
 Loose files override either profile. Names are resolved case-insensitively and
 ambiguous loose-file names are diagnosed. Inputs are explicit; no source archive,

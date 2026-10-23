@@ -16,8 +16,8 @@ Add `-Dpython=.venv/bin/python` to use a virtual environment.
 
 | Profile | Required archives | Priority |
 | --- | --- | --- |
-| `retail` | `pak1.pak` through `pak4.pak` | Present numbered archives from pak0 through pak9, followed by loose files |
-| `1.3` | Retail archives, `pak6.pak`, and either `pak5.pak` or `pak5.zip` containing exactly one `pak5.pak` | pak5 overrides the other archives; loose files override archives |
+| `retail` | `pak1.pak` through `pak3.pak`; `pak4.pak` is optional | Present numbered archives from pak0 through pak9, followed by loose files |
+| `1.3` | Retail archives, `pak4.pak`, `pak6.pak`, and either `pak5.pak` or `pak5.zip` containing exactly one `pak5.pak` | pak5 overrides the other archives; loose files override archives |
 
 Names are resolved case-insensitively. Ambiguous loose-file names produce an error.
 Use the profile matching your installation, including its loose overrides.
