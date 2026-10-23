@@ -22,6 +22,9 @@ def verify_bundle(bundle: Path) -> None:
     manifest = json.loads((bundle / 'bundle.json').read_text())
     if manifest.get('format') != 1 or not isinstance(manifest.get('files'), dict):
         raise ValueError('unsupported release bundle')
+    for name in assets.CONVERSION_INPUTS:
+        if name not in manifest['files'] or not (bundle / name).is_file():
+            raise ValueError(f'missing release conversion input: {name}')
     for name, expected in manifest['files'].items():
         if not isinstance(name, str) or not isinstance(expected, str):
             raise ValueError('invalid release manifest entry')

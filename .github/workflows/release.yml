@@ -52,6 +52,27 @@ jobs:
             --wheelhouse build/release-inputs/windows-x64/wheels --out artifacts/dk3-installer-windows-x64.zip
           cd artifacts
           sha256sum dk3-installer-linux-x64.zip dk3-installer-windows-x64.zip > SHA256SUMS
+      - name: Check the extracted installer without a source checkout
+        run: |
+          mkdir -p build/release-check
+          unzip -q artifacts/dk3-installer-linux-x64.zip -d build/release-check
+          bundle_root="$PWD/build/release-check/dk3-installer-linux-x64"
+          cd build/release-check
+          "$bundle_root/runtime/python/bin/python3" -I -B - "$bundle_root" <<'PY'
+          import subprocess, sys
+          from pathlib import Path
+          bundle = Path(sys.argv[1])
+          sys.path.insert(0, str(bundle / 'dkq3/tools'))
+          import install_wizard
+          install_wizard.verify_bundle(bundle)
+          python = install_wizard.python_environment(bundle, Path.cwd() / 'verification-install')
+          code = ('import sys; sys.path.insert(0, sys.argv[1]); '
+                  'import appearances, navigation; '
+                  'assert appearances.catalog(); assert navigation.CONFIG.read_bytes()')
+          subprocess.run([str(python), '-I', '-B', '-c', code, str(bundle / 'dkq3/tools')], check=True)
+          install_wizard.verify_bundle(bundle)
+          print('Extracted installer manifest and converter inputs verified.')
+          PY
       - name: Sign build provenance for release files
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:

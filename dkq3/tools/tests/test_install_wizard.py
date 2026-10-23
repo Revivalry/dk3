@@ -3,6 +3,8 @@ from contextlib import closing
 import json
 from pathlib import Path
 import tempfile
+import subprocess
+import sys
 import unittest
 from unittest import mock
 
@@ -113,6 +115,18 @@ class InstallerTests(unittest.TestCase):
             self.assertIn('bin/dk3', manifest['files'])
             self.assertIn('dkq3/tools/install_wizard.py', manifest['files'])
             install_wizard.verify_bundle(bundle)
+            # Load the real consumers in a separate process outside the checkout.
+            # A manifest alone cannot catch an omitted runtime data dependency.
+            result = subprocess.run([sys.executable, '-I', '-B', '-c',
+                'import json,sys; from pathlib import Path; '
+                'sys.path.insert(0,sys.argv[1]); import appearances,navigation; '
+                'print(json.dumps({"catalog":appearances.catalog(),"aas":navigation.CONFIG.read_text()}))',
+                str(bundle / 'dkq3/tools')], cwd=root, capture_output=True, text=True, check=True)
+            consumed = json.loads(result.stdout)
+            self.assertEqual(len(consumed['catalog']), 36)
+            self.assertIn('phys_maxstep', consumed['aas'])
+            self.assertIn('src/multiplayer/appearances.csv', manifest['files'])
+            self.assertIn('dkq3/tools/dk3-aas.cfg', manifest['files'])
             self.assertTrue((bundle / 'install.sh').stat().st_mode & 0o111)
             self.assertFalse((bundle / 'data').exists())
             installed = root / 'installed'
@@ -123,6 +137,12 @@ class InstallerTests(unittest.TestCase):
             (bundle / 'bin/dk3').write_bytes(b'changed')
             with self.assertRaisesRegex(ValueError, 'changed release file'):
                 install_wizard.verify_bundle(bundle)
+            for name in assets.CONVERSION_INPUTS:
+                with self.subTest(missing_conversion_input=name):
+                    omitted = dict(manifest, files={k: v for k, v in manifest['files'].items() if k != name})
+                    (bundle / 'bundle.json').write_text(json.dumps(omitted))
+                    with self.assertRaisesRegex(ValueError, 'missing release conversion input'):
+                        install_wizard.verify_bundle(bundle)
 
 
 if __name__ == '__main__':

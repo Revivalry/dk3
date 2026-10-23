@@ -22,6 +22,7 @@ import entities
 import media
 import pk3
 import pk3_paths
+import asset_source
 
 # ---------------------------------------------------------------------------------------------------------------------
 # The music tables: Gold's `.vsc` and `.csv` (reference/dk-gold/user/csv.cpp, Lzari.cpp) and 1.3's `.json`.
@@ -206,6 +207,27 @@ def package_name(path):
     """-> the entry of a converted MP3: its corpus path in lower case with `.ogg` appended, so the codec lookup of the name Daikatana
     asks for (`<path>.mp3`) finds it (specs/assets/ASSET-music-voice.md, "Names")."""
     return path.lower() + OGG_EXTENSION
+
+
+def alias_rule(value):
+    target, separator, source = value.partition('=')
+    try:
+        if not separator or not target.endswith('.mp3') or not source.endswith('.mp3'):
+            raise ValueError('expected missing.mp3=supplied.mp3')
+        return asset_source.asset_name(target), asset_source.asset_name(source)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+
+
+def alias_entries(packaged, rules):
+    """Expose supplied recordings under absent requested names, preserving originals."""
+    result, applied = dict(packaged), {}
+    for target, source in rules:
+        target_entry, source_entry = package_name(target), package_name(source)
+        if target_entry not in result and source_entry in packaged:
+            result[target_entry] = packaged[source_entry]
+            applied[target] = source
+    return result, applied
 
 
 @dataclass(frozen=True)
@@ -534,6 +556,8 @@ def parse_args(argv=None):
     ap.add_argument('--summary', required=True, help='text report to write: the lines printed on stdout')
     ap.add_argument('--expected-missing', action='append', default=[], metavar='NAME',
                     help='a referenced name no converted file resolves, reported as a loss; repeatable')
+    ap.add_argument('--alias', action='append', type=alias_rule, default=[], metavar='MISSING=SUPPLIED',
+                    help='expose a supplied MP3 under an absent requested name; repeatable')
     ap.add_argument('--expected-orphan-subtitles', type=int, help='the subtitles no voice file name leads to')
     return ap.parse_args(argv)
 
@@ -556,11 +580,13 @@ def main(argv=None):
             results = list(pool.map(lambda key: convert_copy(*key, media.read_copy(game.root, archives, *key), args.ffmpeg, run), keys))
         rows = media.table(copies, [row for row, _ in results])
         packaged = {row['entry']: ogg for row, (_, ogg) in zip(rows, results) if row['status'] == CONVERTED}
+        packaged, aliases = alias_entries(packaged, args.alias)
         tables, used = read_tables(game.root, archives)
         reference_rows = references(game, tables, set(packaged))
         subtitles = subtitle_entries(game.root, archives)
     voices = [row['name'] for row in rows if row['status'] == CONVERTED and row['kind'] == VOICE]
     report = document(rows, version, tables, used, reference_rows, link_subtitles(voices, subtitles), subtitles, set(args.expected_missing))
+    report['aliases'] = aliases
     lines = summary(report)
     for path, text in ((args.report, json.dumps(report, indent=1, sort_keys=True) + '\n'), (args.summary, ''.join(line + '\n' for line in lines))):
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
