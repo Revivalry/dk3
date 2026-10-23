@@ -15,6 +15,8 @@ import shutil
 import tempfile
 import zipfile
 
+import assets
+
 
 PRODUCTS = {
     'linux-x64': ('dk3', 'dk3ded', 'dkguard', 'bspc', 'renderer_vulkan.so',
@@ -74,6 +76,8 @@ def fill(bundle: Path, repository: Path, prefix: Path, platform: str,
         copy_file(script, bundle / 'dkq3/tools' / script.name)
     for name in ('requirements.txt', 'requirements-hd.txt'):
         copy_file(tools / name, bundle / 'dkq3/tools' / name)
+    for name in assets.CONVERSION_INPUTS:
+        copy_file(repository / name, bundle / name)
     if platform == 'windows-x64':
         (bundle / 'install.cmd').write_bytes(b'@echo off\r\n"%~dp0runtime\\python\\python.exe" -B "%~dp0dkq3\\tools\\install_wizard.py" --bundle "%~dp0." %*\r\n')
     else:

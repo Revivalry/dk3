@@ -26,7 +26,18 @@ REJECTED_IMAGES = ('fonts/statbar_font.bmp', 'pics/misc/we_mflash2.bmp', 'skins/
 MISSING_TEXTURES = ('textures/ctf1/navytrim10', 'textures/e1m7/blueglss',
                     'textures/e4m5\\labfloorshiny', 'textures/e4m9/subplate4', 'textures/protex\\region')
 MISSING_AUDIO = ('music/dm1_riffy.mp3', 'music/dm2_forebode.mp3', 'sounds/voices/mikiko/e2m5_mk_10b.mp3')
+# These two tracks are absent from the unpatched Steam distribution. Keep the
+# unresolved references in its report without rejecting an otherwise valid copy.
+RETAIL_MISSING_AUDIO = ('music/deadly.mp3', 'music/katana1.mp3')
+# Original map triggers use the wrong voice directories; both recordings are
+# supplied by retail. Alias only an absent name, never override supplied audio.
+AUDIO_ALIASES = (('sounds/voices/misc/sid_s_25.mp3', 'sounds/voices/superfly/sid_s_25.mp3'),
+                 ('sounds/voices/superfly/sid_m_52b.mp3', 'sounds/voices/mikiko/sid_m_52b.mp3'))
 TOOLS = Path(__file__).resolve().parent
+# Non-Python inputs read by converters, relative to the checkout or bundle root.
+CONVERTER_DATA = {'appearances.py': ('src/multiplayer/appearances.csv',),
+                  'navigation.py': ('dkq3/tools/dk3-aas.cfg',)}
+CONVERSION_INPUTS = tuple(sorted({path for paths in CONVERTER_DATA.values() for path in paths}))
 STAGE_INPUTS = {'textures': ('images',), 'maps': ('images', 'textures'),
                 'shaders': ('maps', 'images', 'textures'), 'models': ('images',),
                 'sprites': ('images',), 'hud': ('images',), 'navigation': ('maps',)}
@@ -151,13 +162,20 @@ class Pipeline:
         inputs = json.loads((root / 'inputs.json').read_text())
         # The command records orchestration options. Navigation has no outputs
         # consumed by the other converters, so its compiler cannot invalidate them.
-        inputs['converters'] = {file: inputs['converters'].get(file)
-                                for file in converter_sources(command[2])}
+        sources = converter_sources(command[2])
+        inputs['converters'] = {file: inputs['converters'].get(file) for file in sources}
+        data = inputs.get('converter_data', {})
+        inputs['converter_data'] = {path: data.get(path) for file in sources
+                                    for path in CONVERTER_DATA.get(file, ())}
         if name != 'navigation':
             inputs.pop('bspc', None)
         normalized = []
         for index, argument in enumerate(command):
-            if index and command[index - 1] in ('--bspc', '--dkguard'):
+            if index == 2:
+                # A new bootstrap extraction has a different temporary path;
+                # converter contents are already fingerprinted above.
+                normalized.append('$TOOLS/' + Path(argument).name)
+            elif index and command[index - 1] in ('--bspc', '--dkguard', '--ffmpeg'):
                 normalized.append(command[index - 1])
             elif index and command[index - 1] in ('--workers', '--jobs'):
                 # Parallelism changes scheduling, not these deterministic products.
@@ -258,9 +276,11 @@ class Pipeline:
         encoder = ['--data', data, '--ffmpeg', self.args.ffmpeg, '--ffmpeg-major', self.args.ffmpeg_major,
                    '--dkguard', self.args.dkguard, '--jobs', min(self.args.workers, 4)]
         self.run('sound', 'media.py', [*encoder, '--pk3', self.packages / 'dk3-sound.pk3', *self.report_args('sound')])
+        missing_audio = MISSING_AUDIO + (RETAIL_MISSING_AUDIO if self.args.profile == 'retail' else ())
         self.run('music', 'music_voice.py', [*encoder, '--music-pk3', self.packages / 'dk3-music.pk3',
                  '--voice-pk3', self.packages / 'dk3-voice.pk3', *self.report_args('music'),
-                 *['--expected-missing=' + n for n in MISSING_AUDIO]])
+                 *['--expected-missing=' + n for n in missing_audio],
+                 *['--alias=' + target + '=' + source for target, source in AUDIO_ALIASES]])
         package_game_data(data, self.packages / 'dk3-data.pk3', self.args.profile, self.root.name)
         self.run('navigation', 'navigation.py', ['--maps', maps_dir / 'bsp', '--bspc', self.args.bspc,
                  '--dkguard', self.args.dkguard, '--out', self.root / 'navigation' / 'compiled',
@@ -325,6 +345,7 @@ def main(argv=None):
         archives, loose, records = inventory(args.data, args.profile)
         inputs = dict(format=FORMAT, profile=args.profile, files=records, numpy=numpy.__version__,
                       python=sys.version, ffmpeg=digest(args.ffmpeg), bspc=digest(args.bspc), ffmpeg_major=args.ffmpeg_major,
+                      converter_data={name: digest(TOOLS.parents[1] / name) for name in CONVERSION_INPUTS},
                       converters={p.name: digest(p) for p in sorted(TOOLS.glob('*.py'))})
         key = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
         args.out.mkdir(parents=True, exist_ok=True)

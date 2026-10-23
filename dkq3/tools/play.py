@@ -261,6 +261,7 @@ def launch(prefix, guard, extra, headless=False):
                '+set', 'fs_homedatapath', str(prefix / 'play' / 'home'),
                '+set', 'fs_homestatepath', str(prefix / 'play' / 'state'),
                '+set', 'vm_game', '0', '+set', 'vm_cgame', '0', '+set', 'vm_ui', '0',
+               '+set', 'dk3_runtime_probe', '2',
                '+set', 'g_gametype', '2', '+set', 'cl_renderer', 'vulkan',
                *(['+set', 'r_picmip', '0'] if any(name in manifest['files'] for name in
                  ('share/dk3/zz-dk3-textures-hd.pk3', 'share/dk3/zz-dk3-neural.pk3',

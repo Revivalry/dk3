@@ -103,6 +103,8 @@ class PlayInstallTest(unittest.TestCase):
             with patch('play.os.execv') as execute:
                 play.launch(prefix, guard, [])
             self.assertEqual(execute.call_args.args[1][-3:], ['+set', 'r_picmip', '0'])
+            command = execute.call_args.args[1]
+            self.assertEqual(command[command.index('dk3_runtime_probe') + 1], '2')
             report['source_models_sha256'] = 'wrong'
             write()
             with self.assertRaisesRegex(ValueError, 'another model generation'):

@@ -40,7 +40,14 @@ also off by default; enable them in Options for the next map load.
 On every push to `main`, the [release workflow](https://github.com/Revivalry/dk3/blob/main/.github/workflows/release.yml)
 builds Linux and Windows x86-64 bundles, generates SHA-256 checksums, signs
 build provenance through GitHub artifact attestations, and publishes both ZIPs
-in a commit-tagged release. No original game data or NVIDIA DLLs are included.
+in a commit-tagged release. Before signing and publication, it extracts the Linux
+bundle and checks its manifest, multiplayer appearance catalog, and navigation
+hull configuration using the bundled interpreter outside the source checkout.
+The wizard also checks these conversion inputs before asking for the game data.
+Conversion and final installation use the dependency-bearing private Python
+environment; system NumPy is not required. Rerunning from a new temporary bundle
+location preserves validated completed conversion stages.
+No original game data or NVIDIA DLLs are included.
 To verify a downloaded archive and its provenance:
 
 ```sh

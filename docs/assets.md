@@ -21,6 +21,8 @@ retain their skybox; missing named cloud images report the map and image path.
 Completed deterministic conversion stages can be reused across worker-count
 changes. Interpreter, input content, profile, converter code and relevant encoding
 options still identify a stage; changing only concurrency does not rebuild AAS.
+Moving an unchanged installer bundle to a new temporary extraction directory also
+preserves completed stages; converter and encoder content hashes remain checked.
 
 ```sh
 zig build
@@ -56,6 +58,12 @@ The generation identity includes input hashes, converter hashes, profile, Python
 NumPy and ffmpeg. Package output uses fixed archive metadata and encoder settings.
 Known missing/rejected asset names are explicit allowances, not wildcard suppressions;
 their absence from a particular profile or repair by a loose override is allowed.
+For unpatched Steam data, the music report records the absent `music/deadly.mp3`
+and `music/katana1.mp3` tracks. Two original map voice paths point into the wrong
+directories; conversion exposes their supplied Superfly and Mikiko recordings under
+those requested names, while preserving an existing recording at either name.
+The report lists the aliases, and unrelated unresolved audio references still fail
+conversion.
 
 `play-install` checks package hashes, ZIP integrity and required startup assets, then
 copies this build's client, server, renderers and native modules into a separate

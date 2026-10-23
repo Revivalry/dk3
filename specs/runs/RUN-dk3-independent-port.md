@@ -10047,3 +10047,29 @@ Updated the installer diagnostic and input-profile documentation.
 | Existing 1.3 installation | Passed locally, inventory | Correct profile and archive priority detected; original files and saves unchanged |
 | Installer, stage identity, and play installation regression checks | Passed | `python3 -B -m unittest tests.test_install_wizard tests.test_stage_identity tests.test_play_install` from `dkq3/tools`: 13 tests, including three-archive preparation, optional pak4, missing required archives, and unchanged 1.3 requirements |
 | Published release installer and complete Steam conversion/gameplay | Unrun | Local fix only; the downloaded release still requires pak4. The existing complete 1.3 data directory is a compatible input for that bundle. No release was published and no game run is claimed |
+
+## Sequence 429 — release-installer-closure — complete Steam conversion and native launch
+
+24 October 2026. The published installer omitted the multiplayer appearance CSV
+and the navigation hull configuration. Both are now explicit bundle inputs,
+checked before source selection and included in conversion fingerprints. A new
+release job extracts the actual ZIP and reads these inputs using the installer's
+offline private Python environment before signing or publication.
+
+A complete unpatched Steam run exposed two erroneous map voice directories and
+two absent retail music tracks. The supplied recordings receive aliases only at
+absent requested paths; existing audio wins. Missing retail tracks remain explicit
+report entries, and unrelated missing audio still fails. Final installation now
+runs with the dependency-bearing private Python, and the launcher selects the
+same native gameplay mode as the build launcher. Temporary bundle relocation
+preserves completed conversions while changed converter content invalidates reuse.
+
+| Scenario | State | Evidence / limits |
+| --- | --- | --- |
+| Extracted ZIP input and offline-environment check | Passed locally | Exact release smoke step, `zig-out/reports/release-catalog-429/ci-smoke-002.log`; neither the source checkout nor system NumPy supplies the catalog/configuration |
+| Full original-texture Steam conversion | Passed | 83 maps, 782 models, 1,608 music/voice sources, 98 navigation variants, 12 packages; `candidate-002-install.log`. Both directory aliases resolve; known source omissions remain reported |
+| Final installation with private Python | Passed | `candidate-003-result.json`, `candidate-004-result.json`: successful installation, 24 installed files, source unchanged. The bare-parent/private-child regression reproduces the original NumPy failure condition |
+| Resume from a relocated bundle | Passed | `candidate-003-install.log`: all completed stages reused with validated inputs; a changed-converter regression still rejects reuse |
+| Installed menu and opening-map admission | Passed, scoped startup check | Native UI initialized, e1m1a server/client loaded, first active snapshot applied, clean exit. `admitted-world.jpg` captures the world/HUD with the intro skipped. SDL offscreen/OpenGL 1 used because this host rejected the X11 test backend; captures under the isolated installation's `play/home/dk3/screenshots/`. Default intro and Vulkan fidelity are not accepted by this check |
+| Focused regressions | Passed | 15 installer/cache/audio cases and 5 play-install cases across integrated and focused runs; extracted-bundle smoke also passed |
+| Published delivery | Tracked in PR #9 | Release publication and public-bootstrap verification follow merge; no campaign, cinematic-fidelity, multiplayer, or Vulkan acceptance is claimed by this installer work |

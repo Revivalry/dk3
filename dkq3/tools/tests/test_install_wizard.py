@@ -3,6 +3,9 @@ from contextlib import closing
 import json
 from pathlib import Path
 import tempfile
+import subprocess
+import sys
+import shutil
 import unittest
 from unittest import mock
 
@@ -79,6 +82,48 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual([name for name, _ in archives],
                              ['pak1.pak', 'pak2.pak', 'pak3.pak', 'pak4.pak', 'pak6.pak', 'pak5.pak'])
 
+    def test_final_install_uses_private_python_when_wizard_has_no_numpy(self):
+        from tests.test_play_install import PlayInstallTest
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            destination, cache = PlayInstallTest().fixture(root)
+            (destination / '.installer').mkdir()
+            shutil.move(str(cache), destination / '.installer/assets')
+            tools = Path(install_wizard.__file__).parent
+            (destination / 'tools').mkdir()
+            for script in tools.glob('*.py'):
+                shutil.copy2(script, destination / 'tools' / script.name)
+            bundle, source = root / 'bundle', root / 'original'
+            (bundle / 'bin').mkdir(parents=True)
+            (bundle / 'bin/dkguard').touch()
+            (bundle / 'bin/bspc').touch()
+            (bundle / 'runtime/ffmpeg').mkdir(parents=True)
+            (bundle / 'runtime/ffmpeg/ffmpeg').touch()
+            source.mkdir()
+            script = '''import importlib.util, subprocess, sys
+from pathlib import Path
+from unittest.mock import patch
+tools, bundle, source, destination, private = map(Path, sys.argv[1:])
+sys.path.insert(0, str(tools))
+assert importlib.util.find_spec('numpy') is None, 'parent must reproduce the bare bundled runtime'
+import install_wizard
+real_run = subprocess.run
+def run(command, **kwargs):
+    if command[0] == str(bundle / 'bin/dkguard'):
+        return subprocess.CompletedProcess(command, 0)
+    return real_run(command, **kwargs)
+with patch.object(install_wizard, 'python_environment', return_value=private), \\
+     patch.object(install_wizard, 'copy_products'), \\
+     patch.object(install_wizard.subprocess, 'run', side_effect=run):
+    install_wizard.install(bundle, source, destination, 'retail', [])
+'''
+            result = subprocess.run([sys.executable, '-S', '-B', '-c', script, str(tools), str(bundle),
+                                     str(source), str(destination), sys.executable],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertTrue((destination / 'play/current/installation.json').is_file())
+            self.assertTrue((destination / 'share/dk3/dk3/campaign-regions.cfg').is_file())
+
     def test_release_bundle_contains_launchers_and_no_game_data(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -113,6 +158,18 @@ class InstallerTests(unittest.TestCase):
             self.assertIn('bin/dk3', manifest['files'])
             self.assertIn('dkq3/tools/install_wizard.py', manifest['files'])
             install_wizard.verify_bundle(bundle)
+            # Load the real consumers in a separate process outside the checkout.
+            # A manifest alone cannot catch an omitted runtime data dependency.
+            result = subprocess.run([sys.executable, '-I', '-B', '-c',
+                'import json,sys; from pathlib import Path; '
+                'sys.path.insert(0,sys.argv[1]); import appearances,navigation; '
+                'print(json.dumps({"catalog":appearances.catalog(),"aas":navigation.CONFIG.read_text()}))',
+                str(bundle / 'dkq3/tools')], cwd=root, capture_output=True, text=True, check=True)
+            consumed = json.loads(result.stdout)
+            self.assertEqual(len(consumed['catalog']), 36)
+            self.assertIn('phys_maxstep', consumed['aas'])
+            self.assertIn('src/multiplayer/appearances.csv', manifest['files'])
+            self.assertIn('dkq3/tools/dk3-aas.cfg', manifest['files'])
             self.assertTrue((bundle / 'install.sh').stat().st_mode & 0o111)
             self.assertFalse((bundle / 'data').exists())
             installed = root / 'installed'
@@ -123,6 +180,12 @@ class InstallerTests(unittest.TestCase):
             (bundle / 'bin/dk3').write_bytes(b'changed')
             with self.assertRaisesRegex(ValueError, 'changed release file'):
                 install_wizard.verify_bundle(bundle)
+            for name in assets.CONVERSION_INPUTS:
+                with self.subTest(missing_conversion_input=name):
+                    omitted = dict(manifest, files={k: v for k, v in manifest['files'].items() if k != name})
+                    (bundle / 'bundle.json').write_text(json.dumps(omitted))
+                    with self.assertRaisesRegex(ValueError, 'missing release conversion input'):
+                        install_wizard.verify_bundle(bundle)
 
 
 if __name__ == '__main__':
