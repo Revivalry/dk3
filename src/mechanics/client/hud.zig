@@ -56,9 +56,10 @@ pub const Hud = struct {
         self.skill = try picture("skill_window");
         self.window = try picture("weapn_win");
         self.selection = try picture("selec_weapn");
-        self.crosshair = draw.shader("pics/crosshair/ch_center.tga");
+        self.crosshair = draw.shader("pics/crosshair/ch_center2.tga");
         self.white = draw.shader("white");
         _ = engine.gateway.call(c.CG_CVAR_REGISTER, .{ @as(?*c.vmCvar_t, null), @as([*:0]const u8, "cg_hudScale"), @as([*:0]const u8, "1"), @as(isize, c.CVAR_ARCHIVE) });
+        _ = engine.gateway.call(c.CG_CVAR_REGISTER, .{ @as(?*c.vmCvar_t, null), @as([*:0]const u8, "cg_crosshairSize"), @as([*:0]const u8, "16"), @as(isize, c.CVAR_ARCHIVE) });
     }
     pub fn render(self: *Hud, display: c.glconfig_t, health: data.Health, character: data.Character, keys: data.Keys, loadout: data.Weapons, table: *const @import("../domain/weapons.zig").Table, selected: i32, now: i64) !void {
         const width: f32 = @floatFromInt(display.vidWidth);
@@ -99,7 +100,10 @@ pub const Hud = struct {
             const text = try std.fmt.bufPrint(&buffer, "+{d} skill points", .{character.points});
             draw.text(self.font, center - self.font.metrics.width(text, scale * 0.7) * 0.5, height - 145 * scale, scale * 0.7, text, .{ 1, 0.8, 0.25, 1 });
         }
-        if (health.current > 0) draw.rect(center - 12 * scale, height * 0.5 - 12 * scale, 24 * scale, 24 * scale, self.crosshair, white);
+        // Aim artwork uses output pixels, independently of the HUD and world render scale.
+        // The default matches the supplied 16x16 picture; integer edges avoid filtered texel bleed.
+        const crosshair_size = @round(std.math.clamp(engine.number("cg_crosshairSize", 16), 0, 64));
+        if (health.current > 0 and crosshair_size > 0) draw.rect(@floor(center - crosshair_size * 0.5), @floor(height * 0.5 - crosshair_size * 0.5), crosshair_size, crosshair_size, self.crosshair, white);
         var owned: [28]u5 = undefined;
         var count: usize = 0;
         var active: usize = 0;

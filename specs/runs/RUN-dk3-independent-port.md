@@ -10124,4 +10124,22 @@ and refreshes the launcher and desktop entry. It does not run asset conversion.
 | Complete authored intro and opening gameplay | Passed, scoped | `candidate-002/result.json`: all 115 shots observed without skipping or timescale changes, automatic e1m1a handoff, movement, save and clean exit. Captures include shots 3/5/20/60/100 and opening gameplay. Guarded Xvfb with Vulkan software rendering, audio disabled. This does not accept full cinematic fidelity, audio, or campaign completion |
 | Installer update regressions | Passed | Nine installer cases, including real private-child publication preserving assets/settings/saves/local artwork, and corrupt packages leaving the previous generation selected |
 | Extracted ZIP runtime update | Passed | `packaged-update-result.json` and `packaged-update.log`: bare bundled Python installs offline, updates an isolated prefix using the owner's exact converted generation, and preserves source archives, asset manifest bytes/mtime and save/settings sentinels. No conversion invoked |
-| Published delivery | Pending merge | Local packaged result verified; public installer update and published runtime replay follow publication. Existing nonfatal animation-frame warnings and complete decoration parity remain outside this acceptance |
+| Published delivery | Passed | PR #11 merged as `6f8f6700733faeb0efc9a7773d14ea8e7585a193`; signed release `snapshot-6f8f6700733f-40089846402-1` installed through its unchanged published installer. `published-update-result.json` confirms retained source/assets/settings/saves and desktop discovery. `published-001/result.json` replays New Game, intro, opening movement and save with the installed release. Existing nonfatal animation-frame warnings and complete decoration parity remain outside this acceptance |
+
+## Sequence 432 — crosshair-size — native output pixels
+
+The crosshair used the HUD scale: an 8×8 image was stretched to 120×120 at
+3840×2400, exposing filtered transparent-magenta fringes. The client now selects
+the supplied 16×16 crosshair and renders it at native size with integer edges.
+`cg_crosshairSize` independently selects 0–64 output pixels (default 16, zero
+hides it); it is archived and takes effect immediately. Other HUD scaling is
+unchanged. Existing local assets supply the artwork; no conversion is needed.
+
+| Scenario | State | Evidence / limits |
+| --- | --- | --- |
+| Original high-resolution appearance | Reproduced | `zig-out/reports/crosshair-432/baseline-3840x2400/default.png`; `comparison.png` shows native-pixel crops before and after |
+| Native build and ownership | Passed | ReleaseSafe build; ownership update retains zero violations for R1–R11 |
+| Crosshair at 640×480, 1920×1080 and 3840×2400 | Passed | `candidate-<resolution>-002/result.json`: all 56 opaque source pixels retain their exact colors and positions in the centered 16×16 image |
+| Independent HUD scale and size/hide controls | Passed | Each resolution checks HUD scales 0.75 and 1.5, hidden crosshair and requested 32-pixel size. TGA captures verify the reticle mask independently of animated rain. Initial full-image subtraction failed as a test method because background rain continues moving; its captures are retained |
+| FSR software-rendering check | Failed on baseline and candidate | Both the current published runtime and candidate crash in the lavapipe Vulkan path with remaster/FSR enabled before capture. Logs and crash details remain in the `*-1920x1080-002-fsr/` reports; no FSR or hardware-renderer acceptance is claimed by this change |
+| Published delivery | Pending merge | Component CI, publication and an installed-release high-resolution replay follow the verified local rendering change |
