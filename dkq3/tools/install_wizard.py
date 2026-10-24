@@ -243,12 +243,18 @@ def _install(bundle, source, destination, profile, stages, ui):
     if stages:
         with ui.phase('Generating optional HD textures'):
             hd = generate_hd(bundle, python, destination, assets_dir, stages, ui=ui)
+    return publish_runtime(bundle, python, destination, assets_dir, ui, hd=hd)
+
+
+def publish_runtime(bundle, python, destination, assets_dir, ui, hd=None, overlays=()):
     with ui.phase('Copying game files'):
         copy_products(bundle, destination)
     command = [str(python), '-B', str(destination / 'tools/play.py'), 'install',
                '--prefix', str(destination), '--assets', str(assets_dir)]
     if hd is not None:
         command += ['--hd-textures', str(hd)]
+    for option, path in overlays:
+        command += [option, str(path)]
     with ui.phase('Finishing installation'):
         ui.run(command)
         write_launcher(destination)
@@ -256,6 +262,33 @@ def _install(bundle, source, destination, profile, stages, ui):
         with ui.phase('Adding dk3 to the applications menu'):
             return register_desktop(destination)
     return None
+
+
+def update_runtime(bundle: Path, destination: Path, ui=None) -> None:
+    """Publish new native products with the exact installed assets and local art."""
+    current = assets.current_generation(destination / 'play').resolve(strict=True)
+    installed = json.loads((current / 'installation.json').read_text())
+    assets_dir = destination / '.installer/assets'
+    converted = json.loads((assets.current_generation(assets_dir) / 'manifest.json').read_text())
+    if installed.get('asset_generation') != converted.get('key'):
+        raise ValueError('converted data differs from this installation; choose full installation to update game data')
+    overlays = []
+    for option, name in (('--hd-textures', 'textures-hd'), ('--neural-assets', 'neural'),
+                         ('--hd-weapons', 'hd-weapons'), ('--materials', 'materials')):
+        entry = f'share/dk3/zz-dk3-{name}.pk3'
+        if entry in installed['files']:
+            if option == '--hd-weapons':
+                compatibility = json.loads((current / 'share/dk3/compatibility.json').read_text())
+                if '+hd-weapons-preview-v1' in compatibility.get('cosmetic', ''):
+                    option = '--hd-weapons-preview'
+            overlays.append((option, current / entry))
+    ui = ui or InstallerUI(plain=True)
+    ui.message('Updating game files. Converted data, settings, saves, and installed artwork are kept.')
+    with ui.session(destination):
+        with ui.phase('Setting up installation tools'):
+            python = python_environment(bundle, destination, ui=ui)
+        desktop = publish_runtime(bundle, python, destination, assets_dir, ui, overlays=overlays)
+    ui.result(destination, desktop)
 
 
 def main(argv=None) -> int:
@@ -266,8 +299,11 @@ def main(argv=None) -> int:
     parser.add_argument('--profile', choices=('retail', '1.3'))
     parser.add_argument('--hd-stages', choices=('none', 'esrgan', 'sdxl', 'flux'))
     parser.add_argument('--plain', action='store_true', help='plain text output without terminal animation')
-    parser.add_argument('--desktop-only', action='store_true',
-                        help='register an existing Linux installation without reconverting game data')
+    operation = parser.add_mutually_exclusive_group()
+    operation.add_argument('--desktop-only', action='store_true',
+                           help='register an existing Linux installation without reconverting game data')
+    operation.add_argument('--update-runtime', action='store_true',
+                           help='update game files using the existing converted assets, settings, and saves')
     args = parser.parse_args(argv)
     ui = InstallerUI(plain=True)
     try:
@@ -282,10 +318,24 @@ def main(argv=None) -> int:
             desktop = register_desktop(destination, args.bundle / 'share/dk3/dk3.svg')
             ui.result(destination, desktop)
             return 0
+        destination = (args.destination or Path.home() / 'Games/dk3').expanduser().resolve()
+        if args.update_runtime:
+            if args.source or args.profile or args.hd_stages:
+                raise ValueError('choose full installation to change the game data or texture quality')
+            update_runtime(args.bundle.resolve(strict=True), destination, ui=ui)
+            return 0
+        if not any((args.source, args.destination, args.profile, args.hd_stages)):
+            current = assets.current_generation(destination / 'play')
+            if (current / 'installation.json').is_file():
+                action = choose(f'Existing dk3 installation · {destination}',
+                                ['Update game files · keep converted data, settings, and saves',
+                                 'Full installation · choose game data and texture quality'], ui=ui)
+                if action == 0:
+                    update_runtime(args.bundle.resolve(strict=True), destination, ui=ui)
+                    return 0
         source = game_data(args.source) if args.source else source_selection(ui)
         if source is None:
             raise ValueError('source has no Daikatana data')
-        destination = (args.destination or Path.home() / 'Games/dk3').expanduser().resolve()
         if args.destination is None:
             ui.message('\nStep 2 · Installation folder', 'bold cyan')
             entered = input(f'Install destination [{destination}]: ').strip()

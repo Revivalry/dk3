@@ -30,6 +30,18 @@ entry is stored in `$XDG_DATA_HOME/applications` (normally
 `~/.local/share/applications`) and uses the bundled dk3 icon. No root privileges
 or terminal window are required to launch from the menu.
 
+When the default installation already exists, the wizard first offers an update
+of the game files while keeping converted data, artwork, settings and saves.
+This avoids rerunning conversion for a runtime fix. A full installation remains
+available when changing the source data or texture quality. For an explicit update:
+
+```sh
+./install.sh --update-runtime --destination "$HOME/Games/dk3"
+```
+
+The existing converted packages and optional artwork are checked before publishing
+the new runtime. A corrupt package leaves the previous installed generation selected.
+
 To add or repair the application entry for an existing Linux installation without
 converting assets again, run the downloaded bundle with:
 
