@@ -7,6 +7,7 @@ FRD: specs/frds/FRD-019-sound-effects.md
 import argparse
 import collections
 import concurrent.futures
+import install_progress
 import json
 import os
 import re
@@ -712,7 +713,9 @@ def main(argv=None):
         print(f'{PREFIX} FAIL {error}', file=sys.stderr)
         return 1
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        results = list(pool.map(lambda item: convert_copy(*item[0], item[1], item[2], args.ffmpeg, run), zip(keys, sources, plans)))
+        results = list(install_progress.tracked(
+            pool.map(lambda item: convert_copy(*item[0], item[1], item[2], args.ffmpeg, run), zip(keys, sources, plans)),
+            len(keys), lambda result: result[0]['name']))
     rows = table(copies, [row for row, _ in results])
     report = document(rows, [encoding(data, name) for (name, _), data in zip(keys, sources)], version, set(args.expected_loss))
     lines = summary(report)

@@ -72,8 +72,10 @@ def pypi_wheel(package: str, version: str, platform: str) -> tuple[str, bytes]:
     metadata = json.loads(fetch(f'https://pypi.org/pypi/{package}/{version}/json'))
     tag = PLATFORMS[platform][1]
     candidates = [item for item in metadata['urls']
-                  if item['filename'].endswith('.whl') and tag in item['filename']
-                  and (platform != 'linux-x64' or item['filename'].endswith('x86_64.whl'))
+                  if item['filename'].endswith('.whl')
+                  and (item['filename'].endswith('-none-any.whl') or
+                       (tag in item['filename'] and
+                        (platform != 'linux-x64' or item['filename'].endswith('x86_64.whl'))))
                   and (package != 'numpy' or '-cp312-cp312-' in item['filename'])]
     if len(candidates) != 1:
         raise ValueError(f'expected one {package} {version} wheel for {platform}, found {len(candidates)}')
@@ -134,6 +136,10 @@ def main() -> None:
     wheels = args.out / 'wheels'
     wheels.mkdir()
     (wheels / filename).write_bytes(content)
+    for requirement in (Path(__file__).parent / 'requirements-tui.txt').read_text().splitlines():
+        package, version = requirement.split('==')
+        filename, content = pypi_wheel(package, version, args.platform)
+        (wheels / filename).write_bytes(content)
     ffmpeg(args.platform, args.out)
     print(args.out)
 

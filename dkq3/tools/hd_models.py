@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import urllib.request
+import install_progress
 
 ESRGAN_URL = 'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth'
 ESRGAN_SHA256 = '4fa0d38905f75ac06eb49a7951b426670021be3018265fd191d2125df9d682f1'
@@ -41,8 +42,12 @@ def download_esrgan(root):
         return path
     partial = path.with_suffix('.partial')
     with urllib.request.urlopen(ESRGAN_URL, timeout=60) as response, partial.open('wb') as output:
+        total = int(response.headers.get('Content-Length', 0)) or None
+        completed = 0
         while chunk := response.read(1024 * 1024):
             output.write(chunk)
+            completed += len(chunk)
+            install_progress.emit(completed, total, 'RealESRGAN model · bytes', stage='Downloading HD models')
     if digest(partial) != ESRGAN_SHA256:
         partial.unlink()
         raise ValueError('RealESRGAN model hash mismatch')
@@ -53,6 +58,7 @@ def download_esrgan(root):
 def download_repo(root, name):
     from huggingface_hub import snapshot_download
     repo, patterns = REPOS[name]
+    install_progress.emit(detail=repo, stage='Downloading HD models')
     target = root / name
     snapshot_download(repo_id=repo, local_dir=target, allow_patterns=patterns,
                       token=os.environ.get('HF_TOKEN') or None)

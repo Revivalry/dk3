@@ -65,13 +65,17 @@ jobs:
           sys.path.insert(0, str(bundle / 'dkq3/tools'))
           import install_wizard
           install_wizard.verify_bundle(bundle)
+          from install_ui import InstallerUI
+          ui = InstallerUI(bundle)
+          assert ui.console is not None, 'offline terminal UI dependencies missing'
+          ui.welcome()
           python = install_wizard.python_environment(bundle, Path.cwd() / 'verification-install')
           code = ('import sys; sys.path.insert(0, sys.argv[1]); '
                   'import appearances, navigation; '
                   'assert appearances.catalog(); assert navigation.CONFIG.read_bytes()')
           subprocess.run([str(python), '-I', '-B', '-c', code, str(bundle / 'dkq3/tools')], check=True)
           install_wizard.verify_bundle(bundle)
-          print('Extracted installer manifest and converter inputs verified.')
+          print('Extracted installer manifest, offline terminal UI, and converter inputs verified.')
           PY
       - name: Sign build provenance for release files
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4

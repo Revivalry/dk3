@@ -16,6 +16,7 @@ import zipfile
 import asset_source
 import dkpak
 import pk3
+import install_progress
 
 FORMAT = 1
 PROFILES = ('retail', '1.3')
@@ -221,20 +222,25 @@ class Pipeline:
         directory = self.root / name
         complete = directory / 'complete.json'
         if complete.is_file():
+            install_progress.emit(stage=name, state='done', cached=True)
             return directory
         command = [sys.executable, '-B', str(TOOLS / script), *map(str, arguments)]
         if not directory.exists() and self.reuse(name, command):
+            install_progress.emit(stage=name, state='done', cached=True)
             return directory
         if directory.exists() and name != 'navigation':
             shutil.rmtree(directory)
         directory.mkdir(exist_ok=True)
         print(f'assets: {name}', flush=True)
+        install_progress.emit(stage=name)
         with (directory / 'console.log').open('wb') as log:
-            result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=False)
+            result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=False,
+                                    env=dict(os.environ, DK3_INSTALL_STAGE=name))
         if result.returncode:
             tail = (directory / 'console.log').read_text(errors='replace').splitlines()[-40:]
             raise ValueError(f'{name} failed ({result.returncode}); {directory / "console.log"}\n' + '\n'.join(tail))
         write_json(complete, dict(command=command))
+        install_progress.emit(stage=name, state='done')
         return directory
 
     def report_args(self, stage):
@@ -281,7 +287,9 @@ class Pipeline:
                  '--voice-pk3', self.packages / 'dk3-voice.pk3', *self.report_args('music'),
                  *['--expected-missing=' + n for n in missing_audio],
                  *['--alias=' + target + '=' + source for target, source in AUDIO_ALIASES]])
+        install_progress.emit(stage='game-data')
         package_game_data(data, self.packages / 'dk3-data.pk3', self.args.profile, self.root.name)
+        install_progress.emit(stage='game-data', state='done')
         self.run('navigation', 'navigation.py', ['--maps', maps_dir / 'bsp', '--bspc', self.args.bspc,
                  '--dkguard', self.args.dkguard, '--out', self.root / 'navigation' / 'compiled',
                  '--pk3', self.packages / 'dk3-navigation.pk3'])
@@ -342,6 +350,7 @@ def main(argv=None):
         args.data, args.out = args.data.resolve(), args.out.resolve()
         if args.out == args.data or args.data in args.out.parents or args.out in args.data.parents:
             raise ValueError('--out and --data must be separate directories')
+        install_progress.emit(stage='Checking original game files')
         archives, loose, records = inventory(args.data, args.profile)
         inputs = dict(format=FORMAT, profile=args.profile, files=records, numpy=numpy.__version__,
                       python=sys.version, ffmpeg=digest(args.ffmpeg), bspc=digest(args.bspc), ffmpeg_major=args.ffmpeg_major,
@@ -375,6 +384,7 @@ def main(argv=None):
                 temporary.symlink_to(root.name, target_is_directory=True)
                 temporary.replace(current)
             print(f'assets: generation {root}\nassets: {root / "manifest.json"}', flush=True)
+            install_progress.emit(stage='complete', state='done')
         return 0
     except (OSError, ValueError, dkpak.PakError, zipfile.BadZipFile) as error:
         print(f'assets: {error}', file=sys.stderr)
