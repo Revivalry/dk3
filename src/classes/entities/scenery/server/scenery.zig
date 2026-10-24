@@ -32,7 +32,11 @@ pub fn spawn(allocator: std.mem.Allocator, world: *data.World, slots: *Slots, pr
             var path: [64]u8 = undefined;
             tables[episode] = try @import("../../../../engine/files.zig").read(.server, &engine.gateway, allocator, try std.fmt.bufPrintZ(&path, "dk3/tables/e{d}decoinfo.cfg", .{episode + 1}), 4 * 1024 * 1024);
         }
-        const definition = try policy.find(tables[episode].?, object.model);
+        const definition = try policy.find(tables[episode].?, object.model) orelse {
+            var warning: [256]u8 = undefined;
+            engine.print(try std.fmt.bufPrintZ(&warning, "dk3 scenery: omitted decoration class={s} model={s}; no definition in e{d}decoinfo\n", .{ object.classname, object.model, episode + 1 }));
+            continue;
+        };
         const material: Material = if (object.flags & 8 != 0) .wood else if (object.flags & 16 != 0) .metal else if (object.flags & 32 != 0) .glass else if (object.flags & 64 != 0) .flesh else definition.material;
         const scale = try prop.number(object, "scale", 1);
         var state: data.Scenery = .{

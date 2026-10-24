@@ -30,7 +30,8 @@ pub fn material(name: []const u8) Material {
     // STONE is not a breakable material in the decoration authoring contract.
     return .unbreakable;
 }
-pub fn find(bytes: []const u8, name: []const u8) !Definition {
+/// A missing row omits this decoration. Malformed supplied rows still fail.
+pub fn find(bytes: []const u8, name: []const u8) !?Definition {
     var reader = try tables.Reader.init(bytes);
     while (try reader.next()) |row| {
         if (!std.ascii.eqlIgnoreCase(row.field("modelname") orelse "", name)) continue;
@@ -67,5 +68,23 @@ pub fn find(bytes: []const u8, name: []const u8) !Definition {
         if (!std.mem.startsWith(u8, result.model, "models/") or std.mem.indexOf(u8, result.model, "..") != null or result.model.len >= 64 or result.mass < 0) return error.InvalidDecorationDefinition;
         return result;
     }
-    return error.UnknownDecorationModel;
+    return null;
+}
+
+test "absent decoration rows are optional while supplied definitions stay strict" {
+    const t = std.testing;
+    const table = "dk3_table 1 { modelname fixture pathname models/e1/fixture.dkm movetype none solidtype bbox mass 120 minx -4 maxx 4 animseq 1 seq0 2~5 }";
+    try t.expect(try find(table, "missing-fixture") == null);
+    try t.expect(try find("dk3_table 1", "missing-fixture") == null);
+    const definition = (try find(table, "FIXTURE")).?;
+    try t.expectEqualStrings("models/e1/fixture.dkm", definition.model);
+    try t.expectEqual(Movement.stationary, definition.movement);
+    try t.expect(definition.solid);
+    try t.expectEqual(@as(f32, 120), definition.mass);
+    try t.expectEqual(@as(u16, 2), definition.sequences[0].frames.first);
+    try t.expectEqual(@as(u16, 5), definition.sequences[0].frames.last);
+    try t.expect(definition.sequences[0].looping);
+    try t.expectError(error.UnknownDecorationMovement, find("dk3_table 1 { modelname fixture pathname models/e1/fixture.dkm movetype invalid solidtype bbox }", "fixture"));
+    try t.expectError(error.InvalidDecorationBounds, find("dk3_table 1 { modelname fixture pathname models/e1/fixture.dkm movetype none solidtype bbox minx 5 maxx -5 }", "fixture"));
+    try t.expectError(error.TableHeader, find("invalid table", "missing-fixture"));
 }

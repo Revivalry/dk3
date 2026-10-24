@@ -7,6 +7,7 @@ import subprocess
 import sys
 import shutil
 import unittest
+import zipfile
 from unittest import mock
 
 import install_wizard
@@ -19,6 +20,62 @@ import release_bundle
 
 
 class InstallerTests(unittest.TestCase):
+    def runtime_update_fixture(self, root):
+        from tests.test_play_install import PlayInstallTest
+        import play
+        destination, cache = PlayInstallTest().fixture(root)
+        hd = root / 'local-art.pk3'
+        with zipfile.ZipFile(hd, 'w') as archive:
+            archive.writestr('textures/fixture.png', b'local artwork fixture')
+        play.install(destination, cache, hd_textures=hd)
+        (destination / '.installer').mkdir()
+        shutil.move(str(cache), destination / '.installer/assets')
+        bundle = root / 'bundle'
+        for directory in ('bin', 'lib', 'share'):
+            shutil.copytree(destination / directory, bundle / directory)
+        (bundle / 'lib/dk3/qagame.so').write_bytes(b'updated native module')
+        tools = bundle / 'dkq3/tools'
+        tools.mkdir(parents=True)
+        for script in Path(install_wizard.__file__).parent.glob('*.py'):
+            shutil.copy2(script, tools / script.name)
+        return bundle, destination
+
+    def test_runtime_update_keeps_assets_saves_settings_and_local_art(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle, destination = self.runtime_update_fixture(Path(temporary))
+            previous = (destination / 'play/current').resolve()
+            manifest = destination / '.installer/assets/current/manifest.json'
+            original = (manifest.read_bytes(), manifest.stat().st_mtime_ns)
+            save = destination / 'play/state/dk3/saves/user.sav'
+            save.parent.mkdir(parents=True)
+            save.write_bytes(b'owner save')
+            settings = destination / 'play/home/dk3/dk3config.cfg'
+            settings.parent.mkdir(parents=True)
+            settings.write_text('owner settings')
+            with mock.patch.object(install_wizard, 'python_environment', return_value=Path(sys.executable)), \
+                 mock.patch.object(install_wizard, 'register_desktop'):
+                install_wizard.update_runtime(bundle, destination)
+            current = (destination / 'play/current').resolve()
+            self.assertNotEqual(current, previous)
+            self.assertEqual((current / 'share/dk3/qagame.so').read_bytes(), b'updated native module')
+            self.assertEqual((previous / 'share/dk3/qagame.so').read_bytes(), b'first build')
+            self.assertEqual((current / 'share/dk3/zz-dk3-textures-hd.pk3').read_bytes(),
+                             (previous / 'share/dk3/zz-dk3-textures-hd.pk3').read_bytes())
+            self.assertEqual((manifest.read_bytes(), manifest.stat().st_mtime_ns), original)
+            self.assertEqual(save.read_bytes(), b'owner save')
+            self.assertEqual(settings.read_text(), 'owner settings')
+
+    def test_runtime_update_rejects_corrupt_assets_without_replacing_current(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle, destination = self.runtime_update_fixture(Path(temporary))
+            previous = (destination / 'play/current').resolve()
+            (destination / '.installer/assets/current/packages/dk3-models.pk3').write_bytes(b'corrupt')
+            with mock.patch.object(install_wizard, 'python_environment', return_value=Path(sys.executable)), \
+                 mock.patch.object(install_wizard, 'register_desktop'):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    install_wizard.update_runtime(bundle, destination)
+            self.assertEqual((destination / 'play/current').resolve(), previous)
+
     def test_hd_plan_keeps_highest_tier_across_palette_variants(self):
         manifest = {'textures': {
             'texture-a': {'key': 'wall', 'maps': ['maps/e1m1a.bsp']},

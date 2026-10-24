@@ -10100,3 +10100,28 @@ specification; original game installations and saves remain separate.
 | Final terminal display and shortcut-only path | Passed | `final-ui.terminal`, `final-ui-result.json`, `desktop-only.log`: final UI completes; shortcut repair leaves the asset manifest unchanged. Unknown work stays indeterminate after a completed measured task |
 | XDG discovery and execution | Passed | GIO discovers the entry for GNOME; `desktop-file-validate` passes and GIO launches a synthetic installation from a path containing spaces, dollars, backticks, quotes, percent and equals. Actual menu clicking and Windows installation remain unrun |
 | Published delivery | Pending merge | Local bundle verified. Publication and a public shortcut-only installation follow merge. Campaign, cinematic, multiplayer and renderer acceptance are unchanged |
+
+## Sequence 431 — retail-intro — optional decorations and installed runtime updates
+
+24 October 2026. The owner's retail intro requests `dojolamp`, absent from its
+episode decoration table. The native scenery adapter treated the missing row as
+fatal. Reviewed the private `SpawnDeco` / `deco_info::ReadInfo` behavioral reference:
+an absent definition emits a diagnostic and leaves the decoration unconfigured.
+The class now omits its scenery component while preserving map-object identity;
+malformed supplied definitions remain errors. No reference code or assets were
+imported. The class review is recorded in `docs/class-porting/scenery.md`.
+
+The installer now offers an existing-installation update and `--update-runtime`.
+It verifies the selected converted generation, retains installed optional artwork,
+publishes new native products through the existing atomic generation selection,
+and refreshes the launcher and desktop entry. It does not run asset conversion.
+
+| Scenario | State | Evidence / limits |
+| --- | --- | --- |
+| Original failure through New Game | Reproduced | `zig-out/reports/retail-intro-431/baseline-002/result.json`: normal Return on Samurai selection starts intro and fails with `UnknownDecorationModel` using the owner's unchanged installed runtime |
+| Native build, runtime regressions and ownership | Passed | ReleaseSafe integrated build and `zig build test-runtime`; missing-row, valid-row and malformed-definition coverage. Ownership update retains zero violations for R1–R11 |
+| New Game, intro skip and opening gameplay | Passed | `candidate-001/result.json`: actual menu input and Escape, e1m1a movement and save; missing decorations are diagnostic rather than fatal |
+| Complete authored intro and opening gameplay | Passed, scoped | `candidate-002/result.json`: all 115 shots observed without skipping or timescale changes, automatic e1m1a handoff, movement, save and clean exit. Captures include shots 3/5/20/60/100 and opening gameplay. Guarded Xvfb with Vulkan software rendering, audio disabled. This does not accept full cinematic fidelity, audio, or campaign completion |
+| Installer update regressions | Passed | Nine installer cases, including real private-child publication preserving assets/settings/saves/local artwork, and corrupt packages leaving the previous generation selected |
+| Extracted ZIP runtime update | Passed | `packaged-update-result.json` and `packaged-update.log`: bare bundled Python installs offline, updates an isolated prefix using the owner's exact converted generation, and preserves source archives, asset manifest bytes/mtime and save/settings sentinels. No conversion invoked |
+| Published delivery | Pending merge | Local packaged result verified; public installer update and published runtime replay follow publication. Existing nonfatal animation-frame warnings and complete decoration parity remain outside this acceptance |
