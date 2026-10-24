@@ -11,6 +11,7 @@ FRD: specs/frds/FRD-006-deterministic-image-extraction-with-loss-manifest.md
 import argparse
 import collections
 import concurrent.futures
+import install_progress
 import json
 import multiprocessing
 import os
@@ -340,7 +341,7 @@ def run_jobs(function, jobs, workers):
     results = []
     with concurrent.futures.ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context('spawn')) as pool:
         try:
-            results.extend(pool.map(function, jobs, chunksize=JOBS_PER_TASK))
+            results.extend(install_progress.tracked(pool.map(function, jobs, chunksize=JOBS_PER_TASK), len(jobs)))
         except concurrent.futures.process.BrokenProcessPool as error:
             raise WorkerDied(f'a worker process died after {len(results)} of {len(jobs)} jobs returned: {error}') from error
     return results

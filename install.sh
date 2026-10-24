@@ -24,8 +24,10 @@ fi
 
 temporary=$(mktemp -d "${TMPDIR:-/tmp}/dk3-install.XXXXXXXX")
 trap 'rm -rf "$temporary"' EXIT HUP INT TERM
-curl -fL --retry 3 "$release/$asset" -o "$temporary/$asset"
-curl -fL --retry 3 "$release/SHA256SUMS" -o "$temporary/SHA256SUMS"
+echo 'dk3 installer · Downloading the latest release'
+curl -fL --progress-bar --retry 3 "$release/$asset" -o "$temporary/$asset"
+echo 'Checking the download …'
+curl -fsSL --retry 3 "$release/SHA256SUMS" -o "$temporary/SHA256SUMS"
 expected=$(awk -v name="$asset" '$2 == name {print $1}' "$temporary/SHA256SUMS")
 if [ "${#expected}" -ne 64 ]; then
     echo 'Release checksum is missing or invalid.' >&2
@@ -46,5 +48,6 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
 else
     echo 'SHA-256 verified. Sign in with gh to also verify the signed build provenance.' >&2
 fi
+echo 'Preparing the installation wizard …'
 unzip -q "$temporary/$asset" -d "$temporary"
 "$temporary/dk3-installer-linux-x64/install.sh" "$@"

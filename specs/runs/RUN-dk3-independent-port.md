@@ -10073,3 +10073,30 @@ preserves completed conversions while changed converter content invalidates reus
 | Installed menu and opening-map admission | Passed, scoped startup check | Native UI initialized, e1m1a server/client loaded, first active snapshot applied, clean exit. `admitted-world.jpg` captures the world/HUD with the intro skipped. SDL offscreen/OpenGL 1 used because this host rejected the X11 test backend; captures under the isolated installation's `play/home/dk3/screenshots/`. Default intro and Vulkan fidelity are not accepted by this check |
 | Focused regressions | Passed | 15 installer/cache/audio cases and 5 play-install cases across integrated and focused runs; extracted-bundle smoke also passed |
 | Published delivery | Tracked in PR #9 | Release publication and public-bootstrap verification follow merge; no campaign, cinematic-fidelity, multiplayer, or Vulkan acceptance is claimed by this installer work |
+
+## Sequence 430 — installer-experience — visible work and desktop launch
+
+24 October 2026. The release wizard now uses the reviewed Rich terminal library
+for setup headings, explicit defaults, an installation summary, and live progress.
+Converters publish completed units and the current asset through optional local
+telemetry; operations without measurable totals show activity and elapsed time.
+The asset-stage count does not pretend to measure a fraction of elapsed work.
+Detailed output stays in the installation log, with diagnostics and resume guidance
+on failure or cancellation. The UI and all four pinned wheels load offline before
+NumPy setup, retaining their original license metadata.
+
+Linux installation registers a user XDG application entry with the existing dk3
+brand icon. Completion prints a shell-copyable launch command and tells the owner
+to search Applications for dk3. `--desktop-only` repairs an existing installation's
+entry without asset conversion. Desktop Exec quoting follows the freedesktop
+specification; original game installations and saves remain separate.
+
+| Scenario | State | Evidence / limits |
+| --- | --- | --- |
+| Focused progress/installer/cache/desktop checks | Passed | 20 cases in `zig-out/reports/installer-tui-430/regressions.log`; real child telemetry, partial event reads, failure diagnostics, cancellation/reaping, Rich total-to-unknown transition, and copied shell command |
+| Bare extracted runtime, offline UI | Passed | `offline-ui-smoke.log`: isolated `-I -S` Python imports Rich directly from bundled wheels, before NumPy is available |
+| Real terminal Steam conversion and cancellation | Passed | `cancel-at-navigation.terminal` and events: fresh image/map/model/audio work reports units; cancellation exits 130 and leaves no converter running. Original Steam files unchanged |
+| Navigation and stage resume | Passed | `resume-to-completion.terminal`, events and `scenario-result.json`: 83 maps, 12 packages, all 98 previously qualified AAS variants individually revalidated by BSP/compiler/config/mode identities and output hashes. Navigation computation was not repeated |
+| Final terminal display and shortcut-only path | Passed | `final-ui.terminal`, `final-ui-result.json`, `desktop-only.log`: final UI completes; shortcut repair leaves the asset manifest unchanged. Unknown work stays indeterminate after a completed measured task |
+| XDG discovery and execution | Passed | GIO discovers the entry for GNOME; `desktop-file-validate` passes and GIO launches a synthetic installation from a path containing spaces, dollars, backticks, quotes, percent and equals. Actual menu clicking and Windows installation remain unrun |
+| Published delivery | Pending merge | Local bundle verified. Publication and a public shortcut-only installation follow merge. Campaign, cinematic, multiplayer and renderer acceptance are unchanged |

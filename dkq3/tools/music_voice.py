@@ -7,6 +7,7 @@ FRD: specs/frds/FRD-020-music-and-voice.md
 import argparse
 import collections
 import concurrent.futures
+import install_progress
 import json
 import os
 import struct
@@ -577,7 +578,9 @@ def main(argv=None):
         copies = dkm2md3.discover(game.root, archives, suffix=MP3_EXTENSION)
         keys = [(name, origin) for name, origins in sorted(copies.items()) for origin in origins]
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-            results = list(pool.map(lambda key: convert_copy(*key, media.read_copy(game.root, archives, *key), args.ffmpeg, run), keys))
+            results = list(install_progress.tracked(
+                pool.map(lambda key: convert_copy(*key, media.read_copy(game.root, archives, *key), args.ffmpeg, run), keys),
+                len(keys), lambda result: result[0]['name']))
         rows = media.table(copies, [row for row, _ in results])
         packaged = {row['entry']: ogg for row, (_, ogg) in zip(rows, results) if row['status'] == CONVERTED}
         packaged, aliases = alias_entries(packaged, args.alias)

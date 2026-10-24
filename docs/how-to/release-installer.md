@@ -23,7 +23,35 @@ Windows. Choose a Steam installation or enter the directory containing
 `pak1.pak` through `pak3.pak`, as supplied by Steam. Retail `pak4.pak` is optional.
 The wizard detects the retail or 1.3 asset profile,
 asks for a separate destination, and converts assets locally. After installation,
-run `play.sh` or `play.cmd` in that destination.
+the completion screen prints the exact command to run `play.sh` or `play.cmd` in
+that destination. Linux installations also register **dk3** in the applications
+menu, so GNOME and other XDG desktop environments can find it by name. The menu
+entry is stored in `$XDG_DATA_HOME/applications` (normally
+`~/.local/share/applications`) and uses the bundled dk3 icon. No root privileges
+or terminal window are required to launch from the menu.
+
+To add or repair the application entry for an existing Linux installation without
+converting assets again, run the downloaded bundle with:
+
+```sh
+./install.sh --desktop-only --destination "$HOME/Games/dk3"
+```
+
+The public bootstrap forwards these same arguments. If you move an installation,
+rerun this command with its new destination to update the menu entry.
+
+The wizard shows numbered setup steps, an installation summary, and live progress
+for each conversion stage. Maps, models, images, audio, navigation variants, and
+optional HD texture production report completed work. Stages without a known total
+show activity and elapsed time. The asset-stage count measures finished stages,
+not a predicted fraction of installation time.
+
+Detailed output is saved to `.installer/install.log` in the destination. Failures
+show the last diagnostic lines and the log path. Ctrl+C cancels the active process;
+rerun with the same destination to reuse completed conversions. Progress uses plain
+text when output is redirected; `--plain` disables terminal animation explicitly.
+The Rich UI and its pinned pure-Python dependencies are included in both bundles,
+with their original wheel license metadata, and load before pip/NumPy setup.
 
 Original textures are the default. The HD choice first builds a 4× RealESRGAN
 overlay. The SDXL and FLUX choices add the corresponding local model stages.
@@ -67,10 +95,11 @@ zig build -Dtarget=x86_64-windows-gnu -Doptimize=ReleaseSafe
 ```
 
 The workflow obtains a digest-checked Python 3.12 standalone runtime, a
-platform-matched NumPy wheel, and FFmpeg 7 from the imageio-ffmpeg wheel for
+platform-matched NumPy wheel, pinned Rich terminal UI wheels, and FFmpeg 7 from the imageio-ffmpeg wheel for
 each target. For manual packaging, supply a redistributable, relocatable Python runtime with
 `venv` and `pip`, a static FFmpeg 7 binary and its license text, and a wheelhouse with
-the pinned NumPy wheel matching that Python and target. The packager checks
+the pinned NumPy wheel matching that Python and target plus all universal wheels
+listed in `dkq3/tools/requirements-tui.txt`. The packager checks
 required products and creates a ZIP without retail assets:
 
 ```sh

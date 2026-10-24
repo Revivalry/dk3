@@ -31,6 +31,7 @@ FRD: specs/frds/FRD-017-dkm-models-with-preserved-surfaces-vertices-and-sequence
 import argparse
 import collections
 import concurrent.futures
+import install_progress
 import json
 import math
 import multiprocessing
@@ -608,7 +609,8 @@ def run_jobs(args, jobs):
     rows = []
     with concurrent.futures.ProcessPoolExecutor(args.workers, mp_context=context, initializer=_start_worker, initargs=initargs) as pool:
         try:
-            rows.extend(pool.map(convert_entry, jobs, chunksize=1))
+            rows.extend(install_progress.tracked(pool.map(convert_entry, jobs, chunksize=1), len(jobs),
+                                                lambda row: row['name']))
         except concurrent.futures.process.BrokenProcessPool as error:
             rows.extend(dict(name=n, archive=o, status=FAILED, error=f'a worker process died: {error}') for n, o in jobs[len(rows):])
     return rows

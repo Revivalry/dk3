@@ -21,6 +21,7 @@ FRD: specs/frds/FRD-016-all-84-maps-convert-and-load-headless.md
 import argparse
 import collections
 import concurrent.futures
+import install_progress
 import json
 import os
 import sys
@@ -126,11 +127,15 @@ def convert(args, copies, names):
     results = {}
     with concurrent.futures.ProcessPoolExecutor(max_workers=args.workers) as pool:
         futures = {name: pool.submit(convert_map, (name, args.data, args.manifest, args.textures, args.out_dir)) for name in names}
-        for name, future in futures.items():
+        install_progress.emit(0, len(futures))
+        names_by_future = {future: name for name, future in futures.items()}
+        for index, future in enumerate(concurrent.futures.as_completed(names_by_future), 1):
+            name = names_by_future[future]
             try:
                 results[name] = future.result()
             except concurrent.futures.process.BrokenProcessPool as error:
                 results[name] = (None, None, f'a worker process died: {error}')
+            install_progress.emit(index, len(futures), name)
     return results
 
 

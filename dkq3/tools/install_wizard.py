@@ -15,6 +15,8 @@ import subprocess
 import sys
 
 import assets
+from install_ui import InstallerUI
+from desktop_entry import register as register_desktop
 
 
 def verify_bundle(bundle: Path) -> None:
@@ -89,7 +91,9 @@ def steam_sources() -> list[Path]:
     return sorted(sources)
 
 
-def choose(label: str, options: list[str], default: int = 0) -> int:
+def choose(label: str, options: list[str], default: int = 0, ui=None) -> int:
+    if ui:
+        return ui.choose(label, options, default)
     print(f'\n{label}')
     for index, option in enumerate(options, 1):
         print(f'  {index}. {option}')
@@ -102,10 +106,10 @@ def choose(label: str, options: list[str], default: int = 0) -> int:
         print('Enter one of the listed numbers.')
 
 
-def source_selection() -> Path:
+def source_selection(ui=None) -> Path:
     found = steam_sources()
     options = [f'Steam: {path}' for path in found] + ['Choose another directory']
-    selected = choose('Original Daikatana data source', options)
+    selected = choose('Step 1 · Original Daikatana data', options, ui=ui)
     if selected < len(found):
         return found[selected]
     while True:
@@ -131,8 +135,9 @@ def bundle_tool(bundle: Path, name: str) -> Path:
     return path
 
 
-def python_environment(bundle: Path, destination: Path) -> Path:
+def python_environment(bundle: Path, destination: Path, ui=None) -> Path:
     """Use the bundled interpreter and offline wheelhouse in a private environment."""
+    run = ui.run if ui else lambda command: subprocess.run(command, check=True)
     runtime = destination / '.installer/runtime-python'
     marker = runtime / '.copied'
     if not marker.is_file():
@@ -144,13 +149,13 @@ def python_environment(bundle: Path, destination: Path) -> Path:
     environment = destination / '.installer/python'
     python = environment / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
     if not python.is_file():
-        subprocess.run([str(bundled), '-m', 'venv', '--copies', str(environment)], check=True)
+        run([str(bundled), '-m', 'venv', '--copies', str(environment)])
     wheelhouse = bundle / 'runtime/wheels'
     if not wheelhouse.is_dir():
         raise ValueError(f'release bundle is missing its Python wheelhouse: {wheelhouse}')
     requirements = bundle / 'dkq3/tools/requirements.txt'
-    subprocess.run([str(python), '-m', 'pip', 'install', '--disable-pip-version-check', '--no-index',
-                    '--find-links', str(wheelhouse), '-r', str(requirements)], check=True)
+    run([str(python), '-m', 'pip', 'install', '--disable-pip-version-check', '--no-index',
+         '--find-links', str(wheelhouse), '-r', str(requirements)])
     return python
 
 
@@ -177,7 +182,8 @@ def write_launcher(destination: Path) -> None:
         launcher.chmod(0o755)
 
 
-def generate_hd(bundle: Path, python: Path, destination: Path, assets_dir: Path, stages: list[str]) -> Path:
+def generate_hd(bundle: Path, python: Path, destination: Path, assets_dir: Path, stages: list[str], ui=None) -> Path:
+    run = ui.run if ui else lambda command: subprocess.run(command, check=True)
     producer = bundle / 'dkq3/tools/produce.py'
     if not producer.is_file():
         raise ValueError('this release bundle has no reviewed HD texture producer')
@@ -187,50 +193,69 @@ def generate_hd(bundle: Path, python: Path, destination: Path, assets_dir: Path,
     models = destination / '.installer/models/models.json'
     plan = root / 'textures/hd-plan.json'
     guard = bundle_tool(bundle, 'dkguard')
-    subprocess.run([str(python), '-m', 'pip', 'install', '--disable-pip-version-check', '-r',
-                    str(bundle / 'dkq3/tools/requirements-hd.txt')], check=True)
-    subprocess.run([str(python), '-c',
-                    'import torch; assert torch.cuda.is_available(), "HD generation needs a CUDA-capable GPU and CUDA-enabled PyTorch"'],
-                   check=True)
-    subprocess.run([str(python), str(bundle / 'dkq3/tools/hd_models.py'), '--stage', stages[-1],
-                    '--out', str(models.parent)], check=True)
-    subprocess.run([str(python), str(bundle / 'dkq3/tools/hd_plan.py'), '--textures-manifest',
-                    str(root / 'textures/textures.json'), '--out', str(plan)], check=True)
+    if ui:
+        ui.update(dict(stage='Downloading HD dependencies'))
+    run([str(python), '-m', 'pip', 'install', '--disable-pip-version-check', '-r',
+         str(bundle / 'dkq3/tools/requirements-hd.txt')])
+    run([str(python), '-c',
+         'import torch; assert torch.cuda.is_available(), "HD generation needs a CUDA-capable GPU and CUDA-enabled PyTorch"'])
+    if ui:
+        ui.update(dict(stage='Downloading HD models'))
+    run([str(python), str(bundle / 'dkq3/tools/hd_models.py'), '--stage', stages[-1], '--out', str(models.parent)])
+    run([str(python), str(bundle / 'dkq3/tools/hd_plan.py'), '--textures-manifest',
+         str(root / 'textures/textures.json'), '--out', str(plan)])
     common = [str(producer), '--textures-manifest', str(root / 'textures/textures.json'),
               '--images', str(root / 'images/png'), '--plan', str(plan), '--work', str(work)]
     for stage in stages:
-        print(f'Generating {stage} textures. This can take hours; completed entries resume on the next run.', flush=True)
-        subprocess.run([str(guard), '--gpu', '--mem', '64G', '--timeout', '86400', '--', str(python),
-                        *common, '--stage', stage, '--models', str(models)], check=True)
-    subprocess.run([str(guard), '--mem', '4G', '--timeout', '600', '--', str(python), *common,
-                    '--stage', 'pack', '--out', str(output), '--report', str(output.with_suffix('.json')),
-                    '--summary', str(output.with_suffix('.txt'))], check=True)
+        if ui:
+            ui.update(dict(stage=f'Generating {stage} textures'))
+        run([str(guard), '--gpu', '--mem', '64G', '--timeout', '86400', '--', str(python),
+             *common, '--stage', stage, '--models', str(models)])
+    run([str(guard), '--mem', '4G', '--timeout', '600', '--', str(python), *common,
+         '--stage', 'pack', '--out', str(output), '--report', str(output.with_suffix('.json')),
+         '--summary', str(output.with_suffix('.txt'))])
     return output
 
 
-def install(bundle: Path, source: Path, destination: Path, profile: str, stages: list[str]) -> None:
+def install(bundle: Path, source: Path, destination: Path, profile: str, stages: list[str], ui=None) -> None:
     if source == destination or source in destination.parents or destination in source.parents:
         raise ValueError('install destination must be separate from original game data')
     destination.mkdir(parents=True, exist_ok=True)
-    python = python_environment(bundle, destination)
+    ui = ui or InstallerUI(plain=True)
+    with ui.session(destination):
+        desktop = _install(bundle, source, destination, profile, stages, ui)
+    ui.result(destination, desktop)
+
+
+def _install(bundle, source, destination, profile, stages, ui):
+    with ui.phase('Setting up installation tools'):
+        python = python_environment(bundle, destination, ui=ui)
     ffmpeg = bundle / 'runtime/ffmpeg' / ('ffmpeg.exe' if os.name == 'nt' else 'ffmpeg')
     if not ffmpeg.is_file():
         raise ValueError(f'release bundle is missing FFmpeg: {ffmpeg}')
     assets_dir = destination / '.installer/assets'
-    subprocess.run([str(bundle_tool(bundle, 'dkguard')), '--mem', '8G', '--timeout', '14400', '--',
+    with ui.phase('Converting original game data'):
+        ui.run([str(bundle_tool(bundle, 'dkguard')), '--mem', '8G', '--timeout', '14400', '--',
                     str(python), str(bundle / 'dkq3/tools/assets.py'), '--data', str(source), '--profile', profile,
                     '--out', str(assets_dir), '--ffmpeg', str(ffmpeg), '--dkguard', str(bundle_tool(bundle, 'dkguard')),
-                    '--bspc', str(bundle_tool(bundle, 'bspc'))], check=True)
-    hd = generate_hd(bundle, python, destination, assets_dir, stages) if stages else None
-    copy_products(bundle, destination)
+                    '--bspc', str(bundle_tool(bundle, 'bspc'))])
+    hd = None
+    if stages:
+        with ui.phase('Generating optional HD textures'):
+            hd = generate_hd(bundle, python, destination, assets_dir, stages, ui=ui)
+    with ui.phase('Copying game files'):
+        copy_products(bundle, destination)
     command = [str(python), '-B', str(destination / 'tools/play.py'), 'install',
                '--prefix', str(destination), '--assets', str(assets_dir)]
     if hd is not None:
         command += ['--hd-textures', str(hd)]
-    subprocess.run(command, check=True)
-    write_launcher(destination)
-    print(f'Installed dk3 at {assets.current_generation(destination / "play")}')
-    print('Original Daikatana files were read only. Settings and saves use this dk3 installation.')
+    with ui.phase('Finishing installation'):
+        ui.run(command)
+        write_launcher(destination)
+    if sys.platform.startswith('linux'):
+        with ui.phase('Adding dk3 to the applications menu'):
+            return register_desktop(destination)
+    return None
 
 
 def main(argv=None) -> int:
@@ -240,23 +265,38 @@ def main(argv=None) -> int:
     parser.add_argument('--destination', type=Path)
     parser.add_argument('--profile', choices=('retail', '1.3'))
     parser.add_argument('--hd-stages', choices=('none', 'esrgan', 'sdxl', 'flux'))
+    parser.add_argument('--plain', action='store_true', help='plain text output without terminal animation')
+    parser.add_argument('--desktop-only', action='store_true',
+                        help='register an existing Linux installation without reconverting game data')
     args = parser.parse_args(argv)
+    ui = InstallerUI(plain=True)
     try:
+        ui.message('\nChecking installer files …')
         verify_bundle(args.bundle.resolve(strict=True))
-        source = game_data(args.source) if args.source else source_selection()
+        ui = InstallerUI(args.bundle, plain=args.plain)
+        ui.welcome()
+        if args.desktop_only:
+            if not sys.platform.startswith('linux'):
+                raise ValueError('--desktop-only requires a Linux desktop')
+            destination = (args.destination or Path.home() / 'Games/dk3').expanduser().resolve()
+            desktop = register_desktop(destination, args.bundle / 'share/dk3/dk3.svg')
+            ui.result(destination, desktop)
+            return 0
+        source = game_data(args.source) if args.source else source_selection(ui)
         if source is None:
             raise ValueError('source has no Daikatana data')
         destination = (args.destination or Path.home() / 'Games/dk3').expanduser().resolve()
         if args.destination is None:
+            ui.message('\nStep 2 · Installation folder', 'bold cyan')
             entered = input(f'Install destination [{destination}]: ').strip()
             if entered:
                 destination = Path(entered).expanduser().resolve()
         profile = args.profile or profile_for(source)
         if args.profile is None:
-            print(f'Using detected {profile} asset profile.')
+            ui.message(f'Detected {profile} game data.')
         stage = args.hd_stages or ('none', 'esrgan', 'sdxl', 'flux')[choose(
-            'Optional locally generated HD textures (can need hours, large downloads, and a powerful GPU)',
-            ['Original textures (default)', 'RealESRGAN 4×', 'RealESRGAN + SDXL', 'RealESRGAN + SDXL + FLUX'])]
+            'Step 3 · Texture quality (HD options need large downloads and a powerful GPU)',
+            ['Original textures · fastest installation', 'RealESRGAN 4×', 'RealESRGAN + SDXL', 'RealESRGAN + SDXL + FLUX'], ui=ui)]
         stages = {'none': [], 'esrgan': ['esrgan'], 'sdxl': ['esrgan', 'sdxl'],
                   'flux': ['esrgan', 'sdxl', 'flux']}[stage]
         if stages:
@@ -264,10 +304,19 @@ def main(argv=None) -> int:
             print('HD models and dependencies are downloaded for local use only. Review their terms before continuing.')
             if input('Download models and start generation? [y/N]: ').strip().lower() != 'y':
                 raise ValueError('HD generation declined')
-        install(args.bundle.resolve(strict=True), source, destination, profile, stages)
+        ui.summary(source, destination, {'none': 'Original', 'esrgan': 'RealESRGAN 4×',
+                                       'sdxl': 'RealESRGAN + SDXL', 'flux': 'RealESRGAN + SDXL + FLUX'}[stage])
+        install(args.bundle.resolve(strict=True), source, destination, profile, stages, ui=ui)
         return 0
+    except (KeyboardInterrupt, EOFError):
+        ui.message('\nInstallation cancelled. Rerun with the same destination to resume completed work.', 'yellow')
+        return 130
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
-        print(f'install wizard: {error}', file=sys.stderr)
+        reason = (f'{ui.operation} could not finish (exit {error.returncode}).'
+                  if isinstance(error, subprocess.CalledProcessError) else str(error).splitlines()[0])
+        ui.message(f'\nInstallation stopped: {reason}', 'red')
+        if ui.log:
+            ui.message(f'Full details: {ui.log}\nRerun with the same destination to resume completed work.')
         return 1
 
 

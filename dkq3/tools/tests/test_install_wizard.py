@@ -114,7 +114,8 @@ def run(command, **kwargs):
     return real_run(command, **kwargs)
 with patch.object(install_wizard, 'python_environment', return_value=private), \\
      patch.object(install_wizard, 'copy_products'), \\
-     patch.object(install_wizard.subprocess, 'run', side_effect=run):
+     patch.object(install_wizard, 'register_desktop'), \\
+     patch.object(install_wizard.InstallerUI, 'run', side_effect=run):
     install_wizard.install(bundle, source, destination, 'retail', [])
 '''
             result = subprocess.run([sys.executable, '-S', '-B', '-c', script, str(tools), str(bundle),
@@ -146,6 +147,9 @@ with patch.object(install_wizard, 'python_environment', return_value=private), \
             wheels = root / 'wheels'
             wheels.mkdir()
             (wheels / 'numpy-2.4.3-py3-none-any.whl').write_bytes(b'wheel')
+            for requirement in (Path(release_bundle.__file__).parent / 'requirements-tui.txt').read_text().splitlines():
+                package, version = requirement.split('==')
+                (wheels / f'{package.replace("-", "_")}-{version}-py3-none-any.whl').write_bytes(b'wheel')
             ffmpeg = root / 'ffmpeg'
             ffmpeg.write_bytes(b'ffmpeg')
             license_file = root / 'ffmpeg-license'

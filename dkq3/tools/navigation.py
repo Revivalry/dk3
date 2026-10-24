@@ -9,6 +9,7 @@ import sys
 
 import entities
 import pk3
+import install_progress
 
 MODES = ('dm', 'easy', 'normal', 'hard', 'ctf', 'deathtag')
 # Converted collision brushes retain sides that need not match a rendered face.
@@ -89,10 +90,13 @@ def main(argv=None):
         entries = []
         compiler_hash = hashlib.sha256(Path(args.bspc).read_bytes()).hexdigest()
         config_hash = hashlib.sha256(CONFIG.read_bytes()).hexdigest()
-        for source in maps:
-            variants, selected = navigation_variants(source)
+        plans = [(source, *navigation_variants(source)) for source in maps]
+        total = sum(len(variants) for _, variants, _ in plans)
+        completed = 0
+        for source, variants, selected in plans:
             source_hash = hashlib.sha256(source.read_bytes()).hexdigest()
             for stem, mode in variants:
+                install_progress.emit(completed, total, stem)
                 target = args.out / (stem + '.aas')
                 log = args.out / (stem + '.log')
                 record = args.out / (stem + '.json')
@@ -104,6 +108,8 @@ def main(argv=None):
                         inspect_aas(target)
                         entries.append(('maps/' + target.name, str(target)))
                         print(f'navigation: {stem} (resumed)', flush=True)
+                        completed += 1
+                        install_progress.emit(completed, total, stem + ' · reused')
                         continue
                 work = args.out / ('.work-' + stem)
                 work.mkdir(exist_ok=True)
@@ -124,6 +130,8 @@ def main(argv=None):
                 temporary.replace(record)
                 entries.append(('maps/' + target.name, str(target)))
                 print(f'navigation: {stem}: {counts}', flush=True)
+                completed += 1
+                install_progress.emit(completed, total, stem)
             selection = args.out / (source.stem + '.cfg')
             selection.write_text('dk3_navigation 1\n' + ''.join(f'{mode} {selected[mode]}\n' for mode in MODES))
             entries.append(('dk3/navigation/' + selection.name, str(selection)))

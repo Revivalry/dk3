@@ -18,6 +18,7 @@ before its dkguard timeout. Arguments are parsed before torch, PIL or diffusers 
 Spec: specs/assets/ASSET-textures-hd.md. FRD: specs/frds/FRD-021-upscaled-texture-variant-package.md
 """
 import argparse
+import install_progress
 import collections
 import hashlib
 import json
@@ -285,6 +286,7 @@ def run_esrgan(args, items, models):
         rgb = (y[0].float().clamp(0, 1).permute(1, 2, 0) * 255).round().byte().cpu().numpy()
         finish(entry, with_alpha(rgb, src), src, record, 'esrgan', time.time() - t0, args.work)
         done += 1
+        install_progress.emit(done, len(items), entry, stage='HD · RealESRGAN')
         if done % 100 == 0:
             print(f'{PREFIX} esrgan {done}/{len(items)}', flush=True)
     return done
@@ -311,6 +313,7 @@ def run_sdxl(args, items, models):
                                         record['prompt'], strength=args.strength_sdxl, steps=args.steps_sdxl)
         finish(entry, merge(rgb, src), src, record, 'sdxl', seconds, args.work)
         done += 1
+        install_progress.emit(done, len(items), entry, stage='HD · SDXL')
         print(f'{PREFIX} sdxl {done}/{len(items)} {entry} {seconds:.1f}s', flush=True)
     del pipe
     torch.cuda.empty_cache()
@@ -336,6 +339,7 @@ def run_flux(args, items, models):
                                                       steps=args.steps_flux, cscale=args.cscale_flux)
         finish(entry, merge(rgb, src), src, record, 'flux', seconds, args.work)
         done += 1
+        install_progress.emit(done, len(items), entry, stage='HD · FLUX')
         print(f'{PREFIX} flux {done}/{len(items)} {entry} {seconds:.1f}s', flush=True)
     del pipe
     torch.cuda.empty_cache()
@@ -349,6 +353,7 @@ def produce(args):
     items = todo(args.work, args.stage, entries(read_json(args.textures_manifest), read_json(args.plan)), args.images,
                  args.maps, args.limit)
     print(f'{PREFIX} {args.stage}: {len(items)} entries to produce', flush=True)
+    install_progress.emit(0, len(items), stage='HD · ' + args.stage)
     if not items:
         return 0
     import dkenv  # noqa: F401  (stubs a broken xformers before any diffusers import)

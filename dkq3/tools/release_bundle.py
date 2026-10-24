@@ -64,6 +64,12 @@ def fill(bundle: Path, repository: Path, prefix: Path, platform: str,
     version = requirement.partition('==')[2]
     if not any(p.name.lower().startswith(f'numpy-{version}-') and p.suffix == '.whl' for p in wheelhouse.iterdir()):
         raise ValueError(f'wheelhouse lacks the pinned NumPy {version} wheel')
+    for requirement in (repository / 'dkq3/tools/requirements-tui.txt').read_text().splitlines():
+        package, version = requirement.split('==')
+        prefix_name = package.replace('-', '_') + '-' + version + '-'
+        if not any(p.name.lower().startswith(prefix_name) and p.name.endswith('-none-any.whl')
+                   for p in wheelhouse.iterdir()):
+            raise ValueError(f'wheelhouse lacks the pinned terminal UI dependency: {requirement}')
     shutil.copytree(python_runtime, bundle / 'runtime/python', symlinks=False)
     shutil.copytree(wheelhouse, bundle / 'runtime/wheels')
     copy_file(ffmpeg, bundle / 'runtime/ffmpeg' / ('ffmpeg.exe' if platform == 'windows-x64' else 'ffmpeg'))
@@ -74,10 +80,11 @@ def fill(bundle: Path, repository: Path, prefix: Path, platform: str,
     tools = repository / 'dkq3/tools'
     for script in tools.glob('*.py'):
         copy_file(script, bundle / 'dkq3/tools' / script.name)
-    for name in ('requirements.txt', 'requirements-hd.txt'):
+    for name in ('requirements.txt', 'requirements-hd.txt', 'requirements-tui.txt'):
         copy_file(tools / name, bundle / 'dkq3/tools' / name)
     for name in assets.CONVERSION_INPUTS:
         copy_file(repository / name, bundle / name)
+    copy_file(repository / 'docs/assets/brand.svg', bundle / 'share/dk3/dk3.svg')
     if platform == 'windows-x64':
         (bundle / 'install.cmd').write_bytes(b'@echo off\r\n"%~dp0runtime\\python\\python.exe" -B "%~dp0dkq3\\tools\\install_wizard.py" --bundle "%~dp0." %*\r\n')
     else:

@@ -22,6 +22,11 @@ The process runner uses Zig's standard library and Linux interfaces. The develop
 also bundles ioquake3 and its third-party sources with their original notices. This project's
 GPL grant does not replace those licenses; see [component dispositions](docs/provenance.md).
 
+Release installers include unmodified Rich, markdown-it-py and mdurl wheels under
+their MIT notices, and Pygments under its BSD-2-Clause notice. Their licenses and
+author metadata remain inside the wheels under `runtime/wheels/`. These packages
+provide the terminal installation interface; they are not game runtime components.
+
 ioquake3 is bundled under `engine/ioquake3` with its own
 [GPL license and notices](engine/ioquake3/COPYING.txt). Its LCC tools carry separate
 [terms](engine/ioquake3/code/tools/lcc/COPYRIGHT) and are optional development targets.
