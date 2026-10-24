@@ -73,3 +73,15 @@ vid_restart
 
 Values above 1 brighten the image. See the [renderer reference](../reference/rendering.md)
 for exposure, bloom and tone-mapping controls.
+
+## Adjust the crosshair
+
+The crosshair uses the supplied 16×16 artwork at native size. Its size is measured
+in output pixels, independently of resolution, HUD scaling and FSR render scale.
+To change it, enter this in the console (no restart required):
+
+```text
+cg_crosshairSize 16
+```
+
+Values range from 0 to 64 pixels; 0 hides it. The setting is saved with your profile.
