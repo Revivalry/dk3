@@ -420,14 +420,87 @@ static void BotImport_DebugLineShow(int line, vec3_t start, vec3_t end, int colo
 	BotImport_DebugPolygonShow(line, color, 4, points);
 }
 
+// A bot command issued while SV_SpawnServer is still settling the level would
+// be dropped: SV_ExecuteClientCommand forwards to the game only once the
+// server state is SS_GAME, and the game never learns about the drop.  Keep
+// such a command for the first server frame after the level has loaded.
+#define MAX_BOT_DEFERRED_COMMANDS 8
+typedef struct {
+	char	text[MAX_STRING_CHARS];
+	int	client;
+} botDeferredCommand_t;
+
+static botDeferredCommand_t botDeferredCommands[MAX_BOT_DEFERRED_COMMANDS];
+static int botDeferredCount;
+
+static void BotDeferClientCommand( int client, const char *command ) {
+	int i;
+
+	// Anything left from a level that never finished loading is stale.
+	if ( sv.state == SS_LOADING ) {
+		botDeferredCount = 0;
+	}
+	for ( i = 0; i < botDeferredCount; i++ ) {
+		if ( botDeferredCommands[i].client == client && !Q_stricmp( botDeferredCommands[i].text, command ) ) {
+			return; // the same command is already waiting
+		}
+	}
+	if ( botDeferredCount == MAX_BOT_DEFERRED_COMMANDS ) {
+		Com_DPrintf( "BotClientCommand: too many deferred commands\n" );
+		return;
+	}
+	Q_strncpyz( botDeferredCommands[botDeferredCount].text, command, MAX_STRING_CHARS );
+	botDeferredCommands[botDeferredCount].client = client;
+	botDeferredCount++;
+}
+
+/*
+==================
+SV_BotFlushClientCommands
+
+Replays bot commands that arrived during a level load.  Called once per server
+frame, outside a game frame, so the game receives them like any other client
+command.  One command per frame: replaying may itself load a level.
+==================
+*/
+void SV_BotFlushClientCommands( void ) {
+	botDeferredCommand_t next;
+	client_t *cl;
+	int i;
+
+	if ( botDeferredCount == 0 ) {
+		return;
+	}
+	if ( sv.state != SS_GAME || !gvm ) {
+		return;
+	}
+	next = botDeferredCommands[0];
+	for ( i = 1; i < botDeferredCount; i++ ) {
+		botDeferredCommands[i - 1] = botDeferredCommands[i];
+	}
+	botDeferredCount--;
+	if ( next.client < 0 || next.client >= sv_maxclients->integer ) {
+		return;
+	}
+	cl = &svs.clients[next.client];
+	if ( cl->state == CS_ACTIVE ) {
+		SV_ExecuteClientCommand( cl, next.text, qtrue );
+	}
+}
+
 /*
 ==================
 SV_BotClientCommand
 ==================
 */
 static void BotClientCommand( int client, char *command ) {
+	if ( sv.state != SS_GAME ) {
+		BotDeferClientCommand( client, command );
+		return;
+	}
 	SV_ExecuteClientCommand( &svs.clients[client], command, qtrue );
 }
+
 
 /*
 ==================
@@ -435,6 +508,7 @@ SV_BotFrame
 ==================
 */
 void SV_BotFrame( int time ) {
+	SV_BotFlushClientCommands();
 	if (!bot_enable) return;
 	//NOTE: maybe the game is already shutdown
 	if (!gvm) return;
