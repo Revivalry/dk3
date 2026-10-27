@@ -342,7 +342,22 @@ pub fn step(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
                 engine.print(std.fmt.bufPrintZ(&text, "dk3 zig mover blocked: id={d} blocker={d} at={d:.0},{d:.0},{d:.0} state={s}\n", .{ try world.persistentId(entity), try world.persistentId(blocker), at[0], at[1], at[2], @tagName(master.state) }) catch "");
             }
             _ = try @import("../../../../mechanics/server/damage.zig").apply(world, blocker, master.damage, now, .{});
-            if (!master.force and master.moving()) try start(world, slots, projections, master.group, master.state == .closing, now, false);
+            // Daikatana's movers do not give way: the reference handler bound to
+            // every DK3 mover class (`MoverBlocked`, set for all mover kinds in
+            // DK_SpawnEntity) hurts what is in the way and then resumes the
+            // travel - it tails to BinaryMove - instead of reversing like Quake
+            // 2's Blocked_Door. Hold the travel clock while held up rather than
+            // running it out against an obstruction, so the mover continues from
+            // where it was stopped once the way clears. e1m1c's exit door is
+            // opened by a switch upstairs and a Crox crossing its sweep used to
+            // seal the level for good, since the switch fires a trigger_once.
+            if (master.moving()) {
+                for (moves[0..count]) |held| {
+                    if (world.get(held.entity, data.Mover)) |member| {
+                        if (member.moving()) member.motion.start_ms += elapsed;
+                    } else |_| {}
+                }
+            }
         }
     }
 }
