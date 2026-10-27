@@ -1634,6 +1634,9 @@ void SV_ExecuteClientCommand( client_t *cl, const char *s, qboolean clientOK ) {
 			Cmd_Args_Sanitize();
 			VM_Call( gvm, GAME_CLIENT_COMMAND, cl - svs.clients );
 		}
+		else if (!u->name) {
+			Com_DPrintf( "client command %s ignored: sv.state=%i cl->state=%i\n", Cmd_Argv(0), sv.state, cl->state );
+		}
 	}
 	else if (!bProcessed)
 		Com_DPrintf( "client text ignored for %s: %s\n", cl->name, Cmd_Argv(0) );
