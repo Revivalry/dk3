@@ -38,7 +38,7 @@ pub const Script = struct {
             .{ "reachable", &reachable },              .{ "controls", &controls },    .{ "exit_to", &exitTo },
             .{ "route", &routeTo },                    .{ "trace", &traceLine },      .{ "pickups", &pickups },
             .{ "contents", &pointContents },           .{ "ammo", &ammo },            .{ "plan", &plan },
-            .{ "sidekick", &sidekick },
+            .{ "currents", &currents },                .{ "threats", &threats },      .{ "sidekick", &sidekick },
         }) |entry| vm.register("dk3", entry[0], entry[1], vm);
         vm.run(prelude, "=coop_prelude") catch return self.report(error.ScriptLoad);
         var name: [c.MAX_QPATH + 1]u8 = undefined;
@@ -459,6 +459,46 @@ fn pointContents(L: ?*lua.State) callconv(.c) c_int {
     L_.lua_pushinteger(L, bits);
     return 1;
 }
+/// Every push current of the level (a fan's draught, a water flow): an array of
+/// `{x0, y0, z0, x1, y1, z1, vx, vy, vz, enabled}`. A body that enters one is
+/// shoved by its velocity whatever its own heading, so a route authors around
+/// them and `dk3.trace` cannot see them (they carry no collision).
+fn currents(L: ?*lua.State) callconv(.c) c_int {
+    const query = current(L);
+    const world = query.frame.world;
+    L_.lua_createtable(L, 8, 0);
+    var count: i64 = 0;
+    var links = world.queryAccess(data.World.mask(.{ data.WorldControl, data.Binding }), 0, 0);
+    defer links.deinit();
+    while (links.next()) |view| for (view.read(data.WorldControl), view.read(data.Binding)) |control, binding| {
+        const push = @import("entity_classes/registry.zig").current(control.action) orelse continue;
+        if (binding.slot >= query.frame.projections.len) continue;
+        const box = query.frame.projections[binding.slot].shared;
+        count += 1;
+        L_.lua_createtable(L, 0, 10);
+        const corners = [6]f32{ box.absmin[0], box.absmin[1], box.absmin[2], box.absmax[0], box.absmax[1], box.absmax[2] };
+        for ([_][:0]const u8{ "x0", "y0", "z0", "x1", "y1", "z1" }, corners) |key, value| {
+            L_.lua_pushnumber(L, value);
+            L_.lua_setfield(L, -2, key);
+        }
+        for ([_][:0]const u8{ "vx", "vy", "vz" }, push.velocity) |key, value| {
+            L_.lua_pushnumber(L, value);
+            L_.lua_setfield(L, -2, key);
+        }
+        L_.lua_pushboolean(L, @intFromBool(push.enabled));
+        L_.lua_setfield(L, -2, "enabled");
+        var class: []const u8 = "-";
+        if (binding.slot < query.frame.slots.occupants.len) {
+            if (query.frame.slots.occupants[binding.slot]) |held| {
+                if (world.get(held, data.MapObject) catch null) |object| class = object.classname;
+            }
+        }
+        _ = L_.lua_pushlstring(L, class.ptr, class.len);
+        L_.lua_setfield(L, -2, "class");
+        L_.lua_rawseti(L, -2, count);
+    };
+    return 1;
+}
 /// `file:line` of the innermost route-script frame, skipping the prelude, so a
 /// failed action names the route line that asked for it (tail calls included).
 fn where(L: ?*lua.State) callconv(.c) c_int {
@@ -730,6 +770,65 @@ fn hostiles(L: ?*lua.State) callconv(.c) c_int {
     };
     actors.deinit();
     L_.lua_pushinteger(L, count);
+    return 1;
+}
+/// Every hostile actor around a point: an array of `{id, index, class, x, y, z,
+/// health, seeing}`. `dk3.hostiles` counts them, which is enough to ask whether
+/// a room is clear but not enough to write a route that fights it: an authored
+/// crossing needs to know which bodies stand between it and the far side, and
+/// whether any of them can see the way in.
+fn threats(L: ?*lua.State) callconv(.c) c_int {
+    const query = current(L);
+    const radius: f32 = @floatCast(L_.luaL_optnumber(L, 1, 1536));
+    const world = query.frame.world;
+    var origin = (world.get(query.frame.entity, data.Transform) catch unreachable).position;
+    if (L_.lua_type(L, 2) == L_.LUA_TTABLE) for (0..3) |axis| {
+        _ = L_.lua_rawgeti(L, 2, @intCast(axis + 1));
+        origin[axis] = @floatCast(L_.luaL_checknumber(L, -1));
+        L_.lua_settop(L, -2);
+    };
+    const hull = (world.get(query.frame.entity, data.Body) catch unreachable).*;
+    L_.lua_createtable(L, 16, 0);
+    var count: i64 = 0;
+    var actors = world.queryAccess(data.World.mask(.{ data.Actor, data.Health, data.Transform }), 0, 0);
+    defer actors.deinit();
+    while (actors.next()) |view| for (view.entities(), view.read(data.Actor), view.read(data.Health), view.read(data.Transform)) |who, actor, vitality, pose| {
+        if (vitality.current <= 0 or !route.hostile(catalog.entries[actor.definition].kind)) continue;
+        if (v.length(v.subtract(pose.position, origin)) > radius) continue;
+        // Can it see the place the route is going through: the same hull line a
+        // shot would take, from the body that must not be walked into it.
+        var seen = false;
+        if (query.frame.index != 2047) {
+            if (engine.collisionService().trace(.{
+                .start = .{ pose.position[0], pose.position[1], pose.position[2] + 24 },
+                .end = origin,
+                .mins = hull.mins,
+                .maxs = hull.maxs,
+                .slot = query.frame.index,
+                .mask = c.MASK_PLAYERSOLID,
+            }) catch null) |line| {
+                seen = line.fraction > 0.9;
+            }
+        }
+        count += 1;
+        L_.lua_createtable(L, 0, 8);
+        const id = world.persistentId(who) catch continue;
+        L_.lua_pushinteger(L, id);
+        L_.lua_setfield(L, -2, "id");
+        L_.lua_pushinteger(L, id & 0xffffff);
+        L_.lua_setfield(L, -2, "index");
+        _ = L_.lua_pushstring(L, @tagName(catalog.entries[actor.definition].kind).ptr);
+        L_.lua_setfield(L, -2, "class");
+        for ([_][:0]const u8{ "x", "y", "z" }, pose.position) |key, value| {
+            L_.lua_pushnumber(L, value);
+            L_.lua_setfield(L, -2, key);
+        }
+        L_.lua_pushinteger(L, vitality.current);
+        L_.lua_setfield(L, -2, "health");
+        L_.lua_pushboolean(L, @intFromBool(seen));
+        L_.lua_setfield(L, -2, "seeing");
+        L_.lua_rawseti(L, -2, count);
+    };
     return 1;
 }
 fn mover(L: ?*lua.State) callconv(.c) c_int {
