@@ -40,7 +40,11 @@ pub const Router = struct {
         self.depth += 1;
         defer self.depth -= 1;
         const object = (try world.get(entity, data.MapObject)).*;
-        if (!@import("locks.zig").allows(world, object, activator)) return;
+        if (!@import("locks.zig").allows(world, object, activator)) {
+            try detail(world, entity, "locked", @import("properties.zig").text(object, "keyname") orelse "", now);
+            return;
+        }
+        try trace(world, entity, "enter", now);
         if ((world.get(entity, data.WorldControl) catch null) != null) return @import("world_controls.zig").use(world, slots, projections, self, entity, activator, now);
         var using: @import("entity_classes/registry.zig").Use = .{ .router = self, .world = world, .slots = slots, .projections = projections, .entity = entity, .object = object, .source = source, .activator = activator, .now = now };
         if (try useStage(uses.before_actors, &using)) return;
@@ -51,18 +55,24 @@ pub const Router = struct {
         if (try useStage(uses.after_authored, &using)) return;
         if (try @import("world_actions.zig").activate(world, slots, projections, self, entity, activator, now)) return;
         if (try self.useActor(world, slots, entity, true, now)) return;
+        try trace(world, entity, "movers-gate", now);
         if (try useStage(uses.after_actors, &using)) return;
         if (world.get(entity, data.Trigger)) |trigger| {
-            if (now < trigger.ready_ms or (trigger.limit > 0 and trigger.uses >= trigger.limit)) return;
+            if (now < trigger.ready_ms or (trigger.limit > 0 and trigger.uses >= trigger.limit)) {
+                try trace(world, entity, "skip", now);
+                return;
+            }
             trigger.uses += 1;
             if (trigger.counter and trigger.uses < trigger.limit) return;
             trigger.ready_ms = now + trigger.wait_ms;
+            try trace(world, entity, "used", now);
             try self.fire(world, slots, projections, entity, activator, now);
         } else |_| {}
     }
     pub fn fire(self: *Router, world: *data.World, slots: *Slots, projections: []abi.EntityProjection, entity: ecs.Entity, activator: u32, now: i64) anyerror!void {
         const object = (try world.get(entity, data.MapObject)).*;
         const delay = try prop.milliseconds(object, "delay", 0);
+        if (delay > 0) try trace(world, entity, "queued", now);
         if (delay < 0 or delay > 3600000) return error.InvalidTargetDelay;
         if (delay > 0) {
             for (&self.pending) |*item| if (item.* == null) {
@@ -110,6 +120,7 @@ pub const Router = struct {
         for ([_][]const u8{ object.target, prop.text(object, "target2") orelse "", prop.text(object, "target3") orelse "", prop.text(object, "target4") orelse "" }) |name| {
             if (name.len == 0) continue;
             const matches = try named(lookup_world, name);
+            if (matches.count == 0) try detail(world, entity, "missing", name, now);
             for (matches.ids[0..matches.count]) |id| {
                 if (!world.alive(entity)) return;
                 if (id == own_id) continue;
@@ -144,7 +155,11 @@ pub const Router = struct {
             if (action.due_ms > now) continue;
             self.pending[index] = null;
             if (@import("region_access.zig").find(world, action.source)) |source| {
-                if (source.world == world) try self.dispatch(world, slots, projections, source.entity, action.activator, now) else {
+                try trace(world, source.entity, "due", now);
+                if (source.world == world) self.dispatch(world, slots, projections, source.entity, action.activator, now) catch |err| {
+                    try detail(world, source.entity, "dispatch-failed", @errorName(err), now);
+                    return err;
+                } else {
                     const context = @import("region_access.zig").contextFor(source.world) orelse return error.TargetWorldUnavailable;
                     const scope = try context.select();
                     defer scope.deinit();
@@ -154,6 +169,19 @@ pub const Router = struct {
         };
     }
 };
+/// Where an authored chain node was spent, deferred or dropped (route authoring).
+fn trace(world: *data.World, entity: ecs.Entity, kind: []const u8, now: i64) !void {
+    try detail(world, entity, kind, "", now);
+}
+/// Where an authored chain node was spent, deferred or dropped, with the edge or reason at issue.
+fn detail(world: *data.World, entity: ecs.Entity, kind: []const u8, note: []const u8, now: i64) !void {
+    if (engine.integer("developer") < 2) return;
+    const object = (try world.get(entity, data.MapObject)).*;
+    var text: [320]u8 = undefined;
+    engine.print(std.fmt.bufPrintZ(&text, "dk3 target: t={d} event={s} class={s} name={s} note={s}\n", .{
+        now, kind, object.classname, object.targetname, note,
+    }) catch return);
+}
 /// Trigger limits and counters are prepared by their classes.
 pub fn spawn(world: *data.World) !void {
     try @import("entity_classes/registry.zig").prepareAll(.triggers, std.heap.page_allocator, world, &.{});

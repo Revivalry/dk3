@@ -224,6 +224,20 @@ pub const Report = struct {
     /// nearest safe floor, or with none found.
     escaping: bool = false,
     escape_failed: bool = false,
+    /// Held still on purpose (waiting for a gate to open). A body that drowns
+    /// while holding a spot looks, from the outside, exactly like one stuck
+    /// against a wall, so the state is reported rather than guessed at.
+    holding: bool = false,
+    /// Under water how long, and what the breath budget decided: 1 rise to the
+    /// air above, 2 swim to open water (or back to the last breath), 3 neither
+    /// found, 4 backing out of the corner it was pressed into (a swimmer has no
+    /// floor to sidestep against). Authoring evidence for a lost swimmer.
+    submerged_ms: i64 = 0,
+    breathing: u8 = 0,
+    /// The inputs the frame produced (forward, right, up): a body that sits
+    /// still because it was told to and one pressed against geometry look the
+    /// same in the world, and differ completely in the log.
+    input: [3]i8 = .{ 0, 0, 0 },
 };
 /// One frame of movement input, before any sink encodes it.
 pub const Command = struct {
@@ -281,6 +295,11 @@ pub const Pilot = struct {
     seed: u32 = 0x5eed,
     step_ms: i64 = 0,
     unstick_until: i64 = 0,
+    /// Not before when the next shake loose may be armed. Under water only the
+    /// route's own progress can be measured and a dive makes none to count, so
+    /// without this the shake is re-armed the moment it ends and never hands
+    /// the stroke back to the route at all.
+    unstick_ready_ms: i64 = 0,
     unstick_side: f32 = 1,
     strafe_until: i64 = 0,
     strafe_side: f32 = 1,
@@ -296,11 +315,17 @@ pub const Pilot = struct {
     breath_point: ?v.Vec3 = null,
     air_target: ?v.Vec3 = null,
     air_search_ms: i64 = 0,
+    /// Whether `air_target` is open water with air above, or the last breath.
+    breath_found: bool = false,
     /// Safe floor it climbs out to from lethal liquid (careful footing).
     escape_target: ?v.Vec3 = null,
     escape_search_ms: i64 = 0,
     direct_mark: v.Vec3 = @splat(0),
     direct_ms: i64 = 0,
+    /// Route step the body is walked to and the last time it was touched: a
+    /// step behind the goal must be dropped, not aimed back at.
+    waypoint_point: v.Vec3 = @splat(0),
+    waypoint_reached_ms: i64 = 0,
     /// A civilian in the way since `blocker_ms`; one that stayed there long
     /// enough becomes the `nuisance` the bot is allowed to shoot.
     blocker: u32 = 0,
@@ -591,7 +616,20 @@ pub const Pilot = struct {
             } else if (try self.follow(frame, pose.position, try self.reachableNear(frame, pose.position, goal, intent.direct_radius))) |waypoint| {
                 report.waypoint = waypoint;
                 if (frame.now >= self.gate_until) self.gate_since = 0;
-                movement = v.subtract(waypoint.point, pose.position);
+                // A route step the body has already touched is behind it. While
+                // the graph keeps offering that same step, steering at it again
+                // walks a limit cycle: six steps back to the step, six toward
+                // the goal, forever (the pit of e1m2b held a bot there for a
+                // whole action). Plain steps only: a jump take-off, a crouch
+                // under a beam or a ladder is a step the body must stand on.
+                if (v.length(v.subtract(waypoint.point, self.waypoint_point)) > 8) {
+                    self.waypoint_point = waypoint.point;
+                    self.waypoint_reached_ms = 0;
+                } else if (nav.horizontalDistance(waypoint.point, pose.position) <= 8) {
+                    self.waypoint_reached_ms = frame.now + 3000;
+                }
+                const dropped = frame.now < self.waypoint_reached_ms and !waypoint.jump and !waypoint.crouch and !waypoint.ladder;
+                movement = if (dropped) v.subtract(goal, pose.position) else v.subtract(waypoint.point, pose.position);
                 // The route takes a lift: board it, call it or send it, and ride.
                 // Also on the way to a control (a button the lift carries the
                 // player up to): the lift's own control comes first, and the
@@ -687,7 +725,10 @@ pub const Pilot = struct {
                     } else if (!waiting) report.give_up_ms = 3000;
                 }
             };
-            if ((report.no_route or routeless) and frame.now < self.hold_until) movement = @splat(0);
+            if ((report.no_route or routeless) and frame.now < self.hold_until) {
+                report.holding = true;
+                movement = @splat(0);
+            }
             report.blocked = self.route.blocked;
             report.routeless = routeless;
             // A stride that stalls with input held means a lip or step the
@@ -733,7 +774,7 @@ pub const Pilot = struct {
                 // A waypoint at the player's feet gives no heading: use the goal.
                 // (A door the hull already touches leaves the waypoint just
                 // beyond it, a few units away: that still gives the heading.)
-                const toward = if (self.route.waypoint) |waypoint| (if (nav.horizontalDistance(waypoint.point, pose.position) > 6) waypoint.point else goal) else goal;
+                const toward = if (self.route.waypoint) |waypoint| (if (nav.horizontalDistance(waypoint.point, pose.position) > 6 and frame.now >= self.waypoint_reached_ms) waypoint.point else goal) else goal;
                 if (engine.integer("developer") >= 2) {
                     var text: [192]u8 = undefined;
                     engine.print(std.fmt.bufPrintZ(&text, "dk3 {s}: t={d} event=seek pos={d:.0},{d:.0},{d:.0} toward={d:.0},{d:.0},{d:.0} blocked={d} stalled={d}\n", .{ frame.label, frame.now, pose.position[0], pose.position[1], pose.position[2], toward[0], toward[1], toward[2], @intFromBool(self.route.blocked), @intFromBool(stalled) }) catch "");
@@ -760,10 +801,16 @@ pub const Pilot = struct {
                         self.control_until = frame.now + 15000;
                         self.route = .{};
                     }
-                } else if ((self.route.blocked or stalled or report.no_route) and frame.now - @min(self.route.progress_ms, self.direct_ms) >= 1500 and frame.now >= self.unstick_until) {
+                } else if ((self.route.blocked or stalled or report.no_route) and frame.now - @min(self.route.progress_ms, self.direct_ms) >= 1500 and frame.now >= self.unstick_until and (player.water_level < 2 or frame.now >= self.unstick_ready_ms)) {
                     // Nothing authored explains the obstruction: sidestep and hop
                     // briefly, the way a player shakes loose from a ledge or prop.
-                    self.unstick_until = frame.now + 600;
+                    // A swimmer has nothing to hop off and no floor to lean on,
+                    // and shakes loose with two shorter strokes instead. Either
+                    // window stays well inside the wait for the next one: given
+                    // its full length, the body spends its whole air budget
+                    // swimming away from where it was going.
+                    self.unstick_until = frame.now + (if (player.water_level >= 2) @as(i64, 450) else 600);
+                    self.unstick_ready_ms = self.unstick_until + (if (player.water_level >= 2) @as(i64, 1050) else 0);
                     self.unstick_side = -self.unstick_side;
                     if (player.ground_entity != c.ENTITYNUM_NONE and frame.now >= self.jump_ready) {
                         self.jump_until = frame.now + 200;
@@ -1082,8 +1129,24 @@ pub const Pilot = struct {
         const axes = v.basis(.{ 0, travel_yaw, 0 });
         var direction = v.normalize(.{ movement[0], movement[1], 0 });
         if (frame.now < self.unstick_until) {
-            const shaken = v.normalize(v.add(direction, v.scale(axes.right, self.unstick_side)));
-            if (try evasion.supported(frame, pose.position, v.add(pose.position, v.scale(shaken, 40)))) direction = shaken else self.unstick_until = 0;
+            if (player.water_level >= 2) {
+                // The sidestep a walker shakes loose with asks for floor under
+                // it; a swimmer presses against the water itself instead, so it
+                // uses the two strokes a player uses in a corner in turn — back
+                // out of the corner the current set the body into, then around
+                // the obstruction (e1m2a's canal: pressed under the sunken slab,
+                // holding a stroke that moved nothing drowned the bot there
+                // through eleven restorations).
+                report.breathing = 4;
+                const along = if (v.length(direction) > 0.01) direction else axes.forward;
+                direction = if (self.unstick_side > 0)
+                    v.scale(along, -1)
+                else
+                    v.normalize(v.add(along, v.scale(axes.right, self.unstick_side)));
+            } else {
+                const shaken = v.normalize(v.add(direction, v.scale(axes.right, self.unstick_side)));
+                if (try evasion.supported(frame, pose.position, v.add(pose.position, v.scale(shaken, 40)))) direction = shaken else self.unstick_until = 0;
+            }
         }
         // Hazards overhead count against the hull the player moves with: a
         // crouch passes under a fan's guard a standing player would touch.
@@ -1104,9 +1167,11 @@ pub const Pilot = struct {
         }
         // A current (a targetless push: a draught, a water flow) beside a drop
         // shoves whoever touches it over the edge: lean away from it while
-        // going on, as a player keeps off it. Precise segments that steer
-        // into a draught on purpose keep their line.
-        if (!intent.direct and player.ground_entity != c.ENTITYNUM_NONE and v.length(direction) > 0.01) direction = try leanFromCurrents(frame, pose.position, direction);
+        // going on, as a player keeps off it. A heading that runs with the
+        // current is riding it where the route means to go (e1m2b's sluice
+        // carries a body over the lip into the tank), so straight steering is
+        // guarded too, but only against a cross-current.
+        if (player.ground_entity != c.ENTITYNUM_NONE and v.length(direction) > 0.01) direction = try leanFromCurrents(frame, pose.position, direction, intent.direct);
         // Walking along a lethal volume (a floor fan's blades at the edge of
         // the way): keep a hand's breadth off it, as a player does.
         if (player.ground_entity != c.ENTITYNUM_NONE and v.length(direction) > 0.01) direction = try leanFromHazards(frame, pose.position, direction, head, nav.horizontalDistance(movement, @splat(0)));
@@ -1188,8 +1253,44 @@ pub const Pilot = struct {
             const below = try frame.collision.trace(.{ .start = stride, .end = v.add(stride, .{ 0, 0, -64 }), .mins = @splat(0), .maxs = @splat(0), .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
             if (below.fraction == 1) magnitude *= 0.4;
         }
-        command.forward = @intFromFloat(std.math.clamp(v.dot(direction, axes.forward) * magnitude, -127, 127));
-        command.right = @intFromFloat(std.math.clamp(v.dot(direction, axes.right) * magnitude, -127, 127));
+        // Walking on a flowing floor (a fan's conveyor top, a water race):
+        // the brush underfoot shoves the body the whole time it stands there,
+        // so a line walked straight drifts off its plank into the pit below.
+        // Two answers, the ones a player gives: keep the stroke full, because
+        // a slow careful step has no authority against a current and simply
+        // travels with it; and aim upstream, so the track still runs where the
+        // way goes. Riding with a current (the route's own errand down a
+        // sluice) costs nothing: the flow has no sideways part to cancel.
+        const flow = if (player.ground_entity != c.ENTITYNUM_NONE and player.water_level < 2 and v.length(direction) > 0.01) try currentUnder(frame, pose.position) else @as(v.Vec3, @splat(0));
+        if (v.length(flow) >= 60) {
+            magnitude = @max(magnitude, if (intent.brake) @as(f32, 76) else @as(f32, 121));
+            // Braking into a goal that stands past the water is the same trap
+            // as a careful step: half a stroke against a whole flow spends the
+            // crossing sliding east off the shelf (e1m2b's race shoves at 200
+            // against a wading walk of 266, so anything under three quarters of
+            // the command is a body in the pit). Where the flow outranks the
+            // stroke the run has, the stroke becomes the whole stroke.
+            if (v.length(flow) > groundSpeed(player, magnitude) * 0.92) magnitude = 127 * intent.pace;
+            // A crouched stroke (a quarter of the run) has no authority at all
+            // against a current that outranks it: standing tall is the only way
+            // back out, the way a player rises to wade out of a race.
+            if (v.length(flow) > magnitude * run_speed / 127 * 0.5) crouch = false;
+        }
+        if (v.length(flow) >= 1) direction = aimAgainstCurrent(frame, pose.position, direction, flow, groundSpeed(player, magnitude));
+        // The engine pays a walk by its dominant hand (`commandScale`: the
+        // stroke's speed is run_speed * max(|forward|,|right|) / 127), so a lean
+        // of nearly fifty degrees of side-stroke walks at three quarters of the
+        // pace and hands the rest to the current. Against a flow both hands go
+        // out along the same heading until the leading one is fully held: the
+        // heading is untouched, and the whole walk is paid for -- the authority
+        // a key that is only ever fully held gives a player.
+        var stroke: [2]f32 = .{ v.dot(direction, axes.forward) * magnitude, v.dot(direction, axes.right) * magnitude };
+        if (v.length(flow) >= 60) {
+            const leading = @max(@abs(stroke[0]), @abs(stroke[1]));
+            if (leading > 1) stroke = .{ stroke[0] * magnitude / leading, stroke[1] * magnitude / leading };
+        }
+        command.forward = @intFromFloat(std.math.clamp(stroke[0], -127, 127));
+        command.right = @intFromFloat(std.math.clamp(stroke[1], -127, 127));
         if (crouch or intent.crouch) command.up = -127;
         // Standing to shoot, a player ducks where the target stays in sight
         // from down there.
@@ -1218,7 +1319,7 @@ pub const Pilot = struct {
             if (movement[2] > 8) command.up = 127 else if (movement[2] < -48 or (movement[2] < -12 and across < -movement[2] * 2)) command.up = -127;
             // A ceiling edge ahead (the low gap of a flooded passage): where the
             // stroke is blocked at this depth but clear a little lower, dive.
-            if (command.up >= 0 and across > 0.01) {
+            if (command.up >= 0 and across > 0.01 and frame.now >= self.unstick_until) {
                 const flat = v.normalize(.{ movement[0], movement[1], 0 });
                 const hull_mins = frame.hull.mins;
                 const hull_maxs = frame.hull.maxs;
@@ -1243,8 +1344,10 @@ pub const Pilot = struct {
             self.air_target = null;
         } else {
             const under = frame.now - self.submerged_ms;
+            report.submerged_ms = under;
             if (try airDistance(frame, pose.position, player.view_height)) |distance| {
                 if (under + surfacing_margin_ms + @as(i64, @intFromFloat(distance / surfacing_speed * 1000)) >= air_ms) {
+                    report.breathing = 1;
                     command.up = 127;
                     command.forward = 0;
                     command.right = 0;
@@ -1252,18 +1355,45 @@ pub const Pilot = struct {
             } else if (under >= air_ms / 3) {
                 if (frame.now >= self.air_search_ms) {
                     self.air_search_ms = frame.now + 500;
-                    self.air_target = try nearestAir(frame, pose.position, player.view_height) orelse self.breath_point;
-                }
-                if (self.air_target) |point| {
-                    const toward = v.subtract(point, pose.position);
-                    const across = nav.horizontalDistance(toward, @splat(0));
-                    if (across > 8) {
-                        const yaw = command.angles[1] * std.math.pi / 180;
-                        const flat: v.Vec3 = .{ toward[0] / across, toward[1] / across, 0 };
-                        command.forward = @intFromFloat(std.math.clamp((flat[0] * @cos(yaw) + flat[1] * @sin(yaw)) * 127, -127, 127));
-                        command.right = @intFromFloat(std.math.clamp((flat[0] * @sin(yaw) - flat[1] * @cos(yaw)) * 127, -127, 127));
+                    const open = try nearestAir(frame, pose.position, player.view_height, intent.destination);
+                    self.breath_found = open != null;
+                    // Turning back to the last breath is the longer swim in
+                    // most cases, and it is the one stroke that gives the route
+                    // up: only once most of the air is gone is it worth more
+                    // than the way forward (e1m2a's canal: with no open water
+                    // anywhere under the sunken slab, a bot that turns for the
+                    // breath it had two thirds of the leg ago drowns having
+                    // abandoned the passage through).
+                    self.air_target = open;
+                    if (self.air_target == null and under >= air_ms * 3 / 4) {
+                        // Where the route itself is going has air above it and
+                        // the rest of the swim fits the air that is left, the
+                        // way forward *is* the way to air: swim the leg out
+                        // instead of turning for a surface behind.
+                        const left: f32 = @floatFromInt(air_ms - under);
+                        const onward = if (intent.destination) |point| blk: {
+                            if (v.length(.{ point[0] - pose.position[0], point[1] - pose.position[1], 0 }) > left / 1000 * air_swim_speed - 96) break :blk null;
+                            break :blk if (try airDistance(frame, point, player.view_height) != null) point else null;
+                        } else null;
+                        self.air_target = onward orelse self.breath_point;
                     }
-                    command.up = if (toward[2] > 8) 127 else 0;
+                }
+                // Shaking loose comes first: while the body is reversing out of
+                // the corner, the headless stroke toward the last breath is
+                // what pressed it in.
+                if (self.air_target) |point| {
+                    if (frame.now >= self.unstick_until) {
+                        report.breathing = if (self.breath_found) @as(u8, 2) else @as(u8, 3);
+                        const toward = v.subtract(point, pose.position);
+                        const across = nav.horizontalDistance(toward, @splat(0));
+                        if (across > 8) {
+                            const yaw = command.angles[1] * std.math.pi / 180;
+                            const flat: v.Vec3 = .{ toward[0] / across, toward[1] / across, 0 };
+                            command.forward = @intFromFloat(std.math.clamp((flat[0] * @cos(yaw) + flat[1] * @sin(yaw)) * 127, -127, 127));
+                            command.right = @intFromFloat(std.math.clamp((flat[0] * @sin(yaw) - flat[1] * @cos(yaw)) * 127, -127, 127));
+                        }
+                        command.up = if (toward[2] > 8) 127 else 0;
+                    }
                 }
             }
         }
@@ -1591,8 +1721,10 @@ pub fn crushOverhead(frame: Frame, position: v.Vec3) !?v.Vec3 {
 }
 /// `direction` bent away from an active current within reach whose push would
 /// carry the player over a drop.
-fn leanFromCurrents(frame: Frame, position: v.Vec3, direction: v.Vec3) !v.Vec3 {
+fn leanFromCurrents(frame: Frame, position: v.Vec3, direction: v.Vec3, direct: bool) !v.Vec3 {
     var bias: v.Vec3 = @splat(0);
+    var outranked = false;
+    const heading = v.normalize(.{ direction[0], direction[1], 0 });
     var controls = frame.world.queryAccess(data.World.mask(.{ data.WorldControl, data.Binding }), 0, 0);
     defer controls.deinit();
     while (controls.next()) |view| for (view.read(data.WorldControl), view.read(data.Binding)) |control, binding| {
@@ -1605,18 +1737,27 @@ fn leanFromCurrents(frame: Frame, position: v.Vec3, direction: v.Vec3) !v.Vec3 {
         if (position[0] < box.absmin[0] - reach or position[0] > box.absmax[0] + reach or position[1] < box.absmin[1] - reach or position[1] > box.absmax[1] + reach) continue;
         if (position[2] + frame.hull.maxs[2] < box.absmin[2] or position[2] + frame.hull.mins[2] > box.absmax[2]) continue;
         const along = v.normalize(flat);
+        // Going with the current is the route's own errand: an authored
+        // straight segment that rides a flow over a fall must keep its line.
+        if (direct and v.dot(heading, along) > 0.5) continue;
         const centre = v.scale(v.add(box.absmin, box.absmax), 0.5);
         const beyond = v.add(.{ centre[0], centre[1], position[2] }, v.scale(along, 64));
         const floor = try frame.collision.trace(.{ .start = beyond, .end = v.add(beyond, .{ 0, 0, -96 }), .mins = @splat(0), .maxs = @splat(0), .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
         if (floor.fraction < 1) continue;
         bias = v.subtract(bias, along);
+        // A push that outranks a full stroke cannot be fought from inside: the
+        // volume sets the velocity every frame it touches, so the stroke is
+        // erased as fast as it is made (the fan at e1m2b's plank measured 200
+        // against a walk of 320 at a crawl of 23). Such a current is stepped
+        // around, not leaned against: give the way round it the whole weight.
+        if (v.length(flat) >= run_speed) outranked = true;
     };
     if (v.length(bias) < 0.01) return direction;
-    const ahead = v.normalize(.{ direction[0], direction[1], 0 });
+    const ahead = heading;
     // Keep the way's own heading but never toward the current.
     const toward = v.dot(ahead, v.scale(bias, -1));
     var bent = if (toward > 0) v.subtract(ahead, v.scale(v.normalize(v.scale(bias, -1)), toward)) else ahead;
-    bent = v.add(bent, v.scale(v.normalize(bias), 0.35));
+    bent = v.add(bent, v.scale(v.normalize(bias), if (outranked) @as(f32, 1) else 0.35));
     return v.scale(v.normalize(bent), v.length(.{ direction[0], direction[1], 0 }));
 }
 /// Bends a heading away from an enabled lethal hazard the hull runs within a
@@ -1727,6 +1868,9 @@ fn waterNear(frame: Frame, eye: v.Vec3, origin: v.Vec3, aim: ?v.Vec3) !bool {
 const air_ms: i64 = 12000;
 const surfacing_margin_ms: i64 = 1500;
 const surfacing_speed: f32 = 120;
+/// How far a swimmer covers in a second of stroke (used to ask whether the air
+/// left reaches the next pocket, and so whether to keep going or turn back).
+const air_swim_speed: f32 = 150;
 /// How far the body must rise to have its head out of the water, when air lies straight above
 /// within 1024 units and short of a ceiling; null when there is none.
 fn airDistance(frame: Frame, position: v.Vec3, view: f32) !?f32 {
@@ -1747,6 +1891,54 @@ const lethal_liquids: u32 = c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_
 fn slickUnder(frame: Frame, position: v.Vec3) !bool {
     const floor = try frame.collision.trace(.{ .start = position, .end = v.add(position, .{ 0, 0, -4 }), .mins = frame.hull.mins, .maxs = frame.hull.maxs, .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
     return floor.fraction < 1 and floor.slick;
+}
+/// The speed the motor steers a walker to at a full stroke (the base run
+/// speed; a slower pace scales it down where the command is scaled).
+const run_speed: f32 = 320;
+/// The speed a walker actually reaches with this stroke: the base run speed
+/// scaled by how far the command is pushed, less what the liquid it stands in
+/// takes back. `Frame.walk` cuts a wading step by a sixth per level of water
+/// (`speed * (1 - water_level/6)`), and a current is fought with what the legs
+/// truly deliver, not with the speed the same boots reach on dry ground: aim
+/// upstream by the dry-ground figure and the body is short of the compensation
+/// every frame, and walks sideways into whatever the flow runs at.
+fn groundSpeed(player: data.Player, magnitude: f32) f32 {
+    const wade: f32 = if (player.water_level >= 2) 2.0 / 3.0 else if (player.water_level == 1) 5.0 / 6.0 else 1;
+    return @min(run_speed, run_speed * magnitude / 127) * wade;
+}
+/// The shove the currents have on the hull where it stands, as the motor
+/// counts it: a flowing brush underfoot carries a walker at its conveyor
+/// speed, a liquid the feet stand in at half the swim speed. Only the
+/// walking case: a swimmer's stroke is a different fight (see `swim`).
+fn currentUnder(frame: Frame, position: v.Vec3) !v.Vec3 {
+    const authored = @import("../player_state.zig").currents;
+    const move = @import("../domain/player_move.zig");
+    var push: v.Vec3 = @splat(0);
+    const feet = v.add(position, .{ 0, 0, frame.hull.mins[2] + 1 });
+    const here = try frame.collision.contents(feet, frame.slot);
+    if (here & c.MASK_WATER != 0 and here & authored.mask() != 0) push = v.add(push, v.scale(authored.direction(here), move.water_current_speed / 2));
+    const floor = try frame.collision.trace(.{ .start = position, .end = v.add(position, .{ 0, 0, -4 }), .mins = frame.hull.mins, .maxs = frame.hull.maxs, .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
+    if (floor.fraction < 1 and floor.contents & authored.mask() != 0) push = v.add(push, v.scale(authored.direction(floor.contents), move.conveyor_speed));
+    push[2] = 0;
+    return push;
+}
+/// The heading to aim so the track keeps `direction`: the flow takes its
+/// sideways part out of the walk, the rest of the stroke still points the
+/// way. Where the flow is stronger than the walk, aim as far upstream as the
+/// walk reaches (the track then still claws along the wanted line).
+fn aimAgainstCurrent(frame: Frame, position: v.Vec3, direction: v.Vec3, push: v.Vec3, speed: f32) v.Vec3 {
+    const wanted = v.normalize(.{ direction[0], direction[1], 0 });
+    var sideways = v.subtract(push, v.scale(wanted, v.dot(push, wanted)));
+    sideways[2] = 0;
+    const reach = @min(v.length(sideways), speed * 0.92);
+    if (v.length(sideways) > 0.01) sideways = v.scale(v.normalize(sideways), reach);
+    const along = @sqrt(@max(0, speed * speed - reach * reach));
+    const aimed = v.scale(v.subtract(v.scale(wanted, along), sideways), 1 / speed);
+    if (engine.integer("developer") >= 3) {
+        var text: [200]u8 = undefined;
+        engine.print(std.fmt.bufPrintZ(&text, "dk3 {s} current: t={d} pos={d:.0},{d:.0},{d:.0} flow={d:.0},{d:.0} walk={d:.0} track={d:.2},{d:.2} aim={d:.2},{d:.2}\n", .{ frame.label, frame.now, position[0], position[1], position[2], push[0], push[1], speed, wanted[0], wanted[1], aimed[0], aimed[1] }) catch "");
+    }
+    return v.scale(aimed, v.length(.{ direction[0], direction[1], 0 }));
 }
 /// How far ahead a body moving this fast still travels once it lets go,
 /// with a stride's margin: ground friction stops a runner within about
@@ -1811,7 +2003,29 @@ fn safeFloorNear(frame: Frame, position: v.Vec3) !?v.Vec3 {
     return null;
 }
 /// The nearest point at the same depth, reachable in a straight stroke, with air straight above.
-fn nearestAir(frame: Frame, position: v.Vec3, view: f32) !?v.Vec3 {
+fn nearestAir(frame: Frame, position: v.Vec3, view: f32, ahead: ?v.Vec3) !?v.Vec3 {
+    // A submerged route reaches its air at the far end of the run it is
+    // already making, and a passage bends: the eight fixed rays miss the
+    // opening whenever its leg turns. Sweep a fan about the way the body is
+    // going first (e1m2b's tank: the only air gap of the flooded lower level
+    // lies east along a corridor that stands on none of the rays, and with no
+    // air found the bot turned for the surface it had left twelve seconds
+    // earlier and lost a leg with two hundred and twenty units to go).
+    var heading: ?f32 = null;
+    if (ahead) |point| {
+        const toward = v.subtract(point, position);
+        const across = nav.horizontalDistance(toward, @splat(0));
+        if (across > 1) heading = std.math.atan2(toward[1], toward[0]);
+    }
+    if (heading) |facing| for ([_]f32{ 64, 128, 256, 384, 512, 768, 1024 }) |radius| {
+        for ([_]f32{ 0, -25, 25, -50, 50, -75, 75 }) |off| {
+            const angle = facing + off * std.math.pi / 180;
+            const point = v.add(position, .{ @cos(angle) * radius, @sin(angle) * radius, 0 });
+            const stroke = try frame.collision.trace(.{ .start = position, .end = point, .mins = frame.hull.mins, .maxs = frame.hull.maxs, .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
+            if (stroke.start_solid or stroke.fraction < 1) continue;
+            if (try airDistance(frame, point, view) != null) return point;
+        }
+    };
     for ([_]f32{ 64, 128, 256, 384, 512 }) |radius| {
         for (0..8) |step| {
             const angle = @as(f32, @floatFromInt(step)) * std.math.pi / 4;

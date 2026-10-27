@@ -48,5 +48,7 @@ pub fn pilotFrame(frame: Frame) !pilot.Frame {
 pub fn drive(motor: *Motor, frame: Frame, intent: Intent) !Report {
     const steering = try motor.steer(try pilotFrame(frame), intent);
     @import("bot_input.zig").submit(frame.index, steering.command, (try frame.world.get(frame.entity, data.Player)).delta_angles, frame.now);
-    return steering.report;
+    var report = steering.report;
+    report.input = .{ steering.command.forward, steering.command.right, steering.command.up };
+    return report;
 }
