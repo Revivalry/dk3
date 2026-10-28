@@ -51,6 +51,13 @@ local function target(value)
   return value
 end
 
+-- The player's own position, one axis at a time: a route states where it
+-- expects to stand after a move (`expect(x() < 1350, "through the doors")`)
+-- rather than trusting that the move returned.
+function x() return (dk3.position()) end
+function y() local _, east = dk3.position() return east end
+function z() local _, _, height = dk3.position() return height end
+
 function level(name, body)
   assert(type(name) == "string", "level name must be a map name")
   local function register(fn)
@@ -687,22 +694,40 @@ end
 -- neighbourhood is quiet: arming under fire trades the weapon for a death.
 function arm(low, radius)
   local tried = {}
+  local taken, seen, reasons = 0, 0, {}
+  local function why(reason) reasons[reason] = (reasons[reason] or 0) + 1 end
   for _ = 1, 4 do
     local x, y, z = dk3.position()
-    if dk3.hostiles(600, { x, y, z }) > 0 then break end
+    if dk3.hostiles(600, { x, y, z }) > 0 then
+      why("hostiles")
+      break
+    end
     local best, nearest
     for _, item in ipairs(dk3.pickups(radius or 900)) do
       local distance = (item.x - x) ^ 2 + (item.y - y) ^ 2
-      if item.ammo > 0 and not dk3.has_weapon(item.ammo) and not tried[item.id]
-          and math.abs(item.z - z) <= 128 and (not nearest or distance < nearest)
-          and dk3.reachable({ id = item.id }) and handy(item, x, y, z) then
-        best, nearest = item, distance
-      end
+      seen = seen + 1
+      -- The same tests in the same order, named: an arsenal that stays armed
+      -- with one weapon says nothing about why the rest were left, and the
+      -- answer is usually one of the last two (nothing walks to the pickup, or
+      -- nothing walks back).
+      if item.ammo <= 0 then why("not-a-weapon")
+      elseif dk3.has_weapon(item.ammo) then why("carried")
+      elseif tried[item.id] then why("tried")
+      elseif math.abs(item.z - z) > 128 then why("other-floor")
+      elseif nearest ~= nil and distance >= nearest then why("farther")
+      elseif not dk3.reachable({ id = item.id }) then why("unreachable")
+      elseif not handy(item, x, y, z) then why("long-way-back")
+      else best, nearest = item, distance end
     end
     if not best then break end
     tried[best.id] = true
+    taken = taken + 1
     fetch(best, 30)
   end
+  local parts = {}
+  for reason, count in pairs(reasons) do parts[#parts + 1] = reason .. "=" .. count end
+  table.sort(parts)
+  dk3.log(string.format("arm: %d taken of %d seen: %s", taken, seen, table.concat(parts, " ")))
   resupply(low or 40, radius or 900)
 end
 
