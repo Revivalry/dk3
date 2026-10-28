@@ -913,6 +913,19 @@ pub const Driver = struct {
                             result.intent.direct_radius = 300;
                         } else result.intent.destination = null;
                         if (now - running.started_ms > 45000) return failed(running, "the lift stayed above the rider");
+                    } else if (boardable) {
+                        // Deck at the rider's feet: step straight onto it. The
+                        // area graph is compiled without movers, so it has no
+                        // platform under a lift and a routed walk to the centre
+                        // leaves the ledge and drops the rider into the shaft.
+                        const inset = @min(24.0, (found.maxs[0] - found.mins[0]) / 2, (found.maxs[1] - found.mins[1]) / 2);
+                        var aboard: v.Vec3 = centre;
+                        inline for (0..2) |axis| aboard[axis] = @min(@max(pose.position[axis], found.mins[axis] + inset), found.maxs[axis] - inset);
+                        result.goal = aboard;
+                        result.intent.destination = aboard;
+                        result.intent.direct = true;
+                        result.intent.direct_radius = 32;
+                        if (stalled(frame, running, self.report, pose.position, aboard, now)) return stuck(running, self.report, pose.position);
                     } else {
                         result.goal = centre;
                         result.intent.destination = centre;

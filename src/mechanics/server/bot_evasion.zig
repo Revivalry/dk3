@@ -234,6 +234,31 @@ pub fn supportedUnder(frame: Frame, from: v.Vec3, to: v.Vec3, head: f32) !bool {
     }
     return true;
 }
+/// A hop armed for a stalled stride climbs the lip in the way; it is no
+/// decision to leave the floor. The way ahead must not fall away a long way
+/// below the feet or be a gas that kills on contact (the nitrogen under the
+/// icelab's floors: e1m6a's lab killed the bot on every attempt by a hop off
+/// the ledge beside the button's room). A way ahead that is solid — the lip
+/// itself, a wall — says nothing either way and is left alone.
+/// Where the route itself means to descend, the fall is the way: `drop` is how
+/// far below the feet the route's own step or goal lies (0 when it means to
+/// stay up), and the ground is sought that far down before the hop is refused.
+/// Only a gas still refuses it — e1m7a's corridor comes down over a kerb too
+/// high to step, and a hop is how a player goes over it.
+pub fn hopSafe(frame: Frame, position: v.Vec3, direction: v.Vec3, drop: f32) !bool {
+    const collision = frame.collision;
+    const feet = position[2] + frame.hull.mins[2];
+    const depth: f32 = 256 + @max(drop, 0);
+    for ([_]f32{ 32, 56 }) |step| {
+        const above: v.Vec3 = .{ position[0] + direction[0] * step, position[1] + direction[1] * step, position[2] - 8 };
+        const down = try collision.trace(.{ .start = above, .end = .{ above[0], above[1], above[2] - depth }, .mins = @splat(0), .maxs = @splat(0), .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
+        if (down.start_solid or down.all_solid) continue;
+        if (down.fraction == 1 or down.normal[2] < 0.5) return false;
+        if (drop <= 0 and down.end[2] < feet - 64) return false;
+        if (try collision.contents(.{ down.end[0], down.end[1], down.end[2] + 8 }, frame.slot) & (c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_NITRO) != 0) return false;
+    }
+    return true;
+}
 /// Sidestep across the enemy's line of fire, alternating sides, tethered to
 /// the position the route chose to hold.
 pub fn strafe(frame: Frame, position: v.Vec3, enemy: v.Vec3, anchor: v.Vec3, side: f32, tethered: bool, arena: ?[2][2]f32, avoid: *const fn (Frame, v.Vec3, v.Vec3) anyerror!bool) !?v.Vec3 {
