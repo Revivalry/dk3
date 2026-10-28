@@ -325,6 +325,15 @@ pub const Pilot = struct {
     escape_search_ms: i64 = 0,
     direct_mark: v.Vec3 = @splat(0),
     direct_ms: i64 = 0,
+    /// Ground the area graph had a way from, two seconds behind the body, and
+    /// when it was noted. Pressed against a closed control a body has no route
+    /// from and cannot operate either: its use line starts inside the thing it
+    /// presses. A stride back is the way a player reads the same situation, so
+    /// the last ground that was worth standing on is kept to step back to.
+    routable_point: v.Vec3 = @splat(0),
+    routable_ms: i64 = 0,
+    /// Not before when standing off from an unroutable spot may be tried again.
+    retreat_until: i64 = 0,
     /// Route step the body is walked to and the last time it was touched: a
     /// step behind the goal must be dropped, not aimed back at.
     waypoint_point: v.Vec3 = @splat(0),
@@ -674,6 +683,12 @@ pub const Pilot = struct {
                         }
                     },
                 };
+                // Kept two seconds in arrears, so stepping back to it is a
+                // stride rather than a step on one's own toes.
+                if (frame.now >= self.routable_ms + 2000 and nav.horizontalDistance(pose.position, self.routable_point) > 8) {
+                    self.routable_point = pose.position;
+                    self.routable_ms = frame.now;
+                }
                 ladder = waypoint.ladder;
                 const hull = (try world.get(entity, data.Body)).*;
                 crouch = waypoint.crouch or try steering.crouch(frame.collision, pose.position, waypoint.point, hull.mins, .{ hull.maxs[0], hull.maxs[1], frame.hull.maxs[2] }, frame.slot, hull.collision_mask);
@@ -734,6 +749,24 @@ pub const Pilot = struct {
             }
             report.blocked = self.route.blocked;
             report.routeless = routeless;
+            // No route, nothing to operate, no ground under the route: walk
+            // back to where the graph last knew where it was. Pressing on from
+            // a spot no area contains produces no input at all — the body just
+            // stands in the doorway that shoved it there (e1m5b's freezer,
+            // whose closing leaf left it wedged for the rest of the run).
+            if (report.no_route and !report.holding and self.control == null and self.passage == null and
+                player.water_level < 2 and frame.now - self.direct_ms >= 1500 and frame.now >= self.retreat_until)
+            {
+                const back = nav.horizontalDistance(pose.position, self.routable_point);
+                if (self.routable_ms != 0 and frame.now - self.routable_ms <= 20000 and back > 40 and back < 400) {
+                    self.retreat_until = frame.now + 2000;
+                    movement = v.subtract(self.routable_point, pose.position);
+                    if (engine.integer("developer") >= 2) {
+                        var text: [192]u8 = undefined;
+                        engine.print(std.fmt.bufPrintZ(&text, "dk3 {s}: t={d} event=retreat pos={d:.0},{d:.0},{d:.0} to={d:.0},{d:.0},{d:.0}\n", .{ frame.label, frame.now, pose.position[0], pose.position[1], pose.position[2], self.routable_point[0], self.routable_point[1], self.routable_point[2] }) catch "");
+                    }
+                }
+            }
             // A stride that stalls with input held means a lip or step the
             // route did not mark: hop it, the way a player would.
             // Horizontal only: bobbing at a surface or hopping in place is no progress.
