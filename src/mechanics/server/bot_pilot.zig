@@ -1137,6 +1137,15 @@ pub const Pilot = struct {
             const held_goal = intent.destination orelse face_point;
             engine.print(std.fmt.bufPrintZ(&aim_text, "dk3 {s} aim: t={d} pos={d:.0},{d:.0},{d:.0} face={d:.0},{d:.0},{d:.0} dest={d:.0},{d:.0},{d:.0} use={d} centred={d} hit={d} fraction={d:.2}\n", .{ frame.label, frame.now, pose.position[0], pose.position[1], pose.position[2], face_point[0], face_point[1], face_point[2], held_goal[0], held_goal[1], held_goal[2], want, @intFromBool(centred), sight.entity, sight.fraction }) catch "");
         };
+        // The same for a shot ordered at an object: what the view answers to,
+        // and which of the pilot's own checks withholds the trigger (a weapon
+        // not yet settled in the hand, a blast that would catch the shooter).
+        if (engine.integer("developer") >= 3) if (intent.use_slot == null) if (intent.shoot_slot) |want| if (intent.face) |face_point| {
+            var aim_text: [288]u8 = undefined;
+            const sight = try frame.collision.trace(.{ .start = eye, .end = v.add(eye, v.scale(view_forward, @max(96, v.length(aim) + 8))), .mins = @splat(0), .maxs = @splat(0), .slot = frame.slot, .mask = c.MASK_SHOT });
+            const held_goal = intent.destination orelse face_point;
+            engine.print(std.fmt.bufPrintZ(&aim_text, "dk3 {s} aim: t={d} pos={d:.0},{d:.0},{d:.0} face={d:.0},{d:.0},{d:.0} dest={d:.0},{d:.0},{d:.0} shoot={d} centred={d} hit={d} fraction={d:.2} selected={d} weapon={d} attack={d} discharge={d} safe={d}\n", .{ frame.label, frame.now, pose.position[0], pose.position[1], pose.position[2], face_point[0], face_point[1], face_point[2], held_goal[0], held_goal[1], held_goal[2], want, @intFromBool(centred), sight.entity, sight.fraction, selected, loadout.weapon, @intFromBool(combat.attack(loadout, frame.table, v.length(aim))), @intFromBool(discharge), @intFromBool(try objectBlastSafe(frame, eye, angles, loadout.weapon, want, v.add(eye, aim))) }) catch "");
+        };
         // Locomotion follows the route heading, independent of where the view
         // points: player movement is applied relative to the view the command
         // carries, so the heading is resolved against that view (the yaw sent
@@ -2106,12 +2115,15 @@ fn reachableNearImpl(self: *Pilot, frame: Frame, position: v.Vec3, goal: v.Vec3,
     // Nearest the goal first, and only where the last stretch to it is a
     // supported straight walk (not the far side of a wall).
     const hull = (try frame.world.get(frame.entity, data.Body)).*;
+    const diagnostic = engine.integer("developer") >= 3;
+    var probed: usize = 0;
     for ([_]f32{ 32, 64, 96 }) |radius| {
         var best: ?v.Vec3 = null;
         var shortest: f32 = std.math.inf(f32);
         for (0..8) |heading| {
             const angle = @as(f32, @floatFromInt(heading)) * std.math.pi / 4;
             const candidate = v.add(goal, .{ @cos(angle) * radius, @sin(angle) * radius, 0 });
+            if (diagnostic) probed += 1;
             if (try frame.service.next(.{ .position = position, .destination = candidate, .slot = frame.slot, .player = true }) == null) continue;
             // Raised a little: goal points sit on the floor plane.
             // The goal itself may be pressed against a console (a touch
@@ -2123,6 +2135,10 @@ fn reachableNearImpl(self: *Pilot, frame: Frame, position: v.Vec3, goal: v.Vec3,
             if (span >= shortest) continue;
             shortest = span;
             best = candidate;
+        }
+        if (diagnostic) {
+            var text: [224]u8 = undefined;
+            engine.print(std.fmt.bufPrintZ(&text, "dk3 {s}: t={d} event=near radius={d:.0} probed={d} best={d:.0},{d:.0},{d:.0}\n", .{ frame.label, frame.now, radius, probed, if (best) |point| point[0] else 0, if (best) |point| point[1] else 0, if (best) |point| point[2] else 0 }) catch "");
         }
         if (best) |point| {
             self.near_point = point;

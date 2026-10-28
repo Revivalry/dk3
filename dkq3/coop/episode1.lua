@@ -892,6 +892,12 @@ level("e1m3b", function(visit, resumed)
       try(function() clear { radius = 450, timeout = 25, hold = true } end)
     end },
     { "console", function()
+      -- The arrival floor's ammunition: the shotcycler holds thirty shells and
+      -- a box is twenty-four, so a fight fought without the next box in sight is
+      -- a fight fought with an empty gun. The box by the steam pool (#310) and
+      -- the two by the octagon's stairs (#130, #385) lie below the floor plates
+      -- -- no area of the graph holds them -- so only the cells and the pack.
+      for _, item in ipairs({ 159, 61 }) do try(pickup, { index = item }, { timeout = 20 }) end
       use { index = 186 }
       wait_until(function() return dk3.mover { index = 255 } == "open" end, { timeout = 20, reason = "big door open" })
     end },
@@ -949,8 +955,10 @@ level("e1m3b", function(visit, resumed)
       use { index = 198 }                    -- the console's operate button
       wait(5)
       use { index = 133 }                    -- the lever the broken machinery bared
-      -- Guards and inmates hold the lift's top: the packs on this floor first.
-      for _, pack in ipairs({ 409, 156, 212, 158 }) do try(pickup, { index = pack }, { timeout = 20 }) end
+      -- Guards and inmates hold the lift's top: everything this floor holds
+      -- first -- two health packs and a box beside them, and the shells and ion
+      -- cells by the west wall, the cycler's last refill before the lift.
+      for _, pack in ipairs({ 409, 68, 67, 156, 212, 158 }) do try(pickup, { index = pack }, { timeout = 20 }) end
       wait(2)
       -- Under the jammed door it raised part way, crawling.
       move({ -1680, 1824, -296 }, { radius = 24, timeout = 30 })
@@ -972,13 +980,24 @@ level("e1m3b", function(visit, resumed)
       end
       use { index = 357 }
       ride { index = 173 }
-      -- Fought from inside the cage (its walls are cover), the inmate by
-      -- the landing first.
-      try(function() kill({ index = 64 }, { hold = true, timeout = 30 }) end)
-      try(function() clear { radius = 700, timeout = 45, hold = true } end)
-      -- Carried back down meanwhile (a press of its button in the fight).
+      -- Fought on the landing the cage carried the bot up to (its walls are
+      -- cover), the inmate by the landing first. The arena keeps the chase on
+      -- this floor: the shaft is a fall of two hundred units, and a rider
+      -- carried back down has to call the cage down and ride again -- ride
+      -- waits clear of a lift above it instead of chasing it, and a cage with
+      -- nobody under it does not come back down on its own.
+      for _ = 1, 3 do
+        try(function() kill({ index = 64 }, { hold = true, timeout = 30 }) end)
+        try(function()
+          clear { radius = 700, timeout = 45, hold = true, arena = { { -2100, 1300 }, { -1380, 1620 } } }
+        end)
+        local _, _, z = dk3.position()
+        if z >= -100 then break end
+        use { index = 357 }
+        ride { index = 173 }
+      end
       local _, _, z = dk3.position()
-      if z < -100 then ride { index = 173 } end
+      expect(z >= -100, "on the lift's upper landing")
     end },
     { "red room", checkpoint = true, function()
       -- Down the hall to the red room where Superfly hangs: his scene.
