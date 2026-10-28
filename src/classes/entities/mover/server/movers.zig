@@ -330,11 +330,17 @@ pub fn step(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
             moves[count] = .{ .entity = part, .destination = transform };
             count += 1;
         }
-        if (try pusher.push(world, slots, projections, moves[0..count], now, elapsed)) |blocker| {
+        // A button press is a timed press in the reference: the mover travel that
+        // carries it traces without monsters, so an actor standing in the panel - the
+        // worker typing at the console e1m3b's door button is set in - never holds the
+        // press up. The brush still cannot commit into him, but the press arrives on its
+        // authored clock and fires its target, which is the difference between a stuck
+        // level and a door that opens.
+        const button = eq((try world.get(entity, data.MapObject)).classname, "func_button");
+        if (try pusher.push(world, slots, projections, moves[0..count], now, elapsed, if (button) .running else .held)) |blocker| {
             // Daikatana's button_blocked does nothing: a pressed button neither
-            // hurts nor gives way; it waits until whatever holds it has moved
-            // (e1m3b's worker typing at the console a button is set in).
-            if (eq((try world.get(entity, data.MapObject)).classname, "func_button")) continue;
+            // hurts nor gives way.
+            if (button) continue;
             if (engine.integer("developer") >= 2) {
                 var text: [160]u8 = undefined;
                 const blocker_pose = world.get(blocker, data.Transform) catch null;
