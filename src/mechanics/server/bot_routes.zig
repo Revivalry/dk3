@@ -432,7 +432,11 @@ pub fn liftStep(world: *data.World, slots: *Slots, projections: []const @import(
     if ((below.fraction < 1 and below.entity == lift_slot) or level) return .{ .board = .{ middle[0], middle[1], entrance[2] } };
     if (!rider.operate) return .away;
     if (try seekObstacle(world, slots, projections, actor, lift, service, now, 0, false, &dependencies, 0)) |control| return .{ .operate = control };
-    return .wait;
+    // Nothing to board it with and nothing to call it by: the graph's platform
+    // link is not a lift at all (e1m7a's hall counts the fallen cable that
+    // story-drops across the room as a platform between its two floors). Give
+    // up the lift and let the route be planned without one.
+    return .away;
 }
 /// A button riding on `lift` (inside its footprint) whose chain reaches it,
 /// with a standing point to press it from.

@@ -1641,9 +1641,45 @@ level("e1m6a", function(visit, resumed)
       move({ 1380, 560, -248 }, { timeout = 60 })
       try(pickup, { index = 23 }, { timeout = 20 })
       use { index = 97 }
+      -- (The rotor seals a shaft of nitrogen: the threshold it was pressed
+      --  from fills with gas the moment it turns, two damage a tick. Back
+      --  along the way in — the way that was walked — for the lift's run.)
+      move({ 1345, 450, -248 }, { direct = true, radius = 40, timeout = 15 })
       wait(15)
-      try(regroup, 250, 60)
-      progress("e1m6b")
+      -- The way out is not on this floor: down the ladder shaft at the lab
+      -- room's east edge to the plant floor over the nitrogen's water, east
+      -- and north round it to the lift, and up in the lift to the rooms the
+      -- exit stands in. The area graph reaches every step of that; only the
+      -- two door halves closing the exit's corridor (44 seconds to slide,
+      -- from the button on their near side) it cannot express, being built
+      -- with them shut.
+      try(regroup, 400, 90)
+      move({ 1546, 470, -248 }, { timeout = 45 })
+      move({ 1512, 552, -372 }, { timeout = 120 })
+      -- Four deathspheres hold the plant floor, two of them not roused until
+      -- their neighbours are: each by name, from the floor they hover over.
+      for _, foe in ipairs({ 345, 346, 171, 347 }) do
+        try(kill, { index = foe }, { timeout = 30 })
+      end
+      move({ 980, 212, -312 }, { timeout = 120 })
+      move({ 1768, -64, -372 }, { timeout = 150 })
+      -- The lift stands in a shaft sunk below the plant floor: its deck rests
+      -- eight below the lip it travels through, so it is stepped down onto,
+      -- not climbed to. (The area graph, compiled without movers, offers the
+      -- pit floor under the deck -- hence the ride's own straight step.)
+      ride { index = 98 }
+      -- A mishimaguard and a fatworker hold the landing between the lift and
+      -- the button; the mishimaguard by the corridor comes to the noise.
+      for _, foe in ipairs({ 59, 167, 307 }) do
+        try(kill, { index = foe }, { timeout = 30 })
+      end
+      move({ 2035, -228, 24 }, { timeout = 90 })
+      use { index = 75 }
+      wait_until(function() return dk3.mover { index = 129 } ~= "closed" end,
+                 { timeout = 45, reason = "the corridor's door halves sliding back" })
+      try(regroup, 300, 120)
+      move({ 2168, -312, 24 }, { direct = true, radius = 48, timeout = 30 })
+      exit "e1m6b"
     end },
   }(visit, resumed)
 end)
@@ -1897,9 +1933,16 @@ level("e1m7a", function(visit, resumed)
       try(shoot, { index = 53 }, { timeout = 30 })
       use { index = 612 }
       -- Out of the cage, off the corridor's north edge to the floor below
-      -- and through the doors before they shut (10 s).
-      path({ { -660, -2160, 480 }, { -620, -2080, 216 }, { -605, -1960, 216 }, { -605, -1880, 216 } },
-           { direct = true, radius = 24, timeout = 6, fight = false })
+      -- (a kerb at the edge too high to step: a hop over it and down) and
+      -- through the doors before they shut (10 s — and the keypad below
+      -- targets the same wire, so a missed window is opened again).
+      for _ = 1, 3 do
+        if z() < 300 then break end
+        try(move, { -660, -2160, 480 }, { direct = true, radius = 32, timeout = 10, fight = false })
+        try(move, { -620, -2080, 216 }, { direct = true, radius = 40, timeout = 10, fight = false })
+      end
+      expect(z() < 300, "not down off the corridor's north edge")
+      path({ { -605, -1960, 216 }, { -605, -1880, 216 } }, { direct = true, radius = 24, timeout = 10 })
       try(function() clear { radius = 700, timeout = 60 } end)
       use { index = 610 }
     end },
@@ -1911,8 +1954,23 @@ level("e1m7a", function(visit, resumed)
       dk3.sidekick("all", "stay")
       move({ -700, -1390, 96 }, { timeout = 60 })
       use { index = 208 }
+      -- Over the open hatch and down into the pipe (a drop of 130: the pipe's
+      -- floor is the floor hereafter). The channel is flooded to its ceiling
+      -- and sealed, and the ceiling is a breakable plate (health 10) over the
+      -- channel's east end: a shot through its underside is the only way out
+      -- of the water, and up through the hole is the way on.
       move({ -230, -1440, -30 }, { timeout = 60 })
-      try(shoot, { index = 211 }, { timeout = 20 })
+      -- (Ducked: where the plate's west end meets the channel the ceiling
+      -- presses down to the crown of a standing head, and a hull that rises
+      -- there is pinned; below the lip the lane to fire up lies open.)
+      for _ = 1, 3 do
+        if z() > 60 then break end
+        try(move, { -208, -1436, -44 }, { direct = true, radius = 28, crouch = true, timeout = 30 })
+        try(shoot, { index = 211 }, { timeout = 30 })
+        try(move, { -208, -1436, 104 }, { direct = true, radius = 48, timeout = 25 })
+        try(move, { -177, -1448, 104 }, { direct = true, radius = 40, timeout = 25 })
+      end
+      expect(z() > 60, "not out of the flooded channel")
       -- Up the ramp past the save gem: the fan's mechanism, shot from in
       -- front of it, stops the fan, and the way drops past it.
       move({ 300, -880, 216 }, { timeout = 60, cautious = true })
@@ -1930,16 +1988,35 @@ level("e1m7a", function(visit, resumed)
       expect(x() < 240, "not into the duct behind the fan")
       move({ 170, -800, 88 }, { direct = true, radius = 24, timeout = 8 })   -- down its shaft
     end },
-    { "hatch", checkpoint = true, function()
-      -- West along the hallway (its guards on the way) to the ladder at its
-      -- end and the hatch at the ladder's top, opened by hand.
-      path({ { 0, -780, 88 }, { -500, -780, 88 }, { -864, -790, 88 } }, { direct = true, radius = 24, timeout = 20 })
-      move({ -864, -872, 88 }, { direct = true, radius = 12, timeout = 10 })
-      try(move, { -864, -880, 200 }, { direct = true, radius = 16, timeout = 8 })
-      local hx, hy, hz = dk3.position()
-      dk3.log(string.format("ladder top at %.0f,%.0f,%.0f hatch=%s", hx, hy, hz, tostring(dk3.mover({ index = 76 }))))
-      try(use, { index = 76 }, { timeout = 10 })
-      dk3.log("hatch after use: " .. tostring(dk3.mover({ index = 76 })))
+    { "ladder", checkpoint = true, function()
+      -- Up the ladder in the hall's east wall to the ledge that runs above it
+      -- and west along that ledge. The niche ladder at the hall's west end is
+      -- no way up: its top is shut by a hatch and a wall panel (76, 77 — the
+      -- pair t502), and the button of that pair stands on the ledge above, so
+      -- the niche is a way down, not a way on.
+      --
+      -- The graph's own ladder step is asked for from a goal that stands well
+      -- back on the ledge. A goal at the ladder's own face is answered by the
+      -- top of the ladder's place — that volume is playerclip to its last
+      -- unit, so a hull dropped down it stops at its lid and takes the lid for
+      -- the floor — and the body is let go and comes back down into the hall.
+      -- First a stride to the rungs' own column. The graph's ladder step
+      -- stands at the place's east corner; pressed there the body's head finds
+      -- a beam at 176 instead of rungs, and the climb hangs on the face
+      -- gaining nothing for its whole life. The rungs themselves are at x=100.
+      move({ 100, -860, 88 }, { direct = true, radius = 16, timeout = 12 })
+      move({ 100, -806, 216 }, { timeout = 45 })
+      expect(z() > 180, "not up the hall's ladder")
+      -- Along the ledge to the cables that hold the plate which the story
+      -- drops across the room (four of them, a hundred apiece, one firing
+      -- place under them covers all). The ledge gives out past here and the
+      -- plate's fall brings the rider down with it: the way on from the
+      -- ledge's west end is the open work of this hall.
+      move({ -200, -806, 224 }, { radius = 24, timeout = 30 })
+      expect(z() > 180, "not along the ledge above the hall")
+      for _, foe in ipairs({ 203, 205, 206, 204 }) do
+        try(shoot, { index = foe }, { timeout = 30 })
+      end
       progress("e1m7b")
     end },
   }(visit, resumed)

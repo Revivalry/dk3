@@ -298,6 +298,8 @@ pub const Pilot = struct {
     seed: u32 = 0x5eed,
     step_ms: i64 = 0,
     unstick_until: i64 = 0,
+    /// Last stall of a hop refused for the ground beyond the lip (told once a second).
+    hop_told_ms: i64 = 0,
     /// Not before when the next shake loose may be armed. Under water only the
     /// route's own progress can be measured and a dive makes none to count, so
     /// without this the shake is re-armed the moment it ends and never hands
@@ -788,9 +790,27 @@ pub const Pilot = struct {
             // not stuck: a hop there only lands beside it.
             const on_mover = player.ground_entity < frame.slots.occupants.len and if (frame.slots.occupants[player.ground_entity]) |ground| (world.get(ground, data.Mover) catch null) != null or @import("platforms.zig").pathPhase(world, ground) != null else false;
             if ((frame.now - self.direct_ms > 700 or sliding) and !(on_mover and intent.direct) and player.ground_entity != c.ENTITYNUM_NONE and player.water_level < 2 and frame.now >= self.jump_ready and v.length(.{ movement[0], movement[1], 0 }) > 4) {
-                self.jump_until = frame.now + 200;
-                self.jump_ready = frame.now + 900;
+                // The hop is for the lip in the way, not for the edge behind
+                // it: a stalled stride by a long drop or a lethal gas keeps
+                // its feet on the floor and looks for another way instead.
                 report.blocked = true;
+                const heading = v.normalize(.{ movement[0], movement[1], 0 });
+                // A route that means to come down (a step or a goal well below
+                // the feet) may take its own drop; a stalled stride by an edge
+                // it never asked for may not. The fall the route accepts is how
+                // far down the hop looks for ground.
+                const hop_drop: f32 = if (movement[2] < -56 or if (self.route.waypoint) |waypoint| waypoint.drop else false) -movement[2] else 0;
+                if (try evasion.hopSafe(frame, pose.position, heading, hop_drop)) {
+                    self.jump_until = frame.now + 200;
+                    self.jump_ready = frame.now + 900;
+                } else {
+                    self.jump_ready = frame.now + 400;
+                    if (engine.integer("developer") >= 2 and frame.now >= self.hop_told_ms) {
+                        self.hop_told_ms = frame.now + 1000;
+                        var text: [192]u8 = undefined;
+                        engine.print(std.fmt.bufPrintZ(&text, "dk3 {s}: t={d} event=hop-refused pos={d:.0},{d:.0},{d:.0} toward={d:.0},{d:.0},{d:.0}\n", .{ frame.label, frame.now, pose.position[0], pose.position[1], pose.position[2], pose.position[0] + heading[0] * 40, pose.position[1] + heading[1] * 40, pose.position[2] }) catch "");
+                    }
+                }
             }
             const changing_floor = self.control == null and player.ground_entity != c.ENTITYNUM_NONE and @abs(movement[2]) > 18;
             // Circling the same route point without the route moving on
@@ -881,13 +901,23 @@ pub const Pilot = struct {
             };
         };
 
-        // Ladders the route steers straight at (rungs that slide out of a
-        // wall are not in the area graph): with the goal well above and a
-        // climbable face within reach, press into it and climb.
-        if (!ladder and movement[2] > 24 and player.water_level < 2) if (try climbable(frame, pose.position)) |normal| {
+        // A climbable face the body already touches, whether the area graph
+        // named the step or the route steers at it itself (rungs that slide
+        // out of a wall are not in the graph): keep the rise and take the
+        // stride into the face out. Rungs stand out of the wall as solid
+        // brushes as deep as the ladder's whole place (e1m7a's hall ladder:
+        // rungs 8 deep every 28 units, so the gaps between them are 20 tall
+        // against a body 56 tall) and a body pressed into them is buried
+        // between two rungs, coming no higher than the second. The way up a
+        // ladder is against its face, in front of the rungs, which is exactly
+        // where the area graph puts a ladder step's spot; walking into the
+        // wall already brings the body there, so nothing presses it further.
+        if (movement[2] > 8 and (ladder or movement[2] > 24) and player.water_level < 2) if (try climbable(frame, pose.position)) |normal| {
             const rise = movement[2];
-            movement = v.scale(normal, -16);
-            movement[2] = rise;
+            var flat = v.subtract(movement, .{ 0, 0, rise });
+            const into = v.dot(flat, normal);
+            if (into < 0) flat = v.add(flat, v.scale(normal, into));
+            movement = .{ flat[0], flat[1], rise };
             ladder = true;
         };
 
@@ -1233,6 +1263,13 @@ pub const Pilot = struct {
         // Walking along a lethal volume (a floor fan's blades at the edge of
         // the way): keep a hand's breadth off it, as a player does.
         if (player.ground_entity != c.ENTITYNUM_NONE and v.length(direction) > 0.01) direction = try leanFromHazards(frame, pose.position, direction, head, nav.horizontalDistance(movement, @splat(0)));
+        // A ledge whose lip over lethal liquid closes on the way: the area graph
+        // walks an area's centre, and on a catwalk cut by a diagonal edge the
+        // centre runs within a couple of units of the drop (e1m6c's west
+        // ring). A hull that keeps only part of its width on the plank is
+        // supported until it keeps none, so the run holds the edge right up
+        // to the fall. Give the edge a wide berth, as a player does.
+        if (player.ground_entity != c.ENTITYNUM_NONE and player.water_level < 2 and v.length(direction) > 0.01 and !intent.direct) direction = try leanFromLiquidEdge(frame, pose.position, direction, head);
         // The wide berth by lethal hazards is against knockback: in a fight.
         // Out of one, the route's own line along the edge (beside e1m4b's
         // floor fans) is walked.
@@ -1863,6 +1900,30 @@ fn leanFromHazards(frame: Frame, position: v.Vec3, direction: v.Vec3, head: f32,
     if (!try evasion.supportedUnder(frame, position, v.add(position, v.scale(v.normalize(bent), 40)), head)) return direction;
     return v.scale(v.normalize(bent), v.length(.{ direction[0], direction[1], 0 }));
 }
+/// Whether lethal liquid lies straight below `at` with nothing solid between:
+/// an open lip over a pool rather than a floor. A slim point drop, because it
+/// asks what is under one spot, which is what an edge is made of.
+fn edgeOfLethal(frame: Frame, at: v.Vec3) !bool {
+    const down = try frame.collision.trace(.{ .start = at, .end = .{ at[0], at[1], at[2] - 320 }, .mins = @splat(0), .maxs = @splat(0), .slot = frame.slot, .mask = @as(u32, c.MASK_PLAYERSOLID) | lethal_liquids });
+    if (down.start_solid or down.all_solid or down.fraction == 1) return false;
+    return down.contents & lethal_liquids != 0;
+}
+/// Bends a heading away from a lethal-liquid edge that runs beside the player.
+/// One side only: an edge with liquid on both sides is a beam the route meant
+/// to cross, and no side is not an edge. The lean is small (a quarter) and
+/// only taken where the bent stride still has floor all the way.
+fn leanFromLiquidEdge(frame: Frame, position: v.Vec3, direction: v.Vec3, head: f32) !v.Vec3 {
+    const ahead = v.normalize(.{ direction[0], direction[1], 0 });
+    if (v.length(ahead) < 0.5) return direction;
+    const side: v.Vec3 = .{ -ahead[1], ahead[0], 0 };
+    const left = try edgeOfLethal(frame, v.add(position, v.scale(side, 44)));
+    const right = try edgeOfLethal(frame, v.add(position, v.scale(side, -44)));
+    if (left == right) return direction;
+    const off = if (left) v.scale(side, -1) else side;
+    const bent = v.normalize(v.add(ahead, v.scale(off, 0.4)));
+    if (!try evasion.supportedUnder(frame, position, v.add(position, v.scale(bent, 48)), head)) return direction;
+    return v.scale(bent, v.length(.{ direction[0], direction[1], 0 }));
+}
 /// An actor (not geometry or a mover) right ahead of the player's stride.
 fn actorAhead(frame: Frame, position: v.Vec3, movement: v.Vec3) !bool {
     const flat: v.Vec3 = .{ movement[0], movement[1], 0 };
@@ -2042,7 +2103,13 @@ fn lethalAlong(frame: Frame, position: v.Vec3, heading: v.Vec3, reach: f32) !boo
     var along: f32 = 24;
     while (true) : (along += 24) {
         const ahead = v.add(position, v.scale(flat, @min(along, limit)));
-        const below = try frame.collision.trace(.{ .start = ahead, .end = v.add(ahead, .{ 0, 0, -256 }), .mins = .{ -4, -4, 0 }, .maxs = .{ 4, 4, 0 }, .slot = frame.slot, .mask = @as(u32, c.MASK_PLAYERSOLID) | lethal_liquids });
+        // Footing is what the body's hull stands on, not what a slim column
+        // happens to touch: a catwalk's lip over the nitrogen carries the hull
+        // while a narrow probe down its middle finds only the gas beneath, and
+        // a routed step along such a lip then refuses itself for ever (e1m6c's
+        // ring). Where the body cannot even stand, the slim probe still answers.
+        var below = try frame.collision.trace(.{ .start = ahead, .end = v.add(ahead, .{ 0, 0, -256 }), .mins = frame.hull.mins, .maxs = frame.hull.maxs, .slot = frame.slot, .mask = @as(u32, c.MASK_PLAYERSOLID) | lethal_liquids });
+        if (below.start_solid or below.all_solid) below = try frame.collision.trace(.{ .start = ahead, .end = v.add(ahead, .{ 0, 0, -256 }), .mins = .{ -4, -4, 0 }, .maxs = .{ 4, 4, 0 }, .slot = frame.slot, .mask = @as(u32, c.MASK_PLAYERSOLID) | lethal_liquids });
         if (below.fraction < 1 and below.contents & lethal_liquids != 0) return true;
         if (along >= limit) return false;
     }
