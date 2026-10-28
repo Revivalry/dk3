@@ -185,7 +185,7 @@ pub fn step(world: *data.World, slots: *const Slots, projections: []abi.EntityPr
         if (@import("../../../../mechanics/server/attachments.zig").attached(world, entity)) continue;
         const destination = if (train.phase == .moving) data.Transform{ .position = train.position.sample(now), .angles = train.angles.sample(now) } else (try world.get(entity, data.Transform)).*;
         const move: @import("../../../../mechanics/server/pusher.zig").Move = .{ .entity = entity, .destination = destination };
-        if (try @import("../../../../mechanics/server/pusher.zig").push(world, slots, projections, &.{move}, now, elapsed)) |blocker| {
+        if (try @import("../../../../mechanics/server/pusher.zig").push(world, slots, projections, &.{move}, now, elapsed, .held)) |blocker| {
             _ = try @import("../../../../mechanics/server/damage.zig").apply(world, blocker, train.damage, now, .{});
         }
     }
