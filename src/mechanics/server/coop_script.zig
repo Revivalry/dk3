@@ -537,7 +537,7 @@ fn reach(frame: Frame, found: targets.Resolved, kind: []const u8) !bool {
         const action: @FieldType(@import("bot_routes.zig").Control, "action") = if (std.mem.eql(u8, kind, "shoot")) .shoot else if (std.mem.eql(u8, kind, "touch")) .touch else .use;
         var obstructions: [@import("bot_routes.zig").approach_points]u16 = @splat(c.ENTITYNUM_NONE);
         const diagnostic = engine.integer("developer") >= 2;
-        return try @import("bot_routes.zig").approach(world, control, frame.entity, action, frame.service, frame.projections, diagnostic, &obstructions) != null;
+        return try @import("bot_routes.zig").approach(world, control, frame.entity, action, frame.service, frame.projections, diagnostic, &obstructions, null) != null;
     };
     return try frame.service.next(.{ .position = origin, .destination = try standingGoal(frame, found), .slot = frame.index, .player = true, .allow_slime_escape = true }) != null;
 }

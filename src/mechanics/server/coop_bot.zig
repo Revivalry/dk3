@@ -763,6 +763,23 @@ pub const Driver = struct {
                 // part of it.
                 var aim_at: ?v.Vec3 = null;
                 const spread = v.scale(v.subtract(found.maxs, found.mins), 0.3);
+                // A blast round leaves from the muzzle below the eye and bursts
+                // on the first thing it meets: a shot is aimed only where its own
+                // round can travel, and a stand that cannot send it there is not
+                // a firing position but an obstacle to walk around.
+                var shot_lane: ?@import("bot_routes.zig").Lane = null;
+                if (action.op == .shoot) {
+                    const loadout = (try world.get(frame.entity, data.Weapons)).*;
+                    const gun: i32 = if (action.weapon != 0) action.weapon else loadout.weapon;
+                    if (gun >= 0 and gun < 32) if (@import("weapon_catalog").find(@intCast(gun))) |entry| {
+                        const flight = entry.spec.projectile;
+                        if (entry.spec.splash_hazard) shot_lane = .{
+                            .muzzle = @import("weapon_catalog").flightLaunch(@intCast(gun), frame.clients.weapon_table.entries[@intCast(gun)], 0, 0).muzzle,
+                            .reach = flight.splash_radius,
+                            .direct = flight.direct_scale > 0,
+                        };
+                    };
+                }
                 // A shot may name the part of a long target to aim at (a
                 // window's far end, away from the party): tried first.
                 var preferred: v.Vec3 = @splat(0);
@@ -770,18 +787,35 @@ pub const Driver = struct {
                 if (named) for (0..3) |axis| {
                     preferred[axis] = std.math.clamp(action.around.?[axis], found.mins[axis] + 1, found.maxs[axis] - 1) - found.point[axis];
                 };
-                if (!station_far) for ([_]v.Vec3{ preferred, .{ 0, 0, 0 }, .{ spread[0], 0, 0 }, .{ -spread[0], 0, 0 }, .{ 0, spread[1], 0 }, .{ 0, -spread[1], 0 }, .{ 0, 0, spread[2] }, .{ 0, 0, -spread[2] } }, 0..) |offset, tried| {
-                    if (tried == 0 and !named) continue;
-                    const point = v.add(found.point, offset);
-                    if (v.length(v.subtract(point, eye)) > reach) continue;
-                    const bolt: f32 = if (action.op == .shoot) 3 else 0;
-                    // Trigger volumes are seen through (a music trigger across
-                    // a doorway, e1m4c), unless the control is one.
-                    const own_trigger = frame.projections[slot].shared.contents & c.CONTENTS_TRIGGER != 0;
-                    const sight = try engine.collisionService().trace(.{ .start = eye, .end = point, .mins = @splat(-bolt), .maxs = @splat(bolt), .slot = frame.index, .mask = if (own_trigger) c.MASK_SHOT | c.CONTENTS_TRIGGER else c.MASK_SHOT });
-                    if (sight.entity == slot or sight.fraction == 1) {
-                        aim_at = point;
-                        break;
+                const aim_points = [_]v.Vec3{ preferred, .{ 0, 0, 0 }, .{ spread[0], 0, 0 }, .{ -spread[0], 0, 0 }, .{ 0, spread[1], 0 }, .{ 0, -spread[1], 0 }, .{ 0, 0, spread[2] }, .{ 0, 0, -spread[2] } };
+                // Two passes over the same parts of the control. The first asks
+                // that a splash round burst where its blast still covers the
+                // mark: a window's far end, named to keep the blast off a
+                // companion, is a poor aim for a round that carries no direct
+                // damage and bursts only where it lands. The second takes any
+                // part it can see rather than never firing at all. The lane
+                // stays a hard requirement either way: a stand the round cannot
+                // travel from is an obstacle to walk around, not a position.
+                if (!station_far) for ([_]bool{ true, false }) |must_tell| {
+                    if (aim_at != null) break;
+                    for (aim_points, 0..) |offset, tried| {
+                        if (tried == 0 and !named) continue;
+                        const point = v.add(found.point, offset);
+                        if (v.length(v.subtract(point, eye)) > reach) continue;
+                        const bolt: f32 = if (action.op == .shoot) 3 else 0;
+                        // Trigger volumes are seen through (a music trigger across
+                        // a doorway, e1m4c), unless the control is one.
+                        const own_trigger = frame.projections[slot].shared.contents & c.CONTENTS_TRIGGER != 0;
+                        const sight = try engine.collisionService().trace(.{ .start = eye, .end = point, .mins = @splat(-bolt), .maxs = @splat(bolt), .slot = frame.index, .mask = if (own_trigger) c.MASK_SHOT | c.CONTENTS_TRIGGER else c.MASK_SHOT });
+                        if (sight.entity == slot or sight.fraction == 1) {
+                            if (shot_lane) |want| {
+                                if (!(try routes.laneClear(frame.index, eye, point, want, slot))) continue;
+                                if (!routes.roundSafe(eye, point, want)) continue;
+                                if (must_tell and !routes.roundTells(point, found.point, want)) continue;
+                            }
+                            aim_at = point;
+                            break;
+                        }
                     }
                 };
                 // A route may name the weapon for a shot (the glove for glass
@@ -799,14 +833,14 @@ pub const Driver = struct {
                     if (running.approach == null or now >= running.approach_ms) {
                         running.approach_ms = now + 2000;
                         var obstructions: [@import("bot_routes.zig").approach_points]u16 = @splat(c.ENTITYNUM_NONE);
-                        running.approach = try routes.approach(world, found.entity.?, frame.entity, if (action.op == .use) .use else .shoot, frame.service, frame.projections, engine.integer("developer") >= 2, &obstructions);
+                        running.approach = try routes.approach(world, found.entity.?, frame.entity, if (action.op == .use) .use else .shoot, frame.service, frame.projections, engine.integer("developer") >= 2, &obstructions, shot_lane);
                         // None reachable as the world stands: choose one as if
                         // every navigation gate were open; the motor's planner
                         // then opens the way to it.
                         if (running.approach == null) if (frame.gates) |state| {
                             state.open();
                             defer state.restore();
-                            running.approach = try routes.approach(world, found.entity.?, frame.entity, if (action.op == .use) .use else .shoot, frame.service, frame.projections, engine.integer("developer") >= 2, &obstructions);
+                            running.approach = try routes.approach(world, found.entity.?, frame.entity, if (action.op == .use) .use else .shoot, frame.service, frame.projections, engine.integer("developer") >= 2, &obstructions, shot_lane);
                         };
                     }
                     const goal = running.approach orelse found.point;
@@ -1446,10 +1480,13 @@ fn standing(frame: Frame, point: v.Vec3) !v.Vec3 {
     if (floor.start_solid or floor.all_solid or floor.fraction == 1) return point;
     return floor.end;
 }
-/// A trigger volume is reached by walking toward its centre; completion is the
-/// first hull overlap, so a centre inside a wall still yields a usable heading.
+/// A trigger volume is reached by walking into it; completion is the first hull
+/// overlap, so a centre inside a wall still yields a usable heading. Where the
+/// volume does have a place to stand, that place is the goal: a centre set
+/// inside a wall has no floor and no area to route at, and a route cannot be
+/// planned to it at all (e1m4a's keypad trigger, set into the bar's wall).
 fn volumeGoal(frame: Frame, found: targets.Resolved) !v.Vec3 {
-    if (found.brush) if (try routes.touchPointFrom(found.mins, found.maxs, frame.index, .{ .position = (try frame.world.get(frame.entity, data.Transform)).position, .service = frame.service })) |point| return point;
+    if (try routes.touchPointFrom(found.mins, found.maxs, frame.index, .{ .position = (try frame.world.get(frame.entity, data.Transform)).position, .service = frame.service })) |point| return point;
     var centre = found.point;
     centre[2] = @min(found.maxs[2], found.mins[2] - hull_mins[2] + 8);
     return standing(frame, centre);

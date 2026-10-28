@@ -22,7 +22,21 @@ pub fn eye(position: v.Vec3, height: f32) v.Vec3 {
 }
 pub fn muzzle(origin: v.Vec3, angles: v.Vec3, offset: v.Vec3) v.Vec3 {
     const basis = v.basis(angles);
-    return v.add(v.add(origin, v.scale(basis.forward, offset[1])), v.add(v.scale(basis.right, offset[0]), .{ 0, 0, offset[2] - 22 }));
+    return muzzleFrom(origin, basis.forward, basis.right, offset);
+}
+/// Where a round leaves a shooter sighting along the line `origin -> target`,
+/// for callers that have no view angles to name (a route asking whether a spot
+/// can hold a shot at all): the same offset as `muzzle`, taken from the line's
+/// own basis.
+pub fn muzzleAlong(origin: v.Vec3, target: v.Vec3, offset: v.Vec3) v.Vec3 {
+    const forward = v.normalize(v.subtract(target, origin));
+    const flat = v.length(.{ forward[0], forward[1], 0 });
+    // Straight down a barrel there is no side to lean on: any holds.
+    const right: v.Vec3 = if (flat < 0.001) .{ 0, -1, 0 } else .{ forward[1] / flat, -forward[0] / flat, 0 };
+    return muzzleFrom(origin, forward, right, offset);
+}
+fn muzzleFrom(origin: v.Vec3, forward: v.Vec3, right: v.Vec3, offset: v.Vec3) v.Vec3 {
+    return v.add(v.add(origin, v.scale(forward, offset[1])), v.add(v.scale(right, offset[0]), .{ 0, 0, offset[2] - 22 }));
 }
 pub fn aim(start: v.Vec3, target: v.Vec3, forward: v.Vec3) v.Vec3 {
     const delta = v.add(target, v.scale(start, -1));
