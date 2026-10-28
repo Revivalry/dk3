@@ -4,6 +4,9 @@
 
 -- The Marsh, part 2: river, two turret controls, the bridge ambush and the
 -- Thunderskeet whose death opens the north gate to part 3.
+-- The stone east of the fallen span, clear of the west cliff and of the
+-- laser barrier at x=-621: the arena every fight there is held in.
+local plateau = { { -1000, 440 }, { -700, 800 } }
 level("e1m1b", function(visit, resumed)
   if visit > 1 then return exit "e1m1c" end
   return stages {
@@ -44,27 +47,51 @@ level("e1m1b", function(visit, resumed)
              {-1834, 5, 705}, {-1800, -84, 774}, {-1775, -174, 823}, {-1659, -218, 824},
              {-1591, -51, 863}, {-1568, 159, 899}, {-1705, 306, 961}, {-1798, 463, 980},
              {-1751, 665, 986}, {-1648, 816, 984}, {-1616, 752, 984}, {-1548, 800, 984} }, { direct = true })
-      kill({ index = 431 }, { hold = true, timeout = 40 })
+      -- The Crox in the pool under the span's west end lives in water, which
+      -- ion bolts discharge in: it is only shot when it climbs out onto the
+      -- bank in view of the deck. Take it when it does, run on when it does
+      -- not (the arena is the bank itself, not the drop into the pool).
+      try(kill, { index = 431 }, { hold = true, timeout = 25,
+                                   arena = { { -1850, 400 }, { -1500, 900 } } })
     end },
     { "bridge", function()
-      -- Crossing the span starts the authored timeline: the bridge breaks, a
-      -- skeet formation arrives and the Thunderskeet follows. The far end is
-      -- an authored laser barrier, so the fight is held on the span.
-      path { {-1563, 622, 988}, {-1420, 640, 984}, {-1280, 640, 984}, {-1120, 640, 984},
-             {-1010, 640, 984}, {-930, 640, 984} }
+      -- The span is a trap: the generator at its east end, and the death of
+      -- either cambot over it, blows the deck apart a moment later (piece_03
+      -- is the deck from x=-1376 to x=-992). Shooting the guards on the way
+      -- drops the player into the pool, so run across ignoring them, as the
+      -- game teaches, and fight from the stone east of the collapse.
+      path({ {-1563, 622, 988}, {-1420, 640, 984}, {-1280, 640, 984}, {-1120, 640, 984},
+             {-1010, 640, 984}, {-930, 640, 984} }, { fight = false, timeout = 90 })
+      -- Across: the deck behind falls away, and the two guards, still alive,
+      -- would shoot through the fight with the skeets. Clear them from the
+      -- plateau (the arena is the plateau: the gap and the laser at x=-621
+      -- bound the fight on its west and east).
+      wait(2)
+      move({ -792, 632, 984 }, { fight = false, radius = 48 })
+      kill({ index = 481 }, { hold = true, timeout = 45, arena = plateau })
+      kill({ index = 96 }, { hold = true, timeout = 45, arena = plateau })
       wait_until(function()
         local boss = dk3.entity { class = "monster_thunderskeet" }
         return boss and boss.health > 0
       end, { timeout = 60, reason = "Thunderskeet arrival" })
       -- Fight from the middle of the open east plateau: clear of the west
       -- cliff, which blocks the firing line, and of the laser at x=-621.
-      move { -792, 632, 984 }
+      move({ -792, 632, 984 }, { fight = false, radius = 48 })
       -- The arena keeps knockback clear of the laser barrier at x=-621.
       kill({ class = "monster_thunderskeet" }, { radius = 4000, hold = true, timeout = 300,
-                                                 arena = { { -1000, 440 }, { -700, 800 } } })
+                                                 arena = plateau })
     end },
-    { "north", function()
+    { "north", checkpoint = true, function()
       wait(3)                              -- sprays still falling after the kill
+      -- The swim across the pool is fought with neither weapon: an ion bolt
+      -- discharges where it meets water and the glove reaches no further than a
+      -- body across. Whatever can follow a swimmer is met on the stone first,
+      -- and the health to survive it is taken before the water and not after.
+      try(recover, 0.85, 600)
+      try(resupply, 20, 600)
+      for _ = 1, 3 do
+        if not try(function() clear { radius = 700, timeout = 45 } end) then break end
+      end
       -- The boss drops a Megashield where it dies; fetch it only if it landed on
       -- the plateau (elsewhere it strands the bot beyond the broken span).
       local shield = dk3.entity { class = "item_megashield" }
@@ -90,8 +117,6 @@ level("e1m1b", function(visit, resumed)
   }(visit, resumed)
 end)
 
-local function z() local _, _, height = dk3.position() return height end
-local function x() local value = dk3.position() return value end
 local function opened(index)
   return function() local state = dk3.mover { index = index } return state == "open" or state == "opening" end
 end
@@ -153,8 +178,14 @@ level("e1m1c", function(visit, resumed)
       move({ 2398, 1698, 816 }, { radius = 12, direct = true })
       use { index = 216 }                  -- the switch; its monitor shows the exit
       cinematic()
-      for _, door in ipairs({ 313, 214, 215 }) do
-        wait_until(opened(door), { timeout = 25, reason = "exit doors" })
+      -- The switch opens the catwalk to the lift as well as the exit door
+      -- downstairs. Only the catwalk doors are waited for here: the exit door
+      -- travels for ten seconds across a bank a Crox patrols, and anything in
+      -- its sweep makes it reverse (authentic mover behaviour) -- a monster
+      -- crossing it seals the exit, since the switch is a trigger_once. The
+      -- door is reopened by hand below once its blocker is dead.
+      for _, door in ipairs({ 214, 215 }) do
+        wait_until(opened(door), { timeout = 25, reason = "catwalk doors" })
       end
     end },
     { "departure", function()
@@ -167,11 +198,31 @@ level("e1m1c", function(visit, resumed)
       wait_until(function() return z() <= 690 end, { timeout = 8, reason = "liftmaster descent" })
       move({ 1653, 1596, 680 }, { radius = 20, direct = true })
     end },
-    { "lower", function()
-      path({ {1592, 1384, 680}, {1574, 1286, 664}, {1511, 1232, 581}, {1748, 1202, 537},
-             {1824, 981, 495}, {1710, 973, 511} }, { radius = 24, direct = true })
+    { "lower", checkpoint = true, function()
+      -- Down the pocket's only descent -- the ledge at the south end of the
+      -- upper bank, from which the area graph drops 128 units onto the low
+      -- bank -- and along it to the Crox's ground (the graph's own legs).
+      path({ {1649, 1620, 664}, {1600, 1329, 664}, {1707, 1265, 664}, {1711, 1175, 544},
+             {1727, 1167, 552}, {1743, 1104, 544}, {1759, 1009, 520}, {1711, 881, 488} }, { radius = 24 })
+      -- The Crox that owns this bank; it is what seals the exit door on the
+      -- way down. Shoot it from the bank above its pool, and follow it if it
+      -- wades out of sight.
       kill({ index = 160 }, { hold = true, timeout = 40 })   -- dry-bank Crox
-      path({ {1783, 769, 472}, {1645, 672, 472} }, { radius = 24, direct = true })
+      clear({ radius = 400, timeout = 25 })                  -- the pool's froginator
+      -- Along the bank to the exit door in the area graph's own steps: the
+      -- bank is a chain of narrow areas and one long hop across them makes the
+      -- route alternate between two first legs, which walks the player in
+      -- place. Each short step has a single way to go.
+      path({ {1711, 847, 488}, {1681, 783, 488}, {1681, 721, 488}, {1674, 718, 486},
+             {1658, 689, 472} }, { radius = 20 })
+      -- Sealed by the reversal above: open it by hand, as every door of its
+      -- class is opened, and go through while the way stays clear.
+      if dk3.mover { index = 313 } ~= "open" then
+        dk3.log("exit door reversed; opening it by hand")
+        use({ index = 313 }, { timeout = 30 })
+        wait_until(opened(313), { timeout = 30, reason = "exit door reopened" })
+      end
+      wait(11)                                -- let the swing finish
       exit "e1m2a"
     end },
   }(visit, resumed)
@@ -276,14 +327,20 @@ level("e1m2a", function(visit, resumed)
       -- the floor and tilts the rock slab into the canal. The surface is then
       -- blocked by the slab and, further east, by a barrier just under the
       -- water: slide down the slab and swim the deep passage beneath both to
-      -- the basin below the ladder alcove.
+      -- the basin below the ladder alcove. The swim keeps to the canal floor
+      -- (about -230, deeper yet under the slab): the navigation still carries
+      -- that passage at the height it had before the rockfall tilted the slab
+      -- into it, so a swimmer who trusts the compiled depths ends up pressed
+      -- against a rock that moved after the map was compiled.
       move({ -839, 1452, 72 }, { radius = 40, timeout = 60 })
       move({ -740, 1500, 80 }, { radius = 24, direct = true })
       wait(2)
       move({ -700, 1510, 80 }, { radius = 24, timeout = 20 })
       path({ {-560, 1530, -60}, {-480, 1540, -130}, {-400, 1560, -140}, {-330, 1560, -150},
-             {-260, 1530, -150}, {-208, 1530, -170}, {-154, 1529, -196}, {-49, 1490, -225}, {-48, 1454, -260},
-             {111, 1450, -260}, {146, 1519, -248}, {223, 1583, -240}, {385, 1604, -67}, {422, 1519, 8} },
+             {-260, 1530, -150}, {-230, 1530, -200}, {-200, 1525, -228}, {-150, 1518, -232},
+             {-100, 1505, -232}, {-55, 1485, -238}, {-48, 1454, -262}, {-20, 1448, -262},
+             {60, 1442, -265}, {111, 1448, -262}, {132, 1497, -262}, {146, 1519, -250},
+             {180, 1565, -244}, {223, 1583, -240}, {385, 1604, -67}, {422, 1519, 8} },
            { direct = true, radius = 24, fight = false })
       move({ 470, 1320, 72 }, { radius = 24, direct = true })
     end },
@@ -322,15 +379,40 @@ level("e1m2b", function(visit, resumed)
       if z() > 0 then
         try(function() move({ 1560, 1376, 344 }, { radius = 32, timeout = 60 }) end)
         if z() > 0 then
-          try(function() clear { radius = 400, timeout = 30 } end)
-          move({ 1560, 1480, -200 }, { radius = 48, direct = true, timeout = 10 })
+          -- Fight from the ledge's north end: chasing down the catwalk runs
+          -- into a rail the area graph does not know and wastes the guards'
+          -- whole alarm (the e1m2b run of 25 s pinned at 1519,995).
+          try(function()
+            clear { radius = 400, timeout = 30, hold = true, arena = { { 1480, 1290 }, { 1690, 1470 } } }
+          end)
+          -- Step off the ledge's north edge into the chute. A fight may have
+          -- moved the bot off the edge; the drop is one way, so come back to
+          -- the lip and go over again rather than climb.
+          for _ = 1, 3 do
+            if try(function() move({ 1560, 1480, -200 }, { radius = 48, direct = true, timeout = 25 }) end) then break end
+            if z() < 200 then break end
+            try(function() move({ 1560, 1400, 344 }, { radius = 64, timeout = 25, fight = false }) end)
+          end
+          expect(z() < 200, "down the chute")
         end
       end
       -- Down the chute floor; its trigger (t44) raises the sluice at the foot.
-      path({ {1640, 1488, -244}, {1760, 1488, -304}, {1820, 1488, -325}, {1900, 1480, -340},
-             {2060, 1480, -340}, {2150, 1480, -344} }, { direct = true, radius = 32, fight = false })
+      path({ {1640, 1488, -244}, {1760, 1488, -304}, {1820, 1488, -325} },
+           { direct = true, radius = 40, fight = false })
+      -- Past x 1800 the sluice's flow sweeps a body east faster than a player
+      -- swims west: an upstream swim stalls at x 2150 for as long as it is
+      -- asked for. Go with the flow instead, over the lip where the chute
+      -- floor ends (x 2210) and down the fall into the tank's water: the
+      -- goal is put below the lip, so a bot that stops short of the drop is
+      -- still asked to take it.
+      -- The last stretch to the lip is therefore asked for as a band rather
+      -- than a point: reached, undershot or carried past x 1900 the body is
+      -- where the flow is wanted (a run of t2 swam to 1954 with the current
+      -- and could not return for its own twenty-unit arrival radius).
+      move({ 1930, 1478, -335 }, { radius = 88, direct = true, fight = false, timeout = 45 })
+      move({ 2245, 1470, -470 }, { radius = 96, direct = true, fight = false, timeout = 45 })
     end },
-    { "tank", function()
+    { "tank", checkpoint = true, function()
       -- Over the falls into the flooded tank (the hugewater train). Its drain
       -- is reached under water: dive at the waterfall's foot and swim the
       -- submerged lower level south and east (some eleven seconds without
@@ -367,7 +449,7 @@ level("e1m2b", function(visit, resumed)
       -- valve ledge.
       move({ 2139, 367, -474 }, { radius = 32, timeout = 60 })
     end },
-    { "valve", function()
+    { "valve", checkpoint = true, function()
       -- Through the doors (t42) into the pit, up its ladder and over to the
       -- platform above the central machine; the valve stands on the walkway
       -- above that, up a ladder the area graph does not link. The valve opens
@@ -375,52 +457,233 @@ level("e1m2b", function(visit, resumed)
       -- Sludgeminions wade in the pit and lob sludge: fight them from its
       -- south end before walking up its length.
       move({ 1640, 400, -488 }, { radius = 48, timeout = 60 })
-      try(function() kill({ class = "monster_sludgeminion" }, { hold = true, radius = 800, timeout = 45 }) end)
+      -- Everything in the pit, before the crossing: a body on the plank has
+      -- fourteen units either side, and one hit's knockback spends them.
+      try(function() clear { radius = 500, hold = true, timeout = 45,
+                             arena = { { 1470, 330 }, { 1900, 1180 } } } end)
       -- Up the pit's west side and along its north end to the ladder: the
       -- spinning column in the middle (absent from the area graph) has a sump
       -- round its foot that traps a player.
       path({ {1600, 520, -488}, {1600, 945, -488}, {1720, 1060, -488}, {1833, 1105, -488} }, { radius = 40, timeout = 60 })
       -- The platform is a frame of narrow beams over the pit: walk the
       -- straight one along y 840 to the ladder, braking at each turn.
+      -- The plank over the pit's west edge, walked in the open: the area
+      -- graph's way to it keeps re-offering the ladder the bot just climbed,
+      -- and a route back east here is a route off the plank into the pit.
+      --
+      -- What makes the crossing is not the drop but the water. The shelf
+      -- stands at -16 between two platforms at 0 (one step either end) and a
+      -- liquid brush caps it from -16 to 0: shallow enough that a body on it
+      -- only wades, and authored with a current due east. Gold's PM_AddCurrents
+      -- carries a wading walker at half the swim speed, two hundred units a
+      -- second, and a walker's own step is cut to five sixths in water -- so
+      -- the race is beatable (two hundred sixty-six of walk against two
+      -- hundred of flow leaves about a hundred and eighty of going forward,
+      -- and the length is crossed in a second) but only by a body that aims
+      -- upstream and keeps its stroke full. Braking is what kills: a half
+      -- stroke has nothing left over the current and the body simply travels
+      -- with it, east, off the shelf's end at x 1564 and five hundred units
+      -- down. Nothing turns inside the race: it is crossed in one straight
+      -- full-length stroke, so no arrival falls in it.
+      --
+      -- Two walls fence the water. Its west edge (x 1456..1472) is filled
+      -- playerclip to the water's own height, so the race is entered from a
+      -- platform end and never from the dry ledge west of it; a hull there
+      -- must keep its centre east of x 1487. East, the shelf ends at x 1564
+      -- and a fan blows down the shaft (a push of 200 east in x 1574..1594,
+      -- y 1030..1194): a hull from x 1558 touches it, and a volume that sets
+      -- the velocity every frame it is touched cannot be steered out of, so
+      -- the run keeps well inside. The line asked for is x 1505 -- nineteen
+      -- clear of the clip, fifty clear of the shelf's end, so the drift the
+      -- motor cannot cancel still lands on the shelf.
+      -- The pit's north wall stands at y 1241 and the ladder is a face on it
+      -- between x 1750 and x 1800. A body asked for y 1235 is walked into that
+      -- wall: its own hull then starts inside a solid, every trace the motor
+      -- makes answers start_solid and the run of b12 stood in one place for a
+      -- hundred seconds with nothing in front of it. The base is stood off at
+      -- y 1205 and reached along x 1850, where the floor is one unbroken slab
+      -- (west of x 1700 a ledge steps down and wedges a body against its side),
+      -- and the climb is asked for the standing area at the ladder's head that
+      -- the area graph does reach.
+      local ladder_base, ladder_head = { 1770, 1205, -480 }, { 1793, 1256, -24 }
+      local function plank()
+        if z() < -200 then
+          -- Back on the pit's floor: the ladder again.
+          path({ {1850, 1120, -480}, {1850, 1205, -480}, ladder_base },
+               { radius = 40, timeout = 60, fight = false })
+          move(ladder_head, { radius = 48, timeout = 90, fight = false })
+          if z() < -200 then error("off the pit's ladder", 0) end
+        end
+        -- Onto the platform and square on to the water. A wall stands on the
+        -- platform's west half (x 1408..1520 is solid from its floor to the
+        -- head), so the climb up from the ledge below is made at x 1560 --
+        -- forty clear of the wall's face, forty clear of the platform's east
+        -- end at x 1600, beyond which the pit begins -- and the standing line
+        -- afterwards keeps the same twenty units between the two.
+        path({ {1650, 1275, -10}, {1585, 1288, -10}, {1556, 1246, 24}, {1544, 1240, 24} },
+             { direct = true, radius = 14, timeout = 45, on_floor = true, fight = false })
+        if x() < 1525 or x() > 1565 or z() < 12 or z() > 40 then
+          error("off the platform's west end", 0)
+        end
+        -- The race, in one stroke: the far platform is the only place to stop,
+        -- so the goal is set beyond the water and the whole length is walked
+        -- with the current fought the whole way. Asked short, the bot brakes in
+        -- the water and the flow takes it east. The line is the same x the run
+        -- stands at: the drift the motor cannot cancel is a few units over the
+        -- second and a half of the crossing, and the line stands ten clear of
+        -- the block that fills the north landing's west end (x 1408..1520) and
+        -- ten clear of the shelf's east edge (x 1553 fully supported, the fan
+        -- touching a hull from x 1561).
+        move({ 1544, 990, 24 }, { direct = true, radius = 14, timeout = 40, fight = false })
+        if z() < 16 or x() > 1560 or x() < 1440 then
+          error("in the race", 0)
+        end
+        -- Stand on the plank short of its north end, then stand still: a hop
+        -- takes off at the speed it was running at, and the motor sets that
+        -- speed from the drop ahead (see below), so it needs the plank's own
+        -- length to settle into it. Arrived at a run, the body jumped from the
+        -- tip at twice the speed the drop can use.
+        move({ 1544, 992, 24 }, { direct = true, radius = 10, timeout = 25, fight = false })
+        wait(0.6)
+        if x() < 1525 or x() > 1565 or z() < 16 then error("off the plank", 0) end
+        -- The plank's north end (y ~945) hangs over the pit and the beam frame
+        -- under the machine catches a body thirty-two units below it, between
+        -- y ~900 and y ~835 where its slabs stand; between them nothing holds a
+        -- hull. The landing is the frame's middle (y 862, where two slabs
+        -- overlap); the take-off is the tip, forty units of dry plank behind
+        -- the standing place above. The speed of the hop is the motor's own
+        -- arithmetic on that drop: asked for as a run it passed a hundred units
+        -- above the frame and fell in the pit on its north side.
+        if not try(function() leap({ 1548, 948, 24 }, { 1552, 862, -8 }) end) then
+          error("off the plank's north end", 0)
+        end
+        -- East along the beam. Its north and south edges have gaps where its
+        -- cross-members stand; y 840 is the one row traced with continuous
+        -- support from x 1530 to the ladder at x 2000.
+        path({ {1554, 840, -8}, {1700, 840, -8}, {1860, 840, -8}, {1986, 840, -8} },
+             { direct = true, radius = 16, timeout = 90, fight = false })
+        -- Up the ladder at x 2000 onto the valve walkway, then east up its ramp.
+        move({ 2004, 840, 76 }, { radius = 28, timeout = 30, fight = false })
+        move({ 2040, 840, 96 }, { radius = 28, timeout = 20, fight = false })
+      end
+      -- A step off the plank ends on the pit's floor, and plank() goes back up
+      -- the ladder from there by itself; a stop on the plank takes up at the
+      -- same step rather than losing the ground already won.
       local function climb()
-        move({ 1550, 985, 24 }, { radius = 24, timeout = 120 })   -- stop short of the drop
-        path({ {1545, 880, -8}, {1600, 850, -8}, {1900, 840, -8}, {1975, 860, 0} }, { direct = true, radius = 16 })
-        move({ 2024, 880, 100 }, { radius = 24, direct = true, timeout = 15 })
+        for attempt = 1, 4 do
+          if try(plank) then return end
+        end
+        error("never reached the valve walkway", 0)
       end
       climb()
-      try(function() pickup({ index = 26 }, { timeout = 20 }) end)   -- ion ammunition for the way west
-      -- A worker stands at the valve wheel, in every line to it.
-      try(function() kill({ index = 50 }, { radius = 400, timeout = 20 }) end)
-      -- Back to the doors the way up, over the beams: the area graph's way
-      -- drops into the pit, a fall that costs a fifth of the player's health
-      -- and the doors' ten seconds.
-      local function back()
-        -- Stop on the walkway's edge above the beam's widest end, then step
-        -- straight down onto it (a running drop overshoots into the pit).
-        path({ {2009, 1000, 72}, {2008, 864, 72} }, { direct = true, radius = 12, timeout = 6, fight = false })
-        path({ {1978, 864, -8}, {1900, 840, -8}, {1600, 850, -8}, {1532, 900, -8} },
-             { direct = true, radius = 16, timeout = 6, fight = false })
-        leap({ 1530, 905, -8 }, { 1540, 960, 24 })
-        -- The doors open once the wheel has turned: wait at them.
-        move({ 1380, 1045, 70 }, { radius = 32, timeout = 20, fight = false })
+      -- North up the walkway to the shelf that caps the pit's north-west
+      -- corner. The walkway is a ramp: a flat strip of some twenty units at
+      -- x 2000, its face rising east from there to the upper floor at x 2110,
+      -- and the pit falling west from the same line. The area graph walks the
+      -- ramp's own face and turns west at the north end, where the shelf
+      -- begins: fifty units deep (y 1196..1246), holding the ionpack, four
+      -- protopods and the worker who guards the wheel.
+      move({ 1980, 1230, 72 }, { radius = 16, timeout = 60, fight = false })
+      expect(z() > 40 and z() < 110 and x() < 1996, "on the shelf above the pit")
+      -- What stands between here and the wheel is shot from the standing
+      -- place, never walked up to. A protopod blocks the lane's mouth (x 1984,
+      -- y 1240) and another stands in the lane itself (y 1296); two more lie
+      -- along the shelf's middle and west end where the way back goes; each
+      -- hatches a slaughterskeet the moment it sees a player. The worker keeps
+      -- the wheel, dead centre of the lane. The lane is thirty units wide and
+      -- the pit beside it five hundred deep, and a fought body moves further
+      -- than the lane: so the shots are taken without a step, from the ground
+      -- the bot is already standing on (`shoot` with a `from` spot walks to it
+      -- first, and the spot named here is the spot already under the bot).
+      for _, guard in ipairs({ 379, 380, 378, 377, 50 }) do
+        try(function()
+          shoot({ index = guard }, { from = { { 1980, 1230, 72 } }, timeout = 20, fight = false })
+        end)
       end
-      -- A turn blocked part-way (the worker's body by the wheel) springs back
-      -- without opening the doors: press until the wheel stays open.
+      -- The pods are spent by the time the bot arrives (each hatches its
+      -- slaughterskeet the moment it sees a player), so they are shot at only
+      -- if something still stands in their place. The protopod in the pit below
+      -- the lane's west end is taken the same way -- from the shelf, never by
+      -- going down for it: a body that leaves the shelf for the pit gives up
+      -- the crossing with the doors open behind it.
+      try(shoot, { index = 85 }, { from = { { 1980, 1230, 72 }, { 1900, 1230, 72 } }, timeout = 20, fight = false })
+      -- Up the lane to the wheel. The navigation's own standing areas trace
+      -- the lane from x 1968 to x 2000 for its whole length, so the walked
+      -- line is its centre at x 1984: onto the lane first, then the length of
+      -- it in one straight stroke, nobody fought and nothing stopped on it. The
+      -- ionpack at x 1888 lies on the shelf's middle, not on the way here; it
+      -- is taken on the way back, by walking over it.
+      move({ 1984, 1260, 72 }, { radius = 10, timeout = 30, fight = false })
+      expect(x() > 1962 and x() < 2006 and y() > 1250 and z() > 40 and z() < 110,
+             "on the lane to the wheel")
+      move({ 1984, 1378, 72 }, { direct = true, radius = 14, timeout = 40, fight = false })
+      expect(y() > 1330 and z() > 40 and z() < 110, "at the valve wheel")
+      -- A turn blocked part-way (a body at the wheel) springs back without
+      -- opening the doors: press until the wheel stays open.
+      -- The press is taken whatever is shooting from the pit: fighting first
+      -- here loses the eleven seconds the doors stay open, and a body at the
+      -- wheel is pressed through (the wheel's own retry below).
       local function turn()
         for _ = 1, 4 do
-          use { index = 112 }
+          use({ index = 112 }, { timeout = 30, fight = false })
           if try(function()
             wait_until(function() return dk3.mover { index = 112 } == "open" end, { timeout = 4, reason = "valve open" })
           end) then return end
         end
         error("the valve never stayed open", 0)
       end
-      for attempt = 1, 3 do
-        turn()
-        if try(back) then break end
-        if attempt < 3 then climb() end
+      turn()
+      -- West, and not back the way the bot came: the shelf's west end is an
+      -- edge above the pit's sloping side, a drop of a hundred and forty-four
+      -- that costs no damage and saves the whole crossing of the beams and the
+      -- race. Down it, west and north-west up the slope to the ledge above the
+      -- race's north end, then south down the race's east side and west across
+      -- its shallow end and through the doors the wheel has just opened --
+      -- which stay open eleven seconds, so nothing on this way stops.
+      local function back()
+        -- Back down the lane and west along the shelf.
+        move({ 1980, 1234, 72 }, { radius = 12, timeout = 30, fight = false })
+        -- Off the shelf's west face (x 1824) onto the pit's slope below.
+        move({ 1802, 1245, -48 }, { on_floor = true, radius = 44, timeout = 45, fight = false })
+        move({ 1772, 1264, -48 }, { on_floor = true, radius = 44, timeout = 40, fight = false })
+        move({ 1612, 1300, 0 }, { on_floor = true, radius = 48, timeout = 45, fight = false })
+        -- The lip at the race's north-east corner stands twenty-four over the
+        -- slope: the area graph asks a jump there and the motor makes one.
+        move({ 1560, 1272, 24 }, { on_floor = true, radius = 40, timeout = 40, fight = false })
+        move({ 1560, 1200, 24 }, { direct = true, radius = 30, timeout = 30, fight = false })
+        -- Across the race without stopping. A liquid brush lies on the shelf
+        -- from x 1490 to x 1553, sixteen over a wading body and authored with a
+        -- current due east: Gold's PM_AddCurrents takes a wading body at half
+        -- the swim speed, two hundred, against two hundred and sixty-six of a
+        -- walker's own shortened step. Standing still in it is travelling with
+        -- it, east, and the shelf's east end is a fall of five hundred units.
+        move({ 1460, 1112, 40 }, { direct = true, radius = 26, timeout = 40, fight = false })
+        -- Through the doors. Their own floor is the sill they stand in at feet
+        -- sixteen, and the wheel's door slides down into it, so the way west is
+        -- walked over the top of the retracted leaf.
+        move({ 1368, 1112, 40 }, { on_floor = true, radius = 24, timeout = 45, fight = false })
       end
-      expect(x() < 1420, "through the valve doors")
+      for attempt = 1, 3 do
+        if try(back) then break end
+        -- Already west of the leaf (its box ends at x 1424) the doors no longer
+        -- matter: a body standing in the water at the sill has won the crossing
+        -- and must not be walked back to the wheel for a second press.
+        if x() < 1400 then break end
+        -- Not through: at the wheel again, because the doors close on a player
+        -- who is too slow. A body driven off the shelf into the pit goes by its
+        -- ladder, which climb() knows; a body left on the shelf walks back to
+        -- the lane's mouth.
+        if z() < -200 then
+          climb()
+          move({ 1980, 1230, 72 }, { radius = 16, timeout = 60, fight = false })
+        else
+          try(function()
+            move({ 1900, 1230, 72 }, { radius = 24, timeout = 45, fight = false })
+          end)
+        end
+        turn()
+      end
+      expect(x() < 1400, "through the valve doors")
     end },
     { "west", checkpoint = true, function()
       -- Sludgeminions hold the long way west; their globs are dodged from a
@@ -629,6 +892,12 @@ level("e1m3b", function(visit, resumed)
       try(function() clear { radius = 450, timeout = 25, hold = true } end)
     end },
     { "console", function()
+      -- The arrival floor's ammunition: the shotcycler holds thirty shells and
+      -- a box is twenty-four, so a fight fought without the next box in sight is
+      -- a fight fought with an empty gun. The box by the steam pool (#310) and
+      -- the two by the octagon's stairs (#130, #385) lie below the floor plates
+      -- -- no area of the graph holds them -- so only the cells and the pack.
+      for _, item in ipairs({ 159, 61 }) do try(pickup, { index = item }, { timeout = 20 }) end
       use { index = 186 }
       wait_until(function() return dk3.mover { index = 255 } == "open" end, { timeout = 20, reason = "big door open" })
     end },
@@ -653,6 +922,11 @@ level("e1m3b", function(visit, resumed)
       try(pickup, { index = 263 }, { timeout = 30 })
       try(pickup, { index = 219 }, { timeout = 20 })
       use { index = 33 }                     -- the hatch up the stairs
+      -- The panel turns slowly (speed 25) and a strafe under a turning panel
+      -- is swept back down the stairs it just climbed: climb once it is flat
+      -- out of the way. (Routing says the stairs are shut until then.)
+      wait_until(function() return dk3.mover { index = 209 } == "open" end,
+                 { timeout = 30, reason = "hatch open" })
     end },
     { "pit room", checkpoint = true, function()
       -- West past the octagon and down the stairs south to the catwalk that
@@ -681,8 +955,10 @@ level("e1m3b", function(visit, resumed)
       use { index = 198 }                    -- the console's operate button
       wait(5)
       use { index = 133 }                    -- the lever the broken machinery bared
-      -- Guards and inmates hold the lift's top: the packs on this floor first.
-      for _, pack in ipairs({ 409, 156, 212, 158 }) do try(pickup, { index = pack }, { timeout = 20 }) end
+      -- Guards and inmates hold the lift's top: everything this floor holds
+      -- first -- two health packs and a box beside them, and the shells and ion
+      -- cells by the west wall, the cycler's last refill before the lift.
+      for _, pack in ipairs({ 409, 68, 67, 156, 212, 158 }) do try(pickup, { index = pack }, { timeout = 20 }) end
       wait(2)
       -- Under the jammed door it raised part way, crawling.
       move({ -1680, 1824, -296 }, { radius = 24, timeout = 30 })
@@ -704,13 +980,24 @@ level("e1m3b", function(visit, resumed)
       end
       use { index = 357 }
       ride { index = 173 }
-      -- Fought from inside the cage (its walls are cover), the inmate by
-      -- the landing first.
-      try(function() kill({ index = 64 }, { hold = true, timeout = 30 }) end)
-      try(function() clear { radius = 700, timeout = 45, hold = true } end)
-      -- Carried back down meanwhile (a press of its button in the fight).
+      -- Fought on the landing the cage carried the bot up to (its walls are
+      -- cover), the inmate by the landing first. The arena keeps the chase on
+      -- this floor: the shaft is a fall of two hundred units, and a rider
+      -- carried back down has to call the cage down and ride again -- ride
+      -- waits clear of a lift above it instead of chasing it, and a cage with
+      -- nobody under it does not come back down on its own.
+      for _ = 1, 3 do
+        try(function() kill({ index = 64 }, { hold = true, timeout = 30 }) end)
+        try(function()
+          clear { radius = 700, timeout = 45, hold = true, arena = { { -2100, 1300 }, { -1380, 1620 } } }
+        end)
+        local _, _, z = dk3.position()
+        if z >= -100 then break end
+        use { index = 357 }
+        ride { index = 173 }
+      end
       local _, _, z = dk3.position()
-      if z < -100 then ride { index = 173 } end
+      expect(z >= -100, "on the lift's upper landing")
     end },
     { "red room", checkpoint = true, function()
       -- Down the hall to the red room where Superfly hangs: his scene.
@@ -1354,9 +1641,45 @@ level("e1m6a", function(visit, resumed)
       move({ 1380, 560, -248 }, { timeout = 60 })
       try(pickup, { index = 23 }, { timeout = 20 })
       use { index = 97 }
+      -- (The rotor seals a shaft of nitrogen: the threshold it was pressed
+      --  from fills with gas the moment it turns, two damage a tick. Back
+      --  along the way in — the way that was walked — for the lift's run.)
+      move({ 1345, 450, -248 }, { direct = true, radius = 40, timeout = 15 })
       wait(15)
-      try(regroup, 250, 60)
-      progress("e1m6b")
+      -- The way out is not on this floor: down the ladder shaft at the lab
+      -- room's east edge to the plant floor over the nitrogen's water, east
+      -- and north round it to the lift, and up in the lift to the rooms the
+      -- exit stands in. The area graph reaches every step of that; only the
+      -- two door halves closing the exit's corridor (44 seconds to slide,
+      -- from the button on their near side) it cannot express, being built
+      -- with them shut.
+      try(regroup, 400, 90)
+      move({ 1546, 470, -248 }, { timeout = 45 })
+      move({ 1512, 552, -372 }, { timeout = 120 })
+      -- Four deathspheres hold the plant floor, two of them not roused until
+      -- their neighbours are: each by name, from the floor they hover over.
+      for _, foe in ipairs({ 345, 346, 171, 347 }) do
+        try(kill, { index = foe }, { timeout = 30 })
+      end
+      move({ 980, 212, -312 }, { timeout = 120 })
+      move({ 1768, -64, -372 }, { timeout = 150 })
+      -- The lift stands in a shaft sunk below the plant floor: its deck rests
+      -- eight below the lip it travels through, so it is stepped down onto,
+      -- not climbed to. (The area graph, compiled without movers, offers the
+      -- pit floor under the deck -- hence the ride's own straight step.)
+      ride { index = 98 }
+      -- A mishimaguard and a fatworker hold the landing between the lift and
+      -- the button; the mishimaguard by the corridor comes to the noise.
+      for _, foe in ipairs({ 59, 167, 307 }) do
+        try(kill, { index = foe }, { timeout = 30 })
+      end
+      move({ 2035, -228, 24 }, { timeout = 90 })
+      use { index = 75 }
+      wait_until(function() return dk3.mover { index = 129 } ~= "closed" end,
+                 { timeout = 45, reason = "the corridor's door halves sliding back" })
+      try(regroup, 300, 120)
+      move({ 2168, -312, 24 }, { direct = true, radius = 48, timeout = 30 })
+      exit "e1m6b"
     end },
   }(visit, resumed)
 end)
@@ -1610,9 +1933,16 @@ level("e1m7a", function(visit, resumed)
       try(shoot, { index = 53 }, { timeout = 30 })
       use { index = 612 }
       -- Out of the cage, off the corridor's north edge to the floor below
-      -- and through the doors before they shut (10 s).
-      path({ { -660, -2160, 480 }, { -620, -2080, 216 }, { -605, -1960, 216 }, { -605, -1880, 216 } },
-           { direct = true, radius = 24, timeout = 6, fight = false })
+      -- (a kerb at the edge too high to step: a hop over it and down) and
+      -- through the doors before they shut (10 s — and the keypad below
+      -- targets the same wire, so a missed window is opened again).
+      for _ = 1, 3 do
+        if z() < 300 then break end
+        try(move, { -660, -2160, 480 }, { direct = true, radius = 32, timeout = 10, fight = false })
+        try(move, { -620, -2080, 216 }, { direct = true, radius = 40, timeout = 10, fight = false })
+      end
+      expect(z() < 300, "not down off the corridor's north edge")
+      path({ { -605, -1960, 216 }, { -605, -1880, 216 } }, { direct = true, radius = 24, timeout = 10 })
       try(function() clear { radius = 700, timeout = 60 } end)
       use { index = 610 }
     end },
@@ -1624,8 +1954,23 @@ level("e1m7a", function(visit, resumed)
       dk3.sidekick("all", "stay")
       move({ -700, -1390, 96 }, { timeout = 60 })
       use { index = 208 }
+      -- Over the open hatch and down into the pipe (a drop of 130: the pipe's
+      -- floor is the floor hereafter). The channel is flooded to its ceiling
+      -- and sealed, and the ceiling is a breakable plate (health 10) over the
+      -- channel's east end: a shot through its underside is the only way out
+      -- of the water, and up through the hole is the way on.
       move({ -230, -1440, -30 }, { timeout = 60 })
-      try(shoot, { index = 211 }, { timeout = 20 })
+      -- (Ducked: where the plate's west end meets the channel the ceiling
+      -- presses down to the crown of a standing head, and a hull that rises
+      -- there is pinned; below the lip the lane to fire up lies open.)
+      for _ = 1, 3 do
+        if z() > 60 then break end
+        try(move, { -208, -1436, -44 }, { direct = true, radius = 28, crouch = true, timeout = 30 })
+        try(shoot, { index = 211 }, { timeout = 30 })
+        try(move, { -208, -1436, 104 }, { direct = true, radius = 48, timeout = 25 })
+        try(move, { -177, -1448, 104 }, { direct = true, radius = 40, timeout = 25 })
+      end
+      expect(z() > 60, "not out of the flooded channel")
       -- Up the ramp past the save gem: the fan's mechanism, shot from in
       -- front of it, stops the fan, and the way drops past it.
       move({ 300, -880, 216 }, { timeout = 60, cautious = true })
@@ -1643,16 +1988,35 @@ level("e1m7a", function(visit, resumed)
       expect(x() < 240, "not into the duct behind the fan")
       move({ 170, -800, 88 }, { direct = true, radius = 24, timeout = 8 })   -- down its shaft
     end },
-    { "hatch", checkpoint = true, function()
-      -- West along the hallway (its guards on the way) to the ladder at its
-      -- end and the hatch at the ladder's top, opened by hand.
-      path({ { 0, -780, 88 }, { -500, -780, 88 }, { -864, -790, 88 } }, { direct = true, radius = 24, timeout = 20 })
-      move({ -864, -872, 88 }, { direct = true, radius = 12, timeout = 10 })
-      try(move, { -864, -880, 200 }, { direct = true, radius = 16, timeout = 8 })
-      local hx, hy, hz = dk3.position()
-      dk3.log(string.format("ladder top at %.0f,%.0f,%.0f hatch=%s", hx, hy, hz, tostring(dk3.mover({ index = 76 }))))
-      try(use, { index = 76 }, { timeout = 10 })
-      dk3.log("hatch after use: " .. tostring(dk3.mover({ index = 76 })))
+    { "ladder", checkpoint = true, function()
+      -- Up the ladder in the hall's east wall to the ledge that runs above it
+      -- and west along that ledge. The niche ladder at the hall's west end is
+      -- no way up: its top is shut by a hatch and a wall panel (76, 77 — the
+      -- pair t502), and the button of that pair stands on the ledge above, so
+      -- the niche is a way down, not a way on.
+      --
+      -- The graph's own ladder step is asked for from a goal that stands well
+      -- back on the ledge. A goal at the ladder's own face is answered by the
+      -- top of the ladder's place — that volume is playerclip to its last
+      -- unit, so a hull dropped down it stops at its lid and takes the lid for
+      -- the floor — and the body is let go and comes back down into the hall.
+      -- First a stride to the rungs' own column. The graph's ladder step
+      -- stands at the place's east corner; pressed there the body's head finds
+      -- a beam at 176 instead of rungs, and the climb hangs on the face
+      -- gaining nothing for its whole life. The rungs themselves are at x=100.
+      move({ 100, -860, 88 }, { direct = true, radius = 16, timeout = 12 })
+      move({ 100, -806, 216 }, { timeout = 45 })
+      expect(z() > 180, "not up the hall's ladder")
+      -- Along the ledge to the cables that hold the plate which the story
+      -- drops across the room (four of them, a hundred apiece, one firing
+      -- place under them covers all). The ledge gives out past here and the
+      -- plate's fall brings the rider down with it: the way on from the
+      -- ledge's west end is the open work of this hall.
+      move({ -200, -806, 224 }, { radius = 24, timeout = 30 })
+      expect(z() > 180, "not along the ledge above the hall")
+      for _, foe in ipairs({ 203, 205, 206, 204 }) do
+        try(shoot, { index = foe }, { timeout = 30 })
+      end
       progress("e1m7b")
     end },
   }(visit, resumed)

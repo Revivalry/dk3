@@ -136,7 +136,7 @@ fn gateControl(world: *data.World, slots: *Slots, projections: []const @import("
         const breakable = try world.get(entity, data.Destructible);
         if (breakable.shootable) {
             var obstructions: [approach_points]u16 = @splat(c.ENTITYNUM_NONE);
-            const point = try approach(world, entity, actor, .shoot, service, projections, diagnostic, &obstructions) orelse return null;
+            const point = try approach(world, entity, actor, .shoot, service, projections, diagnostic, &obstructions, null) orelse return null;
             return .{ .id = gate.id, .obstacle = gate.id, .route_obstacle = gate.id, .point = point, .action = .shoot };
         }
         // One only another breakable's blast brings down (e1m3b's logo
@@ -330,7 +330,7 @@ fn seekObstacle(world: *data.World, slots: *Slots, projections: []const @import(
         }
         if (!chained) continue;
         var obstructions: [approach_points]u16 = @splat(c.ENTITYNUM_NONE);
-        if (try approach(world, entity, actor, action, service, projections, diagnostic, &obstructions)) |point| {
+        if (try approach(world, entity, actor, action, service, projections, diagnostic, &obstructions, null)) |point| {
             const distance = v.length(v.subtract(point, pose.position));
             if (distance >= nearest) continue;
             nearest = distance;
@@ -432,7 +432,11 @@ pub fn liftStep(world: *data.World, slots: *Slots, projections: []const @import(
     if ((below.fraction < 1 and below.entity == lift_slot) or level) return .{ .board = .{ middle[0], middle[1], entrance[2] } };
     if (!rider.operate) return .away;
     if (try seekObstacle(world, slots, projections, actor, lift, service, now, 0, false, &dependencies, 0)) |control| return .{ .operate = control };
-    return .wait;
+    // Nothing to board it with and nothing to call it by: the graph's platform
+    // link is not a lift at all (e1m7a's hall counts the fallen cable that
+    // story-drops across the room as a platform between its two floors). Give
+    // up the lift and let the route be planned without one.
+    return .away;
 }
 /// A button riding on `lift` (inside its footprint) whose chain reaches it,
 /// with a standing point to press it from.
@@ -450,7 +454,7 @@ fn carriedControl(world: *data.World, projections: []const @import("../../engine
         var visited: [64]u32 = undefined;
         if (!try chain(world, entity, lift, id, now, &visited, 0)) continue;
         var obstructions: [approach_points]u16 = @splat(c.ENTITYNUM_NONE);
-        const point = try approach(world, entity, actor, .use, service, projections, false, &obstructions) orelse continue;
+        const point = try approach(world, entity, actor, .use, service, projections, false, &obstructions, null) orelse continue;
         return .{ .id = try world.persistentId(entity), .obstacle = lift_id, .route_obstacle = lift_id, .point = point, .action = .use };
     };
     return null;
@@ -488,7 +492,7 @@ fn findLift(world: *data.World, projections: []const @import("../../engine/abi.z
 /// Candidate standing points `approach` tries around a control.
 pub const approach_points = 13;
 /// Nearest supported, reachable standing point from which `action` can operate `target`.
-pub fn approach(world: *data.World, target: ecs.Entity, actor: ecs.Entity, action: @FieldType(Control, "action"), service: nav.Service, projections: []const @import("../../engine/abi.zig").EntityProjection, diagnostic: bool, obstructions: *[approach_points]u16) !?v.Vec3 {
+pub fn approach(world: *data.World, target: ecs.Entity, actor: ecs.Entity, action: @FieldType(Control, "action"), service: nav.Service, projections: []const @import("../../engine/abi.zig").EntityProjection, diagnostic: bool, obstructions: *[approach_points]u16, lane: ?Lane) !?v.Vec3 {
     const pose = (try world.get(actor, data.Transform)).*;
     const body = (try world.get(actor, data.Body)).*;
     const target_slot = (try world.get(target, data.Binding)).slot;
@@ -507,6 +511,7 @@ pub fn approach(world: *data.World, target: ecs.Entity, actor: ecs.Entity, actio
         .slot = (try world.get(actor, data.Binding)).slot,
         .target_slot = target_slot,
         .middle = middle,
+        .lane = lane,
         // A shot at an explosive (a barrel, a charged panel) is fired from
         // outside the worst of its blast.
         .blast = if (action != .shoot) 0 else if (world.get(target, data.Scenery) catch null) |scenery| (if (scenery.explosive) 100 else 0) else if (world.get(target, data.Destructible) catch null) |destructible| (if (destructible.damage > 0) destructible.radius else 0) else 0,
@@ -633,6 +638,36 @@ pub fn isStation(world: *data.World, entity: ecs.Entity) bool {
     const object = world.get(entity, data.MapObject) catch return false;
     return @import("entity_classes/registry.zig").traitsOf(object.classname).station;
 }
+/// What a held blast round needs of a position: where the round leaves the
+/// weapon, so its lane can be traced from the muzzle and not the eye; how far
+/// its blast carries once it bursts (`reach`, the same distance the pilot holds
+/// itself out to); and whether the round needs a blast at all to do its work.
+pub const Lane = struct { muzzle: v.Vec3, reach: f32 = 0, direct: bool = true };
+/// Whether a round bursting at `point` can affect a mark centred on `mark`.
+/// The game measures a blast from an object's centre, so a splash-only round
+/// that bursts at the near end of a long target (the end of a window pane)
+/// reaches none of it: firing there spends ammo forever and changes nothing.
+pub fn roundTells(point: v.Vec3, mark: v.Vec3, lane: Lane) bool {
+    if (lane.direct or lane.reach <= 0) return true;
+    return v.length(v.subtract(point, mark)) <= lane.reach;
+}
+/// Whether a shooter at `eye` may fire a round that bursts at `point` at all:
+/// its own blast would land on it. This is the pilot's own rule, so a stand
+/// taken here is one the trigger will actually be pulled from.
+pub fn roundSafe(eye: v.Vec3, point: v.Vec3, lane: Lane) bool {
+    if (lane.reach <= 0) return true;
+    return v.length(v.subtract(point, eye)) >= lane.reach;
+}
+/// Whether a blast round's own lane reaches `point`. The round starts below the
+/// eye and detonates on whatever it meets, so a line the eye can see may be a
+/// lane the round cannot travel (a fin across a pit clips a shot aimed down at
+/// the pipe under it). The tolerance is the pilot's own, so a spot taken here
+/// is one it will pull the trigger from.
+pub fn laneClear(slot: u16, eye: v.Vec3, point: v.Vec3, lane: Lane, target_slot: u16) !bool {
+    const muzzle = @import("../domain/combat.zig").muzzleAlong(eye, point, lane.muzzle);
+    const flight = try engine.collisionService().trace(.{ .start = muzzle, .end = point, .mins = @splat(-6), .maxs = @splat(6), .slot = slot, .mask = c.MASK_SHOT });
+    return !flight.start_solid and (flight.fraction == 1 or flight.entity == target_slot or v.length(v.subtract(flight.end, point)) <= 48);
+}
 /// One candidate standing point for `approach`.
 const Stand = struct {
     world: *data.World,
@@ -647,6 +682,7 @@ const Stand = struct {
     target_slot: u16,
     middle: v.Vec3,
     blast: f32,
+    lane: ?Lane = null,
 
     /// The floor under `candidate` if the action works from there and the
     /// route reaches it; `obstruction` names what hid or held it.
@@ -690,6 +726,20 @@ const Stand = struct {
             obstruction.* = sight.entity;
             return null;
         }
+        // A blast round needs the lane as well as the eye its line: a shot
+        // fired at what the eye can see detonates on the first ledge it meets.
+        // It also needs the shooter out of the burst's own reach, or the pilot
+        // holding that rule never pulls the trigger from here.
+        if (self.action == .shoot) if (self.lane) |lane| {
+            if (!(try laneClear(self.slot, eye, self.middle, lane, self.target_slot))) {
+                obstruction.* = c.ENTITYNUM_NONE;
+                return null;
+            }
+            if (!roundSafe(eye, self.middle, lane)) {
+                obstruction.* = c.ENTITYNUM_NONE;
+                return null;
+            }
+        };
         if (self.blast > 0 and v.length(v.subtract(floor.end, self.middle)) < self.blast / 2) return null;
         if (self.action == .use and v.length(v.subtract(sight.end, eye)) > 88) return null;
         // A health station heals only a recipient within 64 of its origin.

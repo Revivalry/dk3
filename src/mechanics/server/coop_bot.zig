@@ -22,6 +22,7 @@ const link_module = @import("coop_link.zig");
 const routes = @import("bot_routes.zig");
 const survival = @import("bot_survival.zig");
 const properties = @import("properties.zig");
+const player_state = @import("../player_state.zig");
 const Slots = @import("../../engine/slots.zig").Slots;
 const Clients = @import("clients.zig").Clients;
 const catalog = @import("actor_catalog");
@@ -47,6 +48,16 @@ const Running = struct {
     pressed_ms: ?i64 = null,
     presses: u8 = 0,
     contact_ms: ?i64 = null,
+    /// A held fight whose stand never found the prey: the tether is
+    /// dropped and the bot closes on the enemy outright.
+    hold_closed: bool = false,
+    /// How long a hunt waits without approaching its prey before giving up on
+    /// it. Full at first; once one enemy in this hunt has proved out of reach,
+    /// the rest of the hunt is judged by a shorter window, because a room
+    /// whose guards stand behind rails the route cannot cross costs a full
+    /// window per guard (e1m2b's pipe room: one prey spent all 30 s of its
+    /// `clear` wobbling at a rail, and the walk to the chute then ran out).
+    hunt_stall_ms: i64 = stall_ms,
     phase: u8 = 0,
     /// Where the bot stood when the action began; held fights tether here.
     home: v.Vec3 = @splat(0),
@@ -124,6 +135,12 @@ pub const Driver = struct {
     attacker: u32 = 0,
     /// Aggressors let be for now (unreachable, unhurt or unfinished).
     ignoring: survival.Ignore = .{},
+    /// Hostiles an area clear gave up on: a chase that reached nothing for its
+    /// whole progress window, against an enemy that never touched the player,
+    /// means it lies out of reach (across a drop, a shut door, the level's own
+    /// one-way). A player clears the room he is in and goes on. Authored kills
+    /// never give up on the target the route named.
+    hunt_let_be: survival.Ignore = .{},
     attribute_cursor: usize = 0,
     detour: survival.Detour = .{},
 
@@ -571,9 +588,11 @@ pub const Driver = struct {
         // level is lost with them).
         var party_buffer: [96]u8 = undefined;
         const party_text = @import("../../game/server/session_classes.zig").party.summary(world, (try world.get(frame.entity, data.Transform)).position, &party_buffer);
-        engine.print(try std.fmt.bufPrintZ(text[head.len..], "{s}vel={d:.0},{d:.0},{d:.0} water={d} ground={d} areas={d},{d} jump={d} crouch={d} ladder={d} blocked={d} no_route={d} enemy={d} enemy_hp={d} fired={d} control={d} passage={d} obstacle={d}:{s}#{d} sidestep={d} dodge={d} hostiles={d} party={s} actions={d}\n", .{
+        engine.print(try std.fmt.bufPrintZ(text[head.len..], "{s}vel={d:.0},{d:.0},{d:.0} input={d},{d},{d} water={d} ground={d} hold={d} sub={d} breath={d} areas={d},{d} jump={d} crouch={d} ladder={d} blocked={d} no_route={d} enemy={d} enemy_hp={d} fired={d} control={d} passage={d} obstacle={d}:{s}#{d} sidestep={d} dodge={d} hostiles={d} party={s} actions={d}\n", .{
             head,                                        velocity[0],                   velocity[1],
-            velocity[2],                                 player.water_level,            player.ground_entity,
+            velocity[2],                                 report.input[0],               report.input[1],
+            report.input[2],                             player.water_level,            player.ground_entity,
+            @intFromBool(report.holding),                report.submerged_ms,           report.breathing,
             waypoint.from_area,                          waypoint.to_area,              @intFromBool(waypoint.jump),
             @intFromBool(waypoint.crouch),               @intFromBool(waypoint.ladder), @intFromBool(report.blocked),
             @intFromBool(report.no_route),               report.enemy,                  report.enemy_health,
@@ -582,6 +601,32 @@ pub const Driver = struct {
             @intFromBool(report.sidestepped),            @intFromBool(report.dodging),  try livingHostiles(world),
             if (party_text.len > 0) party_text else "-", self.actions,
         }));
+    }
+
+    /// The pace a hop asks for, from the hop itself. The jump leaves the ground
+    /// rising at the player's own jump speed and gravity returns the body to the
+    /// landing's height after a time that follows from the two, so the pace that
+    /// covers exactly the gap between takeoff and landing in that time is the
+    /// pace the run-up is made at. A running jump off a ledge sails over the
+    /// landing below it and past it (e1m2b's plank ends above a beam: jumped at
+    /// the run, the body passed a hundred units over the beam and fell in the
+    /// pit beyond it), and a crawl falls short of the same beam. A jump cannot
+    /// rise to a landing above its own apex: asked to reach one, the run stays
+    /// the whole run and something else (a lift, a shotcycler) does the rest.
+    fn hopPace(frame: Frame, takeoff: v.Vec3, landing: v.Vec3, now: i64) !f32 {
+        const world = frame.world;
+        // The body's own numbers, the same the movement adapter pays with, so a
+        // hero whose speed and acrobatics have grown measures a longer hop.
+        const movement = player_state.characterParameters(frame.index, (try world.get(frame.entity, data.Character)).*, (try world.get(frame.entity, data.Ailments)).*, now);
+        const gap = nav.horizontalDistance(takeoff, landing);
+        if (gap < 1) return 1;
+        // Height above the takeoff after t: jump*t - gravity*t^2/2. The body is
+        // at the landing's height at the later root of that, arriving as it
+        // falls -- the slower of the two, the way a player times a drop.
+        const reach = movement.jump_speed * movement.jump_speed + 2 * movement.gravity * (takeoff[2] - landing[2]);
+        if (reach <= 0) return 1;
+        const flight = (movement.jump_speed + @sqrt(reach)) / movement.gravity;
+        return std.math.clamp(gap / flight / movement.speed, 0.25, 1);
     }
 
     fn evaluate(self: *Driver, frame: Frame, running: *Running, player: data.Player) !Evaluation {
@@ -648,7 +693,7 @@ pub const Driver = struct {
                 result.intent.brake = action.direct;
                 result.intent.crouch = action.crouch;
                 // A walk off a narrow ledge drops close under it.
-                result.intent.pace = action.pace;
+                result.intent.pace = action.pace orelse 1;
                 // A precise straight segment ends standing on the floor with its
                 // momentum spent, so the next one does not inherit a drift.
                 const settled = !action.direct or player.water_level >= 2 or (player.ground_entity != c.ENTITYNUM_NONE and nav.horizontalDistance((try world.get(frame.entity, data.Velocity)).linear, @splat(0)) < 120);
@@ -673,7 +718,14 @@ pub const Driver = struct {
                 const found = try held(frame, running, .any) orelse return absent(running, "target removed");
                 // A worker at the console a button is set in holds it back:
                 // move him on as a player would (a shot sends a worker running).
-                if (action.op == .use) if (found.entity) |control| if (nav.horizontalDistance(found.point, pose.position) < 200 and @abs(found.point[2] - pose.position[2]) < 96) if (try routes.civilianBlocker(world, frame.projections, control)) |blocker| {
+                // Worth attempting only with a shot to threaten him by, and only
+                // while it is still worth the wait: a body left holding nothing
+                // but its claws has no way to send him running, and it stands off
+                // him until the press spends its minute (e1m3b's console worker
+                // after a death had taken the guns away). With no shove to make,
+                // the press goes in beside him instead.
+                const shove = action.op == .use and now - running.started_ms < 12_000 and combat.rangedFor((try world.get(frame.entity, data.Weapons)).*, &frame.clients.weapon_table, .{ .advancing = true });
+                if (shove) if (found.entity) |control| if (nav.horizontalDistance(found.point, pose.position) < 200 and @abs(found.point[2] - pose.position[2]) < 96) if (try routes.civilianBlocker(world, frame.projections, control)) |blocker| {
                     self.motor.nuisance = blocker;
                     result.intent.fight = true;
                     result.intent.preferred = blocker;
@@ -711,6 +763,23 @@ pub const Driver = struct {
                 // part of it.
                 var aim_at: ?v.Vec3 = null;
                 const spread = v.scale(v.subtract(found.maxs, found.mins), 0.3);
+                // A blast round leaves from the muzzle below the eye and bursts
+                // on the first thing it meets: a shot is aimed only where its own
+                // round can travel, and a stand that cannot send it there is not
+                // a firing position but an obstacle to walk around.
+                var shot_lane: ?@import("bot_routes.zig").Lane = null;
+                if (action.op == .shoot) {
+                    const loadout = (try world.get(frame.entity, data.Weapons)).*;
+                    const gun: i32 = if (action.weapon != 0) action.weapon else loadout.weapon;
+                    if (gun >= 0 and gun < 32) if (@import("weapon_catalog").find(@intCast(gun))) |entry| {
+                        const flight = entry.spec.projectile;
+                        if (entry.spec.splash_hazard) shot_lane = .{
+                            .muzzle = @import("weapon_catalog").flightLaunch(@intCast(gun), frame.clients.weapon_table.entries[@intCast(gun)], 0, 0).muzzle,
+                            .reach = flight.splash_radius,
+                            .direct = flight.direct_scale > 0,
+                        };
+                    };
+                }
                 // A shot may name the part of a long target to aim at (a
                 // window's far end, away from the party): tried first.
                 var preferred: v.Vec3 = @splat(0);
@@ -718,18 +787,35 @@ pub const Driver = struct {
                 if (named) for (0..3) |axis| {
                     preferred[axis] = std.math.clamp(action.around.?[axis], found.mins[axis] + 1, found.maxs[axis] - 1) - found.point[axis];
                 };
-                if (!station_far) for ([_]v.Vec3{ preferred, .{ 0, 0, 0 }, .{ spread[0], 0, 0 }, .{ -spread[0], 0, 0 }, .{ 0, spread[1], 0 }, .{ 0, -spread[1], 0 }, .{ 0, 0, spread[2] }, .{ 0, 0, -spread[2] } }, 0..) |offset, tried| {
-                    if (tried == 0 and !named) continue;
-                    const point = v.add(found.point, offset);
-                    if (v.length(v.subtract(point, eye)) > reach) continue;
-                    const bolt: f32 = if (action.op == .shoot) 3 else 0;
-                    // Trigger volumes are seen through (a music trigger across
-                    // a doorway, e1m4c), unless the control is one.
-                    const own_trigger = frame.projections[slot].shared.contents & c.CONTENTS_TRIGGER != 0;
-                    const sight = try engine.collisionService().trace(.{ .start = eye, .end = point, .mins = @splat(-bolt), .maxs = @splat(bolt), .slot = frame.index, .mask = if (own_trigger) c.MASK_SHOT | c.CONTENTS_TRIGGER else c.MASK_SHOT });
-                    if (sight.entity == slot or sight.fraction == 1) {
-                        aim_at = point;
-                        break;
+                const aim_points = [_]v.Vec3{ preferred, .{ 0, 0, 0 }, .{ spread[0], 0, 0 }, .{ -spread[0], 0, 0 }, .{ 0, spread[1], 0 }, .{ 0, -spread[1], 0 }, .{ 0, 0, spread[2] }, .{ 0, 0, -spread[2] } };
+                // Two passes over the same parts of the control. The first asks
+                // that a splash round burst where its blast still covers the
+                // mark: a window's far end, named to keep the blast off a
+                // companion, is a poor aim for a round that carries no direct
+                // damage and bursts only where it lands. The second takes any
+                // part it can see rather than never firing at all. The lane
+                // stays a hard requirement either way: a stand the round cannot
+                // travel from is an obstacle to walk around, not a position.
+                if (!station_far) for ([_]bool{ true, false }) |must_tell| {
+                    if (aim_at != null) break;
+                    for (aim_points, 0..) |offset, tried| {
+                        if (tried == 0 and !named) continue;
+                        const point = v.add(found.point, offset);
+                        if (v.length(v.subtract(point, eye)) > reach) continue;
+                        const bolt: f32 = if (action.op == .shoot) 3 else 0;
+                        // Trigger volumes are seen through (a music trigger across
+                        // a doorway, e1m4c), unless the control is one.
+                        const own_trigger = frame.projections[slot].shared.contents & c.CONTENTS_TRIGGER != 0;
+                        const sight = try engine.collisionService().trace(.{ .start = eye, .end = point, .mins = @splat(-bolt), .maxs = @splat(bolt), .slot = frame.index, .mask = if (own_trigger) c.MASK_SHOT | c.CONTENTS_TRIGGER else c.MASK_SHOT });
+                        if (sight.entity == slot or sight.fraction == 1) {
+                            if (shot_lane) |want| {
+                                if (!(try routes.laneClear(frame.index, eye, point, want, slot))) continue;
+                                if (!routes.roundSafe(eye, point, want)) continue;
+                                if (must_tell and !routes.roundTells(point, found.point, want)) continue;
+                            }
+                            aim_at = point;
+                            break;
+                        }
                     }
                 };
                 // A route may name the weapon for a shot (the glove for glass
@@ -747,14 +833,14 @@ pub const Driver = struct {
                     if (running.approach == null or now >= running.approach_ms) {
                         running.approach_ms = now + 2000;
                         var obstructions: [@import("bot_routes.zig").approach_points]u16 = @splat(c.ENTITYNUM_NONE);
-                        running.approach = try routes.approach(world, found.entity.?, frame.entity, if (action.op == .use) .use else .shoot, frame.service, frame.projections, engine.integer("developer") >= 2, &obstructions);
+                        running.approach = try routes.approach(world, found.entity.?, frame.entity, if (action.op == .use) .use else .shoot, frame.service, frame.projections, engine.integer("developer") >= 2, &obstructions, shot_lane);
                         // None reachable as the world stands: choose one as if
                         // every navigation gate were open; the motor's planner
                         // then opens the way to it.
                         if (running.approach == null) if (frame.gates) |state| {
                             state.open();
                             defer state.restore();
-                            running.approach = try routes.approach(world, found.entity.?, frame.entity, if (action.op == .use) .use else .shoot, frame.service, frame.projections, engine.integer("developer") >= 2, &obstructions);
+                            running.approach = try routes.approach(world, found.entity.?, frame.entity, if (action.op == .use) .use else .shoot, frame.service, frame.projections, engine.integer("developer") >= 2, &obstructions, shot_lane);
                         };
                     }
                     const goal = running.approach orelse found.point;
@@ -827,6 +913,19 @@ pub const Driver = struct {
                             result.intent.direct_radius = 300;
                         } else result.intent.destination = null;
                         if (now - running.started_ms > 45000) return failed(running, "the lift stayed above the rider");
+                    } else if (boardable) {
+                        // Deck at the rider's feet: step straight onto it. The
+                        // area graph is compiled without movers, so it has no
+                        // platform under a lift and a routed walk to the centre
+                        // leaves the ledge and drops the rider into the shaft.
+                        const inset = @min(24.0, (found.maxs[0] - found.mins[0]) / 2, (found.maxs[1] - found.mins[1]) / 2);
+                        var aboard: v.Vec3 = centre;
+                        inline for (0..2) |axis| aboard[axis] = @min(@max(pose.position[axis], found.mins[axis] + inset), found.maxs[axis] - inset);
+                        result.goal = aboard;
+                        result.intent.destination = aboard;
+                        result.intent.direct = true;
+                        result.intent.direct_radius = 32;
+                        if (stalled(frame, running, self.report, pose.position, aboard, now)) return stuck(running, self.report, pose.position);
                     } else {
                         result.goal = centre;
                         result.intent.destination = centre;
@@ -994,8 +1093,10 @@ pub const Driver = struct {
                     }
                     return result;
                 }
-                // A hop onto a narrow ledge goes at the route's pace throughout.
-                result.intent.pace = action.pace;
+                // A hop goes at the pace its own gap asks for, throughout: the
+                // route may name one (a hop whose arc must not be its own), and
+                // otherwise the ballistic answer is worked out below.
+                result.intent.pace = action.pace orelse try hopPace(frame, takeoff, landing, now);
                 switch (running.phase) {
                     0 => {
                         // Run straight through the takeoff at full speed from where
@@ -1169,6 +1270,7 @@ pub const Driver = struct {
         var nearest: ?targets.Resolved = null;
         var distance: f32 = std.math.inf(f32);
         var living: usize = 0;
+        var let_be: usize = 0;
         var query = world.queryAccess(data.World.mask(.{ data.Actor, data.Health, data.Transform, data.MapObject }), 0, 0);
         defer query.deinit();
         while (query.next()) |view| for (view.entities(), view.read(data.Actor), view.read(data.Health), view.read(data.Transform), view.read(data.MapObject)) |entity, actor, health, transform, object| {
@@ -1182,6 +1284,10 @@ pub const Driver = struct {
             } else if (!route.hostile(catalog.entries[actor.definition].kind)) continue;
             if (v.length(v.subtract(transform.position, running.anchor)) > action.searchRadius()) continue;
             const id = try world.persistentId(entity);
+            if (action.target == null and self.hunt_let_be.ignored(id, frame.now)) {
+                let_be += 1;
+                continue;
+            }
             if (std.mem.indexOfScalar(u32, running.tracked[0..running.tracked_count], id) == null and running.tracked_count < running.tracked.len) {
                 running.tracked[running.tracked_count] = id;
                 running.tracked_count += 1;
@@ -1193,7 +1299,7 @@ pub const Driver = struct {
             nearest = try targets.describe(frame, entity);
         };
         const killed = running.tracked_count -| living;
-        if (living == 0 or (action.count > 0 and killed >= action.count)) return done(running, running.say("killed {d}", .{killed}));
+        if (living == 0 or (action.count > 0 and killed >= action.count)) return done(running, if (let_be == 0) running.say("killed {d}", .{killed}) else running.say("killed {d}, {d} left out of reach", .{ killed, let_be }));
         var prey = nearest.?;
         prey.point = try standing(frame, prey.point);
         result.intent.preferred = prey.id;
@@ -1205,16 +1311,32 @@ pub const Driver = struct {
         const reach = @min(@as(f32, 900), @max(@as(f32, 96), frame.clients.weapon_table.entries[weapon].range * 0.6));
         // Seen behind cover a shot cannot clear is not yet a firing position.
         const firing_line = self.report.enemy == prey.id and !self.report.lane_blocked;
-        var engaged = action.hold or (firing_line and distance <= reach);
-        var shifted = false;
-        if (engaged) result.intent.leash = if (action.hold) running.home else pose.position;
-        result.intent.arena = action.arena;
-        result.intent.look_at = prey.point;
         if (firing_line) running.contact_ms = frame.now;
         if (running.contact_ms == null) running.contact_ms = frame.now;
+        // A held fight keeps the stand the route chose until that stand proves
+        // blind: prey that stays out of sight for 12 s is not shot from there,
+        // and no player waits on a ledge for a target he cannot see. Then drop
+        // the tether and go and find it, as a player walks to a firing place.
+        // (Not below a ledge or in deep water: bolts die in water and a player
+        // does not jump off the bank after one stubborn enemy.)
+        const reachable_stand = prey.point[2] > pose.position[2] - 128;
+        if (action.hold and reachable_stand and !running.hold_closed and frame.now - running.contact_ms.? > 12_000) {
+            running.hold_closed = true;
+            running.progress = .{};
+            self.event(frame.now, "hold", running.say(
+                "no firing line for 12 s at {d:.0},{d:.0},{d:.0}: closing on prey {d}",
+                .{ pose.position[0], pose.position[1], pose.position[2], prey.id },
+            ));
+        }
+        const tethered = action.hold and !running.hold_closed;
+        var engaged = tethered or (firing_line and distance <= reach);
+        var shifted = false;
+        if (engaged) result.intent.leash = if (tethered) running.home else pose.position;
+        result.intent.arena = action.arena;
+        result.intent.look_at = prey.point;
         // Held, but the prey has stayed out of sight: shift within the tether
         // toward it to regain a firing line, then hold again.
-        if (action.hold and frame.now - running.contact_ms.? > 5000) {
+        if (tethered and frame.now - running.contact_ms.? > 5000) {
             const toward = v.subtract(prey.point, running.home);
             const flat = v.normalize(.{ toward[0], toward[1], 0 });
             var shift = v.add(running.home, v.scale(flat, 200));
@@ -1238,16 +1360,47 @@ pub const Driver = struct {
             running.progress = .{};
             return result;
         };
-        if (engaged and !action.hold) try self.measureTrade(frame, running, prey, pose);
+        if (engaged and !tethered) try self.measureTrade(frame, running, prey, pose);
         // (A held shift keeps its own point: it stays within the tether.)
-        if (!engaged and !shifted) result.intent.destination = prey.point;
-        if (!engaged and !shifted and stalled(frame, running, self.report, pose.position, prey.point, frame.now)) return stuck(running, self.report, pose.position);
+        if (!engaged and !shifted) {
+            var goal = prey.point;
+            // A hunt that left its tether still keeps the arena the route drew
+            // about the fight: what lies beyond it may be the drop the player
+            // would never take in order to reach one stubborn enemy.
+            if (action.hold) if (action.arena) |box| for (0..2) |axis| {
+                const low = box[0][axis] + 16;
+                const high = box[1][axis] - 16;
+                goal[axis] = if (low <= high) std.math.clamp(goal[axis], low, high) else (box[0][axis] + box[1][axis]) / 2;
+            };
+            const close_on = try standing(frame, goal);
+            result.intent.destination = close_on;
+            if (stalled(frame, running, self.report, pose.position, close_on, frame.now)) {
+                // Nothing came of the whole window, and this enemy never hurt
+                // the player: it is out of reach rather than stubborn (the
+                // e1m2a upper sewer's clear spent 42 s wobbling at the rim of
+                // the shaft a sludgeminion waddled down). Let it be and clear
+                // the rest; what hunts the player is always fought.
+                if (action.target == null and self.report.enemy != prey.id and self.attacker != prey.id) {
+                    self.hunt_let_be.ignore(prey.id, frame.now + 20_000);
+                    running.progress = .{};
+                    const spent = running.hunt_stall_ms;
+                    running.hunt_stall_ms = @min(running.hunt_stall_ms, 9_000);
+                    self.event(frame.now, "letbe", running.say(
+                        "no way to prey {d} in {d} s at {d:.0},{d:.0},{d:.0}: leaving it, {d} s per prey after",
+                        .{ prey.id, @divTrunc(spent, 1000), pose.position[0], pose.position[1], pose.position[2], @divTrunc(running.hunt_stall_ms, 1000) },
+                    ));
+                    return result;
+                }
+                return stuck(running, self.report, pose.position);
+            }
+        }
         if (engaged) running.progress = .{};
         return result;
     }
     fn measureTrade(self: *Driver, frame: Frame, running: *Running, prey: targets.Resolved, pose: data.Transform) !void {
         _ = self;
-        const own = (try frame.world.get(frame.entity, data.Health)).current;
+        const own_health = (try frame.world.get(frame.entity, data.Health)).*;
+        const own = own_health.current;
         const theirs = if (prey.entity) |entity| if (frame.world.get(entity, data.Health)) |health| health.current else |_| 0 else 0;
         if (running.trade_prey != prey.id or frame.now - running.trade_ms > 2500) {
             running.trade_prey = prey.id;
@@ -1258,14 +1411,26 @@ pub const Driver = struct {
         }
         const lost = running.trade_health - own;
         const dealt = running.trade_prey_health - theirs;
-        if (lost < 20 or dealt * 2 >= lost or frame.now - running.trade_ms < 800) return;
+        if (lost < 20 or frame.now - running.trade_ms < 800) return;
+        // Who runs out first, measured across both health pools: the prey's
+        // health against the damage still landing, the player's against the
+        // rounds still arriving. Shooting twice as hard as the enemy is no win
+        // from one health pack against twice his armour - the player still
+        // dies first, and a player steps out of that line and lets the enemy
+        // come to him, where the fight is shorter. Equal pools reduce this to
+        // the bare rate of damage the rule had before.
+        const spent = @as(i64, theirs) * lost;
+        const winning = @as(i64, own) * dealt;
+        const outgunned = spent >= winning * 2;
+        const hurt = own * 5 < own_health.maximum * 3;
+        if (!(outgunned or (hurt and spent * 4 >= winning * 3))) return;
         running.trade_ms = frame.now;
         running.trade_health = own;
         running.trade_prey_health = theirs;
         const shooter = v.add(prey.point, .{ 0, 0, 40 });
         if (try @import("bot_evasion.zig").cover(try motor_module.pilotFrame(frame), pose.position, shooter)) |aside| {
             running.cover = v.add(pose.position, aside);
-            running.cover_until_ms = frame.now + 2000;
+            running.cover_until_ms = frame.now + (if (hurt) @as(i64, 3500) else @as(i64, 2000));
         }
     }
 };
@@ -1310,11 +1475,11 @@ fn stalled(frame: Frame, running: *Running, report: motor_module.Report, positio
     const target = report.control_point orelse goal;
     const left = (frame.service.travel(.{ .position = position, .destination = target, .slot = frame.index, .player = true }) catch null) orelse v.length(v.subtract(target, position));
     running.progress.update(left, now);
-    return running.progress.stalled(now, stall_ms);
+    return running.progress.stalled(now, running.hunt_stall_ms);
 }
 fn stuck(running: *Running, report: motor_module.Report, position: v.Vec3) Evaluation {
     const waypoint = report.waypoint orelse nav.Waypoint{ .point = @splat(0) };
-    return .{ .result = .{ .failed = running.say("no progress for {d} s at {d:.0},{d:.0},{d:.0} waypoint={d:.0},{d:.0},{d:.0} blocked={d} no_route={d} control={d} avoided_exit={d}", .{ @divTrunc(stall_ms, 1000), position[0], position[1], position[2], waypoint.point[0], waypoint.point[1], waypoint.point[2], @intFromBool(report.blocked), @intFromBool(report.no_route), report.control, report.avoided_exit }) } };
+    return .{ .result = .{ .failed = running.say("no progress for {d} s at {d:.0},{d:.0},{d:.0} waypoint={d:.0},{d:.0},{d:.0} blocked={d} no_route={d} control={d} avoided_exit={d}", .{ @divTrunc(running.hunt_stall_ms, 1000), position[0], position[1], position[2], waypoint.point[0], waypoint.point[1], waypoint.point[2], @intFromBool(report.blocked), @intFromBool(report.no_route), report.control, report.avoided_exit }) } };
 }
 /// Horizontally within the box (grown by `margin`) and not below its floor.
 fn inside(position: v.Vec3, mins: v.Vec3, maxs: v.Vec3, margin: f32) bool {
@@ -1328,10 +1493,13 @@ fn standing(frame: Frame, point: v.Vec3) !v.Vec3 {
     if (floor.start_solid or floor.all_solid or floor.fraction == 1) return point;
     return floor.end;
 }
-/// A trigger volume is reached by walking toward its centre; completion is the
-/// first hull overlap, so a centre inside a wall still yields a usable heading.
+/// A trigger volume is reached by walking into it; completion is the first hull
+/// overlap, so a centre inside a wall still yields a usable heading. Where the
+/// volume does have a place to stand, that place is the goal: a centre set
+/// inside a wall has no floor and no area to route at, and a route cannot be
+/// planned to it at all (e1m4a's keypad trigger, set into the bar's wall).
 fn volumeGoal(frame: Frame, found: targets.Resolved) !v.Vec3 {
-    if (found.brush) if (try routes.touchPointFrom(found.mins, found.maxs, frame.index, .{ .position = (try frame.world.get(frame.entity, data.Transform)).position, .service = frame.service })) |point| return point;
+    if (try routes.touchPointFrom(found.mins, found.maxs, frame.index, .{ .position = (try frame.world.get(frame.entity, data.Transform)).position, .service = frame.service })) |point| return point;
     var centre = found.point;
     centre[2] = @min(found.maxs[2], found.mins[2] - hull_mins[2] + 8);
     return standing(frame, centre);

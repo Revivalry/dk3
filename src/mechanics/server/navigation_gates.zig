@@ -10,6 +10,8 @@
 //!   damaging volume  blocks while switched on and dealing 10 or more a tick
 //!   toggled wall     blocks while it stands (a cell's force field)
 //!   remote door      blocks until open (a door its authored control opens)
+//!   plain door       blocks until pressed (a nameless door, open only to the
+//!                    party's own use key)
 //!   sliding floor    blocks the floor above it while away from its place
 //!   breakable        blocks until broken
 //!   tripwire         a touch control that switches a damaging volume on
@@ -69,7 +71,7 @@ pub const State = struct {
         const navigation = @import("../../engine/navigation.zig");
         const flags = navigation.travelFlags(true);
         var start = engine.gateway.call(c.BOTLIB_AI_REACHABILITY_AREA, .{ &from, @as(isize, slot) });
-        const target = navigation.destinationArea(goal);
+        var target = navigation.destinationArea(goal);
         if (start == 0 or target == 0) return report("no area", start, target);
         if (engine.gateway.call(c.BOTLIB_AAS_AREA_TRAVEL_TIME_TO_GOAL_AREA, .{ start, &from, target, @as(isize, flags) }) > 0) return report("routed", start, target);
         self.open();
@@ -89,13 +91,24 @@ pub const State = struct {
                 break;
             }
             if (standing == 0) {
+                // The goal may lie in a pocket the compiled graph cannot
+                // enter at all: then the route is planned to the nearest place
+                // beside it, and the gate holding THAT way shut is the one to
+                // work for (`besideGoal`).
+                const neighbour = besideGoal(start, from, slot, goal, flags) catch 0;
+                if (neighbour == 0) {
+                    if (engine.integer("developer") >= 1) {
+                        var message: [160]u8 = undefined;
+                        engine.print(std.fmt.bufPrintZ(&message, "dk3 navigation gates: standing area={d} at {d:.0},{d:.0},{d:.0}\n", .{ standing, from[0], from[1], from[2] }) catch "");
+                    }
+                    return report("no route with every gate open", start, target);
+                }
                 if (engine.integer("developer") >= 1) {
                     var message: [160]u8 = undefined;
-                    engine.print(std.fmt.bufPrintZ(&message, "dk3 navigation gates: standing area={d} at {d:.0},{d:.0},{d:.0}\n", .{ standing, from[0], from[1], from[2] }) catch "");
+                    engine.print(std.fmt.bufPrintZ(&message, "dk3 navigation gates: goal area={d} cannot be entered, planned beside it to {d}\n", .{ target, neighbour }) catch "");
                 }
-                return report("no route with every gate open", start, target);
-            }
-            start = standing;
+                target = neighbour;
+            } else start = standing;
         }
         var areas: isize = 1;
         var previous: i32 = @intCast(start);
@@ -261,7 +274,15 @@ pub fn kindOf(world: *data.World, entity: @import("../../core/ecs/world.zig").En
     if (traits.door == .rotating and object.targetname.len != 0) return .door;
     if (traits.door != .sliding) return null;
     if (slab(projection, mover.*)) return .floor;
-    if (object.targetname.len == 0) return null;
+    // A door armed to open on touch yields to whoever walks into it, and a
+    // nameless one is the party's own to open: Daikatana arms every func_door
+    // with a use handler, and a player's use key fires it precisely when the
+    // door carries no name (a named one answers only its authored control),
+    // while a character walking into a nameless one opens it by that same key.
+    // A nameless door is therefore a gate the routed player operates itself --
+    // it keeps its shut doorway out of the graph until someone presses it,
+    // instead of letting a route run at a panel nobody opens by walking.
+    if (object.targetname.len == 0 and object.flags & 16 != 0) return null;
     // A thin plate (a keypad cover set in a console's floor, e1m4a) is
     // stepped over or onto wherever it stands: never a gate.
     const extent = v.subtract(projection.shared.maxs, projection.shared.mins);
@@ -306,6 +327,53 @@ pub fn closedNow(world: *data.World, projections: []const abi.EntityProjection, 
 fn has(world: *data.World, entity: @import("../../core/ecs/world.zig").Entity, comptime T: type) bool {
     _ = world.get(entity, T) catch return false;
     return true;
+}
+/// The nearest area a route can enter that lies beside `goal` (0: nothing
+/// beside it is routable either). BSPC splits areas at a trigger's own faces
+/// and links a step of a couple of units in one direction only, so a control
+/// set into a counter can end up in a pocket nothing enters (e1m4a's keypad
+/// ledge in front of the bar's console): plan to the closest place a route
+/// reaches next to it; the last stretch is walked by eye.
+/// A place beside it counts only where a player standing there can reach the
+/// control: a floor to stand on, and an unbroken line to it. The compiled
+/// graph hugs walls, and a two-unit sliver of area outside a wall can lie
+/// nearer a control than the room the control stands in (that ledge in front
+/// of the bar's console has an outside as well as an inside): planned there,
+/// no gate would be named and the party would stand outside a shut door.
+/// Where nothing beside the goal can be reached at all, the nearest area a
+/// route enters still counts, so the way gets as close as the graph allows.
+fn besideGoal(start: isize, from: v.Vec3, slot: u16, goal: v.Vec3, flags: i32) !isize {
+    // A hull reaches a control a step or two beside its own area; further
+    // than this is another way round, not the last stretch of this one.
+    const reach: v.Vec3 = .{ 64, 64, 48 };
+    var found: std.ArrayList(i32) = .empty;
+    defer found.deinit(allocator);
+    try collect(&found, v.subtract(goal, reach), v.add(goal, reach), 0, false);
+    for ([_]bool{ true, false }) |reached| {
+        var best: isize = 0;
+        var shortest: f32 = std.math.inf(f32);
+        for (found.items) |area| {
+            var info = std.mem.zeroes(c.aas_areainfo_t);
+            if (engine.gateway.call(c.BOTLIB_AAS_AREA_INFO, .{ @as(isize, area), &info }) == 0) continue;
+            const centre: v.Vec3 = info.center;
+            const distance = v.length(v.subtract(centre, goal));
+            if (distance >= shortest) continue;
+            if (engine.gateway.call(c.BOTLIB_AAS_AREA_TRAVEL_TIME_TO_GOAL_AREA, .{ start, &from, area, @as(isize, flags) }) == 0) continue;
+            if (reached and !reachedFrom(info.flags, centre, goal, slot)) continue;
+            best = area;
+            shortest = distance;
+        }
+        if (best != 0) return best;
+    }
+    return 0;
+}
+/// A floor to stand on with an unbroken line from `centre` to `goal`: the last
+/// stretch from there is a walk a player sees, not a wall the graph slipped
+/// through.
+fn reachedFrom(flags: i32, centre: v.Vec3, goal: v.Vec3, slot: u16) bool {
+    if (flags & AREA_GROUNDED == 0) return false;
+    const stroke = engine.collisionService().trace(.{ .start = centre, .end = goal, .mins = @splat(0), .maxs = @splat(0), .slot = slot, .mask = c.MASK_PLAYERSOLID }) catch return false;
+    return !stroke.start_solid and !stroke.all_solid and stroke.fraction == 1;
 }
 fn report(reason: []const u8, start: isize, target: isize) ?Block {
     if (engine.integer("developer") >= 1) {

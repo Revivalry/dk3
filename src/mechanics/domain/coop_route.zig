@@ -58,9 +58,9 @@ pub const Action = struct {
     cautious: bool = false,
     /// leap: a shotcycler jump (fired at the floor as the player jumps).
     blast: bool = false,
-    /// leap: fraction of full running input, for a short hop onto a narrow
-    /// ledge that a running jump would carry the player past.
-    pace: f32 = 1,
+    /// leap: fraction of full running input, for a hop whose arc must not be
+    /// its own. Unset means the hop works out its own pace from the gap.
+    pace: ?f32 = null,
     /// kill with hold: the horizontal box (min, max) dodges and strafes stay in.
     arena: ?[2][2]f32 = null,
     map: Name = .{},

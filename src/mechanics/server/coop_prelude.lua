@@ -33,9 +33,10 @@ local function act(spec, opts)
   opts = opts or {}
   spec.timeout = seconds(opts.timeout, spec.timeout or 60)
   if opts.fight ~= nil then spec.fight = opts.fight end
-  for _, key in ipairs({ "radius", "around", "class", "map", "count", "hold", "direct", "crouch", "arena", "weapon", "cautious", "blast", "pace" }) do
+  for _, key in ipairs({ "radius", "around", "class", "map", "count", "hold", "direct", "crouch", "arena", "weapon", "cautious", "blast", "pace", "on_floor" }) do
     if opts[key] ~= nil and spec[key] == nil then spec[key] = opts[key] end
   end
+  if spec.on_floor and spec.target and spec.target.point then spec.target.point = on_floor(spec.target.point) end
   local ok, detail = yield(spec)
   if not ok then error(dk3.where() .. ": " .. spec.op .. ": " .. tostring(detail), 0) end
   return detail
@@ -50,6 +51,13 @@ local function target(value)
   return value
 end
 
+-- The player's own position, one axis at a time: a route states where it
+-- expects to stand after a move (`expect(x() < 1350, "through the doors")`)
+-- rather than trusting that the move returned.
+function x() return (dk3.position()) end
+function y() local _, east = dk3.position() return east end
+function z() local _, _, height = dk3.position() return height end
+
 function level(name, body)
   assert(type(name) == "string", "level name must be a map name")
   local function register(fn)
@@ -63,6 +71,10 @@ function level(name, body)
       if options.level_saves and not resumed then
         cinematic()
         recover(0.6)
+        -- Into a new map with an empty arsenal: take what the arrival room can
+        -- safely reach before the fight the map opens on (and before the save
+        -- a retry comes back to).
+        try(arm, 30, 900)
         local healthy, health, maximum = sturdy(0.6)
         if healthy then
           save("coop-" .. name)
@@ -96,7 +108,7 @@ function stages(list)
       -- A checkpoint is only worth having in good health: restoring a badly
       -- hurt player again and again cannot succeed. Heal from what is near;
       -- if still hurt, keep the older checkpoint.
-      if list[index].checkpoint and not resuming then tend() recover(0.6) resupply(30, 900) end
+      if list[index].checkpoint and not resuming then tend() recover(0.6) try(arm, 30, 900) end
       if list[index].checkpoint and not resuming and sturdy(0.5) then
         -- The save records the stage with none of its body's actions done
         -- (healing on the way here is not replayed on restoration).
@@ -150,7 +162,7 @@ function exit(map, opts)
   if door then try(move, { door.x, door.y, door.z }, { radius = 320, timeout = 60 }) end
   tend()
   recover(0.8)
-  resupply()
+  try(arm, 30, 700)
   return act({ op = "exit", map = map, timeout = 180 }, opts)
 end
 function cinematic(opts) return act({ op = "cinematic", timeout = 900 }, opts) end
@@ -206,6 +218,32 @@ function pickup_near(item)
   if not found then return end
   try(move, { found.x, found.y, found.z }, { radius = 160, timeout = 30 })
 end
+-- A `move` is judged in three dimensions: within `radius` across and 56 units
+-- up or down. A point whose height the author did not measure is therefore a
+-- point the bot stands exactly under and never arrives at (and one sunk into
+-- the plank is a wall). `on_floor` returns a point at the height its own floor
+-- is walked at, found by the same hull the bot is moved with; where the trace
+-- finds no walkable floor - a void, a mover not in place yet - the point is
+-- returned as written, so an authored height still stands.
+function on_floor(point, depth)
+  assert(type(point) == "table" and type(point[1]) == "number", "on_floor needs a point")
+  depth = depth or 220
+  -- A hull started inside the structure above - a catwalk's underside, the roof
+  -- of a pit under a floor - stops at that structure and reports no floor,
+  -- though a player walks the level below it all the same. Start the sweep
+  -- under the overhang when the sweep from above is stopped by one, and accept
+  -- only a surface near the authored height: a floor found far below is a void
+  -- the author meant to cross, not a floor to walk.
+  for _, start in ipairs({ point[3] + depth, point[3] + 64, point[3] + 20 }) do
+    local hit = dk3.trace({ point[1], point[2], start }, { point[1], point[2], point[3] - depth }, true)
+    if hit and hit.fraction < 1 and not hit.start_solid and (hit.normal_z or 0) > 0.5
+        and math.abs(hit.z - point[3]) <= 96 then
+      return { point[1], point[2], hit.z }
+    end
+  end
+  return point
+end
+
 function wait(duration) return act({ op = "wait", duration = duration, timeout = duration + 1 }) end
 
 -- Walks the points in order, starting at the one nearest the player: a game
@@ -646,6 +684,51 @@ function resupply(low, radius)
     tried[best.id] = true
     fetch(best, 30)
   end
+end
+
+-- Fetches reachable weapon pickups on this floor within `radius` (nearest
+-- first) for every weapon not yet carried, then resupplies for the whole
+-- arsenal. A level entered with one weapon and no ammunition meets its guards
+-- with fists -- no route survives that -- and the campaign carries the loadout
+-- onward, so an weapon taken here is paid back in the next map. Only while the
+-- neighbourhood is quiet: arming under fire trades the weapon for a death.
+function arm(low, radius)
+  local tried = {}
+  local taken, seen, reasons = 0, 0, {}
+  local function why(reason) reasons[reason] = (reasons[reason] or 0) + 1 end
+  for _ = 1, 4 do
+    local x, y, z = dk3.position()
+    if dk3.hostiles(600, { x, y, z }) > 0 then
+      why("hostiles")
+      break
+    end
+    local best, nearest
+    for _, item in ipairs(dk3.pickups(radius or 900)) do
+      local distance = (item.x - x) ^ 2 + (item.y - y) ^ 2
+      seen = seen + 1
+      -- The same tests in the same order, named: an arsenal that stays armed
+      -- with one weapon says nothing about why the rest were left, and the
+      -- answer is usually one of the last two (nothing walks to the pickup, or
+      -- nothing walks back).
+      if item.ammo <= 0 then why("not-a-weapon")
+      elseif dk3.has_weapon(item.ammo) then why("carried")
+      elseif tried[item.id] then why("tried")
+      elseif math.abs(item.z - z) > 128 then why("other-floor")
+      elseif nearest ~= nil and distance >= nearest then why("farther")
+      elseif not dk3.reachable({ id = item.id }) then why("unreachable")
+      elseif not handy(item, x, y, z) then why("long-way-back")
+      else best, nearest = item, distance end
+    end
+    if not best then break end
+    tried[best.id] = true
+    taken = taken + 1
+    fetch(best, 30)
+  end
+  local parts = {}
+  for reason, count in pairs(reasons) do parts[#parts + 1] = reason .. "=" .. count end
+  table.sort(parts)
+  dk3.log(string.format("arm: %d taken of %d seen: %s", taken, seen, table.concat(parts, " ")))
+  resupply(low or 40, radius or 900)
 end
 
 -- Eats from an authored health tree until healthy or the tree is bare.

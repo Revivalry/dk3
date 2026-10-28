@@ -330,11 +330,17 @@ pub fn step(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
             moves[count] = .{ .entity = part, .destination = transform };
             count += 1;
         }
-        if (try pusher.push(world, slots, projections, moves[0..count], now, elapsed)) |blocker| {
+        // A button press is a timed press in the reference: the mover travel that
+        // carries it traces without monsters, so an actor standing in the panel - the
+        // worker typing at the console e1m3b's door button is set in - never holds the
+        // press up. The brush still cannot commit into him, but the press arrives on its
+        // authored clock and fires its target, which is the difference between a stuck
+        // level and a door that opens.
+        const button = eq((try world.get(entity, data.MapObject)).classname, "func_button");
+        if (try pusher.push(world, slots, projections, moves[0..count], now, elapsed, if (button) .running else .held)) |blocker| {
             // Daikatana's button_blocked does nothing: a pressed button neither
-            // hurts nor gives way; it waits until whatever holds it has moved
-            // (e1m3b's worker typing at the console a button is set in).
-            if (eq((try world.get(entity, data.MapObject)).classname, "func_button")) continue;
+            // hurts nor gives way.
+            if (button) continue;
             if (engine.integer("developer") >= 2) {
                 var text: [160]u8 = undefined;
                 const blocker_pose = world.get(blocker, data.Transform) catch null;
@@ -342,7 +348,22 @@ pub fn step(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
                 engine.print(std.fmt.bufPrintZ(&text, "dk3 zig mover blocked: id={d} blocker={d} at={d:.0},{d:.0},{d:.0} state={s}\n", .{ try world.persistentId(entity), try world.persistentId(blocker), at[0], at[1], at[2], @tagName(master.state) }) catch "");
             }
             _ = try @import("../../../../mechanics/server/damage.zig").apply(world, blocker, master.damage, now, .{});
-            if (!master.force and master.moving()) try start(world, slots, projections, master.group, master.state == .closing, now, false);
+            // Daikatana's movers do not give way: the reference handler bound to
+            // every DK3 mover class (`MoverBlocked`, set for all mover kinds in
+            // DK_SpawnEntity) hurts what is in the way and then resumes the
+            // travel - it tails to BinaryMove - instead of reversing like Quake
+            // 2's Blocked_Door. Hold the travel clock while held up rather than
+            // running it out against an obstruction, so the mover continues from
+            // where it was stopped once the way clears. e1m1c's exit door is
+            // opened by a switch upstairs and a Crox crossing its sweep used to
+            // seal the level for good, since the switch fires a trigger_once.
+            if (master.moving()) {
+                for (moves[0..count]) |held| {
+                    if (world.get(held.entity, data.Mover)) |member| {
+                        if (member.moving()) member.motion.start_ms += elapsed;
+                    } else |_| {}
+                }
+            }
         }
     }
 }

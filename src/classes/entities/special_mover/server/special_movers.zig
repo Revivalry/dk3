@@ -118,7 +118,7 @@ pub fn step(world: *data.World, slots: *const Slots, projections: []abi.EntityPr
                 count += 1;
             }
         } else |_| continue;
-        if (try pusher.push(world, slots, projections, moves[0..count], now, elapsed)) |blocker| {
+        if (try pusher.push(world, slots, projections, moves[0..count], now, elapsed, .held)) |blocker| {
             _ = try @import("../../../../mechanics/server/damage.zig").apply(world, blocker, damage, now, .{});
         }
     }
