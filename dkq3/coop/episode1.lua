@@ -117,8 +117,6 @@ level("e1m1b", function(visit, resumed)
   }(visit, resumed)
 end)
 
-local function z() local _, _, height = dk3.position() return height end
-local function x() local value = dk3.position() return value end
 local function opened(index)
   return function() local state = dk3.mover { index = index } return state == "open" or state == "opening" end
 end
@@ -578,62 +576,114 @@ level("e1m2b", function(visit, resumed)
         error("never reached the valve walkway", 0)
       end
       climb()
-      try(function() pickup({ index = 26 }, { timeout = 20 }) end)   -- ion ammunition for the way west
-      -- A worker stands at the valve wheel, in every line to it.
-      try(function() kill({ index = 50 }, { radius = 400, timeout = 20 }) end)
-      -- Back to the doors the way up, over the beams: the area graph's way
-      -- drops into the pit, a fall that costs a fifth of the player's health
-      -- and the doors' ten seconds.
-      local function back()
-        -- Step off the walkway's edge onto the beam below it (a running drop
-        -- overshoots into the pit), then west along y 840.
-        path({ {1994, 844, -8}, {1860, 840, -8}, {1700, 840, -8}, {1554, 840, -8} },
-             { direct = true, radius = 16, timeout = 90, fight = false })
-        -- Up onto the plank's south tip. The beam ends at y 905 and nothing is
-        -- walked across y 910..940, so the take-off is the beam's north end and
-        -- the landing the plank's own tip at y 950: asked for further north the
-        -- jump is made over empty air and misses its landing.
-        for _ = 1, 3 do
-          if leap({ 1536, 900, -8 }, { 1552, 952, 24 }) then break end
-        end
-        expect(z() > 0, "up from the beam onto the plank")
-        -- South across the race in one full stroke again (the same fight as
-        -- outbound: aim upstream, never brake inside the water). The landing is
-        -- the platform's west end again, on the same line and for the same
-        -- reason; a hull standing there at feet 0 is dry whatever its y, so the
-        -- current is done with by then.
-        path({ {1540, 985, 24} }, { direct = true, radius = 12, timeout = 30,
-                                    on_floor = true, fight = false })
-        move({ 1552, 1240, 24 }, { direct = true, radius = 14, timeout = 40, fight = false })
-        if z() < 16 or x() > 1560 or x() < 1440 then
-          error("in the race", 0)
-        end
-        -- Down off the platform back to the ledge (the wall fills the platform
-        -- west of x 1520, so the ledge is the only way west) and along it to the
-        -- doors: the valve's doors are the pair that fill the gap in the pit's
-        -- west wall at x 1432, y 1112, and the way in is the standing ground
-        -- they turn out of.
-        path({ {1560, 1288, -10}, {1500, 1290, -10} },
-             { direct = true, radius = 16, timeout = 45, on_floor = true, fight = false })
-        move({ 1412, 1112, 24 }, { radius = 24, timeout = 40, fight = false })
+      -- North up the walkway to the shelf that caps the pit's north-west
+      -- corner. The walkway is a ramp: a flat strip of some twenty units at
+      -- x 2000, its face rising east from there to the upper floor at x 2110,
+      -- and the pit falling west from the same line. The area graph walks the
+      -- ramp's own face and turns west at the north end, where the shelf
+      -- begins: fifty units deep (y 1196..1246), holding the ionpack, four
+      -- protopods and the worker who guards the wheel.
+      move({ 1980, 1230, 72 }, { radius = 16, timeout = 60, fight = false })
+      expect(z() > 40 and z() < 110 and x() < 1996, "on the shelf above the pit")
+      -- What stands between here and the wheel is shot from the standing
+      -- place, never walked up to. A protopod blocks the lane's mouth (x 1984,
+      -- y 1240) and another stands in the lane itself (y 1296); two more lie
+      -- along the shelf's middle and west end where the way back goes; each
+      -- hatches a slaughterskeet the moment it sees a player. The worker keeps
+      -- the wheel, dead centre of the lane. The lane is thirty units wide and
+      -- the pit beside it five hundred deep, and a fought body moves further
+      -- than the lane: so the shots are taken without a step, from the ground
+      -- the bot is already standing on (`shoot` with a `from` spot walks to it
+      -- first, and the spot named here is the spot already under the bot).
+      for _, guard in ipairs({ 379, 380, 378, 377, 50 }) do
+        try(function()
+          shoot({ index = guard }, { from = { { 1980, 1230, 72 } }, timeout = 20, fight = false })
+        end)
       end
-      -- A turn blocked part-way (the worker's body by the wheel) springs back
-      -- without opening the doors: press until the wheel stays open.
+      -- The pods are spent by the time the bot arrives (each hatches its
+      -- slaughterskeet the moment it sees a player), so they are shot at only
+      -- if something still stands in their place. The protopod in the pit below
+      -- the lane's west end is taken the same way -- from the shelf, never by
+      -- going down for it: a body that leaves the shelf for the pit gives up
+      -- the crossing with the doors open behind it.
+      try(shoot, { index = 85 }, { from = { { 1980, 1230, 72 }, { 1900, 1230, 72 } }, timeout = 20, fight = false })
+      -- Up the lane to the wheel. The navigation's own standing areas trace
+      -- the lane from x 1968 to x 2000 for its whole length, so the walked
+      -- line is its centre at x 1984: onto the lane first, then the length of
+      -- it in one straight stroke, nobody fought and nothing stopped on it. The
+      -- ionpack at x 1888 lies on the shelf's middle, not on the way here; it
+      -- is taken on the way back, by walking over it.
+      move({ 1984, 1260, 72 }, { radius = 10, timeout = 30, fight = false })
+      expect(x() > 1962 and x() < 2006 and y() > 1250 and z() > 40 and z() < 110,
+             "on the lane to the wheel")
+      move({ 1984, 1378, 72 }, { direct = true, radius = 14, timeout = 40, fight = false })
+      expect(y() > 1330 and z() > 40 and z() < 110, "at the valve wheel")
+      -- A turn blocked part-way (a body at the wheel) springs back without
+      -- opening the doors: press until the wheel stays open.
+      -- The press is taken whatever is shooting from the pit: fighting first
+      -- here loses the eleven seconds the doors stay open, and a body at the
+      -- wheel is pressed through (the wheel's own retry below).
       local function turn()
         for _ = 1, 4 do
-          use { index = 112 }
+          use({ index = 112 }, { timeout = 30, fight = false })
           if try(function()
             wait_until(function() return dk3.mover { index = 112 } == "open" end, { timeout = 4, reason = "valve open" })
           end) then return end
         end
         error("the valve never stayed open", 0)
       end
-      for attempt = 1, 3 do
-        turn()
-        if try(back) then break end
-        if attempt < 3 then climb() end
+      turn()
+      -- West, and not back the way the bot came: the shelf's west end is an
+      -- edge above the pit's sloping side, a drop of a hundred and forty-four
+      -- that costs no damage and saves the whole crossing of the beams and the
+      -- race. Down it, west and north-west up the slope to the ledge above the
+      -- race's north end, then south down the race's east side and west across
+      -- its shallow end and through the doors the wheel has just opened --
+      -- which stay open eleven seconds, so nothing on this way stops.
+      local function back()
+        -- Back down the lane and west along the shelf.
+        move({ 1980, 1234, 72 }, { radius = 12, timeout = 30, fight = false })
+        -- Off the shelf's west face (x 1824) onto the pit's slope below.
+        move({ 1802, 1245, -48 }, { on_floor = true, radius = 44, timeout = 45, fight = false })
+        move({ 1772, 1264, -48 }, { on_floor = true, radius = 44, timeout = 40, fight = false })
+        move({ 1612, 1300, 0 }, { on_floor = true, radius = 48, timeout = 45, fight = false })
+        -- The lip at the race's north-east corner stands twenty-four over the
+        -- slope: the area graph asks a jump there and the motor makes one.
+        move({ 1560, 1272, 24 }, { on_floor = true, radius = 40, timeout = 40, fight = false })
+        move({ 1560, 1200, 24 }, { direct = true, radius = 30, timeout = 30, fight = false })
+        -- Across the race without stopping. A liquid brush lies on the shelf
+        -- from x 1490 to x 1553, sixteen over a wading body and authored with a
+        -- current due east: Gold's PM_AddCurrents takes a wading body at half
+        -- the swim speed, two hundred, against two hundred and sixty-six of a
+        -- walker's own shortened step. Standing still in it is travelling with
+        -- it, east, and the shelf's east end is a fall of five hundred units.
+        move({ 1460, 1112, 40 }, { direct = true, radius = 26, timeout = 40, fight = false })
+        -- Through the doors. Their own floor is the sill they stand in at feet
+        -- sixteen, and the wheel's door slides down into it, so the way west is
+        -- walked over the top of the retracted leaf.
+        move({ 1368, 1112, 40 }, { on_floor = true, radius = 24, timeout = 45, fight = false })
       end
-      expect(x() < 1420, "through the valve doors")
+      for attempt = 1, 3 do
+        if try(back) then break end
+        -- Already west of the leaf (its box ends at x 1424) the doors no longer
+        -- matter: a body standing in the water at the sill has won the crossing
+        -- and must not be walked back to the wheel for a second press.
+        if x() < 1400 then break end
+        -- Not through: at the wheel again, because the doors close on a player
+        -- who is too slow. A body driven off the shelf into the pit goes by its
+        -- ladder, which climb() knows; a body left on the shelf walks back to
+        -- the lane's mouth.
+        if z() < -200 then
+          climb()
+          move({ 1980, 1230, 72 }, { radius = 16, timeout = 60, fight = false })
+        else
+          try(function()
+            move({ 1900, 1230, 72 }, { radius = 24, timeout = 45, fight = false })
+          end)
+        end
+        turn()
+      end
+      expect(x() < 1400, "through the valve doors")
     end },
     { "west", checkpoint = true, function()
       -- Sludgeminions hold the long way west; their globs are dodged from a
@@ -866,6 +916,11 @@ level("e1m3b", function(visit, resumed)
       try(pickup, { index = 263 }, { timeout = 30 })
       try(pickup, { index = 219 }, { timeout = 20 })
       use { index = 33 }                     -- the hatch up the stairs
+      -- The panel turns slowly (speed 25) and a strafe under a turning panel
+      -- is swept back down the stairs it just climbed: climb once it is flat
+      -- out of the way. (Routing says the stairs are shut until then.)
+      wait_until(function() return dk3.mover { index = 209 } == "open" end,
+                 { timeout = 30, reason = "hatch open" })
     end },
     { "pit room", checkpoint = true, function()
       -- West past the octagon and down the stairs south to the catwalk that
