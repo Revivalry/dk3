@@ -718,7 +718,14 @@ pub const Driver = struct {
                 const found = try held(frame, running, .any) orelse return absent(running, "target removed");
                 // A worker at the console a button is set in holds it back:
                 // move him on as a player would (a shot sends a worker running).
-                if (action.op == .use) if (found.entity) |control| if (nav.horizontalDistance(found.point, pose.position) < 200 and @abs(found.point[2] - pose.position[2]) < 96) if (try routes.civilianBlocker(world, frame.projections, control)) |blocker| {
+                // Worth attempting only with a shot to threaten him by, and only
+                // while it is still worth the wait: a body left holding nothing
+                // but its claws has no way to send him running, and it stands off
+                // him until the press spends its minute (e1m3b's console worker
+                // after a death had taken the guns away). With no shove to make,
+                // the press goes in beside him instead.
+                const shove = action.op == .use and now - running.started_ms < 12_000 and combat.rangedFor((try world.get(frame.entity, data.Weapons)).*, &frame.clients.weapon_table, .{ .advancing = true });
+                if (shove) if (found.entity) |control| if (nav.horizontalDistance(found.point, pose.position) < 200 and @abs(found.point[2] - pose.position[2]) < 96) if (try routes.civilianBlocker(world, frame.projections, control)) |blocker| {
                     self.motor.nuisance = blocker;
                     result.intent.fight = true;
                     result.intent.preferred = blocker;
@@ -1345,7 +1352,8 @@ pub const Driver = struct {
     }
     fn measureTrade(self: *Driver, frame: Frame, running: *Running, prey: targets.Resolved, pose: data.Transform) !void {
         _ = self;
-        const own = (try frame.world.get(frame.entity, data.Health)).current;
+        const own_health = (try frame.world.get(frame.entity, data.Health)).*;
+        const own = own_health.current;
         const theirs = if (prey.entity) |entity| if (frame.world.get(entity, data.Health)) |health| health.current else |_| 0 else 0;
         if (running.trade_prey != prey.id or frame.now - running.trade_ms > 2500) {
             running.trade_prey = prey.id;
@@ -1356,14 +1364,26 @@ pub const Driver = struct {
         }
         const lost = running.trade_health - own;
         const dealt = running.trade_prey_health - theirs;
-        if (lost < 20 or dealt * 2 >= lost or frame.now - running.trade_ms < 800) return;
+        if (lost < 20 or frame.now - running.trade_ms < 800) return;
+        // Who runs out first, measured across both health pools: the prey's
+        // health against the damage still landing, the player's against the
+        // rounds still arriving. Shooting twice as hard as the enemy is no win
+        // from one health pack against twice his armour - the player still
+        // dies first, and a player steps out of that line and lets the enemy
+        // come to him, where the fight is shorter. Equal pools reduce this to
+        // the bare rate of damage the rule had before.
+        const spent = @as(i64, theirs) * lost;
+        const winning = @as(i64, own) * dealt;
+        const outgunned = spent >= winning * 2;
+        const hurt = own * 5 < own_health.maximum * 3;
+        if (!(outgunned or (hurt and spent * 4 >= winning * 3))) return;
         running.trade_ms = frame.now;
         running.trade_health = own;
         running.trade_prey_health = theirs;
         const shooter = v.add(prey.point, .{ 0, 0, 40 });
         if (try @import("bot_evasion.zig").cover(try motor_module.pilotFrame(frame), pose.position, shooter)) |aside| {
             running.cover = v.add(pose.position, aside);
-            running.cover_until_ms = frame.now + 2000;
+            running.cover_until_ms = frame.now + (if (hurt) @as(i64, 3500) else @as(i64, 2000));
         }
     }
 };

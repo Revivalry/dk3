@@ -257,6 +257,9 @@ pub const Command = struct {
 pub const Steering = struct { report: Report, command: Command };
 /// Look-around headings relative to travel: the sides are swept, never behind.
 pub const sweep_headings = [_]f32{ 0, 40, -40, 80, -80, 0 };
+/// How long after last being blocked by a civilian the bot stops treating him as
+/// in its way (long enough to walk past a worker in a corridor).
+const nuisance_forget_ms: i64 = 6000;
 pub const Pilot = struct {
     route: nav.State = .{},
     /// Shots at `futile_target` since its health last fell (see Report.futile).
@@ -924,6 +927,10 @@ pub const Pilot = struct {
             } else if (frame.now - self.blocker_ms > 3000) self.nuisance = in_the_way;
             self.blocker_seen_ms = frame.now;
         } else if (frame.now - self.blocker_seen_ms > 1500) self.blocker = 0;
+        // Standing in the way is what earns the notice, so it is what keeps it:
+        // once the body is clear of him the leave-passing permission lapses, or a
+        // civilian who stood in a doorway once is hunted for the rest of the level.
+        if (self.nuisance != 0 and frame.now - self.blocker_seen_ms > nuisance_forget_ms) self.nuisance = 0;
 
         // View: use/shoot/look targets first, then a visible enemy, else travel.
         var aim = movement;
@@ -1121,6 +1128,15 @@ pub const Pilot = struct {
             };
         }
 
+        // A control that will not take a press needs to be seen whole: where
+        // the step is standing, what it aims at, and what the game's own use
+        // trace answers down that line.
+        if (engine.integer("developer") >= 3) if (intent.use_slot) |want| if (intent.face) |face_point| {
+            var aim_text: [240]u8 = undefined;
+            const sight = try frame.collision.trace(.{ .start = eye, .end = v.add(eye, v.scale(view_forward, 96)), .mins = @splat(0), .maxs = @splat(0), .slot = frame.slot, .mask = c.MASK_SHOT });
+            const held_goal = intent.destination orelse face_point;
+            engine.print(std.fmt.bufPrintZ(&aim_text, "dk3 {s} aim: t={d} pos={d:.0},{d:.0},{d:.0} face={d:.0},{d:.0},{d:.0} dest={d:.0},{d:.0},{d:.0} use={d} centred={d} hit={d} fraction={d:.2}\n", .{ frame.label, frame.now, pose.position[0], pose.position[1], pose.position[2], face_point[0], face_point[1], face_point[2], held_goal[0], held_goal[1], held_goal[2], want, @intFromBool(centred), sight.entity, sight.fraction }) catch "");
+        };
         // Locomotion follows the route heading, independent of where the view
         // points: player movement is applied relative to the view the command
         // carries, so the heading is resolved against that view (the yaw sent
@@ -1451,6 +1467,17 @@ pub const Pilot = struct {
     fn follow(self: *Pilot, frame: Frame, position: v.Vec3, goal: v.Vec3) !?nav.Waypoint {
         const lifts = frame.now >= self.lifts_off_until;
         const fresh = try self.route.update(frame.service, .{ .position = position, .destination = goal, .slot = frame.slot, .player = true, .allow_slime_escape = true, .lifts = lifts }, frame.now);
+        // The area graph offers a step away from a goal the hull could be
+        // walked to in a straight line: the walk is taken instead. Navigation
+        // splits a narrow ledge into thin areas whose entrances lie behind the
+        // traveller, and a hull straddling such an entrance is then routed out
+        // over the ledge's end (e1m2b's shelf above the pit walked a bot into
+        // the pit on its way to the valve wheel eight steps away).
+        if (try walksStraight(frame, position, goal, fresh)) {
+            self.committed = null;
+            self.committed_until = 0;
+            return nav.Waypoint{ .point = goal };
+        }
         if (self.committed) |held| {
             const reached = v.length(v.subtract(position, held.point)) < 24;
             if (!reached and !self.route.blocked and frame.now < self.committed_until and v.length(v.subtract(held.point, goal)) <= v.length(v.subtract(position, goal)) + 256) return held;
@@ -1822,6 +1849,21 @@ fn lookAhead(frame: Frame, position: v.Vec3, goal: v.Vec3) !?v.Vec3 {
         if (try walkable(frame, position, point)) return point;
     }
     return null;
+}
+/// A plain walk to the goal beats the route's next step: the goal is within a
+/// stride of ground, reached by a supported straight line, while the step the
+/// area graph offers is further from the goal than the traveller already is.
+/// Only a plain step is ever passed over: a jump, crouch, ladder, lift or drop
+/// is a step the body must stand on whatever the straight line looks like.
+fn walksStraight(frame: Frame, position: v.Vec3, goal: v.Vec3, step: ?nav.Waypoint) !bool {
+    const player = frame.state;
+    if (player.ground_entity == c.ENTITYNUM_NONE or player.water_level >= 2) return false;
+    const span = nav.horizontalDistance(position, goal);
+    if (span < 8 or span > 256 or @abs(goal[2] - position[2]) > 24) return false;
+    const chosen = step orelse return false;
+    if (chosen.jump or chosen.crouch or chosen.ladder or chosen.elevator or chosen.drop) return false;
+    if (nav.horizontalDistance(chosen.point, goal) <= span + 16) return false;
+    return walkable(frame, position, goal);
 }
 /// A straight walk with no gap, drop, steep slope or new liquid along it:
 /// the hull sweeps clear at stepping height and finds level floor every
