@@ -191,3 +191,10 @@ float rainExposure(ViewData view, uint slot, vec3 pos) {
 layout(set = 1, binding = 1) uniform sampler3D volumes[];
 
 vec3 toLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+
+bool alphaRejected(float alpha, uint func) {
+    if (func == 1u && alpha <= 0.0) return true;
+    if (func == 2u && alpha >= 0.5) return true;
+    if (func == 3u && alpha < 0.5) return true;
+    return false;
+}

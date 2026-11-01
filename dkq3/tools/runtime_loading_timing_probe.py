@@ -8,6 +8,8 @@ modules enter the real UI actions through the developer-only dk3_menu_loading
 command; --console-only labels the limited baseline for older installations.
 --save-only starts at copied-save loading in a fresh process, without visiting
 intro or the first map. OS page-cache state remains uncontrolled.
+--settled-menu captures a completed menu frame before starting the loading action,
+separating initial menu rendering from the subsequent load.
 """
 import argparse
 import hashlib
@@ -163,6 +165,10 @@ def sample(args, report, after_load=None):
                 result["device"] = next((line for line in text.splitlines() if "VK_RENDERER:" in line or "GL_RENDERER:" in line), None)
                 if not result["device"] or not any(name in result["device"].lower() for name in ("llvmpipe", "lavapipe", "software")):
                     raise RuntimeError("headless software renderer not confirmed")
+                if getattr(args, "settled_menu", False):
+                    # File completion includes readback/JPEG encoding: an upper bound,
+                    # unlike the earlier native-menu-initialized event.
+                    result["menu_capture_upper_bound_seconds"] = capture("menu-startup") - launched
                 if not args.save_only:
                     offset, started = len(text), time.monotonic()
                     observer.issue("map intro" if args.console_only else "dk3_menu_loading new-game")
@@ -192,7 +198,9 @@ def sample(args, report, after_load=None):
                         state=state, **timings(observer.text()[offset:]))
                     disconnect()
                 else:
-                    result["workload"] = "fresh-process save from menu; OS page cache uncontrolled"
+                    result["workload"] = ("fresh-process save after menu capture; OS page cache uncontrolled"
+                                          if getattr(args, "settled_menu", False) else
+                                          "fresh-process save from menu; OS page cache uncontrolled")
                 observer.issue("set dk3_cinematics 0")
                 result["loads"] = []
                 for index, source in enumerate(args.save):
@@ -204,6 +212,7 @@ def sample(args, report, after_load=None):
                     admission = image_admission(started)
                     ready = time.monotonic()
                     result["loads"].append(dict(source=str(source), ready_seconds=ready - started,
+                        launch_ready_seconds=ready - launched,
                         input_ready_seconds=input_ready - started, image_admission=admission,
                         capture_upper_bound_seconds=capture(f"restored-{index}") - started,
                         state=state, **timings(observer.text()[offset:])))
@@ -254,6 +263,8 @@ def main():
     parser.add_argument("--console-only", action="store_true")
     parser.add_argument("--save-only", action="store_true",
                         help="load copied saves directly from a fresh menu; no intro/map cache priming (OS page cache uncontrolled)")
+    parser.add_argument("--settled-menu", action="store_true",
+                        help="capture a completed menu frame before loading; report its capture upper bound separately")
     parser.add_argument("--gdb", action="store_true", help="retain a batch crash trace; diagnostic timings only")
     parser.add_argument("--renderer", choices=("opengl1", "opengl2", "vulkan"), default="opengl2")
     parser.add_argument("--decode-cache-mib", type=int, choices=range(0, 1025), metavar="0..1024")

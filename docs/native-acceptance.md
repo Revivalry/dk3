@@ -5,6 +5,266 @@ with the merged source as of 20 October 2026. Results below retain their origina
 runtime, assets and limits. Implementation and focused passes do not establish
 complete episode/campaign or artistic acceptance.
 
+## Sequence 488 — perf-weather-style — paused; unimplemented
+
+The CPU already knows rain, snow and splash style when constructing each weather
+draw. Test a typed style passed through the existing pipeline variant to specialize
+both weather stages, removing irrelevant style branches from each compiled path.
+Keep original formulas, data and module count; do not retain sequence-487 culling.
+Additional pipelines may increase cold cost, so require loading and equal-work
+render measurements, strict rain images and the two new authored snow fixtures.
+Evidence: `zig-out/reports/perf-weather-style-488/`.
+The owner stopped the optimization loop before implementation.
+
+## Sequence 487 — perf-weather-distance — rejected; source reverted
+
+Return before lighting, gust and corner construction when the existing distance
+fade already makes the entire particle transparent. Rain endpoints are ≤4 or
+≥800 units, snow ≤8 or ≥2000, splash crowns ≥800. Named shader constants are
+shared with the original fade expressions; no fade curve or visible-particle
+equation changes. The first version keeps roof rejection in its original order.
+Weather uses source-alpha blending, no depth writes and no motion-attachment
+writes; alpha zero contributes nothing to color/HDR alpha. Existing out-of-bounds
+particles use the same invisible degenerate-vertex return. Build 89/89; exact
+classic/Neutral/AgX frozen TGA and private-Xvfb RGB pass, including two resolution
+restarts. Real episode-three e3m1a snow snapshots match exactly at the initial
+and rotated view, with 6,720 / 2,112 submitted particles. New immutable demos and
+golden images are retained for future weather verification. These are renderer
+diagnostics, not episode/campaign acceptance.
+
+Six repeated rain processes retain identical work counts. Frame median
+65.77 → 65.14 ms overlaps widely; CPU per 384 measured frames 147.68 →145.72 s
+(observed ranges 146.77–150.28 / 144.61–145.85), about 1.3% less CPU. Twelve
+fresh-process, completed-menu loading comparisons show arrival readiness
+3.018 →2.974 s but autosave 3.270 →3.423 s; all three autosave pairs are slower.
+Autosave CPU medians 11.302 →11.918 s. Reject this small rendering-CPU/cold-load
+tradeoff, preserve every sample and revert the guard/constants. No specific
+shader-compilation cause is proved by these timings. Evidence:
+`zig-out/reports/perf-weather-distance-487/`.
+
+## Sequence 486 — perf-ui-cost — diagnosis complete; no batching admitted
+
+Measure actual 2D submission cost before adding batching complexity. A temporary
+renderer-only normal/skip/normal diagnostic on the same held demo will compare
+whole-frame CPU/wall intervals while retaining world/model/weather work counts.
+The controlled same-binary normal/skip/normal phases each warm 32 frames and
+measure 96. Frame medians 63.47 / 69.23 / 64.96 ms; CPU 35.69 / 36.37 / 36.08 s.
+Draws change 442 →174→442 while world/model/weather counts remain identical,
+including 389,180 particles. Removing all 268 2D draws does not show a material
+CPU saving in this fixture. The slower skip phase does not prove UI accelerates
+the engine; scheduling/state effects are not isolated. Do not add batching based
+on draw count alone. Restore normal drawing before ordinary exit, verify source
+preservation, and remove the diagnostic cvar/branch from current source.
+Evidence: `zig-out/reports/perf-ui-cost-486/`.
+
+## Sequence 485 — perf-display-fragment — startup improvement retained; correctness and aggregate checks verified
+
+Broaden the narrow fragment contract from 2D-only to all matching display-space
+stages: classic target, no prepass/prepassed state, debug view off, no secondary
+texture and no flags except optional opaque overlay. The original fragment then
+has exactly the same texture × vertex-color result, alpha rejection and opaque
+override regardless of geometry kind. All vertex, depth and blend behavior stays
+shared. The shader/program are named for display composition, not a UI-only limit.
+
+Add optional `--settled-menu` to the loading probe: capture a completed menu frame
+before loading and report its capture upper bound separately from the earlier
+native-initialization event. Each load also records launch-to-ready time. This
+separates initial menu JIT from subsequent save/map admission; screenshots include
+readback/JPEG overhead. Historical workloads remain unchanged by default.
+Eighteen three-arm, rotating fresh processes compare the original baseline,
+UI-only 483 final and broadened candidate on both saves. Across six identical
+startup workloads per arm, menu capture medians are 1.107 → 1.056 → 0.956 s;
+the broadened candidate improves five of six paired captures, about 13.7% by
+median. Ranges overlap (baseline 0.857–1.157 / candidate 0.705–1.058 s); these
+include readback/JPEG and do not measure an exact first-present timestamp.
+
+Subsequent warmed-menu save admission is broadly neutral: arrival 3.324 → 3.323 s,
+autosave 3.674 → 3.622 s, with overlapping ranges. Launch-to-admitted-save medians
+(including the menu capture) are 4.429 → 4.180 / 4.678 → 4.577 s. Whole-process
+CPU medians are 11.148 → 10.542 / 12.583 → 12.071 s; retain all samples and avoid
+per-frame or population/tail CPU claims from these unconstrained loading frames.
+
+Six equal-work held-scene processes measure 64 warmup plus 384 measured frames
+each. All 18 reporting intervals match 442 draws, 268 UI quads and 389,180
+particles. Whole-frame median 64.89 → 65.02 ms; CPU per measured process
+144.14 → 145.10 s, both with overlapping ranges. No rendering throughput gain
+is accepted. Retain the small display path for its measured startup benefit.
+Private Mesa caches start empty per process; OS page cache remains uncontrolled.
+These are headless software results, with no physical-GPU or Windows execution claim.
+
+Build 89/89. Classic/Neutral/AgX frozen TGA and normalized private-Xvfb RGB match
+the unchanged baseline exactly, including matching real menu JPEG hashes across
+arms. Two resolution restarts and the integrated UI new-game/intro, e1m1a and both
+copied saves pass with zero pending/failed images, preserved sources and no Vulkan
+validation errors. General-path unused-motion-output warnings remain pre-existing.
+
+Final aggregate: 57/57 steps, 550/550 Zig tests plus C contracts, 383 Python tests.
+Retain the initial missing-dependency and fixture failures. Install only declared
+pinned test dependencies in a local virtual environment; preserve its interpreter
+path rather than resolving its symlink into the global interpreter. The release
+fixture now provides/verifies runtime notices, runtime-media uses real valid asset
+fixtures instead of its obsolete validator mock, and the Rich terminal test sets
+a non-dumb TERM while simulating live output. Production installer behavior is
+unchanged. Publication uses the separate performance branch and PR #14,
+independent of co-op PR #13; local benchmark artifacts remain excluded. Evidence:
+`zig-out/reports/perf-display-fragment-485/`.
+
+## Sequence 484 — perf-ui-contract — actual fallback captured
+
+The first general classic-fragment pipeline before map load comes from native
+`Art.render` through UI scene rendering: MD3 geometry, two_d=false, menu icon
+`dkq3/menu/ib_singleplay`. Optimized DWARF omits the record pointer, so its flags
+and secondary slot are not directly observed; new eligibility must check actual
+record fields. The first debugger script crashes GDB after deleting its own
+breakpoint in a stop callback. Retain that failure; the repaired frame walker
+defers deletion, captures the real contract and passes ordinary copied-save
+replay with preserved sources. No engine source changes in this diagnostic.
+Evidence: `zig-out/reports/perf-ui-contract-484/`.
+
+## Sequence 483 — perf-ui-fragment — verified prototype; superseded by broader contract
+
+Single-texture display-space UI stages with no flags except optional opaque
+overlay select a narrow fragment program. All other stages retain the existing
+general material program. Vertex generation, texture sampling, blend state and
+alpha comparisons remain unchanged; alpha rejection lives once in common.glsl.
+The smaller fragment consumes only color and UV, rather than world/lighting/motion
+varyings. Debug view uses the general path. Build 89/89; prototype and cleaned
+final shader both match classic/Neutral/AgX TGA and private-screen RGB exactly,
+including two renderer resizes. Remove the UI motion output and explicitly
+require a classic target; general-path unused-motion warnings are pre-existing.
+
+Initial three autosave pairs show readiness 3.970 → 3.731 s and CPU 11.581 →
+10.747 s. The twelve-run final confirmation is mixed: arrival readiness
+3.625 → 3.519 s, CPU 10.158 → 9.569 s; autosave readiness 3.769 → 3.922 s, CPU
+11.319 → 10.854 s, with a 4.381 s candidate outlier retained. These start at the
+native-menu-initialized event, before its first completed frame; no warmed-menu
+loading or stable autosave latency gain is accepted. The actual menu MD3 fallback
+motivates the broader sequence-485 contract and separated startup measurement.
+Evidence: `zig-out/reports/perf-ui-fragment-483/`.
+
+## Sequence 482 — perf-static-vertex — rejected; source reverted
+
+Specialize the existing vertex shader for batches whose geometry kind is already
+known to be static. Vertex constant 1 folds only MD3/IQM fetch and previous-pose
+branches; all static vertex data, deformation, UV, color, clipping and motion
+equations remain shared and unchanged. The pipeline key carries that invariant
+for both depth and shading passes. Dynamic model batches keep the existing path.
+Build 88/88, exact classic/Neutral/AgX TGA and private-screen RGB, two renderer
+resizes, validation/ordinary exit and source preservation pass. Three alternating
+fresh-autosave pairs regress readiness 3.770 → 3.971 s; CPU 11.214 → 11.134 s has
+overlapping ranges, and candidate RSS rises about 16 MiB. No gain is admitted;
+revert the specialization and extra pipeline-key variants. Rendering throughput
+is not separately benchmarked for this rejected loading regression. Evidence:
+`zig-out/reports/perf-static-vertex-482/`.
+
+## Sequence 481 — perf-pipeline-overlap — diagnosis verified; prototype reverted
+
+Move first-use creation of the unchanged swapchain composite pipeline before scene
+submission, with explicit begin/end markers. This tests whether the original
+pipeline-call wall timer includes waits for deferred driver work from earlier UI
+draws. Relocating a timer is not an optimization claim. Only window host-call
+ordering changes. Build 88/88 and four fresh-save processes pass state, image
+admission and source preservation. The unchanged copy PSO takes 367.749/464.245 ms
+after scene submission versus 1.715/2.519 ms before it. Readiness does not improve
+(two-run medians 3.698 → 3.847 s), nor total CPU (10.908 → 11.192 s). The large
+call timer is not an isolated copy-shader cost: preceding software work/order can
+dominate it. Precise backend synchronization is not isolated. Revert the ordering
+prototype and add this observation limit to the machine-local perf skill; admit
+no optimization from the relocated timer. Evidence:
+`zig-out/reports/perf-pipeline-overlap-481/`.
+
+## Sequence 480 — perf-copy-descriptor — rejected; source reverted
+
+Actual sequence-479 stacks motivate testing a single sampled-image descriptor for
+display copies, in place of dynamic access through the global bindless array.
+The proposed mechanism is broader sampler/format variant compilation; it remains
+a hypothesis. Neither smaller fragment input experiment changed descriptor access.
+The prototype uses one sampled-image descriptor per persistent scene/final target,
+a dedicated copy pipeline layout and the original nearest/linear clamp samplers.
+Descriptors are released after idle, before image views; layouts outlive pipelines.
+Build 89/89. Classic/Neutral/AgX TGA and private-Xvfb RGB match the unchanged
+baseline exactly. Validation and ordinary exit pass; 960×540 → 800×450 → 960×540
+renderer restarts capture correct dimensions without validation errors.
+
+Three alternating fresh-autosave pairs give neutral readiness (3.871 → 3.872 s)
+and overlapping composite pipeline time (535.216 → 528.580 ms). CPU consumption
+falls 11.399 → 11.106 s, with nonoverlapping observed ranges, but these processes
+may render different frame counts. Six frozen-scene processes then measure 64
+warmup frames and 384 measured frames each, with console notifications suppressed
+in both arms and normal TAA/exposure/weather. All 18 intervals match 442 draws,
+268 UI quads and 389,180 particles. CPU medians 146.80 → 144.93 s have overlapping
+ranges (146.11–147.00 / 143.02–147.31) and mixed paired results; frame medians
+63.50 → 63.87 ms also overlap widely. The apparent loading CPU gain does not
+establish a robust equal-work improvement. Reject the added descriptor/layout
+lifetime code, retaining exact source snapshots, binaries and every observation.
+Evidence: `zig-out/reports/perf-copy-descriptor-480/`.
+
+## Sequence 479 — perf-loading-cpu — thread accounting and actual stack diagnosis verified
+
+Current kernel perf_event_paranoid is 2 and `perf stat -e task-clock:u -- true`
+succeeds, but CPU-clock and task-clock sampling are denied even outside the guard.
+No policy changes. Alternative 50 ms per-thread scheduler observations capture
+10.710 CPU seconds versus 11.133 seconds getrusage (96.2%), across 92 observations
+and 75 threads. Main CPU 1.680 s, runnable delay 0.002833 s; many sleeping-main
+observations wait on futexes. This run does not establish the historical outlier
+cause. Approximate event windows retain 50 ms plus stdout-delivery uncertainty;
+whole-process counters include menu, capture and shutdown.
+
+Repair the first GDB batch sampler, which exited at its first interrupt; retain
+that failed run. Eight bounded intrusive stack observations then complete with
+ordinary save replay and source preservation. Actual stacks include software
+sampler JIT registration, NIR optimization and LLVM fragment compilation. In
+sample 8, an active worker compiles a fragment variant while main waits in
+`lvp_shader_compile` under `window.composite`. These identify mechanisms, not
+CPU-population percentages; debugger timings are excluded from performance claims.
+Accepted runtime and native-dev binaries match the frozen baseline SHA throughout
+after both rejected experiments are reverted. Evidence:
+`zig-out/reports/perf-loading-cpu-479/` in the performance worktree.
+
+## Sequence 478 — perf-composite-copy — rejected; source reverted
+
+Following the rejected specialization experiment, a standalone fragment shader
+copies display-ready images without HDR resources in the driver input. Classic
+final composition and swapchain presentation select that program; remaster final
+composition retains its original HDR program. Same push prefix, sampling, alpha,
+formats and depth-free pipeline contract. After repairing a malformed shader
+extension line, build passes 89/89. All three candidate modes match the preserved
+identical-baseline frozen TGA and private-Xvfb RGB bytes; validation/ordinary exit
+and source preservation pass. The compiled copy SPIR-V is 856 bytes.
+
+Three fresh alternating autosave pairs show readiness 3.819 → 3.830 s (overlapping
+ranges 3.772–4.119 / 3.669–3.970), CPU 11.328 → 11.437 s, and composite pipeline
+creation 524.299 → 517.172 ms with wide overlap. No demonstrated gain; remove the
+prototype. Restored source builds 88/88. Both composite experiments leave the
+accepted runtime unchanged. Evidence: `zig-out/reports/perf-composite-copy-478/`
+in the separate performance worktree.
+
+## Sequence 477 — perf-composite-specialization — rejected; source reverted
+
+Specializing composite copy/HDR mode through fragment constant 0 preserves exact
+frozen classic, Neutral and AgX TGA bytes and normalized private-Xvfb screen RGB.
+All six correctness processes pass ordinary Vulkan validation and preserve source
+saves/configuration. The old co-op-branch demo is rejected with RuntimeMismatch;
+retain that first failure and record a compatible main-based demo for both arms.
+A second harness assertion wrongly demanded remaster weather in classic mode;
+correct it to require zero there. Neither failure is renderer acceptance.
+
+Three alternating fresh-autosave pairs with private empty Mesa caches, validation
+off and uncontrolled OS page cache show readiness 4.478 → 4.476 s; CPU 12.254 →
+12.605 s; composite pipeline creation 549.389 → 557.781 ms. No demonstrated gain:
+remove the prototype, retaining its frozen binaries and every sample. Build 88/88.
+Evidence: `zig-out/reports/perf-composite-specialization-477/` in the performance
+worktree. Gregg §2.5.6 and §12.3.8 guide falsification and work/output sanity checks.
+
+Six additional historical sequence-476 frozen-scene runs complete with matched
+518 draws, 344 UI quads and 389,180 particles. Software frame times vary greatly:
+baseline process medians 78.84/304.30/106.82 ms; candidate 71.64/72.25/230.89 ms.
+CPU consumption per measured frame varies much less (0.371–0.430 s across arms).
+Keep all outliers; no additional frame-speed claim is accepted from this set.
+External CPU workloads and runnable pressure are observed subsequently, but no
+cause of those historical outliers is proved. Evidence remains in the original
+checkout's `zig-out/reports/perf-weather-program-476/`.
+
 ## Sequence 476 — perf-weather-program — loading, exact pixels and main-based smoke replay verified
 
 Owner paused the continuous performance loop. Dedicated weather vertex/fragment
@@ -30,7 +290,7 @@ headless software replay passes the real UI new-game action, e1m1a, and both cop
 e1m1b saves: zero pending/failed images, clean ordinary Vulkan validation/exit and
 unchanged source saves/configuration. Local smoke evidence is
 `/tmp/dk3-perf-pr-smoke/`; no game assets, saves or binaries enter the PR. Repeated
-frame-time benchmarking of the final dedicated shader remains unrun.
+frame-time benchmarking subsequently runs with severe variation; see sequence 477.
 Evidence: `zig-out/reports/perf-weather-program-476/`.
 
 ## Sequence 475 — perf-weather-index-window — initialization diagnosed; no window optimization admitted

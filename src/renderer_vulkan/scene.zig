@@ -1908,7 +1908,8 @@ fn drawStage(view: *const View, batch: *const Batch, stage: *const Stage) void {
     const cmd = window.cmd;
     // Weather particles also lower the HDR alpha so the temporal resolve treats them as moving.
     const mark_motion = batch.mesh.kind == 3 and window.currentTarget() == .hdr;
-    const program: u8 = if (weather_indexed) vk.program_weather else if (prepass_mode) vk.program_depth else if (batch.prepassed) vk.program_stage_early else vk.program_stage;
+    const plain_display = window.currentTarget() == .classic and !prepass_mode and !batch.prepassed and cvars.vkDebugView.integer == 0 and record.mode2[1] == 0 and (record.mode2[2] & ~flag_overlay_opaque) == 0;
+    const program: u8 = if (plain_display) vk.program_display else if (weather_indexed) vk.program_weather else if (prepass_mode) vk.program_depth else if (batch.prepassed) vk.program_stage_early else vk.program_stage;
     const motion_target = window.currentTarget() == .hdr;
     const pipeline = if (prepass_mode)
         vk.pipeline(.{ .src = 1, .dst = 0, .format = window.targetFormat(), .program = program, .color_write = false, .motion_target = motion_target })

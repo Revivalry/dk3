@@ -510,13 +510,7 @@ void main() {
         bool pbrWorld = STAGE_VARIANT == 1u || (STAGE_ALL && (flags & FLAG_PBR_WORLD) != 0u);
         // The alpha test (below) depends only on the texture and vertex alpha here: discard
         // before the lighting, so cut-out foliage texels pay for no rays.
-        {
-            uint func = r.mode2.w;
-            float alpha = tex.a * vertexColor.a;
-            if (func == 1u && alpha <= 0.0) discard;
-            if (func == 2u && alpha >= 0.5) discard;
-            if (func == 3u && alpha < 0.5) discard;
-        }
+        if (alphaRejected(tex.a * vertexColor.a, r.mode2.w)) discard;
         // A visible surface faces the viewer. gl_FrontFacing cannot tell: the flipped viewport
         // (negative height) with Quake's winding reports ordinary visible faces as back faces, so
         // flipping on it inverted world and model normals; lit from behind, every light in
@@ -728,9 +722,7 @@ void main() {
         if (linear) c.rgb += tex.rgb * r.material.w;
     }
     uint func = r.mode2.w;
-    if (func == 1u && c.a <= 0.0) discard;
-    if (func == 2u && c.a >= 0.5) discard;
-    if (func == 3u && c.a < 0.5) discard;
+    if (alphaRejected(c.a, func)) discard;
     // Opaque model pixels mark the HDR alpha as dynamic: the temporal resolve (taa.comp)
     // trusts the new frame there, since reprojection only follows the camera.
     if ((flags & FLAG_DYNAMIC) != 0u) c.a = 0.0;

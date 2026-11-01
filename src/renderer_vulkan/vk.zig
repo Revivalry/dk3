@@ -1551,7 +1551,7 @@ pub const PipelineKey = struct {
 pub const motion_format = c.VK_FORMAT_R16G16_SFLOAT;
 
 var pipelines: std.AutoHashMapUnmanaged(PipelineKey, c.VkPipeline) = .empty;
-var modules: [12]c.VkShaderModule = .{null} ** 12;
+var modules: [14]c.VkShaderModule = .{null} ** 14;
 
 fn spirv(comptime name: []const u8) []const u32 {
     const bytes align(4) = @embedFile(name).*;
@@ -1585,6 +1585,8 @@ pub fn createModules() void {
     modules[9] = if (ray_tracing) createModule(spirv("stage_rt_early.frag.spv")) else createModule(spirv("stage_early.frag.spv"));
     modules[10] = createModule(spirv("weather.vert.spv"));
     modules[11] = createModule(spirv("weather.frag.spv"));
+    modules[12] = createModule(spirv("stage.vert.spv"));
+    modules[13] = createModule(spirv("display.frag.spv"));
 }
 
 pub fn destroyPipelines() void {
@@ -1610,6 +1612,8 @@ pub const program_depth: u8 = 3;
 pub const program_stage_early: u8 = 4;
 /// Dedicated weather stages: fixed vertex color/alpha and no material/deform paths.
 pub const program_weather: u8 = 5;
+/// Single-texture display stages; material vertex generation stays shared.
+pub const program_display: u8 = 6;
 
 /// GL blend factor codes used by material state (`blend.zig` mapping).
 pub fn blendFactor(code: u8) c.VkBlendFactor {
