@@ -229,7 +229,7 @@ fn reportStats() void {
     stats_frames = 0;
     const s = scene.stats;
     const f = vk.frame();
-    common.info("vk stats: views={d} entities={d} md3={d} iqm={d} iqm_culled={d} brush={d} polys={d} surfaces={d} draws={d} ui_quads={d} ui_draws={d} weather_vertices={d} weather_indices={d} weather_particles={d} stream_kb={d} records_kb={d} grown_stream={d} grown_records={d} textures={d} staging_kb={d}\n", .{ s.views, s.entities, s.md3, s.iqm, s.iqm_culled, s.brush, s.polys, s.surfaces, s.draws, s.ui_quads, s.ui_draws, s.weather_vertices, s.weather_indices, s.weather_particles, f.stream.bytesUsed() / 1024, f.records.bytesUsed() / 1024, f.stream.grown, f.records.grown, vk.next_slot, f.staging.bytesUsed() / 1024 });
+    common.info("vk stats: views={d} entities={d} md3={d} iqm={d} iqm_culled={d} brush={d} polys={d} surfaces={d} draws={d} ui_quads={d} ui_draws={d} weather_vertices={d} weather_indices={d} weather_particles={d} weather_prepared_particles={d} weather_prepare_draws={d} stream_kb={d} records_kb={d} grown_stream={d} grown_records={d} textures={d} staging_kb={d}\n", .{ s.views, s.entities, s.md3, s.iqm, s.iqm_culled, s.brush, s.polys, s.surfaces, s.draws, s.ui_quads, s.ui_draws, s.weather_vertices, s.weather_indices, s.weather_particles, s.weather_prepared_particles, s.weather_prepare_draws, f.stream.bytesUsed() / 1024, f.records.bytesUsed() / 1024, f.stream.grown, f.records.grown, vk.next_slot, f.staging.bytesUsed() / 1024 });
     scene.stats = .{};
 }
 

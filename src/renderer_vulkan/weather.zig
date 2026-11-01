@@ -36,7 +36,21 @@ const Params = extern struct {
     grid0: [4]f32 = .{ 0, 0, 0, 0 }, // light grid origin, w = colour volume slot + 1
     grid1: [4]f32 = .{ 0, 0, 0, 0 }, // light grid scale, w = direction volume slot + 1
     sky: [4]f32 = .{ 0, 0, 0, 1 }, // sky radiance (linear), w = intensity
+    divisions: [4]u32 = .{ 0, 0, 0, 0 }, // exact reciprocal multipliers: particles per tile, row
 };
+comptime {
+    if (@sizeOf(Params) != 160) @compileError("weather params layout drifted from common.glsl");
+}
+
+fn divisionMagic(divisor: u32) u32 {
+    std.debug.assert(divisor >= 1 and divisor <= 65536);
+    if (divisor == 1) return 0;
+    return @intCast(((@as(u64, 1) << 32) + divisor - 1) / divisor);
+}
+
+fn divisionParams(row: u32, per_tile: u32) [4]u32 {
+    return .{ divisionMagic(per_tile), divisionMagic(row), 0, 0 };
+}
 
 /// Camera exposure that sets streak length (speed x exposure, about 5-10 in for rain).
 pub const exposure_seconds: f32 = 1.0 / 30.0;
@@ -159,7 +173,9 @@ fn ensureShaders() void {
     shaders_ready = true;
 }
 
-pub const Draw = struct { shader: *shader_mod.Shader, params: u64, count: u32 };
+/// Pipeline specialization values shared with weather_style.glsl.
+pub const Style = enum(u8) { rain = 0, snow = 1, splash = 2 };
+pub const Draw = struct { shader: *shader_mod.Shader, params: u64, count: u32, style: Style = .rain };
 
 /// Particle draws for one volume (drops or flakes, and rain splashes).
 pub fn draws(volume: Volume, lighting: Lighting, out: *[3]?Draw) void {
@@ -206,6 +222,7 @@ pub fn draws(volume: Volume, lighting: Lighting, out: *[3]?Draw) void {
     }
     const sky: [4]f32 = .{ lighting.sky[0], lighting.sky[1], lighting.sky[2], density };
     const rain_shape: [4]f32 = .{ exposure_seconds, lighting.pixel_per_unit, 0.6, @floatFromInt(count) };
+    const divisions = divisionParams(tiles[0], per_tile);
     const params = [_]Params{
         .{
             .mins = .{ volume.mins[0], volume.mins[1], volume.mins[2], @floatFromInt(@intFromEnum(volume.kind)) },
@@ -217,6 +234,7 @@ pub fn draws(volume: Volume, lighting: Lighting, out: *[3]?Draw) void {
             .grid0 = grid0,
             .grid1 = grid1,
             .sky = sky,
+            .divisions = divisions,
         },
         .{
             .mins = .{ volume.mins[0], volume.mins[1], volume.mins[2], @floatFromInt(@intFromEnum(volume.kind)) },
@@ -228,13 +246,14 @@ pub fn draws(volume: Volume, lighting: Lighting, out: *[3]?Draw) void {
             .grid0 = grid0,
             .grid1 = grid1,
             .sky = sky,
+            .divisions = divisions,
         },
     };
     const parts: usize = if (volume.kind == .rain and cvars.vkWeatherSplashes.integer != 0) 2 else 1;
     for (0..parts) |part| {
         const space = vk.frame().stream.alloc(@sizeOf(Params), 16) orelse return;
         @memcpy(space.bytes[0..@sizeOf(Params)], std.mem.asBytes(&params[part]));
-        out[part] = .{ .shader = if (part == 0) &drop_shader else &splash_shader, .params = space.address, .count = count * 6 };
+        out[part] = .{ .shader = if (part == 0) &drop_shader else &splash_shader, .params = space.address, .count = count * 6, .style = if (part == 1) .splash else if (volume.kind == .snow) .snow else .rain };
     }
     if (volume.kind == .rain) out[2] = nearRain(volume, params[0], eye, density);
 }
@@ -274,6 +293,7 @@ fn nearRain(volume: Volume, base: Params, eye: [3]f32, density: f32) ?Draw {
     params.velocity[3] = base.velocity[3] + 7919;
     params.eye[3] = 0;
     params.tiles = .{ first_tile[0], first_tile[1], @floatFromInt(tiles[0]), @floatFromInt(per_tile) };
+    params.divisions = divisionParams(tiles[0], per_tile);
     params.shape[3] = @floatFromInt(count);
     const space = vk.frame().stream.alloc(@sizeOf(Params), 16) orelse return null;
     @memcpy(space.bytes[0..@sizeOf(Params)], std.mem.asBytes(&params));

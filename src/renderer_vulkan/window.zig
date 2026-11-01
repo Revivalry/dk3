@@ -628,7 +628,7 @@ pub fn useTarget(target: Target) void {
     if (target == .shadow) {
         const depth_access = c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
         const old: c.VkImageLayout = if (shadow_cleared) c.VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL else c.VK_IMAGE_LAYOUT_UNDEFINED;
-        vk.barrier(cmd, shadow_atlas.image, c.VK_IMAGE_ASPECT_DEPTH_BIT, old, c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, vk.stage_fragment | depth_stages, vk.access_shader_read, depth_stages, depth_access);
+        vk.barrier(cmd, shadow_atlas.image, c.VK_IMAGE_ASPECT_DEPTH_BIT, old, c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, vk.stage_fragment | vk.stage_vertex | depth_stages, vk.access_shader_read, depth_stages, depth_access);
         current_target = .shadow;
         const clear = !shadow_cleared;
         shadow_cleared = true;
@@ -654,7 +654,7 @@ pub fn targetFormat() c.VkFormat {
 pub fn finishShadows() void {
     if (current_target != .shadow) return;
     suspendRendering();
-    vk.barrier(cmd, shadow_atlas.image, c.VK_IMAGE_ASPECT_DEPTH_BIT, c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, c.VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, depth_stages, c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, vk.stage_fragment, vk.access_shader_read);
+    vk.barrier(cmd, shadow_atlas.image, c.VK_IMAGE_ASPECT_DEPTH_BIT, c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, c.VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, depth_stages, c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, vk.stage_fragment | vk.stage_vertex, vk.access_shader_read);
     shadow_readable = true;
     current_target = .classic;
 }

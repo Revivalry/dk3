@@ -8,6 +8,10 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
+// One render-resolution neighbourhood for the 8x8 output group, including its halo.
+// Render scale is at most one, so each axis spans at most ten input texels.
+shared vec4 neighbourhood[100];
+
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Matrices {
     mat4 inverseCurrent;
     mat4 previous;
@@ -34,11 +38,11 @@ vec3 catmullRom(uint slot, vec2 uv, vec2 size) {
     vec2 tc0 = (center - 1.0) / size;
     vec2 tc3 = (center + 2.0) / size;
     vec3 result =
-        texture(textures[nonuniformEXT(slot)], vec2(tc12.x, tc0.y)).rgb * (w12.x * w0.y) +
-        texture(textures[nonuniformEXT(slot)], vec2(tc0.x, tc12.y)).rgb * (w0.x * w12.y) +
-        texture(textures[nonuniformEXT(slot)], tc12).rgb * (w12.x * w12.y) +
-        texture(textures[nonuniformEXT(slot)], vec2(tc3.x, tc12.y)).rgb * (w3.x * w12.y) +
-        texture(textures[nonuniformEXT(slot)], vec2(tc12.x, tc3.y)).rgb * (w12.x * w3.y);
+        texture(textures[slot], vec2(tc12.x, tc0.y)).rgb * (w12.x * w0.y) +
+        texture(textures[slot], vec2(tc0.x, tc12.y)).rgb * (w0.x * w12.y) +
+        texture(textures[slot], tc12).rgb * (w12.x * w12.y) +
+        texture(textures[slot], vec2(tc3.x, tc12.y)).rgb * (w3.x * w12.y) +
+        texture(textures[slot], vec2(tc12.x, tc3.y)).rgb * (w12.x * w3.y);
     float weight = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
     return max(result / weight, vec3(0.0));
 }
@@ -55,27 +59,42 @@ vec3 clipToBox(vec3 history, vec3 lo, vec3 hi) {
 
 void main() {
     uvec2 id = gl_GlobalInvocationID.xy;
-    if (any(greaterThanEqual(id, pc.size.xy))) return;
     vec2 outSize = vec2(pc.size.xy);
     vec2 inSize = vec2(pc.size.zw);
     vec2 uv = (vec2(id) + 0.5) / outSize;
     vec2 jitterUv = pc.params.xy;
+
+    ivec2 tileBase = ivec2(((vec2(gl_WorkGroupID.xy * 8u) + 0.5) / outSize + jitterUv) * inSize);
+    for (uint i = gl_LocalInvocationIndex; i < 100u; i += 64u) {
+        ivec2 t = clamp(tileBase + ivec2(int(i % 10u), int(i / 10u)) - 1,
+                        ivec2(0), ivec2(inSize) - 1);
+        // Sampler indices originate in dispatch-wide push constants.
+        vec3 c = toYCoCg(texelFetch(textures[pc.slots.x], t, 0).rgb);
+        float d = texelFetch(textures[pc.slots.w], t, 0).r;
+        neighbourhood[i] = vec4(c, d);
+    }
+    barrier();
+    // Even out-of-range invocations participate in the shared loads and barrier.
+    if (any(greaterThanEqual(id, pc.size.xy))) return;
 
     // Current frame: the jittered render sampled at this output pixel's unjittered position.
     vec3 currentColor = catmullRom(pc.slots.x, uv + jitterUv, inSize);
 
     // Neighbourhood statistics and the nearest depth at render resolution.
     ivec2 base = ivec2((uv + jitterUv) * inSize);
+    ivec2 localBase = base - tileBase + 1;
     vec3 m1 = vec3(0.0), m2 = vec3(0.0);
     float nearestDepth = 1.0;
     ivec2 nearestTexel = base;
     for (int y = -1; y <= 1; ++y) {
         for (int x = -1; x <= 1; ++x) {
             ivec2 t = clamp(base + ivec2(x, y), ivec2(0), ivec2(inSize) - 1);
-            vec3 s = toYCoCg(texelFetch(textures[nonuniformEXT(pc.slots.x)], t, 0).rgb);
+            ivec2 local = localBase + ivec2(x, y);
+            vec4 sampleValue = neighbourhood[local.y * 10 + local.x];
+            vec3 s = sampleValue.rgb;
             m1 += s;
             m2 += s * s;
-            float d = texelFetch(textures[nonuniformEXT(pc.slots.w)], t, 0).r;
+            float d = sampleValue.a;
             if (d < nearestDepth) {
                 nearestDepth = d;
                 nearestTexel = t;
@@ -93,7 +112,7 @@ void main() {
 
     // Reprojection by the motion vector of the closest depth in the neighbourhood (sharper
     // edges): the surface's own motion, the camera's for the sky.
-    vec2 motionPx = texelFetch(textures[nonuniformEXT(uint(pc.params2.x))], nearestTexel, 0).xy;
+    vec2 motionPx = texelFetch(textures[uint(pc.params2.x)], nearestTexel, 0).xy;
     vec2 previousUv = uv + motionPx / inSize;
     if (any(lessThan(previousUv, vec2(0.0))) || any(greaterThan(previousUv, vec2(1.0)))) {
         imageStore(images[pc.slots.y], ivec2(id), vec4(currentColor, 1.0));
@@ -108,7 +127,7 @@ void main() {
     float motion = length((previousUv - uv) * outSize);
     float alpha = clamp(pc.params.z + motion * 0.01, pc.params.z, 0.5);
     // Models write 0; faint weather streaks lower it by their coverage, so amplify.
-    float dynamic = clamp((1.0 - texelFetch(textures[nonuniformEXT(pc.slots.x)], nearestTexel, 0).a) * 3.0, 0.0, 1.0);
+    float dynamic = clamp((1.0 - texelFetch(textures[pc.slots.x], nearestTexel, 0).a) * 3.0, 0.0, 1.0);
     alpha = max(alpha, 0.6 * dynamic);
     float wc = alpha / (1.0 + dot(currentColor, LUMA));
     float wh = (1.0 - alpha) / (1.0 + dot(historyColor, LUMA));

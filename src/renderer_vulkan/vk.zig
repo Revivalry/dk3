@@ -422,6 +422,8 @@ pub fn createDevice(candidate: Candidate, want_ray_tracing: bool) !void {
     base.features.shaderInt64 = features.base.features.shaderInt64;
     // Debug probes write storage buffers from fragment shaders (r_vkDebugView 19).
     base.features.fragmentStoresAndAtomics = features.base.features.fragmentStoresAndAtomics;
+    base.features.vertexPipelineStoresAndAtomics = features.base.features.vertexPipelineStoresAndAtomics;
+    vertex_stores = base.features.vertexPipelineStoresAndAtomics != 0;
     base.features.fillModeNonSolid = features.base.features.fillModeNonSolid;
     base.features.shaderClipDistance = features.base.features.shaderClipDistance;
     base.features.shaderStorageImageReadWithoutFormat = features.base.features.shaderStorageImageReadWithoutFormat;
@@ -783,6 +785,15 @@ pub const Ring = struct {
     }
 
     pub fn alloc(self: *Ring, size: u64, alignment: u64) ?Space {
+        return self.allocInternal(size, alignment, self.growable);
+    }
+
+    /// Optional preparation scratch may consume spare capacity but never grow it.
+    pub fn allocRemaining(self: *Ring, size: u64, alignment: u64) ?Space {
+        return self.allocInternal(size, alignment, false);
+    }
+
+    fn allocInternal(self: *Ring, size: u64, alignment: u64, growable: bool) ?Space {
         while (true) {
             const chunk = &self.chunks.items[self.current];
             const offset = std.mem.alignForward(u64, self.used, alignment);
@@ -790,7 +801,7 @@ pub const Ring = struct {
                 self.used = offset + size;
                 return .{ .buffer = chunk.buffer, .offset = offset, .address = chunk.address + offset, .bytes = chunk.mapped.?[offset .. offset + size] };
             }
-            if (!self.growable) return null;
+            if (!growable) return null;
             if (self.current + 1 >= self.chunks.items.len) {
                 self.chunks.append(common.gpa, persistentBuffer(@max(self.chunk_size, size), self.usage)) catch return null;
                 self.grown += 1;
@@ -826,6 +837,7 @@ pub const Frame = struct {
     value: u64 = 0,
     staging: Ring = .{},
     stream: Ring = .{},
+    weather_scratch_used: u64 = 0,
     records: Ring = .{},
     upload_used: bool = false,
     retired: std.ArrayList(Buffer) = .empty,
@@ -929,6 +941,7 @@ fn beginUploads(slot: *Frame) void {
     must(d.ResetCommandPool.?(s.device, slot.pool, 0), "vkResetCommandPool");
     slot.staging.reset();
     slot.stream.reset();
+    slot.weather_scratch_used = 0;
     slot.records.reset();
     slot.upload_used = false;
     beginBuffer(slot.upload);
@@ -1540,7 +1553,7 @@ pub const PipelineKey = struct {
     overlay: bool = false,
     /// HDR alpha is multiplied by (1 - source alpha): taa.comp trusts the new frame there.
     mark_motion: bool = false,
-    /// stage.frag STAGE_VARIANT specialisation (stage programs only).
+    /// Material STAGE_VARIANT or weather.Style specialization, according to program.
     variant: u8 = 0,
     /// Draws into the remaster HDR target, whose second attachment holds motion vectors
     /// (motion.zig); `motion_write` lets this stage write them.
@@ -1551,7 +1564,8 @@ pub const PipelineKey = struct {
 pub const motion_format = c.VK_FORMAT_R16G16_SFLOAT;
 
 var pipelines: std.AutoHashMapUnmanaged(PipelineKey, c.VkPipeline) = .empty;
-var modules: [14]c.VkShaderModule = .{null} ** 14;
+var modules: [16]c.VkShaderModule = .{null} ** 16;
+pub var vertex_stores = false;
 
 fn spirv(comptime name: []const u8) []const u32 {
     const bytes align(4) = @embedFile(name).*;
@@ -1587,6 +1601,7 @@ pub fn createModules() void {
     modules[11] = createModule(spirv("weather.frag.spv"));
     modules[12] = createModule(spirv("stage.vert.spv"));
     modules[13] = createModule(spirv("display.frag.spv"));
+    if (vertex_stores) modules[14] = createModule(spirv("weather_prepare.vert.spv"));
 }
 
 pub fn destroyPipelines() void {
@@ -1614,6 +1629,8 @@ pub const program_stage_early: u8 = 4;
 pub const program_weather: u8 = 5;
 /// Single-texture display stages; material vertex generation stays shared.
 pub const program_display: u8 = 6;
+/// Vertex-only, rasterizer-discard preparation into optional frame scratch.
+pub const program_weather_prepare: u8 = 7;
 
 /// GL blend factor codes used by material state (`blend.zig` mapping).
 pub fn blendFactor(code: u8) c.VkBlendFactor {
@@ -1636,7 +1653,8 @@ pub fn blendFactor(code: u8) c.VkBlendFactor {
 pub fn pipeline(key: PipelineKey) c.VkPipeline {
     if (pipelines.get(key)) |existing| return existing;
     // Composite and bake passes have no depth attachment.
-    const composite = key.program == program_composite or key.program == program_bake;
+    const prepare = key.program == program_weather_prepare;
+    const composite = key.program == program_composite or key.program == program_bake or prepare;
     const variant: u32 = key.variant;
     const entry = c.VkSpecializationMapEntry{ .constantID = 0, .offset = 0, .size = @sizeOf(u32) };
     const specialization = c.VkSpecializationInfo{ .mapEntryCount = 1, .pMapEntries = &entry, .dataSize = @sizeOf(u32), .pData = &variant };
@@ -1646,6 +1664,7 @@ pub fn pipeline(key: PipelineKey) c.VkPipeline {
             .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
             .module = modules[@as(usize, key.program) * 2],
             .pName = "main",
+            .pSpecializationInfo = if (key.program == program_weather or prepare) &specialization else null,
         }),
         std.mem.zeroInit(c.VkPipelineShaderStageCreateInfo, .{
             .sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -1658,7 +1677,7 @@ pub fn pipeline(key: PipelineKey) c.VkPipeline {
     const vertex_input = std.mem.zeroInit(c.VkPipelineVertexInputStateCreateInfo, .{ .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO });
     const assembly = std.mem.zeroInit(c.VkPipelineInputAssemblyStateCreateInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-        .topology = c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .topology = @as(c.VkPrimitiveTopology, if (prepare) c.VK_PRIMITIVE_TOPOLOGY_POINT_LIST else c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST),
     });
     const viewport = std.mem.zeroInit(c.VkPipelineViewportStateCreateInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
@@ -1667,6 +1686,7 @@ pub fn pipeline(key: PipelineKey) c.VkPipeline {
     });
     const raster = std.mem.zeroInit(c.VkPipelineRasterizationStateCreateInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .rasterizerDiscardEnable = @as(c.VkBool32, if (prepare) c.VK_TRUE else c.VK_FALSE),
         .polygonMode = c.VK_POLYGON_MODE_FILL,
         .cullMode = c.VK_CULL_MODE_NONE,
         .frontFace = c.VK_FRONT_FACE_COUNTER_CLOCKWISE,
@@ -1724,7 +1744,7 @@ pub fn pipeline(key: PipelineKey) c.VkPipeline {
     const info = std.mem.zeroInit(c.VkGraphicsPipelineCreateInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .pNext = &rendering,
-        .stageCount = 2,
+        .stageCount = @as(u32, if (prepare) 1 else 2),
         .pStages = &stages,
         .pVertexInputState = &vertex_input,
         .pInputAssemblyState = &assembly,

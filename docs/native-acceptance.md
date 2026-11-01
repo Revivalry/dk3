@@ -5,7 +5,540 @@ with the merged source as of 20 October 2026. Results below retain their origina
 runtime, assets and limits. Implementation and focused passes do not establish
 complete episode/campaign or artistic acceptance.
 
-## Sequence 488 — perf-weather-style — paused; unimplemented
+## Sequence 505 — perf-weather-cache-read — rejected; qualified 503 restored
+
+Test the cached validity flag before unpacking the whole basis. An empty state
+returns the original WeatherParams eye position and zero color; state construction
+guarantees these values whenever has_position is false. Keep all-weather coverage,
+64-byte format, arithmetic and counts. Compare qualified 503, eager 504 and this
+505 reader in balanced three-arm frame trials, then compare fresh loads against
+503. Exact images and unchanged visible work remain required. Evidence:
+`zig-out/reports/perf-weather-cache-read-505/`.
+
+Exact rain/private RGB and both snow views pass, but balanced three-arm trials
+do not support retention. Pooled frame-average median is 51.26 ms for qualified
+503 versus 51.87 ms for 505; CPU per 384 frames is 135.51 versus 138.19 seconds.
+Twelve fresh loads are mixed: arrival readiness 3.119 -> 3.219 seconds, autosave
+3.470 -> 3.370, with more resident memory. Reject both all-weather basis-cache
+variants 504/505. All six affected renderer source files are restored byte-for-byte
+to qualified 503; failed experiments remain local evidence, not shipped changes.
+
+## Sequence 504 — perf-weather-basis-cache — not selected; qualified fallback remains 503
+
+Cache one full-precision basis in four vec4s (64 bytes) per particle and expand
+the original corner formula in main draws. The shared packed shader type and
+native extern mirror define the layout. Extend preparation to all visual styles;
+inline variants remain 0..2, prepared main variants add three to the same base
+style. Bind the corresponding specialized preparation pipeline per draw. Preserve
+the invariant clip dependency, capability fallback and whole-draw capacity fallback.
+Scratch is capped at 24 MiB/frame and uses remaining stream capacity; later CPU
+allocations can still grow the ring in other scenes, so measure real growth/RSS.
+The fixed scene needs 389180 * 64 = 24.90752 MB plus normal stream data and fits
+the existing 24 MiB chunk. Build 90/90 passes. Classic/Neutral/AgX images and
+private RGB match exactly; the first authored snow view matches. Actual coverage
+is all 389180 particles in eighteen preparation draws with no stream growth in
+the held scene. Further snow, frame/load and fallback/resource validation remains
+in progress. Qualified frozen 503 is the fallback. Evidence:
+`zig-out/reports/perf-weather-basis-cache-504/`.
+
+Both snow views pass. Three paired frame processes do not support admission:
+pooled frame-average median 52.22 -> 55.64 ms, CPU per 384 frames 134.18 ->
+134.59 seconds. Keep the 69.90 ms baseline process median/outliers; one noisy
+baseline improves the candidate comparison but the other pairs do not. Twelve
+fresh loads are near neutral: arrival readiness 3.269 -> 3.272 seconds, capture
+3.423 -> 3.475; autosave readiness 3.422 -> 3.470, capture 3.674 -> 3.673.
+RSS increases about 40 MiB relative to 503. Reject this eager reader as a frame
+optimization and investigate unnecessary per-corner state loads with 505; no
+loading gain or all-weather performance improvement is claimed.
+
+## Sequence 503 — perf-weather-vertex-preparation — retained; integrated and aggregate verified
+
+The guarded CPU device supports vertex storage writes; vertex subgroup operations
+are unavailable, so do not assume corner lanes can broadcast shared values. Test
+one rasterizer-discard vertex pass per splash particle, shared basis/corner math
+and cached main draws. Keep the original inline fallback for unsupported devices
+or bounded scratch exhaustion. Target the measured repeated splash work while
+keeping the vertex stage used for procedural arithmetic. Require exact pixels,
+explicit preparation coverage, bounded memory, complete loading and repeated
+whole-frame endpoints. Qualified frozen 502 is the fallback; implementation is
+unverified. Evidence: `zig-out/reports/perf-weather-vertex-preparation-503/`.
+
+Connected implementation builds 90/90. First validation exposes the point-list
+PointSize requirement and depth setters issued after binding a discard pipeline
+without depth state; both are repaired before measurements. Clean v2 still has
+the identical 171-pixel mismatch from 500, disproving a stage-only explanation.
+V3 connects the shared basis/corner values to invariant gl_Position using the
+actual clip transform: Neutral TGA returns to the golden 5794386f..., private RGB
+matches exactly, all 155975 splashes prepare in seven draws and validation is clean.
+Classic, AgX and both authored snow views also match exactly. Resize admission,
+dimensions and validation checks pass.
+No performance result is admitted until loading and scratch/feature fallback
+checks complete. Initial three paired processes: median 128-frame average
+60.06 -> 51.08 ms, CPU per 384 frames 153.28 -> 133.46 seconds; all paired CPU
+values improve. Candidate has seven additional preparation draws, 12.478 MB scratch
+per frame (16 MiB cap), stream 101 -> 12287 KiB and records 386 -> 392 KiB, with no
+stream/record growth. Visible world/entity/UI/particle work must stay equal after
+accounting separately for preparation. Resident memory and cold-loading costs
+remain under measurement; the qualified fallback is still frozen 502.
+
+Final admission: three paired frame processes and twelve fresh loads pass. Arrival
+readiness 3.070 -> 3.120 seconds, capture 3.273 -> 3.273; autosave readiness
+3.370 -> 3.370, capture 3.625 -> 3.623. Loading is near neutral; all saves preserve
+their admitted state and original inputs. Peak RSS rises 33220 KiB / 23808 KiB for
+the two saves (about 32 / 23 MiB), acknowledged despite no GPU-buffer growth.
+Density-two capacity diagnostic preserves all 711520 weather particles and exact
+pixels: 180224 of 278528 splashes prepare, 98304 fall back inline, with five prep
+draws and no stream growth. A logical-device build with vertex stores disabled
+renders exact Neutral/private RGB and resizes with zero preparation; this tests
+the fallback, not another physical GPU. Normal source/native files are restored
+to frozen v3. Restoration rebuild differs only in nonallocated .debug_line;
+allocated ELF sections match, both artifacts are preserved and the exact frozen
+binary is restored. Final UI/intro/e1m1a/two-save checks pass. One aggregate passes
+57/57 steps, 550/550 native contracts and 383 Python tests with pinned environment.
+Admit the measured 15.0% frame-average / 12.9% CPU gain for this software fixture;
+physical GPU performance, tails/confidence and additive whole-PR gains remain
+unverified. Qualified runtime: `perf-weather-vertex-preparation-503/runtime-v3`.
+
+## Sequence 502 — perf-weather-integer-division — retained; integrated and aggregate verified
+
+Replace runtime particle/tile quotient and remainder operations with multiply-high
+and one exact correction using per-draw CPU reciprocal metadata. For n < 262144
+and divisor <= 65536, ceil(2^32/d) gives the correct quotient or one too large;
+the correction product cannot overflow. Unit divisors return n. Append one aligned
+uvec4 to weather parameters and refresh near-rain metadata after its tile changes.
+No floating-point particle formulas change and shader int64 is not required.
+Actual helper versus built-in GPU quotient/remainder passes 33,554,400 comparisons
+in 128 dispatch cases, including repeated boundaries: all numerators for sixteen
+representative divisors, every divisor at quotient boundaries, random pairs and
+partial workgroups. Outputs complete, bytes match, validation is clean. This is
+component conformance, not a performance claim or proof of engine parameter ABI.
+Source is implemented while 501 confirmation uses its immutable runtime; development
+binaries remain 501 until a new build. Require actual engine images and endpoints
+before admission. Evidence: `zig-out/reports/perf-weather-integer-division-502/`.
+
+Both frozen modules contain their verified compiled vertex bytes. Variable tile
+quotient/remainder pairs become two UMulExtended operations; remaining / and %
+are constant corner-index operations. Capabilities are unchanged. Exact Classic,
+Neutral, AgX, private RGB, resize and two authored snow views pass. Across six
+paired processes per arm, 36 logical work records match: median 128-frame average
+64.24 -> 59.00 ms, ranges 58.81–96.98 / 56.71–92.36. Independent confirmation is
+64.35 -> 61.11 ms; five paired frame medians improve. CPU per 384 frames is near
+neutral: 138.67 -> 138.20 seconds, ranges 136.42–162.28 / 132.97–146.03.
+Keep all host-pressure variation/outliers; no confidence or tail claim. Independent
+elapsed time confirms the intervals. All 58 threads stay stable in confirmation;
+their CPU sum matches the process counter within 0.1 second. Runnable-delay
+duration is unavailable because kernel scheduler-wait accounting is disabled.
+
+Twenty-four fresh-process loads preserve state and complete image admission.
+Initial autosave readiness regresses 3.270 -> 3.520 seconds; independent confirmation
+is 3.771 -> 3.775, so the larger regression does not repeat. Combined arrival
+readiness is 3.196 -> 3.269 (capture 3.374 -> 3.446); autosave 3.598 -> 3.623
+(capture 3.825 -> 3.875). These are mixed small loading tradeoffs, not a loading
+gain. Metadata adds 16 bytes/draw, 288 bytes in the fixture; stream stays 101 KiB
+with no growth. Final UI/intro/e1m1a/two-save validation and input preservation
+pass. One aggregate checkpoint passes 57/57 steps, 550/550 native contracts and
+383 Python tests with the pinned interpreter identity verified. Admit the software
+frame gain; physical GPU behavior and an additive whole-PR speedup remain unverified.
+
+## Sequence 501 — perf-weather-seed-cull — retained; focused verification passed
+
+Move the existing splash h0.x > 0.7 rejection immediately after seed generation,
+before terminal-speed exp. Rejected particles return exactly the same empty vertex;
+survivors keep the original vertex-stage calculations. Qualified 499 is the frozen
+baseline. Require exact images, unchanged logical work and useful whole-frame/load
+results before admission. Evidence: `zig-out/reports/perf-weather-seed-cull-501/`.
+
+Build 89/89, three rain modes/private RGB/resizes and both authored snow views pass
+exactly. All eighteen work rows match. Initial frame median 61.60 -> 58.78 ms,
+CPU per 384 frames 138.95 -> 138.87 seconds. Keep the broad baseline variation
+(process medians 59.09, 61.60, 65.11 ms) and confirm with three more pairs before
+claiming a gain. Twelve fresh-process loads complete admission and preserve state:
+arrival readiness 2.967 -> 2.966 seconds, capture 3.170 -> 3.168; autosave readiness
+3.269 -> 3.318, capture 3.471 -> 3.521. Fresh-load CPU medians 10.101 -> 10.021 /
+11.451 -> 11.325 seconds. Source now also contains unbuilt 502 integration; current
+501 confirmation continues exclusively with the frozen 499/501 prefixes.
+
+Independent confirmation completes six paired processes per arm. All 36 work
+records match; frame median 60.60 -> 59.43 ms (ranges 58.75–78.60 / 57.70–64.18),
+CPU per 384 frames 139.885 -> 139.435 seconds (136.35–141.67 / 136.21–140.75).
+Five paired frame medians improve, one regresses slightly. The second batch also
+has a lower frame median. Keep every sample, including the 78.60 ms baseline
+interval; variation overlaps and CPU is near neutral. Admit the modest software
+frame improvement without confidence/tail or physical-GPU claims. The only source
+change in this retained batch is the relocated seed guard, with no memory/API cost.
+Qualified frozen 501 is now the fallback for integrated integer-division work 502.
+
+## Sequence 500 — perf-weather-splash-compute — rejected; qualified 499 source restored
+
+Move splash preparation to a compute dispatch using the same shared particle helper
+for all four corners, then read positions/color in vertex specialization 3. Inline
+specialization 2 remains the fallback. Scratch is capped at 16 MiB per frame and
+uses only existing frame-stream capacity; allocation exhaustion keeps inline draws.
+Rain/snow formulas, particle counts and fragment shading remain unchanged. Extend
+roof-map synchronization to vertex/compute readers. Test exact images, actual
+preparation coverage, memory behavior, whole frames and fresh loading before
+admission. Qualified frozen 499 is the fallback; this source prototype is unverified.
+Evidence: `zig-out/reports/perf-weather-splash-compute-500/`.
+
+Reject at the first exact-image gate: 171 of 518400 pixels / 440 RGB channels
+differ, maximum channel delta 59. All 155975 splashes prepare without stream-ring
+growth. One-corner invocation and specialization-default variants produce the same
+failed image. Split diagnostics implicate the position path: computed positions
+with original color reproduce the full mismatch; inline positions with computed
+color leave 300 differing channels. Moving clip transform/depth before storage
+also leaves the identical full mismatch. This does not prove the exact driver or
+floating-point cause. Preserve all failed images, binaries and source snapshots;
+no speedup is admitted or timed before correctness. Restore every renderer source
+hash to qualified 499, then implement the smaller same-stage experiment 501.
+All compute preparation, ring API, new shader files, counters and barriers are
+removed from working code; historical prototype descriptions above are not retained
+implementation. Development binaries become 501 only after its build completes.
+
+## Sequence 499 — perf-weather-uniform-samplers — retained; focused verification passed
+
+Remove nonuniform descriptor markers only from the two draw-wide weather light-grid
+indices and the roof-map slot passed to rainSurface. All originate in immutable
+parameters/view through push.record. Coordinates, arithmetic, particle counts and
+rainExposure are unchanged. Compare frozen rain/snow images and interleaved whole
+frames against qualified 496 before admission; software Vulkan evidence only.
+Evidence: `zig-out/reports/perf-weather-uniform-samplers-499/`.
+
+Measurement scope for these frozen-render experiments: each frame_ms row is a CPU
+monotonic average over 128 frames. Reported medians summarize these averages, not
+individual-frame latency percentiles. Independent Python elapsed time over each
+384-frame block agrees with the three-row mean within 0.06 ms/frame for 499 and
+0.12 ms/frame for 501. Preserve whole-block comparisons in wall-timer-crosscheck.json.
+
+Classic/Neutral/AgX rain TGA and private-screen RGB match exactly; resize checks and
+two authored snow views pass under validation. Snow uses the previously qualified
+fixed-noise correctness fixture only; normal timing has no RNG override. Initial
+six-process results suggested a small frame gain with mixed CPU, so a second six
+process batch independently confirms before retention. Across both batches, 36
+measured work rows match: frame median 60.155 -> 59.220 ms, ranges 58.94–63.53 /
+58.14–63.67; CPU median per 384 frames 140.575 -> 138.600 seconds, ranges
+137.06–141.48 / 136.56–140.72. Four paired frame medians improve; two are nearly
+neutral. Overlapping ranges and six pairs do not support tail/confidence claims.
+Twelve fresh-process loads complete admission and preserve fixtures/state: arrival
+readiness 2.922 -> 2.919 seconds, capture bound 3.125 -> 3.071; autosave readiness
+3.225 -> 3.271, capture bound 3.428 -> 3.524. Keep the autosave tradeoff and all
+samples, including baseline arrival readiness 3.677 seconds. No added modules,
+features, memory or arithmetic. Shader build 89/89 and affected engine checks pass;
+the unchanged native/Python aggregate from 496 is not rerun for these shader hints.
+
+## Sequence 498 — perf-weather-cost — diagnosis verified; no source change
+
+Measure particle cost before a larger per-particle compute/precomputation design.
+Same qualified 496 binary/process/held demo: normal, no splash crowns, no particles,
+normal restored; 32 warmup plus 96 measured frames per phase. Verify density=1,
+splashes=1 and volumetric=0 first, so changing density does not remove froxel work.
+Keep logical world/model/UI work fixed; particles change HDR/post inputs, so this
+is a coupled removal upper bound, not isolated vertex cost or an admitted speedup.
+Restore normal settings before ordinary exit and preserve all inputs. Evidence:
+`zig-out/reports/perf-weather-cost-498/`.
+
+Measured frame medians: normal 61.73 ms, no splashes 42.30 ms, no particles
+23.57 ms, restored normal 60.68 ms. CPU seconds per 96 frames: 35.38, 33.54,
+31.40, 35.14. Particle counts: 389180, 233205, 0, 389180; other logical work
+remains fixed. Ordinary exit and source preservation pass. Wall savings roughly
+match one CPU's work per frame, consistent with serialized critical-path weather
+work; this does not isolate a particular shader instruction or driver cause.
+
+## Sequence 497 — perf-taa-reset-loop — rejected; qualified 496 source restored
+
+Guard only the original constant-bound halo-loading loop with uniform !reset,
+keep the barrier unconditional, reconstruct current color once after the barrier
+and bounds check, and return on reset before any shared-neighbourhood statistics
+read. This avoids the duplicated Catmull-Rom code of rejected 493/495. Test whether
+reset fetch/statistic savings survive without their normal CPU tradeoff. Normal
+formulas/order/loop bound stay fixed; extra control flow may still carry a cost.
+Baseline is qualified 496. Require actual shader output and component evidence
+before native frame/load trials. Evidence: `zig-out/reports/perf-taa-reset-loop-497/`.
+The loading loop is guarded by a dispatch-uniform reset flag, its original
+constant bound is unchanged, and every invocation still reaches the barrier.
+Reset returns after the single current-color reconstruction and before any read
+of skipped shared data. Actual shader output and component comparisons are running;
+the development binaries remain the qualified 496 version until a new build.
+All 704 actual shader output cases pass with validation and output-written
+checks. Twenty-four component trials: native normal CPU per 128 dispatches
+8.672 →8.563 s, scaled normal 8.476 →8.506 s; native reset 5.380 →3.117 s,
+scaled reset 5.312 →3.098 s. Wall medians normal 0.516 →0.510 / 0.525 →0.518 s,
+reset 0.328 →0.195 / 0.317 →0.190 s. The reset CPU saving is about 42%, with
+normal component results near neutral rather than a proven whole-game gain.
+Build and matched native/scaled frame and native fresh-load trials follow against
+qualified frozen 496; the scaled profile matches the already-qualified settings.
+Build 89/89 and actual runtime/source identities are frozen; only the Vulkan
+renderer differs from qualified 496. Native/scaled normal-frame and native fresh
+loads now run sequentially. The working source/development prefix is this 497
+prototype; 496 remains the verified fallback until endpoint admission is decided.
+Endpoint evidence rejects the loop guard: six native processes give frame median
+59.17 →60.03 ms and CPU per 384 frames 136.32 →140.09 s, about 2.8% more CPU.
+Six scaled processes give 58.36 →56.50 ms but CPU 116.69 →117.47 s, about 0.7%
+more CPU. Twelve native fresh loads are broadly neutral: arrival readiness
+2.917 →2.967 s and autosave 3.270 →3.218 s. The component reset gain does not
+justify a common-path CPU regression. Preserve all samples and restore 496;
+no feature removal or rejected code is retained as a performance improvement.
+Restoration build 89/89; current renderer source hashes and all nine development
+runtime file hashes exactly match the qualified 496 snapshot. Its unchanged
+integrated/scaled/aggregate checks therefore remain applicable without rerunning
+the same suites.
+
+## Sequence 496 — perf-taa-uniform-only — retained; integrated and aggregate verified
+
+Test the remaining combination: original 492 shared neighbourhood and late
+history-reset branch, with only known-uniform sampler annotations removed. The
+three-way 495 results favor 492 for normal work, so isolate the annotation change
+from early-reset control flow. Qualify actual outputs/component costs before
+any native frame/load comparison. Evidence:
+`zig-out/reports/perf-taa-uniform-only-496/`.
+All 704 direct output cases pass with no validation errors. Native normal CPU
+per 128 component dispatches 9.000 →8.997 s is effectively unchanged; scaled
+normal 9.212 →8.646 s, about 6.1% lower. Native/scaled reset CPU 5.606 →5.394 /
+5.622 →5.380 s. Wall medians normal 0.581 →0.585 / 0.597 →0.551 s, reset
+0.381 →0.339 / 0.365 →0.340 s. Qualify actual native frames and a separate
+forced-builtin 0.667-scale workload with identical configuration in both arms;
+never attribute reducing render resolution to this annotation change. Native
+fresh-load trials will check cold cost before final connected-batch selection.
+Native build 89/89 and frozen runtime/source identities are recorded. The current
+source is uniform-only 496, with late history reset; normal 492-versus-496 frame
+trials, separate same-configuration builtin-scaled trials, and native fresh loads
+were measured sequentially. Final selected-source integrated smoke and one aggregate
+are recorded below; no TAA prototype has been published.
+Twelve normal-quality frame processes (three pairs per native/scaled workload)
+retain every timing/work row. Native frame median 60.90 →60.17 ms (ranges
+59.74–63.44 / 59.53–63.90), CPU per 384 frames 139.98 →136.98 s (ranges
+137.90–140.42 / 135.61–137.47), about 2.1% less CPU. Scaled frame median
+58.90 →59.02 ms is neutral within variation; scaled CPU 118.79 →115.94 s
+(ranges 117.80–121.07 / 115.29–118.75), about 2.4% lower. All six paired CPU
+totals improve; this is software-only evidence, not a physical-GPU/tail claim.
+
+Twelve native fresh loads: arrival readiness 3.067 →3.167 s and JPEG capture
+3.269 →3.320 s; autosave readiness 3.318 →3.270 s and capture 3.521 →3.521 s.
+Process CPU 10.221 →10.441 / 11.571 →11.447 s. Preserve the small arrival-load
+tradeoff; no universal loading gain is accepted. Select shared tile plus uniform
+samplers and late reset for common-path efficiency, excluding early-reset 493/495.
+Final native integrated smoke, actual scaled-CVar qualification and one applicable
+aggregate were then run before admission.
+Final qualification passes native UI new-game/intro, e1m1a and both copied saves;
+the scaled run explicitly reads active quality=6, scale=0.667, upscaler=0, TAA=1,
+with 960×540 windowed output. GPU inputs are 640×360 as derived from the verified
+window allocation code and settings. No validation errors, zero pending/failed
+images, and all original saves/configuration remain preserved. One aggregate
+passes 57/57 steps, 550/550 Zig tests plus C contracts and 383 Python tests using
+the unchanged pinned virtual-environment interpreter path. Current source and all
+nine development runtime files match the frozen qualified candidate exactly.
+Admit 496; 493/495 early-reset implementations remain rejected alternatives.
+New code stays local, with no Git or publication action.
+
+## Sequence 495 — perf-taa-uniform-samplers — combined variant not selected
+
+TAA sampler indices come only from dispatch-wide push constants, including the
+Catmull-Rom slot arguments. Remove nonuniformEXT annotations from these known
+uniform descriptor accesses, following the existing post-histogram pattern.
+Preserve every coordinate/filter/arithmetic/control-flow expression and device
+features. Test whether this permits cheaper descriptor handling; the driver may
+already infer uniformity, so output equivalence alone does not establish a gain.
+Compare actual SPIR-V, direct shader outputs and component costs before native
+frame/load tests. Evidence: `zig-out/reports/perf-taa-uniform-samplers-495/`.
+Compiled SPIR-V removes all NonUniform decorations and the two corresponding
+capabilities, with no new capability requirement. The first preparation assertion
+also exposes a log-capture boundary race in 494: one partial report has two work
+rows because the wait returned at the third timing header before its statistics
+line. The complete client log recovers all three measured work rows, identical
+to every other sample; preserve the partial report and normalized evidence. Future
+measurement capture waits for both timing and work rows. No frame/CPU sample is
+discarded or changed by this recovery.
+All 704 actual shader output cases match with no validation errors. Twenty-four
+actual-component samples: native normal CPU per 128 dispatches 8.827 →8.765 s,
+scaled normal 8.862 →8.504 s; native reset 2.681 →2.389 s, scaled reset
+2.712 →2.414 s. Wall medians 0.517 →0.504 / 0.522 →0.513 s for normal and
+0.161 →0.152 / 0.164 →0.156 s for reset. Record these as warm-input component
+gains only. Rotating normal 492/493/495 frame/load trials will test the combined
+choice; the repaired capture waits for all three work rows as well as timing rows.
+Build 89/89; native UI new-game/intro, e1m1a and both copied saves pass under
+validation, with original saves/profile preserved. Freeze actual modules and
+renderer source hashes. Rotating 492/493/495 normal frame/load measurements are
+in progress; no full-frame or cold-load gain is admitted from component data alone.
+Nine processes retain all 27 work rows with the repaired wait. Frame medians
+492 / 493 / 495: 60.73 / 62.00 / 61.84 ms; CPU per 384 frames 137.21 / 139.90 /
+139.79 s. Eighteen fresh loads: arrival readiness 3.072 / 3.118 / 3.069 s,
+autosave 3.470 / 3.472 / 3.419 s. The combined variant does not recover 492's
+normal CPU advantage; do not select it from the component gain. Preserve all
+three-way outcomes and test uniform access alone as sequence 496. No broad check
+is repeated while the connected TAA batch's source selection is pending.
+
+## Sequence 494 — perf-taa-reset-confirmation — measured tradeoff confirmed
+
+Independently repeat the frozen 492/493 comparison because component, full-frame
+and loading results disagree. Three interleaved process pairs for normal frames
+then three pairs per fresh save, keeping both blocks and every sample. No source
+change or rebuild; compare actual binary/input identities. Evidence:
+`zig-out/reports/perf-taa-reset-confirmation-494/`.
+Second six normal-frame processes: median 60.59 →60.66 ms, CPU 137.83 →140.67 s
+per 384 frames. Second twelve fresh loads: arrival readiness 3.069 →2.971 s,
+autosave 3.369 →3.219 s; process CPU 10.285 →9.918 / 11.252 →11.193 s. Loading
+benefit repeats while normal CPU remains a tradeoff; no isolated cause or universal
+speedup is claimed. Keep all block-specific outcomes and test the known-uniform
+sampler follow-up before final connected-batch selection.
+
+## Sequence 493 — perf-taa-reset — measured tradeoff; admission deferred
+
+Move the dispatch-uniform history-reset branch before shared neighbourhood loads
+and barrier. Reset output uses only original current-color reconstruction; every
+invocation returns through this uniform branch, with output bounds checked inside.
+Leave the normal temporal path unchanged. Test exact shader outputs, reset and
+normal component timings, then whole-frame/loading outcomes before admission;
+additional control flow/code layout may carry costs. Evidence:
+`zig-out/reports/perf-taa-reset-493/`.
+Build 89/89; the actual 492/493 SPIR-V outputs match in all 352 native-half and
+352 float32 cases with validation and output-written checks. A separate actual
+shader component experiment measures normal/reset modes: native/scaled fixed HDR,
+depth, history and motion inputs; eight warmup and 128 measured dispatches, three
+interleaved pairs per mode. Process CPU and wall include command recording,
+dispatch dependencies and one readback, with first-use compilation outside the
+measured samples. This is component evidence; complete game frames/loads remain
+required before admission.
+All 24 interleaved component samples complete: native reset CPU per 128
+dispatches 5.653 →2.681 s, wall 0.350 →0.173 s; scaled reset CPU 5.785 →2.728 s,
+wall 0.393 →0.199 s. Normal-history native CPU 8.946 →9.013 s and scaled
+9.160 →9.065 s; wall 0.548 →0.557 / 0.610 →0.599 s. Roughly half the reset
+CPU is removed, while normal component results are mixed around one percent.
+These fixed warm-input component results do not establish whole-game gains.
+Freeze renderer/source identities and measure normal frames and complete loads.
+First six normal-frame processes give medians 62.36 →64.46 ms and CPU
+142.91 →144.37 s per 384 frames; ranges 61.11–66.80 / 60.88–69.43 ms and
+139.88–144.20 / 138.12–145.05 s show substantial variation. Two process frame
+medians improve, the third worsens. Twelve fresh loads favor the candidate:
+arrival readiness 3.118 →3.017 s, autosave 3.930 →3.369 s; process CPU medians
+10.336 →10.257 / 11.884 →11.287 s. Component reset savings alone do not explain
+the loading difference. Preserve this block and confirm independently before
+choosing between shared-neighbourhood 492 and early-reset 493.
+
+## Sequence 492 — perf-taa-neighborhood — retained for connected follow-up
+
+Test shared reuse of current-color/depth neighbourhood samples: an 8×8 group
+currently performs 576 fetches from each texture; its 10×10 neighbourhood needs
+100 from each. A shared vec4(YCoCg, depth) tile costs 1,600 bytes plus a barrier.
+Preserve integer clamping, color conversion/accumulation order and depth ties;
+barrier precedes out-of-range return. Qualify native/scaled extents, jitter and
+partial groups, with actual deterministic history/motion shader-output equivalence
+before timing. Software shared-memory/barrier overhead may defeat the benefit.
+Keep full temporal behavior; compare normal loads and equal-work frames against
+frozen 489. Evidence: `zig-out/reports/perf-taa-neighborhood-492/`.
+The shader now loads the shared tile, synchronizes every invocation before
+out-of-range return, and reads the same 3×3 samples in the original order.
+A local CPU-Vulkan harness executes the actual baseline/candidate SPIR-V on
+identical synthetic HDR, depth, history and motion textures. Initial 256 cases
+(eight extents/scales × sixteen jitter phases × reset/nonreset) match all native
+half-float output bytes. Expanded edge/full-resolution and float32 output checks
+run with validation before normal-quality integrated timing. Diagnostic harness
+code/binaries and test inputs remain local; no original game data is included.
+Expanded direct comparison passes 352 native-half and 352 float32 output cases
+with zero differing bytes and no validation errors, including full resolution,
+partial groups, native/scaled and 3×3-output/1×1-input edges. Every output alpha
+is checked to catch unwritten results. Preserve the earlier diagnostic-only
+float32 buffer-offset alignment failure; fixed 16-byte region alignment, host
+visibility barrier and output-written checks qualify the final harness. Integrated
+build 89/89. Freeze candidate identities, unchanged engine/game modules and all
+renderer source fingerprints; equal-work normal-quality timing is running.
+Six normal-quality processes, 64 warmup plus 384 measured frames each, retain
+all 18 logical work-count intervals. Frame median 63.57 →61.41 ms (ranges
+60.58–67.22 / 60.07–63.16), about 3.4% lower; CPU per process 145.24 →140.40 s
+(ranges 140.46–146.95 / 138.04–141.11), about 3.3% lower by median. Paired CPU
+deltas −8.91/−4.84/+0.65 s show variation; no uniform per-run gain is claimed.
+Twelve normal fresh-process save-loading trials now check for cold regressions;
+record compute-pipeline calls as context without treating their wall time as
+isolated compiler CPU. Admission remains pending those results.
+The twelve loading processes pass: arrival readiness 2.917 →2.918 s, autosave
+3.225 →3.176 s; process CPU medians 9.931 →9.730 / 11.255 →11.018 s. No material
+cold regression is observed; ranges overlap and no universal loading gain is
+claimed. Keep the change and freeze it as the sequence-493 reset-path baseline.
+Final integrated smoke and aggregate checks follow the connected TAA batch.
+
+## Sequence 491 — perf-taa-cost — diagnosis complete; no source change
+
+Cross-check the reported roughly 5 ms temporal-resolve interval against actual
+whole-frame CPU/wall cost before implementing neighbourhood tile reuse. Same
+retained-489 binary/process/demo, TAA on/off/on with 32 warmup plus 96 measured
+frames per phase. Assert logical world/model/weather/UI work identity and restore
+TAA before ordinary exit. Jitter and history also change, so this is a coupled
+upper-bound diagnostic, not isolated resolve time or a feature-off optimization.
+Evidence: `zig-out/reports/perf-taa-cost-491/`.
+Frame medians on/off/on are 61.56 / 53.85 / 59.13 ms; CPU per 96 measured
+frames is 34.91 / 26.67 / 34.65 s. All logical work counts remain identical,
+including 442 draws, 268 UI quads and 389,180 particles. TAA is restored before
+ordinary exit (guard status 0), validation is clean and sources are preserved.
+The roughly 23% CPU drop establishes a material coupled cost, not an isolated
+resolve percentage or an accepted gain. Next test neighbourhood reuse while
+preserving temporal behavior; do not retain disabled TAA.
+
+## Sequence 490 — perf-weather-kind — rejected; selected vertex-only source restored
+
+Specialize rain versus snow in both weather stages, while preserving dynamic
+rain/splash selection from the original parameter. One rain pipeline now covers
+streaks, near-camera drops and splash crowns, matching the original PSO count.
+Particle counts, formulas, buffers and module count remain unchanged. Test whether
+this retains the vertex saving with lower cold cost than sequence 489; compare
+retained 485, frozen vertex-only 489 and the new candidate under rotating trials.
+Evidence: `zig-out/reports/perf-weather-kind-490/`.
+Build 89/89. Three rain output modes, normalized private-screen RGB and two
+resolution restarts match exactly. Both authored snow views match the qualified
+fixed-noise retained-485 references; fixed noise remains correctness-only.
+Eighteen loading processes give 485 / vertex-only / kind-only arrival readiness
+2.920 / 2.971 / 2.970 s, autosave 3.417 / 3.219 / 3.221 s. Arrival candidate
+paired deltas +0.302/+0.001/+0.000 s; autosave −0.403/−0.249/+0.003 s. No
+universal loading gain is claimed. Nine equal-work rendering processes retain all
+27 work-count intervals: frame medians 63.88 / 60.31 / 63.15 ms and CPU medians
+146.15 / 141.76 / 141.99 s per 384 frames. The kind-only prototype saves CPU
+but gives up most of the vertex-only frame benefit; its loading results do not
+justify selecting it instead. Restore sequence-489 sources, build 89/89, and
+verify their fingerprints against the frozen qualified runtime.
+
+Across both independent 489/490 blocks, six processes per retained-485/selected
+arm measure 2,304 frames each: frame medians 63.88 →60.36 ms (ranges 62.40–67.17 /
+58.88–64.21), about 5.5% lower; CPU medians per 384 frames 145.99 →142.39 s
+(ranges 143.73–146.42 / 140.13–144.86), about 2.5% lower. All six paired CPU
+totals and all six process frame medians improve. Small software-only samples;
+loading is broadly neutral/mixed, and no physical-GPU or tail claim is made.
+
+Final selected-source UI smoke passes new-game/intro, e1m1a and both copied saves,
+zero pending/failed images, no Vulkan errors, preserved original saves/profile.
+One applicable aggregate passes 57/57 steps, 550/550 Zig tests plus C contracts,
+383 Python tests with the original pinned virtual-environment interpreter path.
+New specialization changes remain local; earlier published PR contents are unchanged.
+
+## Sequence 489 — perf-weather-vertex-style — rendering gain confirmed; selected for follow-up
+
+Keep sequence-488 typed particle style and vertex specialization, but restore the
+original common weather fragment implementation. Test whether the vertex change
+retains the measured frame benefit while avoiding duplicated cold fragment work.
+Pipeline-call wall totals differ by only a few milliseconds and do not explain
+the whole-load regression; compiler/cache reuse remains a hypothesis. Compare
+retained 485, frozen 488 and this candidate with strict images and normal-quality
+loading/rendering measurements. Evidence:
+`zig-out/reports/perf-weather-vertex-style-489/`.
+Build 89/89; classic/Neutral/AgX rain TGA/private-Xvfb RGB and two resolution
+restarts pass. The initial snow view also proves vulnerable to process-random
+sky lightning: retain its first failed comparison, then qualify both snow views
+with fixed noise for image diagnostics only. Two initial-view baseline processes
+and the candidate match exactly, as does the candidate against the previously
+repeated rotated-view fixed-noise baseline. The timing controller asserts the
+diagnostic preload is absent before running the normal three-arm measurements.
+Eighteen fresh processes: arrival readiness medians 2.868 / 2.917 / 2.969 s for
+485 / both-stage 488 / vertex-only 489, with overlapping ranges; autosave
+3.170 / 3.170 / 3.167 s. Arrival CPU medians 9.979 / 9.934 / 10.005 s; autosave
+11.384 / 11.291 / 11.155 s. Retain both this block and the earlier 488 loading
+regression rather than assigning a universal cold-load conclusion.
+
+Nine rendering processes, three per rotating arm, each warm 64 and measure 384
+frames. All 27 intervals match work counts. Median frame intervals are
+63.88 / 61.17 / 60.59 ms; process CPU medians 145.83 / 144.64 / 143.02 s.
+Vertex-only has about 5.2% lower median frame time and 1.9% less CPU versus 485;
+all three paired CPU values are lower (−5.70/−3.40/−0.37 s). Observed CPU ranges
+144.94–146.42 / 140.13–144.57 s. These are software-only small-sample results,
+not physical-GPU or tail claims. Select vertex-only for the next comparison;
+aggregate admission waits for the connected specialization batch to settle.
+
+## Sequence 488 — perf-weather-style — measured rendering benefit; admission deferred
 
 The CPU already knows rain, snow and splash style when constructing each weather
 draw. Test a typed style passed through the existing pipeline variant to specialize
@@ -14,7 +547,31 @@ Keep original formulas, data and module count; do not retain sequence-487 cullin
 Additional pipelines may increase cold cost, so require loading and equal-work
 render measurements, strict rain images and the two new authored snow fixtures.
 Evidence: `zig-out/reports/perf-weather-style-488/`.
-The owner stopped the optimization loop before implementation.
+The owner resumed the loop. A typed Style travels through Draw and Mesh into
+the existing pipeline variant; both weather shader stages specialize constant 0.
+No new modules or buffers are introduced. Original formulas and dynamic params
+remain unchanged; the comparison baseline is the retained sequence-485 runtime.
+Build 89/89 and strict rain classic/Neutral/AgX TGA/private-Xvfb RGB, two
+resolution restarts, and the initial snow view pass. The rotated snow comparison
+first fails against its historical image; unchanged baseline replay also fails.
+Inspection identifies randomized sky lightning: Com_InitRand seeds libc rand
+from OS randomness, R_NoiseInit consumes it, and the authored sky has a noise
+waveform. A diagnostic-only fixed-srand preload makes two baseline runs and the
+candidate byte-identical, including the visible flakes. Preserve the initial
+failures; the override is excluded from normal performance runs. Sources remain
+preserved, validation reports no new errors. Twelve normal fresh-process loading
+trials give arrival readiness 3.221 →3.429 s, CPU 10.540 →11.177 s; autosave
+3.624 →3.624 s, CPU 12.152 →12.153 s. Arrival paired deltas −0.051/+0.308/+0.202 s;
+autosave +0.150/−0.001/+0.148 s. No loading gain is accepted.
+
+Six equal-work rendering processes measure 64 warmup plus 384 frames each.
+All 18 intervals retain identical draws/UI/particles/indices. Frame medians
+64.12 →60.17 ms (ranges 62.84–65.61 / 59.12–63.75), about 6.2% lower. Process
+CPU medians 144.67 →143.12 s (ranges 144.47–147.63 / 139.68–143.57); all three
+paired candidate CPU totals are lower. This is a software-only rendering benefit
+with an observed loading tradeoff, not an admitted whole-task improvement. Keep
+the frozen candidate and test vertex-only specialization next before selecting
+retained source. OS page cache is uncontrolled; all samples remain recorded.
 
 ## Sequence 487 — perf-weather-distance — rejected; source reverted
 

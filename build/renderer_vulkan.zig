@@ -35,21 +35,16 @@ pub fn declareCpuImageBench(b: *std.Build, optimize: std.builtin.OptimizeMode) *
 
 /// Every shader stage compiled into the module, embedded as `<file>.spv`.
 pub const shaders = [_][]const u8{
-    "weather.vert",          "weather.frag",
-    "stage.vert",            "stage.frag",
-    "composite.vert",        "composite.frag",
-    "display.frag",          "post_histogram.comp",
-    "post_exposure.comp",    "bloom_down.comp",
-    "bloom_up.comp",         "froxel_inject.comp",
-    "froxel_integrate.comp", "froxel_tiles.comp",
-    "taa.comp",              "light_cull.comp",
-    "ddgi.comp",             "rt_skin.comp",
-    "bake.vert",             "bake.frag",
-    "pt_trace.comp",         "pt_temporal.comp",
-    "pt_atrous.comp",        "pt_composite.comp",
-    "light_visibility.comp", "depth.frag",
-    "lightstyle.comp",       "motion_fill.comp",
-    "fsr_reactive.comp",
+    "weather.vert",       "weather.frag",          "weather_prepare.vert",
+    "stage.vert",         "stage.frag",            "composite.vert",
+    "composite.frag",     "display.frag",          "post_histogram.comp",
+    "post_exposure.comp", "bloom_down.comp",       "bloom_up.comp",
+    "froxel_inject.comp", "froxel_integrate.comp", "froxel_tiles.comp",
+    "taa.comp",           "light_cull.comp",       "ddgi.comp",
+    "rt_skin.comp",       "bake.vert",             "bake.frag",
+    "pt_trace.comp",      "pt_temporal.comp",      "pt_atrous.comp",
+    "pt_composite.comp",  "light_visibility.comp", "depth.frag",
+    "lightstyle.comp",    "motion_fill.comp",      "fsr_reactive.comp",
 };
 
 /// renderercommon sources used unchanged: decoders, the resident PNG batches, noise and inflate.

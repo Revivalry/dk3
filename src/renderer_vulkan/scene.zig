@@ -138,6 +138,7 @@ fn stageVariant(flags: u32) u8 {
 
 pub const Mesh = struct {
     kind: u32 = 0,
+    weather_style: weather.Style = .rain,
     vertices: u64 = 0,
     indices: u64 = 0,
     count: u32 = 0,
@@ -381,6 +382,8 @@ pub const Stats = struct {
     weather_vertices: u32 = 0,
     weather_indices: u32 = 0,
     weather_particles: u32 = 0,
+    weather_prepared_particles: u32 = 0,
+    weather_prepare_draws: u32 = 0,
 };
 pub var stats: Stats = .{};
 
@@ -579,6 +582,7 @@ pub fn renderView(view: *View) void {
         }
     }
     stats.surfaces += @intCast(draw_surfs.items.len - first);
+    prepareWeather(view, draw_surfs.items[first..]);
     const draw_scope = profile.begin(window.cmd, if (view.is_portal) "draw portal view" else if (view.world == null) "draw view (no world)" else "draw view");
     drawView(view, draw_surfs.items[first..]);
     profile.end(window.cmd, draw_scope);
@@ -992,8 +996,71 @@ fn addWeatherSurfaces(view: *View) void {
         weather.draws(volume_entry, lighting, &parts);
         for (parts) |maybe| {
             const part = maybe orelse continue;
-            addDrawSurf(part.shader, world_entity, .{ .mesh = .{ .kind = 3, .vertices = part.params, .count = part.count } }, 0);
+            addDrawSurf(part.shader, world_entity, .{ .mesh = .{ .kind = 3, .weather_style = part.style, .vertices = part.params, .count = part.count } }, 0);
         }
+    }
+}
+
+/// Prepare splash bases once in the vertex stage, using only spare frame capacity.
+fn prepareWeather(view: *View, surfaces: []DrawSurf) void {
+    if (!vk.vertex_stores or view.is_portal or view.portal_plane != null or view.view_data == 0) return;
+    const frame = vk.frame();
+    var started = false;
+    var scope: ?u32 = null;
+    for (surfaces) |*surface| {
+        if (surface.geometry != .mesh) continue;
+        const mesh = &surface.geometry.mesh;
+        if (mesh.kind != 3 or mesh.weather_style != .splash) continue;
+        const count = mesh.count / 6;
+        const bytes = @as(u64, count) * 80;
+        if (count == 0 or bytes > (16 << 20) - frame.weather_scratch_used) continue;
+        const scratch = frame.stream.allocRemaining(bytes, 16) orelse continue;
+        frame.weather_scratch_used += bytes;
+        const space = frame.records.alloc(@sizeOf(Record), 16) orelse continue;
+        const record: *Record = @ptrCast(@alignCast(space.bytes.ptr));
+        record.* = std.mem.zeroes(Record);
+        record.clip = modelViewProjection(view, &orientation(view, null), false).clip;
+        record.vertices = mesh.vertices;
+        record.view = view.view_data;
+        record.lights = view.dlight_address;
+        record.counts = .{ 0, 0, @intCast(view.dlights.len), count };
+        record.extra = scratch.address;
+        if (!started) {
+            window.suspendRendering();
+            scope = profile.begin(window.cmd, "weather preparation");
+            const rendering = std.mem.zeroInit(c.VkRenderingInfo, .{
+                .sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
+                .renderArea = .{ .extent = .{ .width = 1, .height = 1 } },
+                .layerCount = 1,
+            });
+            vk.d.CmdBeginRendering.?(window.cmd, &rendering);
+            const pipeline = vk.pipeline(.{ .src = 1, .dst = 0, .format = c.VK_FORMAT_UNDEFINED, .program = vk.program_weather_prepare, .variant = @intFromEnum(weather.Style.splash) });
+            vk.d.CmdBindPipeline.?(window.cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            const sets = [_]c.VkDescriptorSet{ vk.descriptor_set, vk.storage_set };
+            vk.d.CmdBindDescriptorSets.?(window.cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, vk.pipeline_layout, 0, 2, &sets, 0, null);
+            const viewport = c.VkViewport{ .x = 0, .y = 0, .width = 1, .height = 1, .minDepth = 0, .maxDepth = 1 };
+            const scissor = c.VkRect2D{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 1, .height = 1 } };
+            vk.d.CmdSetViewport.?(window.cmd, 0, 1, &viewport);
+            vk.d.CmdSetScissor.?(window.cmd, 0, 1, &scissor);
+            vk.d.CmdSetCullMode.?(window.cmd, c.VK_CULL_MODE_NONE);
+            vk.d.CmdSetFrontFace.?(window.cmd, c.VK_FRONT_FACE_COUNTER_CLOCKWISE);
+            vk.d.CmdSetDepthBiasEnable.?(window.cmd, c.VK_FALSE);
+            vk.d.CmdSetDepthBias.?(window.cmd, 0, 0, 0);
+            started = true;
+        }
+        const push = [2]u32{ @truncate(space.address), @truncate(space.address >> 32) };
+        vk.d.CmdPushConstants.?(window.cmd, vk.pipeline_layout, vk.all_stages, 0, 8, &push);
+        vk.d.CmdDraw.?(window.cmd, count, 1, 0, 0);
+        mesh.extra = scratch.address;
+        stats.draws += 1;
+        stats.weather_prepare_draws += 1;
+        stats.weather_prepared_particles += count;
+    }
+    if (started) {
+        vk.d.CmdEndRendering.?(window.cmd);
+        profile.end(window.cmd, scope);
+        vk.memoryBarrier(window.cmd, vk.stage_vertex, c.VK_ACCESS_2_SHADER_WRITE_BIT, vk.stage_vertex, vk.access_shader_read);
+        resetBindings();
     }
 }
 
@@ -1914,7 +1981,7 @@ fn drawStage(view: *const View, batch: *const Batch, stage: *const Stage) void {
     const pipeline = if (prepass_mode)
         vk.pipeline(.{ .src = 1, .dst = 0, .format = window.targetFormat(), .program = program, .color_write = false, .motion_target = motion_target })
     else
-        vk.pipeline(.{ .src = stage.src, .dst = stage.dst, .format = window.targetFormat(), .program = program, .overlay = overlay, .mark_motion = mark_motion, .variant = if (weather_indexed) 0 else stageVariant(flags), .motion_target = motion_target, .motion_write = record.mode2[2] & flag_motion != 0 });
+        vk.pipeline(.{ .src = stage.src, .dst = stage.dst, .format = window.targetFormat(), .program = program, .overlay = overlay, .mark_motion = mark_motion, .variant = if (weather_indexed) (if (batch.mesh.extra != 0) 3 else @intFromEnum(batch.mesh.weather_style)) else stageVariant(flags), .motion_target = motion_target, .motion_write = record.mode2[2] & flag_motion != 0 });
     if (pipeline != current_pipeline) {
         vk.d.CmdBindPipeline.?(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         current_pipeline = pipeline;

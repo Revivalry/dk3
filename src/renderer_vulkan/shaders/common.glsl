@@ -102,6 +102,7 @@ layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer We
     vec4 grid0;        // light grid origin, w = colour volume slot + 1
     vec4 grid1;        // light grid scale, w = direction volume slot + 1
     vec4 sky;          // sky radiance (linear), w = intensity (r_vkWeatherDensity)
+    uvec4 divisions;   // exact reciprocal multipliers: particles per tile, row
 };
 const float WEATHER_TILE = 512.0;
 
@@ -164,7 +165,8 @@ float rainSurface(ViewData view, uint slot, vec2 xy) {
     vec2 uv = view.rain.xy + vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5) * view.rain.z;
     float texel = view.rainParams.z;
     uv = clamp(uv, view.rain.xy + texel, view.rain.xy + view.rain.z - texel);
-    float stored = textureLod(textures[nonuniformEXT(slot)], uv, 0.0).r;
+    // The roof-map slot is constant across the weather draw; only coordinates vary.
+    float stored = textureLod(textures[slot], uv, 0.0).r;
     return view.rainParams.y - stored / view.rainParams.x;
 }
 
