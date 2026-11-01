@@ -24,7 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "tr_types.h"
 
-#define	REF_API_VERSION		13
+#define	REF_API_VERSION		14
 struct fsReadJob_s;
 
 //
@@ -112,6 +112,9 @@ typedef struct {
     /* Authored weather volume for the next world scene (kind 0 rain, 1 snow). Returns
      * qtrue when the renderer simulates it itself; NULL or qfalse keeps cgame particles. */
     qboolean (*AddDk3WeatherToScene)( int kind, int flags, const vec3_t mins, const vec3_t maxs, int id );
+    /* Optional CPU preparation hint: count contiguous MAX_QPATH strings.
+     * Registration still admits every model/material synchronously on its owner. */
+    qboolean (*PrepareModels)( const char *paths, int count );
 } refexport_t;
 
 //

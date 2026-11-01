@@ -5,6 +5,12 @@ Unreviewed corridors retain authored landing travel. They are prefetched but nev
 silently promoted to continuous seams. This file contains no reference runtime.
 """
 import campaign_connections
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+from portable_lock import locked
 
 # Sequence 298, seam-vertex-evidence.json: shared corridor geometry and authored
 # reciprocal brushes. Identity is a measured transform, not a spawn-name fallback.
@@ -55,3 +61,48 @@ def encode(document):
 
 def build(package):
     return encode(campaign_connections.build(package))
+
+
+def _derivation_identity():
+    digest = hashlib.sha256()
+    for filename in (__file__, campaign_connections.__file__, campaign_connections.entities.__file__,
+                     campaign_connections.entities.dkbsp.__file__):
+        path = Path(filename)
+        digest.update(path.name.encode() + b'\0' + path.read_bytes() + b'\0')
+    return digest.hexdigest()
+
+
+def cached_build(package, output, *, verified_package_sha256=None):
+    """Reuse derived authoring only after package identity has been verified.
+
+    play.install supplies the SHA-256 it already checked; standalone callers
+    hash their input here. Both tooling changes and damaged cached output cause
+    regeneration, without weakening the caller's asset/package validation.
+    """
+    package, output = Path(package), Path(output)
+    if verified_package_sha256 is None:
+        with package.open('rb') as stream:
+            verified_package_sha256 = hashlib.file_digest(stream, 'sha256').hexdigest()
+    identity = dict(maps_sha256=verified_package_sha256, tools_sha256=_derivation_identity(),
+                    python=list(sys.version_info[:2]))
+    output.parent.mkdir(parents=True, exist_ok=True)
+    receipt = output.with_suffix(output.suffix + '.inputs.json')
+    with locked(output.with_suffix(output.suffix + '.lock')):
+        try:
+            metadata = json.loads(receipt.read_text())
+            data = output.read_bytes()
+            if (isinstance(metadata, dict) and metadata.get('inputs') == identity and
+                    metadata.get('output_sha256') == hashlib.sha256(data).hexdigest()):
+                return data.decode('utf-8')
+        except (OSError, ValueError):
+            pass
+        result = build(package)
+        data = result.encode('utf-8')
+        temporary = output.with_suffix(output.suffix + '.partial')
+        temporary.write_bytes(data)
+        temporary.replace(output)
+        temporary = receipt.with_suffix(receipt.suffix + '.partial')
+        temporary.write_text(json.dumps(dict(inputs=identity, output_sha256=hashlib.sha256(data).hexdigest()),
+                                        sort_keys=True) + '\n')
+        temporary.replace(receipt)
+        return result

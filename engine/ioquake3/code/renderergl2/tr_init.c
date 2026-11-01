@@ -1599,6 +1599,7 @@ RE_Shutdown
 */
 void RE_Shutdown( qboolean destroyWindow ) {
     R_ClearResidentWorlds();
+    if (destroyWindow) R_ClearPNGCache();
 
 	ri.Printf( PRINT_ALL, "RE_Shutdown( %i )\n", destroyWindow );
 

@@ -202,6 +202,7 @@ typedef enum {
     , CG_DK3_COLLISION_CURRENT_V1 = 714
     , CG_DK3_GAMESTATE_SELECT_V1 = 715
     , CG_DK3_R_WEATHER_V1 = 716
+    , CG_DK3_MODEL_PREPARE_V1 = 717
 } cgameImport_t;
 
 

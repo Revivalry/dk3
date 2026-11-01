@@ -61,6 +61,26 @@ var first_volume: usize = 0;
 var drop_shader: shader_mod.Shader = .{ .sort = shader_mod.Sort.blend0 };
 var splash_shader: shader_mod.Shader = .{ .sort = shader_mod.Sort.blend0 };
 var shaders_ready = false;
+pub const max_particles: u32 = 262144;
+var quad_indices: vk.Buffer = .{};
+
+/// Shared topology only: per-particle positions, lighting and random IDs are unchanged.
+pub fn indexBuffer() c.VkBuffer {
+    if (quad_indices.buffer == null) {
+        const started = common.nanoseconds();
+        const indices = common.gpa.alloc(u32, max_particles * 6) catch @panic("OOM");
+        defer common.gpa.free(indices);
+        for (0..max_particles) |particle| {
+            const base: u32 = @intCast(particle * 4);
+            indices[particle * 6 ..][0..6].* = .{ base, base + 1, base + 2, base + 2, base + 1, base + 3 };
+        }
+        const filled = common.nanoseconds();
+        quad_indices = vk.staticBuffer(std.mem.sliceAsBytes(indices), c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+        const prepared = common.nanoseconds();
+        common.developer("dk3 weather topology: bytes={d} fill_us={d} allocation_upload_record_us={d}\n", .{ indices.len * @sizeOf(u32), @divTrunc(filled - started, 1000), @divTrunc(prepared - filled, 1000) });
+    }
+    return quad_indices.buffer;
+}
 
 pub fn beginFrame() void {
     volumes.clearRetainingCapacity();
@@ -72,6 +92,7 @@ pub fn clearScene() void {
 }
 
 pub fn shutdown() void {
+    vk.destroyBuffer(&quad_indices);
     volumes.clearAndFree(common.gpa);
     first_volume = 0;
     shaders_ready = false;
@@ -161,7 +182,7 @@ pub fn draws(volume: Volume, lighting: Lighting, out: *[3]?Draw) void {
     const per_tile_f: f32 = (if (volume.kind == .rain) tile_size * tile_size * 0.035 else tile_size * tile_size / 4096.0 * 3) * density;
     const per_tile: u32 = @intFromFloat(@min(per_tile_f, 16384));
     if (per_tile == 0) return;
-    const cap: u32 = if (volume.kind == .rain) 262144 else 32768;
+    const cap: u32 = if (volume.kind == .rain) max_particles else 32768;
     var first_tile: [2]f32 = undefined;
     var tiles: [2]u32 = undefined;
     while (true) {

@@ -34,6 +34,11 @@ Lua 5.4.7 is bundled unmodified under `engine/lua` under the MIT license; its no
 (Copyright © 1994–2024 Lua.org, PUC-Rio) is retained in [lua.h](engine/lua/src/lua.h) and
 [readme.html](engine/lua/doc/readme.html). It is linked into the native server module for the
 scripted co-op bot.
+The unmodified libdeflate 1.26 decoder subset under
+`engine/ioquake3/code/thirdparty/libdeflate-1.26` uses the MIT license; its
+[COPYING](engine/ioquake3/code/thirdparty/libdeflate-1.26/COPYING) and individual
+source notices remain intact. `engine/LIBDEFLATE-UPSTREAM.json` pins the source
+archive and file hashes. It supplies full-buffer PNG decompression in the engine.
 A subset of AMD's FidelityFX SDK v1.1.4 (the FSR 3.1 upscaler shaders) is bundled unmodified
 under `engine/fidelityfx` under the MIT license; its notice (Copyright © 2024 Advanced Micro
 Devices, Inc.) is retained in [LICENSE.txt](engine/fidelityfx/LICENSE.txt) and in every file.

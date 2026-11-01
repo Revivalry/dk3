@@ -9,14 +9,45 @@ const lists = @import("ioq3_sources.zig");
 const source_root = "engine/ioquake3";
 const shader_dir = "src/renderer_vulkan/shaders";
 
+/// Pure CPU admission profiling: the actual PNG decoder and Vulkan mip/color implementation.
+/// No window, Vulkan device, renderer callbacks or graphics library are initialized.
+pub fn declareCpuImageBench(b: *std.Build, optimize: std.builtin.OptimizeMode) *std.Build.Step {
+    const module = b.createModule(.{ .root_source_file = b.path("src/renderer_vulkan/image_levels_bench.zig"), .target = b.graph.host, .optimize = optimize, .link_libc = true });
+    @import("header_inputs.zig").track(b, module, &.{"engine/ioquake3/code"});
+    @import("libdeflate.zig").add(b, module);
+    for ([_][]const u8{ "code/qcommon", "code/renderercommon", "code/sdl", "code/thirdparty/SDL2-2.32.8/include" }) |directory|
+        module.addIncludePath(b.path(b.pathJoin(&.{ source_root, directory })));
+    module.addSystemIncludePath(vulkanHeaders(b));
+    for ([_][]const u8{ "code/renderercommon/tr_image_png.c", "code/qcommon/q_shared.c" }) |source|
+        module.addCSourceFile(.{ .file = b.path(b.pathJoin(&.{ source_root, source })), .flags = &.{ "-std=gnu99", "-fno-sanitize=alignment", "-ffunction-sections", "-fdata-sections" } });
+    for (lists.zlib_sources) |source|
+        module.addCSourceFile(.{ .file = b.path(b.pathJoin(&.{ source_root, source })), .flags = &.{ "-std=gnu99", "-DNO_GZIP", "-w" } });
+    module.linkSystemLibrary("m", .{});
+    const exe = b.addExecutable(.{ .name = "image-levels-benchmark", .root_module = module });
+    exe.link_gc_sections = true;
+    b.step("bench-image-levels", "Build actual CPU mip/color admission profiler (no graphics initialization)").dependOn(&b.addInstallArtifact(exe, .{}).step);
+    const tests = b.addTest(.{ .name = "image-levels-contracts", .root_module = module });
+    tests.link_gc_sections = true;
+    const run = b.addRunArtifact(tests);
+    b.step("test-image-levels", "Check actual CPU mip/color pixels and metadata without graphics initialization").dependOn(&run.step);
+    return &run.step;
+}
+
 /// Every shader stage compiled into the module, embedded as `<file>.spv`.
 pub const shaders = [_][]const u8{
-    "stage.vert",          "stage.frag",            "composite.vert",    "composite.frag",
-    "post_histogram.comp", "post_exposure.comp",    "bloom_down.comp",   "bloom_up.comp",
-    "froxel_inject.comp",  "froxel_integrate.comp", "froxel_tiles.comp", "taa.comp",
-    "light_cull.comp",     "ddgi.comp",             "rt_skin.comp",      "bake.vert",
-    "bake.frag",           "pt_trace.comp",         "pt_temporal.comp",  "pt_atrous.comp",
-    "pt_composite.comp",   "light_visibility.comp", "depth.frag",        "lightstyle.comp",
+    "weather.vert",        "weather.frag",
+    "stage.vert",          "stage.frag",
+    "composite.vert",      "composite.frag",
+    "post_histogram.comp", "post_exposure.comp",
+    "bloom_down.comp",     "bloom_up.comp",
+    "froxel_inject.comp",  "froxel_integrate.comp",
+    "froxel_tiles.comp",   "taa.comp",
+    "light_cull.comp",     "ddgi.comp",
+    "rt_skin.comp",        "bake.vert",
+    "bake.frag",           "pt_trace.comp",
+    "pt_temporal.comp",    "pt_atrous.comp",
+    "pt_composite.comp",   "light_visibility.comp",
+    "depth.frag",          "lightstyle.comp",
     "motion_fill.comp",    "fsr_reactive.comp",
 };
 
@@ -45,6 +76,7 @@ pub fn addProduct(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
         module.linkSystemLibrary("advapi32", .{});
     }
     @import("header_inputs.zig").track(b, module, &.{source_root});
+    @import("libdeflate.zig").add(b, module);
     // The OpenGL2 product's reviewed flag and sanitizer rules cover the same decoder files.
     for (c_sources) |path| module.addCSourceFile(.{ .file = b.path(b.pathJoin(&.{ source_root, path })), .flags = config.sourceFlags(.renderer_opengl2, path) });
     module.addCSourceFile(.{ .file = b.path("src/renderer_vulkan/icon.c"), .flags = config.sourceFlags(.renderer_opengl2, "src/renderer_vulkan/icon.c") });

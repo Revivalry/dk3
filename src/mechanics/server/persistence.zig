@@ -87,9 +87,16 @@ fn localDate(unix: i64, buffer: []u8) []const u8 {
 }
 pub fn prepare(slot: []const u8, previous: bool) !format.Loaded {
     const allocator = std.heap.c_allocator;
+    const started = engine.gateway.call(c.G_MILLISECONDS, .{});
     const bytes = try storage.read(allocator, slot, previous);
     defer allocator.free(bytes);
-    return format.decode(allocator, bytes);
+    const read_at = engine.gateway.call(c.G_MILLISECONDS, .{});
+    const loaded = try format.decode(allocator, bytes);
+    if (engine.integer("developer") >= 1) {
+        var timing: [192]u8 = undefined;
+        engine.print(std.fmt.bufPrintZ(&timing, "dk3 loading timing: stage=save-decode slot={s} bytes={d} read_ms={d} decode_ms={d}\n", .{ slot, bytes.len, read_at - started, engine.gateway.call(c.G_MILLISECONDS, .{}) - read_at }) catch unreachable);
+    }
+    return loaded;
 }
 /// Admission may load immutable class metadata, but cannot mutate engine entities.
 /// Projection rebuilding below is infallible

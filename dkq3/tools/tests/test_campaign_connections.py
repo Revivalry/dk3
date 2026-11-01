@@ -1,12 +1,63 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 import struct
 import unittest
+import tempfile
+import zipfile
+from pathlib import Path
+from unittest.mock import patch
 
 from campaign_connections import connections, read_map
-from campaign_regions import encode, REVIEWED
+from campaign_regions import encode, REVIEWED, build, cached_build
 
 
 class Connections(unittest.TestCase):
+    def cache_fixture(self, root, message='initial'):
+        entities = ('{ "classname" "worldspawn" "message" "' + message + '" }\n\0').encode()
+        bsp = bytearray(144)
+        struct.pack_into('<4si', bsp, 0, b'IBSP', 46)
+        struct.pack_into('<ii', bsp, 8, len(bsp), len(entities))
+        bsp += entities
+        package = root / 'maps.pk3'
+        with zipfile.ZipFile(package, 'w') as archive:
+            archive.writestr('maps/probe.bsp', bsp)
+        return package
+
+    def test_cached_derivation_reuses_exact_output_and_repairs_corruption(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            package = self.cache_fixture(root)
+            output = root / 'generated/campaign.cfg'
+            expected = build(package)
+            self.assertEqual(cached_build(package, output), expected)
+            modified = output.stat().st_mtime_ns
+            self.assertEqual(cached_build(package, output), expected)
+            self.assertEqual(output.stat().st_mtime_ns, modified)
+            output.write_text('damaged authoring')
+            self.assertEqual(cached_build(package, output), expected)
+            self.assertEqual(output.read_text(), expected)
+            output.with_suffix('.cfg.inputs.json').write_text('[]')
+            self.assertEqual(cached_build(package, output), expected)
+
+    def test_cached_derivation_invalidates_changed_maps_and_tooling(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            package = self.cache_fixture(root)
+            output = root / 'campaign.cfg'
+            original = cached_build(package, output)
+            self.cache_fixture(root, message='changed map')
+            changed = cached_build(package, output)
+            self.assertNotEqual(changed, original)
+            self.assertEqual(changed, build(package))
+            with patch('campaign_regions._derivation_identity', return_value='new-tool-generation'), \
+                    patch('campaign_regions.build', return_value=changed + '\n'):
+                self.assertEqual(cached_build(package, output), changed + '\n')
+            self.assertEqual(cached_build(package, output), changed)
+            with zipfile.ZipFile(package, 'w') as archive:
+                archive.writestr('maps/probe.bsp', b'invalid')
+            with self.assertRaisesRegex(ValueError, 'invalid converted BSP'):
+                cached_build(package, output)
+            self.assertEqual(output.read_text(), changed)
+
     def test_named_start_is_not_replaced_with_arbitrary_fallback(self):
         exit = dict(entity=2, destination="e1m1b", target="absent", cinematic="", flags=0)
         maps = {"e1m1a": dict(exits=[exit], starts=[]),

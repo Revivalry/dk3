@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 
 from assets import current_generation, digest, write_json
 from portable_lock import locked
@@ -22,16 +23,46 @@ else:
 LEGACY_RUNTIME_MEDIA = ('scripts/dk3-projectile-weather.shader',)
 ONLINE_METADATA = ('rules.json', 'compatibility.json')
 RUNTIME_MEDIA = (*LEGACY_RUNTIME_MEDIA, 'rules.json')
+RUNTIME_NOTICES = ('share/licenses/dk3/libdeflate-COPYING',)
 PACKAGES = ('base', 'textures', 'maps', 'shaders', 'models', 'sprites', 'hud', 'sound', 'music', 'voice', 'data', 'navigation')
 REQUIRED_ENTRIES = ('default.cfg', 'fonts/con_font.dkf', 'fonts/con_font.tga', 'maps/e1m1a.bsp',
                     'dk3/navigation/e1m1a.cfg')
+_HASH_PARALLEL_MIN_BYTES = 32 << 20
+_GAMEPLAY_PACKAGES = ('base', 'maps', 'data', 'navigation')
+
+
+def _installation_hashes(files):
+    """Hash every product, with bounded independent readers for large builds."""
+    sizes = {}
+    for name, path in files.items():
+        if not path.is_file():
+            raise ValueError(f'missing independent build product: {path}; run zig build')
+        sizes[name] = path.stat().st_size
+    workers = min(4, os.cpu_count() or 1)
+    if workers <= 1 or sum(sizes.values()) < _HASH_PARALLEL_MIN_BYTES:
+        return {name: digest(path) for name, path in files.items()}
+    # Start the largest immutable package first, so it cannot become a long
+    # serial tail after the small binaries. Digests and published key order
+    # remain exactly the same as the sequential implementation.
+    entries = sorted(files.items(), key=lambda item: sizes[item[0]], reverse=True)
+    def hash_product(entry):
+        name, path = entry
+        return name, digest(path)
+    executor = ThreadPoolExecutor(max_workers=workers)
+    try:
+        hashes = dict(executor.map(hash_product, entries))
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
+    return {name: hashes[name] for name in files}
 
 
 def checked_assets(directory):
+    """Validate every package and derive compatibility from the same CRC-checked reads."""
     manifest = json.loads((directory / 'manifest.json').read_text())
     if manifest.get('format') != 1:
         raise ValueError(f'{directory}: unsupported asset manifest format')
     entries = set()
+    gameplay_entries = {}
     for name in PACKAGES:
         filename = f'dk3-{name}.pk3'
         path = directory / 'packages' / filename
@@ -41,14 +72,34 @@ def checked_assets(directory):
         if digest(path) != record['sha256']:
             raise ValueError(f'changed or corrupt package: {path}; regenerate this asset generation')
         with zipfile.ZipFile(path) as archive:
-            invalid = archive.testzip()
-            if invalid:
-                raise ValueError(f'{path}: corrupt entry {invalid}')
-            entries.update(archive.namelist())
+            names = archive.namelist()
+            hashes = {}
+            for entry in names:
+                entry_hash = hashlib.sha256() if name in _GAMEPLAY_PACKAGES and not entry.endswith('/') else None
+                try:
+                    with archive.open(entry) as stream:
+                        while block := stream.read(1 << 20):
+                            if entry_hash is not None:
+                                entry_hash.update(block)
+                except zipfile.BadZipFile as error:
+                    raise ValueError(f'{path}: corrupt entry {entry}') from error
+                if entry_hash is not None:
+                    hashes[entry] = entry_hash.digest()
+            if name in _GAMEPLAY_PACKAGES:
+                # Keep duplicate-name and sorted/case-normalized semantics of
+                # the previous ZipFile.read(name) compatibility calculation.
+                gameplay_entries[name] = [(entry, hashes[entry]) for entry in sorted(names)
+                                          if not entry.endswith('/')]
+            entries.update(names)
     missing = set(REQUIRED_ENTRIES) - entries
     if missing:
         raise ValueError('installation lacks required assets: ' + ', '.join(sorted(missing)))
-    return manifest
+    gameplay = hashlib.sha256()
+    for name in _GAMEPLAY_PACKAGES:
+        for entry, entry_hash in gameplay_entries[name]:
+            gameplay.update(entry.lower().encode() + b'\0')
+            gameplay.update(entry_hash)
+    return manifest, gameplay.hexdigest()
 
 
 def converted_surface_counts(maps_package):
@@ -106,10 +157,11 @@ def install(prefix, assets, hd_textures=None, *, hd_textures_fallback=None,
                          '-DDK_DATA=/path/to/data -Dasset-profile=retail first, '
                          'or select an existing cache with -Dassets-dir=/path/to/cache')
     source = current_generation(assets).resolve(strict=True)
-    manifest = checked_assets(source)
+    manifest, gameplay = checked_assets(source)
     files = {f'bin/{name}': prefix / 'bin' / name for name in BINARIES}
     files.update({f'share/dk3/{name}': prefix / 'lib' / 'dk3' / name for name in MODULES})
     files.update({f'share/dk3/{name}': prefix / 'share' / 'dk3' / name for name in RUNTIME_MEDIA})
+    files.update({name: prefix / name for name in RUNTIME_NOTICES})
     for name in PACKAGES:
         filename = f'dk3-{name}.pk3'
         files[f'share/dk3/{filename}'] = source / 'packages' / filename
@@ -167,15 +219,8 @@ def install(prefix, assets, hd_textures=None, *, hd_textures_fallback=None,
         files['share/dk3/zz-dk3-materials.pk3'] = material_package
     # Canonical package entries ignore ZIP timestamps/compression and native ELF
     # bytes. Approved texture-only overlays do not change gameplay compatibility.
-    gameplay = hashlib.sha256()
-    for name in ('base', 'maps', 'data', 'navigation'):
-        with zipfile.ZipFile(source / 'packages' / f'dk3-{name}.pk3') as archive:
-            for entry in sorted(archive.namelist()):
-                if entry.endswith('/'): continue
-                gameplay.update(entry.lower().encode() + b'\0')
-                gameplay.update(hashlib.sha256(archive.read(entry)).digest())
     compatibility = json.loads((prefix / 'share/dk3/rules.json').read_text())
-    compatibility.update(gameplay=gameplay.hexdigest(), cosmetic='hd-textures-v1' if 'share/dk3/zz-dk3-textures-hd.pk3' in files else 'stock-v1')
+    compatibility.update(gameplay=gameplay, cosmetic='hd-textures-v1' if 'share/dk3/zz-dk3-textures-hd.pk3' in files else 'stock-v1')
     if 'share/dk3/zz-dk3-neural.pk3' in files:
         compatibility['cosmetic'] += '+neural-v1'
     if 'share/dk3/zz-dk3-hd-weapons.pk3' in files:
@@ -189,14 +234,10 @@ def install(prefix, assets, hd_textures=None, *, hd_textures_fallback=None,
     # geometry review after either BSP changes.
     import campaign_regions
     region_file = prefix / 'share/dk3/dk3/campaign-regions.cfg'
-    region_file.parent.mkdir(parents=True, exist_ok=True)
-    region_file.write_text(campaign_regions.build(source / 'packages/dk3-maps.pk3'))
+    campaign_regions.cached_build(source / 'packages/dk3-maps.pk3', region_file,
+                                  verified_package_sha256=manifest['packages']['dk3-maps.pk3']['sha256'])
     files['share/dk3/dk3/campaign-regions.cfg'] = region_file
-    records = {}
-    for name, path in files.items():
-        if not path.is_file():
-            raise ValueError(f'missing independent build product: {path}; run zig build')
-        records[name] = digest(path)
+    records = _installation_hashes(files)
     key = hashlib.sha256(json.dumps(records, sort_keys=True).encode()).hexdigest()
     root = prefix / 'play'
     root.mkdir(exist_ok=True)

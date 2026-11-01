@@ -6,6 +6,9 @@
 /* @(#) $Id$ */
 
 #include "zutil.h"
+#if defined(__SSE2__)
+#  include <emmintrin.h>
+#endif
 
 #define BASE 65521U     /* largest prime smaller than 65536 */
 #define NMAX 5552
@@ -16,6 +19,26 @@
 #define DO4(buf,i)  DO2(buf,i); DO2(buf,i+2);
 #define DO8(buf,i)  DO4(buf,i); DO4(buf,i+4);
 #define DO16(buf)   DO8(buf,0); DO8(buf,8);
+
+#if defined(__SSE2__)
+/* dk3 alteration: fold sixteen byte updates into their exact weighted sums.
+ * The existing NMAX reductions bound both accumulators on 32-bit uLong too.
+ * Loads cover exactly the same sixteen bytes as the upstream unrolled path. */
+#  undef DO16
+#  define DO16(buf) do { \
+    __m128i bytes = _mm_loadu_si128((const __m128i *)(const void *)(buf)); \
+    __m128i zero = _mm_setzero_si128(); \
+    __m128i sums = _mm_sad_epu8(bytes, zero); \
+    __m128i weighted = _mm_add_epi32( \
+        _mm_madd_epi16(_mm_unpacklo_epi8(bytes, zero), _mm_setr_epi16(16,15,14,13,12,11,10,9)), \
+        _mm_madd_epi16(_mm_unpackhi_epi8(bytes, zero), _mm_setr_epi16(8,7,6,5,4,3,2,1))); \
+    weighted = _mm_add_epi32(weighted, _mm_srli_si128(weighted, 8)); \
+    weighted = _mm_add_epi32(weighted, _mm_srli_si128(weighted, 4)); \
+    sum2 += 16UL * adler + (unsigned)_mm_cvtsi128_si32(weighted); \
+    adler += (unsigned)_mm_cvtsi128_si32(sums) + \
+             (unsigned)_mm_cvtsi128_si32(_mm_srli_si128(sums, 8)); \
+} while (0)
+#endif
 
 /* use NO_DIVIDE if your processor does not do division in hardware --
    try it both ways to see which is faster */

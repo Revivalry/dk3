@@ -1,0 +1,36 @@
+{
+  "component": "libdeflate",
+  "version": "1.26",
+  "upstream": "https://github.com/ebiggers/libdeflate",
+  "archive": {
+    "url": "https://codeload.github.com/ebiggers/libdeflate/tar.gz/refs/tags/v1.26",
+    "sha256": "bba03fffc5538576213675ce6968fcff6ce2e67d82e4d5febea2d05f9f13cf85",
+    "bytes": 198768
+  },
+  "license": "MIT; COPYING and individual source notices retained",
+  "scope": "Unmodified full-buffer DEFLATE/zlib decompression and Adler-only subset; no compressor or gzip",
+  "root": "engine/ioquake3/code/thirdparty/libdeflate-1.26",
+  "files": {
+    "COPYING": "4ad69099cb4374836fd27583d9991e2838cd86b6e4666ab26b2d32582c91e73a",
+    "README.md": "176b573d2dcf42c4e7404946a54f4d7cefdd982bc075e7c95ac234069fee40ee",
+    "libdeflate.h": "1bb50a3ff8c6980c1031c0e9bb324cf99df51379fdca77a358644cca841765cc",
+    "common_defs.h": "fe0dfdb4dadf413fcac6d011f678e644127f2361fbf46181bafb4f6c4265814c",
+    "lib/cpu_features_common.h": "f4eb0800558e9116dd14446ccfb9b1896f970aec6de42c18366a29bde73fd0da",
+    "lib/deflate_constants.h": "72ea6e5f0abe53e781203e3f383603a765a768b860a09b3356be36bfd87c8af3",
+    "lib/lib_common.h": "e7aa1f2750434e1019ffabda577dab0fdf5b95f010f6f20aa7e21323b3bcceea",
+    "lib/utils.c": "3d4c9f6d488610d4d9ff314b2dc783e24079325b78af13d3ee37b18fcc0b0d8a",
+    "lib/deflate_decompress.c": "f4299b3a688b5768c3a8790339e47e02a6e6247d3675b0fafe412a1fc9bd995f",
+    "lib/decompress_template.h": "ade3034c1d5c840cb31bd9738a015be804862a8dfce03c14ac2f5b3a826792b8",
+    "lib/adler32.c": "63099826db3ddf84c15bfba30940f9689917185df8c30ff27a2bc2b7cb6a19f2",
+    "lib/zlib_constants.h": "562e16b83ac33ac6d351cdfdf1962750576080d65c22ab66cad0aaa33695bebb",
+    "lib/zlib_decompress.c": "704a57fb91c36c1c88b04a3482694de08c794ca0cb3904ac247a206802aa6ee0",
+    "lib/arm/cpu_features.c": "ab7fb53d8b5b991200e986f20b66f71549a28bbe54b904f37ef81a4696780048",
+    "lib/arm/cpu_features.h": "0cff5c0110021dc8b18511e328f913f1bad21f31ad927497d1f428db4e6ed239",
+    "lib/arm/adler32_impl.h": "b7e43d7b91db98d774243cf29ee41941edf93e71b5a3f5cc3ede34d8b70a93d9",
+    "lib/x86/cpu_features.c": "9ed976e4c66478e8b6a8856424816147a971f75894c66f03274ab8119074dde0",
+    "lib/x86/cpu_features.h": "1fa71a4fdf117120a08f3f46990b2cee5d3cbef0610d77fb40d19a0e5387807b",
+    "lib/x86/decompress_impl.h": "81ab9fd7d4723fdc7ae81dca82f817bcecb7baf5bdfffde0ccfbba70569ac2f1",
+    "lib/x86/adler32_impl.h": "952c36cd1518d2c0d52d2c1b7ed26c7c32621095f0aaf848bfa0ef42b8299b5c",
+    "lib/x86/adler32_template.h": "8e5d14f8e596bd54bea188b6ff5c96649329beeebd9acdd59307a5202206d11e"
+  }
+}

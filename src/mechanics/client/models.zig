@@ -22,6 +22,24 @@ pub fn register(name: []const u8) !c.qhandle_t {
     const path = try std.fmt.bufPrintZ(&buffer, "{s}{s}", .{ name, if (std.mem.endsWith(u8, name, ".dkm")) @as([]const u8, ".md3") else "" });
     return @intCast(engine.gateway.call(c.CG_R_REGISTERMODEL, .{path.ptr}));
 }
+/// Resolve the same optional presentation mappings used by registration, then
+/// send only bounded initial model hints. The renderer copies this stack list.
+pub fn prefetch(game: *const c.gameState_t) !void {
+    if (engine.integer("r_modelImagePrefetch") == 0) return;
+    var paths: [c.MAX_MODELS][c.MAX_QPATH]u8 = @splat(@splat(0));
+    var count: usize = 0;
+    for (1..c.MAX_MODELS) |index| {
+        const source = try engine.config(game, c.CS_MODELS + index);
+        if (source.len == 0 or source[0] == '*') continue;
+        const target = (try @import("weapon_models.zig").resolved(source)) orelse
+            (try @import("neural_models.zig").resolved(source)) orelse source;
+        if (!std.ascii.endsWithIgnoreCase(target, ".iqm")) continue;
+        if (target.len >= c.MAX_QPATH) return error.InvalidModelPath;
+        @memcpy(paths[count][0..target.len], target);
+        count += 1;
+    }
+    _ = engine.gateway.call(c.CG_DK3_MODEL_PREPARE_V1, .{ &paths, @as(isize, @intCast(count)) });
+}
 pub fn get(game: *const c.gameState_t, index: i32) !c.qhandle_t {
     if (index <= 0 or index >= c.MAX_MODELS) return 0;
     const i: usize = @intCast(index);

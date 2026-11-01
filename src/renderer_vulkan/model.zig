@@ -420,6 +420,7 @@ fn iqmText(text: []const u8, offset: u32) []const u8 {
 }
 
 fn loadIqm(bytes: []const u8, name: []const u8) ?*Iqm {
+    const started = common.nanoseconds();
     const header = readAt(c.iqmHeader_t, bytes, 0) orelse return null;
     if (!std.mem.eql(u8, header.magic[0..15], c.IQM_MAGIC) or header.version != c.IQM_VERSION or header.filesize > bytes.len) {
         common.warn("R_LoadIQM: {s} is not a version {d} IQM\n", .{ name, c.IQM_VERSION });
@@ -532,6 +533,7 @@ fn loadIqm(bytes: []const u8, name: []const u8) ?*Iqm {
             data.appendSlice(a, std.mem.asBytes(&value)) catch @panic("OOM");
         }
     }
+    const packed_at = common.nanoseconds();
     for (iqm.surfaces, 0..) |*surface, m| {
         const mesh = readAt(c.iqmMesh_t, bytes, header.ofs_meshes + m * @sizeOf(c.iqmMesh_t)) orelse c.iqmMesh_t{ .name = 0, .material = 0, .first_vertex = 0, .num_vertexes = 0, .first_triangle = 0, .num_triangles = 0 };
         var lowered: [c.MAX_QPATH]u8 = std.mem.zeroes([c.MAX_QPATH]u8);
@@ -545,6 +547,7 @@ fn loadIqm(bytes: []const u8, name: []const u8) ?*Iqm {
             .num_triangles = if (mesh.first_triangle <= header.num_triangles) @min(mesh.num_triangles, header.num_triangles - mesh.first_triangle) else 0,
         };
     }
+    const shaders_at = common.nanoseconds();
     for (0..header.num_joints) |j| {
         var joint = readAt(c.iqmJoint_t, bytes, header.ofs_joints + j * @sizeOf(c.iqmJoint_t)) orelse std.mem.zeroes(c.iqmJoint_t);
         iqm.joint_names[j] = iqmText(iqm.text, joint.name);
@@ -603,7 +606,14 @@ fn loadIqm(bytes: []const u8, name: []const u8) ?*Iqm {
         };
         iqm.bounds = b;
     }
+    const poses_at = common.nanoseconds();
     iqm.buffer = vk.staticBuffer(data.items, c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    const staged_at = common.nanoseconds();
+    common.developer("dk3 IQM admission: name={s} vertices={d} triangles={d} frames={d} poses={d} meshes={d} packed_bytes={d} pack_us={d} shaders_us={d} poses_us={d} buffer_stage_us={d} total_us={d}\n", .{
+        name,                                    vertex_count,                           header.num_triangles,                  header.num_frames,
+        header.num_poses,                        header.num_meshes,                      data.items.len,                        @divTrunc(packed_at - started, 1000),
+        @divTrunc(shaders_at - packed_at, 1000), @divTrunc(poses_at - shaders_at, 1000), @divTrunc(staged_at - poses_at, 1000), @divTrunc(staged_at - started, 1000),
+    });
     return iqm;
 }
 
@@ -654,7 +664,8 @@ fn computeJointMats(iqm: *const Iqm, frame: u32, oldframe: u32, backlerp: f32, o
 
 fn registerIqm(name: []const u8, model: *Model) bool {
     var path: [c.MAX_QPATH]u8 = undefined;
-    const bytes = common.readFile(common.qpath(&path, name).ptr) orelse return false;
+    const bytes = @import("model_prefetch.zig").takeBytes(name) orelse
+        common.readFile(common.qpath(&path, name).ptr) orelse return false;
     defer common.freeFile(bytes);
     const iqm = loadIqm(bytes, name) orelse {
         common.warn("R_RegisterIQM: couldn't load iqm file {s}\n", .{name});
@@ -662,6 +673,34 @@ fn registerIqm(name: []const u8, model: *Model) bool {
     };
     model.kind = .{ .iqm = iqm };
     return true;
+}
+
+/// Bounded metadata admission for the owner-thread preparation hint. Normal
+/// registration still validates the complete IQM and creates its real shaders.
+pub fn prepareImages(name: []const u8, batch: *@import("c.zig").ImageBatch) ?[]u8 {
+    if (!std.ascii.endsWithIgnoreCase(name, ".iqm")) return null;
+    for (models.items) |existing| if (std.mem.eql(u8, existing.nameSlice(), name)) return null;
+    var path: [c.MAX_QPATH]u8 = undefined;
+    const file = common.qpath(&path, name);
+    const size = common.ri.FS_ReadFile.?(file.ptr, null);
+    if (size < @sizeOf(c.iqmHeader_t) or size > 32 << 20) return null;
+    const bytes = common.readFile(file.ptr) orelse return null;
+    var retained = false;
+    defer if (!retained) common.freeFile(bytes);
+    const header = readAt(c.iqmHeader_t, bytes, 0) orelse return null;
+    if (!std.mem.eql(u8, header.magic[0..15], c.IQM_MAGIC) or header.version != c.IQM_VERSION or
+        header.filesize > bytes.len or header.num_meshes > 256 or
+        header.ofs_text > bytes.len or header.num_text > bytes.len - header.ofs_text) return null;
+    const text = bytes[header.ofs_text..][0..header.num_text];
+    for (0..header.num_meshes) |index| {
+        const mesh = readAt(c.iqmMesh_t, bytes, header.ofs_meshes + index * @sizeOf(c.iqmMesh_t)) orelse return null;
+        if (mesh.material >= text.len) return null;
+        const tail = text[mesh.material..];
+        const end = std.mem.indexOfScalar(u8, tail, 0) orelse return null;
+        if (!shader_mod.queueImages(batch, tail[0..end])) return null;
+    }
+    retained = true;
+    return bytes;
 }
 
 // ---------------------------------------------------------------------------------------------

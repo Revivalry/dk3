@@ -376,7 +376,7 @@ def sha(data): return hashlib.sha256(data).hexdigest()
 
 def refresh(root, package, output):
     """Author the enemy actions into an admitted episode package."""
-    from neural_package import classic_archive, validate_package
+    from neural_package import classic_archive, validate_package, entry_compression
     ledger = json.loads((root/'pipeline.json').read_text())
     base = Path(ledger['assets'])/'packages/dk3-models.pk3'
     report = validate_package(package, base)
@@ -389,7 +389,7 @@ def refresh(root, package, output):
     temporary = output.with_suffix('.partial')
     with classic_archive(temporary) as archive:
         for name, data in sorted(files.items()):
-            entry = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0)); entry.compress_type = zipfile.ZIP_DEFLATED
+            entry = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0)); entry.compress_type = entry_compression(name)
             archive.writestr(entry, data)
     validate_package(temporary, base)
     temporary.replace(output)

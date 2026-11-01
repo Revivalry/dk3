@@ -16,13 +16,24 @@ pub fn track(b: *std.Build, module: *std.Build.Module, roots: []const []const u8
             paths.append(b.allocator, b.pathJoin(&.{ root, entry.path })) catch @panic("OOM");
         }
     }
-    std.mem.sort([]const u8, paths.items, {}, struct {
+    stamp(b, module, paths.items, "DK3_HEADER_INPUTS");
+}
+
+/// C fixtures include implementation .c files, which the local C-only cache
+/// can otherwise reuse after those included sources change. Stamp them too.
+pub fn trackFiles(b: *std.Build, module: *std.Build.Module, files: []const []const u8) void {
+    const paths = b.allocator.dupe([]const u8, files) catch @panic("OOM");
+    stamp(b, module, paths, "DK3_INCLUDED_SOURCE_INPUTS");
+}
+
+fn stamp(b: *std.Build, module: *std.Build.Module, paths: [][]const u8, macro: []const u8) void {
+    std.mem.sort([]const u8, paths, {}, struct {
         fn lessThan(_: void, a: []const u8, c: []const u8) bool {
             return std.mem.lessThan(u8, a, c);
         }
     }.lessThan);
     var hash = std.crypto.hash.sha2.Sha256.init(.{});
-    for (paths.items) |path| {
+    for (paths) |path| {
         const bytes = std.Io.Dir.cwd().readFileAlloc(b.graph.io, b.pathFromRoot(path), b.allocator, .limited(16 << 20)) catch |err|
             @panic(b.fmt("header input {s}: {t}", .{ path, err }));
         defer b.allocator.free(bytes);
@@ -33,5 +44,5 @@ pub fn track(b: *std.Build, module: *std.Build.Module, roots: []const []const u8
     }
     var digest: [32]u8 = undefined;
     hash.final(&digest);
-    module.addCMacro("DK3_HEADER_INPUTS", b.fmt("\"{s}\"", .{std.fmt.bytesToHex(digest, .lower)}));
+    module.addCMacro(macro, b.fmt("\"{s}\"", .{std.fmt.bytesToHex(digest, .lower)}));
 }

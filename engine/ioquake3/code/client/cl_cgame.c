@@ -637,6 +637,9 @@ intptr_t CL_CgameSystemCalls( intptr_t *args ) {
         return re.SelectWorld(args[1]);
     case CG_DK3_WORLD_CURRENT_V1:
         return re.CurrentWorld();
+    case CG_DK3_MODEL_PREPARE_V1:
+        if (args[2] < 0 || args[2] > MAX_MODELS) return qfalse;
+        return re.PrepareModels ? re.PrepareModels(VMA(1), (int)args[2]) : qfalse;
 	case CG_R_REGISTERMODEL:
 		return re.RegisterModel( VMA(1) );
 	case CG_R_REGISTERSKIN:

@@ -36,8 +36,16 @@ Slot names use lowercase letters, digits, underscores and hyphens. See
 | `cl_renderer opengl1` | Select OpenGL1 |
 | `vid_restart` | Restart the renderer |
 | `screenshotJPEG <name>` | Write a JPEG capture to the game's screenshot directory |
+| `r_imageDecodeCacheMegs` | CPU cache limit for large decoded PNGs and their source bytes; default 256 MiB, 0 disables, maximum 1024 |
+| `r_modelImagePrefetch` | Vulkan initial model PNG preparation: default 1 enables bounded CPU slots; 0 uses ordinary registration |
+| `r_modelImagePrefetchSlots` | Model preparation slot limit, clamped 1–3; default 3 after the bounded resource/readiness comparison (acceptance sequence 464) |
 
 [Renderer settings](rendering.md) lists resolution, upscaling and lighting variables.
+
+The PNG cache reuses already-decoded large images across map loads. Its limit
+includes both source bytes and decoded pixels, and images retain their resolution
+and alpha. It fills as images first load; a full renderer restart releases it.
+Lowering the limit releases the retained working set on the next PNG request.
 
 ## Multiplayer
 

@@ -103,12 +103,22 @@ pub const Browser = struct {
         self.first = @as(usize, @intCast(@mod(@as(i64, @intCast(self.first / 8)) + direction, @as(i64, @intCast(pages))))) * 8;
     }
     pub fn validate(self: *const Browser) !void {
+        const started = engine.gateway.call(c.UI_MILLISECONDS, .{});
+        defer if (engine.number("developer") >= 1) {
+            var timing: [128]u8 = undefined;
+            engine.print(std.fmt.bufPrintZ(&timing, "dk3 loading timing: stage=menu-validate total_ms={d}\n", .{engine.gateway.call(c.UI_MILLISECONDS, .{}) - started}) catch unreachable);
+        };
         const slot = self.selected() orelse return error.SelectSaveFirst;
         var path: [80]u8 = undefined;
         const bytes = try @import("../../engine/files.zig").read(.ui, &engine.gateway, std.heap.c_allocator, try std.fmt.bufPrintZ(&path, "saves/{s}.sav", .{slot}), snapshot.maximum);
         defer std.heap.c_allocator.free(bytes);
+        const read_at = engine.gateway.call(c.UI_MILLISECONDS, .{});
         var loaded = try snapshot.decode(std.heap.c_allocator, bytes);
         defer loaded.deinit(std.heap.c_allocator);
+        if (engine.number("developer") >= 1) {
+            var timing: [160]u8 = undefined;
+            engine.print(std.fmt.bufPrintZ(&timing, "dk3 loading timing: stage=menu-decode bytes={d} read_ms={d} decode_ms={d}\n", .{ bytes.len, read_at - started, engine.gateway.call(c.UI_MILLISECONDS, .{}) - read_at }) catch unreachable);
+        }
     }
 };
 fn less(_: void, a: [48]u8, b: [48]u8) bool {

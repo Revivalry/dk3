@@ -45,6 +45,7 @@ const commands = [_]struct { name: [*:0]const u8, function: *const fn () callcon
     .{ .name = "gfxinfo", .function = gfxInfo },
     .{ .name = "minimize", .function = minimize },
     .{ .name = "vk_materialscan", .function = materialScan },
+    .{ .name = "dk3_image_pending", .function = imagePending },
 };
 
 fn addCommands() void {
@@ -57,6 +58,9 @@ fn removeCommands() void {
 
 fn imageList() callconv(.c) void {
     image.list();
+}
+fn imagePending() callconv(.c) void {
+    common.info("dk3 pending images: count={d} failed={d}\n", .{ image.pendingCount(), image.failedCount() });
 }
 fn shaderList() callconv(.c) void {
     shader.list();
@@ -81,6 +85,8 @@ fn gfxInfo() callconv(.c) void {
 
 /// Waits for the GPU and releases every content resource; the device and window stay.
 fn releaseContent() void {
+    @import("model_prefetch.zig").cancel();
+    scene.end2DProfile();
     if (window.recording) _ = window.endFrame();
     vk.flushUploads();
     vk.waitIdle();
@@ -96,10 +102,14 @@ fn releaseContent() void {
 }
 
 fn shutdownC(destroy_window: c.qboolean) callconv(.c) void {
+    scene.discard2DProfile();
     common.info("RE_Shutdown( {d} )\n", .{destroy_window});
     removeCommands();
     if (initialized) releaseContent() else world.shutdown();
-    if (destroy_window != 0) window.shutdown(true);
+    if (destroy_window != 0) {
+        cext.R_ClearPNGCache();
+        window.shutdown(true);
+    }
     initialized = false;
     registered = false;
 }
@@ -116,6 +126,8 @@ fn beginRegistration(config: [*c]c.glconfig_t) callconv(.c) void {
 /// region's characters, admitted while playing) take their PNGs off the frame (image.zig).
 var in_play = false;
 fn registerModel(name: [*c]const u8) callconv(.c) c.qhandle_t {
+    const ticket = @import("model_prefetch.zig").select(common.span(name));
+    defer if (ticket) |value| @import("model_prefetch.zig").finish(value);
     @import("image.zig").defer_requests = in_play;
     defer @import("image.zig").defer_requests = false;
     return model.register(name);
@@ -139,7 +151,16 @@ fn setWorldVisData(_: [*c]const u8) callconv(.c) void {
     // Each resident world owns its PVS bytes (dk3_worlds.inc ignores external vis data).
 }
 fn endRegistration() callconv(.c) void {
+    @import("model_prefetch.zig").cancel();
     in_play = true;
+}
+
+fn prepareModels(paths: [*c]const u8, count: c_int) callconv(.c) c.qboolean {
+    if (cvars.modelImagePrefetch.integer == 0) {
+        @import("model_prefetch.zig").cancel();
+        return 0;
+    }
+    return @intFromBool(@import("model_prefetch.zig").begin(paths, count, model.prepareImages, cvars.modelImagePrefetchSlots.integer));
 }
 
 fn clearScene() callconv(.c) void {
@@ -208,7 +229,7 @@ fn reportStats() void {
     stats_frames = 0;
     const s = scene.stats;
     const f = vk.frame();
-    common.info("vk stats: views={d} entities={d} md3={d} iqm={d} iqm_culled={d} brush={d} polys={d} surfaces={d} draws={d} stream_kb={d} records_kb={d} grown_stream={d} grown_records={d} textures={d} staging_kb={d}\n", .{ s.views, s.entities, s.md3, s.iqm, s.iqm_culled, s.brush, s.polys, s.surfaces, s.draws, f.stream.bytesUsed() / 1024, f.records.bytesUsed() / 1024, f.stream.grown, f.records.grown, vk.next_slot, f.staging.bytesUsed() / 1024 });
+    common.info("vk stats: views={d} entities={d} md3={d} iqm={d} iqm_culled={d} brush={d} polys={d} surfaces={d} draws={d} ui_quads={d} ui_draws={d} weather_vertices={d} weather_indices={d} weather_particles={d} stream_kb={d} records_kb={d} grown_stream={d} grown_records={d} textures={d} staging_kb={d}\n", .{ s.views, s.entities, s.md3, s.iqm, s.iqm_culled, s.brush, s.polys, s.surfaces, s.draws, s.ui_quads, s.ui_draws, s.weather_vertices, s.weather_indices, s.weather_particles, f.stream.bytesUsed() / 1024, f.records.bytesUsed() / 1024, f.stream.grown, f.records.grown, vk.next_slot, f.staging.bytesUsed() / 1024 });
     scene.stats = .{};
 }
 
@@ -216,6 +237,7 @@ fn endFrame(front: [*c]c_int, back: [*c]c_int) callconv(.c) void {
     if (front != null) front.* = 0;
     if (back != null) back.* = 0;
     if (!registered) return;
+    scene.end2DProfile();
     reportStats();
     const end_start = @import("profile.zig").cpuBegin();
     defer @import("profile.zig").cpuEnd("end frame (submit, acquire, present)", end_start);
@@ -277,6 +299,7 @@ fn fillExports() void {
     re.Shutdown = shutdownC;
     re.BeginRegistration = beginRegistration;
     re.RegisterModel = registerModel;
+    re.PrepareModels = prepareModels;
     re.RegisterSkin = registerSkin;
     re.RegisterShader = registerShader;
     re.RegisterShaderNoMip = registerShaderNoMip;

@@ -107,6 +107,8 @@ const Device = struct {
     CmdBindDescriptorSets: c.PFN_vkCmdBindDescriptorSets = null,
     CmdPushConstants: c.PFN_vkCmdPushConstants = null,
     CmdDraw: c.PFN_vkCmdDraw = null,
+    CmdBindIndexBuffer: c.PFN_vkCmdBindIndexBuffer = null,
+    CmdDrawIndexed: c.PFN_vkCmdDrawIndexed = null,
     CmdDispatch: c.PFN_vkCmdDispatch = null,
     CreateComputePipelines: c.PFN_vkCreateComputePipelines = null,
     GetPipelineExecutablePropertiesKHR: c.PFN_vkGetPipelineExecutablePropertiesKHR = null,
@@ -280,7 +282,7 @@ const Features = struct {
             self.v12.descriptorBindingStorageImageUpdateAfterBind != 0 and self.v13.shaderDemoteToHelperInvocation != 0 and
             self.v12.descriptorBindingVariableDescriptorCount != 0 and self.v12.shaderSampledImageArrayNonUniformIndexing != 0 and
             self.base.features.shaderClipDistance != 0 and self.base.features.shaderStorageImageReadWithoutFormat != 0 and
-            self.base.features.shaderStorageImageWriteWithoutFormat != 0;
+            self.base.features.shaderStorageImageWriteWithoutFormat != 0 and self.base.features.independentBlend != 0;
     }
 };
 
@@ -415,6 +417,8 @@ pub fn createDevice(candidate: Candidate, want_ray_tracing: bool) !void {
     });
     var base = std.mem.zeroInit(c.VkPhysicalDeviceFeatures2, .{ .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &v12 });
     base.features.samplerAnisotropy = features.base.features.samplerAnisotropy;
+    // Scene color blends while the motion attachment uses independent writes.
+    base.features.independentBlend = c.VK_TRUE;
     base.features.shaderInt64 = features.base.features.shaderInt64;
     // Debug probes write storage buffers from fragment shaders (r_vkDebugView 19).
     base.features.fragmentStoresAndAtomics = features.base.features.fragmentStoresAndAtomics;
@@ -1444,7 +1448,10 @@ pub fn computePipeline(comptime name: []const u8) c.VkPipeline {
     var created: c.VkPipeline = null;
     var stats_info = info;
     if (pipeline_stats) stats_info.flags |= c.VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
+    const compile_start = common.nanoseconds();
     must(d.CreateComputePipelines.?(s.device, null, 1, &stats_info, null, &created), "vkCreateComputePipelines");
+    const compile_ms = @as(f64, @floatFromInt(common.nanoseconds() - compile_start)) / 1e6;
+    common.developer("dk3 pipeline: compute={s} compile_ms={d:.3}\n", .{ name, compile_ms });
     reportPipeline(created, name, 0);
     compute_pipelines.put(common.gpa, name, created) catch @panic("OOM");
     return created;
@@ -1544,7 +1551,7 @@ pub const PipelineKey = struct {
 pub const motion_format = c.VK_FORMAT_R16G16_SFLOAT;
 
 var pipelines: std.AutoHashMapUnmanaged(PipelineKey, c.VkPipeline) = .empty;
-var modules: [10]c.VkShaderModule = .{null} ** 10;
+var modules: [12]c.VkShaderModule = .{null} ** 12;
 
 fn spirv(comptime name: []const u8) []const u32 {
     const bytes align(4) = @embedFile(name).*;
@@ -1576,6 +1583,8 @@ pub fn createModules() void {
     modules[7] = createModule(spirv("depth.frag.spv"));
     modules[8] = createModule(spirv("stage.vert.spv"));
     modules[9] = if (ray_tracing) createModule(spirv("stage_rt_early.frag.spv")) else createModule(spirv("stage_early.frag.spv"));
+    modules[10] = createModule(spirv("weather.vert.spv"));
+    modules[11] = createModule(spirv("weather.frag.spv"));
 }
 
 pub fn destroyPipelines() void {
@@ -1599,6 +1608,8 @@ pub const program_bake: u8 = 2;
 pub const program_depth: u8 = 3;
 /// The stage shader with early fragment tests, for surfaces the depth pre-pass covered.
 pub const program_stage_early: u8 = 4;
+/// Dedicated weather stages: fixed vertex color/alpha and no material/deform paths.
+pub const program_weather: u8 = 5;
 
 /// GL blend factor codes used by material state (`blend.zig` mapping).
 pub fn blendFactor(code: u8) c.VkBlendFactor {
@@ -1727,6 +1738,7 @@ pub fn pipeline(key: PipelineKey) c.VkPipeline {
     const compile_start = common.nanoseconds();
     must(d.CreateGraphicsPipelines.?(s.device, null, 1, &stats_info, null, &created), "vkCreateGraphicsPipelines");
     const compile_ms = @as(f64, @floatFromInt(common.nanoseconds() - compile_start)) / 1e6;
+    common.developer("dk3 pipeline: program={d} variant={d} compile_ms={d:.3}\n", .{ key.program, key.variant, compile_ms });
     if (compile_ms > 50) common.info("vk pipeline compile: program {d} variant {d} took {d:.0} ms\n", .{ key.program, key.variant, compile_ms });
     reportPipeline(created, "graphics program/variant", @as(u16, key.program) * 10 + key.variant);
     pipelines.put(common.gpa, key, created) catch @panic("OOM");

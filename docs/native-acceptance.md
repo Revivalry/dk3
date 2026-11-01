@@ -5,6 +5,1218 @@ with the merged source as of 20 October 2026. Results below retain their origina
 runtime, assets and limits. Implementation and focused passes do not establish
 complete episode/campaign or artistic acceptance.
 
+## Sequence 476 — perf-weather-program — loading, exact pixels and main-based smoke replay verified
+
+Owner paused the continuous performance loop. Dedicated weather vertex/fragment
+programs move the existing particle and shape functions out of the general
+material shaders. The fixed weather-stage contract removes unused skinning,
+deform, texmod and material paths; weather varyings shrink from 23 to 7 scalar
+components. Particle IDs, indices, lighting, fog and clip equations are retained.
+The vertex helper bodies match preserved source byte for byte. Frozen actual
+frames match the original repeated-corner TGA SHA exactly, with 389,180 particles.
+
+Build passes 88/88. Twelve fresh-process, default-validation-off loading runs
+(three pairs per save, warm/uncontrolled OS page cache) preserve identical restored
+state, model order, source files and zero pending/failed images. Arrival medians
+3.671 → 3.420 s (ranges overlap); autosave 4.328 → 3.822 s. Autosave CPU consumption
+12.153 → 11.353 seconds, peak RSS 2,498,408 → 2,462,444 KiB. A matched autosave
+pair's post-map pipeline creation sum falls 334.0 → 174.7 ms. No physical-GPU
+throughput claim. At the owner's stop, repeated frame-time benchmarking and the
+wider four-loading-fixture replay remained unrun. PR isolation subsequently
+builds the performance changes directly on `main` (`8ced3b8`), without the co-op
+branch commits. That fresh build passes 88/88 steps, 407/407 runtime tests plus
+C contracts, 23 focused Python tests, and ownership R1–R11 stays zero. Its guarded
+headless software replay passes the real UI new-game action, e1m1a, and both copied
+e1m1b saves: zero pending/failed images, clean ordinary Vulkan validation/exit and
+unchanged source saves/configuration. Local smoke evidence is
+`/tmp/dk3-perf-pr-smoke/`; no game assets, saves or binaries enter the PR. Repeated
+frame-time benchmarking of the final dedicated shader remains unrun.
+Evidence: `zig-out/reports/perf-weather-program-476/`.
+
+## Sequence 475 — perf-weather-index-window — initialization diagnosed; no window optimization admitted
+
+The existing 6 MiB topology buffer takes 1,704 us to allocate/fill on the host and
+317 us to allocate/stage/record its upload in the diagnostic save. This excludes
+GPU execution and late driver compilation. Reject host initialization as sufficient
+explanation for the earlier 229 ms timing difference. No smaller index window is
+implemented; retain the once-per-content developer timing. Build 86/86 and the
+focused headless diagnostic pass. Evidence:
+`zig-out/reports/perf-weather-index-window-475/`.
+
+## Sequence 474 — perf-weather-indexed — rendering and exact pixels verified; timing configurations separated
+
+Replace the rejected instancing prototype with one shared 6 MiB index buffer for
+at most 262,144 particles per draw. Identical two-triangle ordering references
+four corner IDs per particle in one indexed draw, permitting post-transform reuse
+without per-instance overhead. Temporary host/staging bytes are bounded; content
+shutdown destroys the buffer before freeing its memory. The existing upload
+barrier covers index reads. Counts distinguish submitted indices, nonindexed
+vertices and particles; unique IDs do not prove actual invocation counts.
+The prototype's `r_vkWeatherIndexed` switch initially defaults off. Its alternate
+shader path and switch are removed from the final candidate: weather always uses
+the indexed topology, with generator bounds asserted before submission.
+
+The first same-binary 0/1/0 classification shows indexed steady frames around
+79 ms versus original 93–102 ms with the same 389,180 particles. Its pixel setup
+is rejected: even cheat-enabled devmap clamps time scale zero to a positive
+server rate. A private recorded demo with `cl_freezeDemo` is the next exact-image
+fixture; no time/quality controls enter performance claims.
+
+Five balanced same-process pairs in the stationary arrival scene retain exactly
+389,180 particles: reporting-interval medians 94.74 → 80.275 ms, ranges
+88.34–96.04 / 78.56–85.32 ms. Discard the predefined first interval of every phase,
+retain all others. Live autosave camera/particles move (226,450–363,606 particles),
+so its aggregate is exploratory and cannot establish equal-work performance.
+The repaired frozen-demo qualification produces four exact TGA matches against
+the repeated-corner path and clean ordinary exit; the first run's expected
+disconnect into demo playback confused the generic helper after successful
+pixels. Keep that failure and use scoped checking when returning to a live map.
+
+The first twelve fresh-save runs expose a loading regression: arrival
+3.975 → 4.124 s, autosave 4.425 → 4.875 s, with autosave ranges not overlapping.
+Do not hide this behind the rendering gain. New-binary post-map pipeline creation
+costs about 70/140 ms more in the two fixtures. Six additional autosave runs in
+the same executable isolate drawing: repeated corners 4.779 s, indexed 4.428 s.
+This points toward expanded prototype code as a contributor, without assigning
+the entire regression to compilation. Remove the diagnostic alternate shader;
+the smaller candidate restores observed pipeline compilation to the old range.
+The final direct shader passes exact cross-binary frozen pixels and the four
+loading fixtures. Three paired held-scene rendering processes retain identical
+work: median frame interval 88.17 → 71.86 ms, ranges 87.08–89.99 / 70.76–75.70.
+Six validation-enabled autosave pairs retain a 4.300 → 4.529 s median increase.
+A separate normal-default validation-off comparison does not reproduce it:
+4.271 → 4.231 s with overlapping ranges. Preserve both configurations; do not
+attribute all validation-layer cumulative stack time to validation overhead.
+The shared buffer adds 6 MiB plus temporary host/staging work. No density or
+visual settings are reduced. CPU sampling experiments retain their observability
+limits: process-wide timers mischarge blocked threads, per-thread coverage is
+incomplete, and live module maps are needed before dlclose for symbolization.
+Full build 86/86 and runtime aggregate 26/26, 407/407 plus C contracts pass;
+the aggregate covers unchanged native runtime code, not shader output. Ownership
+stays zero. Evidence:
+`zig-out/reports/perf-weather-indexed-474/`.
+
+## Sequence 473 — perf-weather-quads — rejected; functional prototype removed
+
+Sequence 472's whole-frame experiment identifies the software weather workload.
+An experimental, initially disabled `r_vkWeatherInstancing` path retains particle
+IDs, random sequences, triangle winding/order, density and material settings. It
+draws four distinct corners as one triangle-strip instance per particle in place
+of six repeated triangle-list vertices. The pipeline cache key includes topology;
+only weather uses the strip. Normal-feature frame intervals and work counts must
+improve before promotion. Frozen same-process captures compare exact pixels;
+their time/TAA/exposure/notification controls are correctness fixtures, not a
+performance shortcut. The first full build fails Vulkan signed/unsigned topology
+inference; the repaired build passes 86/86. The same-process 0/1/0 experiment
+reduces vertices 2,335,080 → 1,556,720 at equal 389,180 particles but regresses
+steady frame intervals from roughly 95–98 to 125.73/126.17 ms. Do not infer the
+cause (software SIMD utilization/instance overhead remain hypotheses). Reject
+and remove instancing, its topology key and experimental setting. Pixel comparison
+is not reached because camera/time controls are cheat protected in the save
+fixture; retain the assertion and clean source/ordinary-exit evidence. No
+correctness or physical-GPU acceptance is claimed for the rejected candidate.
+Evidence: `zig-out/reports/perf-weather-quads-473/`.
+
+## Sequence 472 — perf-render-2d — diagnostics qualified; weather limiter cross-checked
+
+Each stretch-picture request currently submits its stages separately. Add overlay
+quad/stage work counts and one CPU/software-Vulkan timestamp scope per consecutive
+2D segment, closing before the next 3D view, frame submission or content release.
+CPU segment time includes caller work between requests; its first quad allocation
+precedes the scope. Counters printed by the existing stats line describe that last
+frame, while timings average the reporting period. Disabled profiling performs no
+per-glyph clock reads. No batching or visual change is implemented yet.
+
+Prediction: glyph-heavy developer notifications may contribute measurable draw
+submission work. First characterize the unchanged workload, including profiler
+output overhead, before deciding whether to batch. Headless software timings
+cannot establish physical-GPU throughput.
+
+Overlay CPU segments average about 1.5 ms; main frames are 94–100 ms. Raw GPU
+query intervals fail additive accounting: a 58 ms gap sits between world and
+weather scopes, and changing boundaries drastically moves apparent category
+costs. Experimental rendering splits do not repair attribution and are removed.
+Retain a one-frame `r_vkStatsTrace` raw interval diagnostic, fractional query
+samples/frame and explicit dropped-scope counts. Do not use the original
+0.2–1.8 ms particle subscopes to rule weather out. Three one-second thread
+samples consume 4.27–4.29 CPU seconds, with the busiest process thread at
+0.82–0.83 seconds each; these identify CPU work, not its call stacks.
+
+A same-process density 1/0/1 classification retains live actors and a stationary
+camera. After the transition interval, density zero frames take 35.68/36.47 ms
+versus restored-density 101.06/101.10/98.65 ms, and submitted weather vertices
+change from 2,335,080 to zero and back. Disabling density is not retained as an
+optimization. Bump 1/0/1 gives no material benefit and that hypothesis is rejected.
+The first attempted manual pause fails because menu refresh resets `cl_paused`;
+preserve the failure and label repaired scenarios unpaused. All completed runs
+preserve source saves/configs and have clean ordinary validation. Full build
+passes 86/86; ownership R1–R11 stays zero. No duplicate runtime suite for timers.
+Evidence:
+`zig-out/reports/perf-render-2d-472/`.
+
+## Sequence 471 — perf-paeth-dispatch — exact CPU gain and connected loading verified
+
+Actual portable-renderer disassembly uses SSE2 while the host-native PNG
+microbenchmark emits newer instructions. `bench-png` now has the explicit
+`-DPNG_BENCH_BASELINE_CPU=true` mode and records its target. The candidate keeps
+portable Paeth and selects an SSSE3/SSE4.1 implementation only after CPUID checks,
+once per eligible image/pass, with no shared mutable dispatch state. Newer
+absolute-value/blend instructions preserve the exact predictor/tie rules.
+
+The first seven-pair/core run exposes a 3–4% RGB control loss despite neutral
+inflate/unfilter phases and identical 324 normalized conversion instructions.
+An explicit alignment attempt does not repair it and is removed. Restoring the
+benchmark's original reporting source (removing a prototype-only CPU-capability
+printf) restores the control: preserve the first candidate, alignment and smoke
+records. This is an observability/code-placement effect; no general linker or
+microarchitectural cause is established. Seven new same-harness pairs per input
+on separately pinned CPUs 3 and 7 retain exact pixels/Adler, source/input/binary
+identities and all variation. Advertised core caps differ; observed frequencies
+or migration causation are not inferred.
+
+RGBA medians on CPU3: full decode 185.834 → 164.214 ms, filter 77.294 →
+55.857 ms; CPU7: 276.355 → 241.918 / 119.085 → 86.395 ms. RGB control
+81.637 → 81.115 / 118.958 → 118.384 ms, effectively neutral. Fast-core trials
+contain retained inflate outliers. RSS/fault counts are neutral; no storage or
+whole-game gain is inferred. Full build passes 86/86, shared aggregate 26/26,
+407/407 tests and C contracts. Both predictors pass every 8-bit triple across
+four lanes against the independent scalar reference. Guarded memory pages also
+exercise exact row ends, unaligned starts and short/tail widths on both paths.
+The PNG translation unit cross-compiles for Windows x86_64; execution remains
+unverified there. Headless Vulkan, OpenGL and the controlled deferred 4096² worker
+pass with preserved sources and clean ordinary validation. Twelve paired first-save
+runs retain identical state and completed image admission. Arrival readiness is
+4.124 → 4.075 s and autosave 4.480 → 4.478 s; model stages are 1043 → 999 ms
+and 1031 → 998 ms. CPU/RSS ranges overlap. Retain the demonstrated component
+gain without claiming a general whole-load or physical-GPU improvement.
+Evidence: `zig-out/reports/perf-paeth-dispatch-471/`.
+
+## Sequence 470 — perf-base-view — exact outputs, ownership and measured work reduction verified
+
+Synchronous image creation still duplicates a 64 MiB level zero even when its
+identity/no-light-scale path never mutates it. The candidate adds explicit
+caller-lifetime borrowed preparation: level views are const, owned allocations
+are tracked separately, generated mips remain owned, and nonidentity color maps
+retain the owned fallback. Synchronous create stages every level before source
+release; deferred workers keep ordinary fully owned preparation. The existing
+owned API remains fully owned. Added ownership/unaligned/color-fallback tests
+and CPU benchmark `borrow` mode compare identical uploaded bytes and actual owned
+allocation volume. Existing image diagnostics record base borrowing. Initial full
+build passes 86/86; aggregate plus benchmark build passes 29/29, 407/407 tests
+and C contracts. Final connected install plus CPU profiler build passes 90/90.
+The 64-case matrix preserves every historical mip SHA, output metadata and owned/
+borrowed equality, including unscaled and nonidentity fallbacks. Seven alternating
+CPU pairs per large fixture reduce mip preparation 27.893 → 7.946 ms (RGBA),
+31.300 → 11.222 ms (RGB). Owned allocation volume is 89478484 → 22369620 bytes
+per 4096-square chain: 64 MiB less copying/allocation. Process peak RSS medians
+181664 → 159744 / 173808 → 135468 KiB include PNG decoding too; user/system
+time and minor faults fall. Physical file I/O and major faults are zero. Large
+PNG hashes equal their historical sequence434 identities; all fixtures are read-only.
+
+Standard and deliberate intensity-1.4 color-fallback four-fixture qualifications
+pass, with actual base-borrow and owned-fallback diagnostics respectively. A
+dynamic 4096-square deferred body also completes through fully owned worker mips.
+Every qualification passes complete admission, ordinary validation, normal exit
+and source preservation. First twelve paired save runs reduce model/shader work
+but yield inconsistent arrival readiness (original three medians 3.925 → 4.322 s).
+Keep these results. Exactly five additional arrival pairs are declared before
+running; all original samples remain in the combined eight-pair summary.
+Combined arrival medians are 4.174 → 4.023 s, with overlapping 3.923–4.373 /
+3.874–4.378 s ranges. Autosave's original three-pair median is 4.628 → 4.374 s.
+All 22 paired saves retain identical restored state/model hints and zero image/
+validation/source-preservation errors. Whole-run arrival CPU is neutral; whole
+RSS ranges overlap. Retain the exact component/work gain and disclose readiness
+variation; do not extrapolate microbenchmark RSS or software frames to GPU play.
+Local sysfs additionally shows 5.158/3.289 GHz advertised core cap groups; this
+alone does not prove migration caused the observed variation. Ownership stays zero.
+Evidence: `zig-out/reports/perf-base-view-470/`.
+
+## Sequence 469 — perf-prepared-view — contracts, work reduction and connected comparison verified
+
+Sequence468 excludes geometry/poses as a major current limiter. Prepared images
+still allocate/copy 64 MiB on their owner (~12 ms each) before prepareLevels
+creates its own mutable levels. The candidate exposes an immutable completed-batch
+view to synchronous Vulkan image admission, retaining explicit allocation ownership
+for ordinary loads. Levels own their data before the selected batch can be freed.
+Deferred consumers explicitly disallow views because their batch is released before
+mip work; C/OpenGL loaders retain fresh owned copies and repeated alias isolation.
+No cache/format/quality policy changes. Existing image timing lines record whether
+a source was borrowed, without extra per-image lines. Contracts cover incomplete/
+failed/missing/freed selection, no RI allocation/re-read, repeated views, interleaved
+batch lifetime and mutation/free of independent owned copies. Full build passes
+86/86; shared aggregate 26/26, 405/405 tests and C contracts; ownership R1–R11
+stays zero. Standard/cache-off/OpenGL2 four-fixture qualifications and an actual
+4096-square deferred-worker fixture pass all admission, normal-exit ordinary
+validation and source-preservation checks. The worker path retains owned copies.
+
+Twelve balanced fresh-process save runs compare frozen468/frozen469 with the same
+IQM diagnostics, assets and settings. Every case restores identical state, eight
+model hints and complete images without errors. At least 512 MiB of observed
+RGBA copying is avoided per first save (work volume, not peak RSS). Large model
+image read/copy totals drop 97/95 → 0/0 ms; shader/image phase medians reduce
+512.762/518.845 → 413.272/427.936 ms; model stages 1226/1230 → 1132/1149 ms.
+Full readiness is neutral for arrival (4.225 → 4.224 s), autosave median
+4.678 → 4.527 s with overlapping ranges. Whole CPU medians are
+10.956 → 11.009 / 12.298 → 12.583 s; no total-CPU saving is claimed. Peak RSS
+medians 2456616 → 2450156 / 2523236 → 2516424 KiB overlap. Retain the exact
+component work reduction; do not claim a general end-to-end or peak-memory gain.
+Evidence: `zig-out/reports/perf-prepared-view-469/`.
+
+## Sequence 468 — perf-iqm-phases — diagnostic qualified
+
+Remaining first-save model registration is about 1.2 seconds after preparation
+and decoding improvements. The IQM loader now records bounded per-model phase
+totals for packed geometry/validation/allocation, shader/image admission, joint/
+pose/bounds preparation and staging the model buffer, alongside actual work counts.
+These are owner wall times; `buffer_stage_us` is not physical-GPU execution time.
+One developer line per new model avoids per-vertex/per-mesh trace overhead. No
+algorithm or allocation policy changes yet. Full build passes 86/86; two actual
+first-save diagnostics pass restoration, complete image admission, ordinary
+validation and source preservation. Across eight IQMs per case, geometry packing
+takes 9.283/9.536 ms; poses/joints/bounds 3.629/3.649 ms; buffer staging
+4.229/5.015 ms, versus shader/image admission 512.822/524.041 ms. Sixteen records
+retain work counts and stage sums. Geometry/pose rewrites are not justified by
+this workload; investigate redundant prepared-image copies instead. Instrumented
+readiness is not a speedup claim; the frozen profiled runtime provides the next
+same-diagnostics baseline.
+Evidence: `zig-out/reports/perf-iqm-phases-468/`.
+
+## Sequence 467 — perf-small-mips — bounded scheduling and connected comparison verified
+
+First-save traces show six 64/256-square weapon/flash images decoding below the
+millisecond timer resolution, then waiting another worker/frame cycle for mip
+preparation. The candidate finishes already-decoded images of at most 256 KiB
+source inline, capped at 2 MiB source per frame, and revisits the entry immediately
+under the unchanged eight-image/four-MiB upload budget. Larger mip chains retain
+workers and cancellation/join ownership. Added aggregate per-image `mip_us` and
+`owner_mip` fields will measure actual owner cost; no extra diagnostic lines.
+Full build passes 86/86; shared aggregate 26/26, 405/405 tests plus C contracts.
+The standard four-fixture qualification passes complete admission, copied saves,
+ordinary validation and source preservation. Fourteen small chains run inline,
+67 us median / 151 us maximum. A separate controlled actor fixture completes an
+actual deferred 4096-square body through the worker: 37359 us mip work,
+`owner_mip=0`, zero pending/failed images and ordinary validation errors.
+
+That fixture first fails because the older single-world save cannot resolve a
+requested resident-world name. Empty requested world selects the active root;
+no gameplay fix or asset substitution is made. The failed record also contains
+command-buffer/layout validation errors during forced SIGTERM teardown. Those
+are retained and unresolved, outside successful normal-exit validation claims.
+The driver now tries ordinary quit before signal fallback on diagnostic failure.
+The repaired actor qualification exits normally without validation errors.
+
+Twelve paired fresh-process save runs use frozen runtime465/runtime467 and pass
+identical restored state, eight model hints, zero pending/failed images and all
+source-preservation/ordinary-validation checks. The observed inline source and
+upload work obey their separate bounds. Median full readiness: arrival
+4.331 → 4.123 s; autosave 4.880 → 4.624 s. Whole-process CPU medians
+11.610 → 11.087 s and 13.011 → 12.622 s, including fewer software-rendered
+waiting frames; do not attribute the whole CPU delta to thread creation.
+Model/world stages are broadly neutral. RSS medians 2447692 → 2461816 KiB
+and 2520332 → 2515156 KiB; ranges overlap and are retained. All have one major
+fault. Retain the bounded change; no physical-GPU/cold-storage claim.
+Evidence: `zig-out/reports/perf-small-mips-467/`.
+
+## Sequence 466 — perf-first-save — fresh-process workload and comparison verified
+
+The four-fixture loop primes decoded images with intro and e1m1a before restoring
+saves. It cannot establish first-save-from-menu latency. The driver now supports
+`--save-only`, retaining real UI actions, copied saves, guarded software display,
+source preservation and complete image admission. One save per process removes
+prior image-cache priming; OS page cache is explicitly uncontrolled, not cold.
+Balanced trials compare frozen runtime464 without preparation, the same binary
+with three slots, and runtime465 with the same three slots. Both supplied e1m1b
+saves are independent process fixtures. Stage time, restored state, job bounds,
+CPU, RSS, pressure and every sample are retained. No new engine change is made.
+The first qualification passes engine restoration but its normal-mode summary
+assumes `new_game` exists and fails after exit. That record remains; optional
+summary fields repair the driver, followed by a new qualification and 18 balanced
+first-save trials. All pass ordinary validation, full image admission, source
+preservation and identical restored map/mode/position/health/armor/weapon/ammo
+within each fixture. Enabled arms consume the same eight model hints at most
+three slots; disabled preparation consumes none. All have one major fault.
+
+Median readiness for serial / prepared / faster decoder: arrival save
+5.484 / 4.879 / 4.425 s; autosave 6.038 / 5.037 / 4.833 s. Model stages are
+2411 / 1514 / 1226 ms and 2404 / 1489 / 1255 ms. CPU medians are
+11.808 / 12.433 / 11.545 s and 13.200 / 13.554 / 13.232 s. RSS medians
+2413484 / 2440376 / 2452676 KiB and 2484364 / 2507068 / 2524324 KiB.
+Variation is retained; do not add gains from these medians to the differently
+primed four-fixture sequence. This verifies first-process restoration with warm/
+uncontrolled OS pages, not cold-storage latency. Remaining deferred small-image
+frame hops motivate sequence467. Evidence: `zig-out/reports/perf-first-save-466/`.
+
+## Sequence 465 — perf-inflate-library — CPU/contracts and connected comparison verified
+
+PNG inflate remains a measured CPU cost. Compare the actual bundled zlib with
+the installed libdeflate 1.26 in one CPU-only executable, using the two fixed PNG
+IDAT streams. Prediction: a full-buffer decoder reduces inflate CPU without
+changing filtered bytes. Both arms include codec allocation/cleanup, exact
+input/output bounds, zlib checksum validation, one discarded warmup and full
+byte comparison outside timing. Record seven alternating pairs, source/binary
+identities, CPU/RSS and all samples. Official v1.26 public header and COPYING
+are retained locally. The same-binary native-target experiment gives median
+inflate 140.743 → 64.983 ms (RGBA) and 75.634 → 43.633 ms (RGB), exact full
+filtered-byte/CRC/Adler equality in all seven pairs. This first experiment links
+the installed library; it does not alone establish engine performance.
+
+The candidate now includes a reviewed, pinned, unmodified 21-file decoder-only
+subset under `engine/ioquake3/code/thirdparty/libdeflate-1.26/`. MIT notices and
+COPYING are retained; COPYING installs under `share/licenses/dk3/`. No system
+runtime dependency, compression/gzip code or game runtime is added. Each PNG call
+owns a decompressor and retains exact filtered-size, checksum and complete-input
+checks; failure frees matching ownership without a fallback codec. The source
+review and archive hash are in the component's `DK3-REVIEW.md`.
+
+The first generic-target build exposes an upstream AVX512 Adler target-attribute
+incompatibility (`evex512`). Using upstream's documented AVX512VNNI opt-out
+retains AVX2/SSE2 and unmodified source. Repaired full build passes 86/86; shared
+runtime contracts and PNG benchmark build pass 29/29 steps, 405/405 tests and C
+contracts. Added valid-chunk-CRC cases reach truncated zlib, bad Adler/header,
+FDICT, reserved block type and trailing-input rejection. Independently encoded
+short/overlapping/window match data also passes the new decoder with unaligned
+output, capacity rejection and guards. Ownership remains R1–R11 zero.
+
+Seven paired actual owner-loader trials include parsing, CRC, inflation, filtering,
+conversion and allocation/copies: RGBA 237.781 → 166.831 ms, RGB 110.989 →
+81.430 ms, identical pixel CRCs throughout. Actual generic-build inflate stages
+are 161.146 → 90.592 / 88.539 → 58.787 ms; filter time is neutral. Peak RSS
+stays approximately 186/135 MiB respectively; CPU falls and all major faults
+are zero. Detailed ranges and source/executable identities are retained.
+
+The first headless replay refuses an incomplete frozen prefix before launching
+the game (modules omitted from the copy). Its record is retained; exact modules
+and shared shader from the same build repair the fixture. Qualification then
+passes default three slots on the deflated archive, cache disabled on the stored
+archive, and OpenGL2. Each passes all four fixtures, ordinary validation and
+source preservation. Restored Vulkan images match the baseline's geometry,
+textures and HUD, including the pre-existing top-row developer glyph artifact.
+Three alternating stored-archive pairs pass with frozen original/candidate
+prefixes and the same three-slot setting. Median complete first-map readiness is
+3.380 → 3.218 s; saves 2.668/2.617 → 2.468/2.419 s. Model stages reduce
+1098/1266/1237 → 1000/1118/1091 ms. Intro is neutral. Whole-run CPU medians
+38.178 → 37.151 s; peak RSS 2773672 → 2764188 KiB with overlapping ranges;
+all have one major fault. All nine successful four-fixture runs pass complete
+image admission, unchanged model order, copied-save restoration, ordinary
+validation and source preservation. These are warm-asset software measurements;
+the library is retained without a cold-storage or physical-GPU claim.
+Development/release assembly now retains COPYING too; all eight existing
+installation contracts pass, including the notice in the published test tree.
+Evidence: `zig-out/reports/perf-inflate-465/`.
+
+## Sequence 464 — perf-model-slots — bounded three-slot comparison verified
+
+Two-slot traces still wait roughly 230–260 ms for successive independent PNG
+groups. The candidate supports a bounded third slot and polls earlier reads before
+loading later model metadata. It snapshots exclusions from every older active
+slot, with a 4096-name hard cap, rather than only one peer. Per-slot model input
+and pixel limits stay 32/128 MiB. Worst-case temporary model/compressed/filtered/
+decoded bounds scale approximately 832 → 1248 MiB; actual RSS/CPU cost and full
+readiness must justify the third slot. Normal registration order and output remain
+unchanged. Multi-peer snapshot/cancellation and cap regressions are added. The
+full build and 26-step/405-test shared aggregate pass with these changes. Slot
+count is controlled by `r_modelImagePrefetchSlots` (clamped 1–3) and
+the probe's `--model-prefetch-slots`. The comparison includes the frozen original
+two-slot path, tuned two slots and tuned three slots; tuned arms share one binary
+so resource changes can be separated from earlier-read polling. Full build passes
+85/85. Qualification passes with three slots, with one slot/cache disabled and
+with the optional hint on OpenGL2 (normal registration, no prepared models).
+Nine balanced headless Vulkan runs pass all four fixtures, complete admission,
+copied-save restoration and ordinary validation; source saves/configuration stay
+unchanged. All arms register the same 26 models and prepare 26 PNGs; observed
+concurrency matches the requested bound.
+
+Median complete readiness for original two slots / tuned two / tuned three:
+first map 3.622 / 3.621 / 3.320 s; saves 2.873/2.921 / 2.871/2.872 /
+2.719/2.618 s. Intro is neutral. Model registration stages support the result:
+first map 1344 / 1332 / 1106 ms, saves 1454/1604 / 1529/1582 / 1327/1277 ms.
+Whole-run CPU medians are 38.148 / 38.522 / 38.834 s; peak RSS medians
+2724848 / 2724016 / 2729376 KiB, with overlapping ranges retained. These
+warm-asset software results support default three; one/two remain available.
+The default-only source change follows this same-binary comparison. Worst-case
+memory bounds above still apply; no cold-storage or physical-GPU claim.
+Evidence: `zig-out/reports/perf-model-slots-464/` including resource ranges.
+
+## Sequence 463 — perf-model-aliases — work reduction and connected comparison verified
+
+The model-preparation trace repeats shared 4096-square body/head PNGs in adjacent
+IQM model slots. Both actual models reuse the same registered shaders, so these
+extra reads and 64 MiB pixel copies are unnecessary. A later slot now snapshots
+the earlier slot's queued source names during metadata preparation. Excluded names
+remain ordinary validated image loads if the earlier hint fails, is cancelled or
+registers out of order. Snapshot ownership avoids retaining a pointer to the
+earlier batch, and names are released before dispatch/cancellation. Worker limits,
+actual model/shader registration and GPU ownership stay unchanged.
+
+Added regressions exercise source-batch destruction, excluded-source normal-load
+fallback, independent prepared output and failed-peer handling. Full build passes
+85/85; the shared aggregate passes 26/26, 405/405 tests and C contracts; ownership
+remains R1–R11 zero. The first six four-fixture headless runs pass all admission,
+save and ordinary-validation checks with unchanged actual model registration lists.
+Prepared model PNG jobs fall 34 → 26 and pixels 2281701376 → 1744830464 bytes
+per run (512 MiB less preparation work). This is work volume, not peak memory.
+The trace also reveals 552 per-mesh exclusion messages. Those diagnostics now
+aggregate at dispatch; the focused PNG contracts and full build pass after this
+repair. Timed comparisons are repeated with aggregate logging before admitting an
+end-to-end gain; first results remain preserved. Evidence:
+`zig-out/reports/perf-model-aliases-463/`.
+The repaired six-run comparison retains the same 26 actual model registrations
+and 26 prepared PNG jobs versus baseline 34; 552 repeated queue requests now
+produce only four aggregate messages. All four fixtures pass complete admission,
+copied-save restoration and ordinary validation in every run. Median first-map
+readiness is 3.622 → 3.575 s; saves 3.072/2.922 → 3.021/2.870 s. Model stages
+1392/1638/1573 → 1347/1536/1494 ms support the work reduction. Intro varies;
+no intro speedup is claimed. RSS and whole-process CPU variation are retained,
+without an isolated peak-memory or CPU-total claim. Source saves/configuration
+remain unchanged. The verified two-slot runtime is frozen for the next experiment.
+
+## Sequence 462 — perf-model-prefetch — contracts and same-binary comparison verified
+
+Remaining corrected save image read/decode work is approximately 1.3 seconds,
+including serial large RGBA decodes. The candidate resolves the existing optional
+model mappings, passes a generic initial model hint through native renderer ABI
+14/import 717, and runs at most two preparation slots. Each retains at most
+32 MiB model input plus the existing 128 MiB decoded batch limit. Only immutable
+PNG bytes decode on workers; model/shader/GPU registration stays on the owner and
+waits for its complete batch. Prepared model input is consumed once, avoiding
+another model read. Cancellation joins workers before input/pixel cleanup.
+
+Explicit cached batches use the unchanged source-byte-checked PNG cache on their
+owner, with independent batch and canonical allocations so shrinking the cache
+cannot invalidate a pending batch. World/deferred batches keep their original
+policy. Normal registration remains available when a preparation hint cannot be
+used. No class-specific dispatch or graphics quality changes are introduced.
+`r_modelImagePrefetch` (default 1) and the probe's `--model-prefetch 0|1`
+support same-binary comparisons. Other renderers may omit this optional hint.
+The shared aggregate passes 26/26 steps, 405/405 tests and C contracts, including
+new prepared-cache admission, no-repeat-decode, cache-shrink copy isolation,
+changed-source rejection and budget rejection. Ownership remains R1–R11 zero.
+The first integrated compile caught constness mismatches in the owned model-file
+handoff; callback/slot types now match the actual mutable file allocation and
+destructor. Full build passes 85/85. The first headless qualification and three
+alternating off/on pairs use the same frozen runtime462 and corrected stored-PNG
+fixture. All seven four-fixture runs pass complete image admission with zero
+ordinary validation errors and unchanged source saves/configuration. Each enabled
+run prepares 26 models, observes at most two slots, and completes every hint;
+disabled runs observe no preparation. Largest prepared model input is 12426648
+bytes, below the 32 MiB cap.
+
+Median complete first-map readiness reduces 3.926 → 3.673 s; saves 3.429/3.275 →
+2.969/2.923 s. Corresponding model registration stages reduce 1699/1954/1949 →
+1376/1610/1612 ms. Intro registration is neutral; no isolated intro claim is made.
+Peak RSS medians rise 2681088 → 2711852 KiB (about 30 MiB). Whole-process CPU
+medians remain near 38 seconds over the four-fixture run; ranges are retained,
+with 1–4 major faults and software-renderer/polling work included. These are warm
+asset-workload software results, not cold-storage or physical-GPU acceptance.
+The resource/readiness data support the bounded strategy; the loop remains active.
+Evidence: `zig-out/reports/perf-model-prefetch-462/`.
+
+## Sequence 461 — perf-zip-buffer — CPU/syscall and connected verification passed
+
+The actual ZIP-reader strace records 10039 read and 6145 lseek calls for the
+fixed RGBA lookup plus three complete reads. Traced timings are discarded. The
+candidate raises the per-stream upper read bound from 16 to 128 KiB to amortize
+seek/read calls, while allocating at most each entry's compressed size (one byte
+for empty entries). Remaining compressed bytes bound every read; CRC and error
+checks stay. At four large readers this adds at most 448 KiB. Small entries no
+longer allocate the full block. Prediction: fewer syscalls and lower read CPU
+time, with exact data and unchanged integrity. Evidence:
+`zig-out/reports/perf-zip-buffer-461/`.
+Seven alternating fresh-process trials with five reads after warmup reduce
+RGBA deflated/stored reads 12.162/11.421 → 11.209/10.501 ms and RGB
+46.045/7.947 → 45.350/7.456 ms. Required CRCs match. Repeated separate strace
+reduces read/lseek counts 10039/6145 → 1279/1765, including identical archive
+lookup/setup. This confirms fewer syscalls; traced timing is excluded. Native
+build passes 85/85 and the shared aggregate passes 26/26 with 405/405 tests and
+C contracts. A separate actual-reader qualification passes 216 independent stored/
+deflated cases, empty/tiny/16-KiB/128-KiB boundary entries, partial/unaligned output,
+zero-length requests, every byte, completion CRC and allocator balance. Connected
+package/runtime replay passes all six four-fixture runs recorded in sequence 459.
+
+## Sequence 460 — perf-zip-copy — CPU and connected verification passed
+
+Sequence 459's actual-reader comparison exposed an important counterexample:
+stored RGBA reads take 32.985 ms versus 12.376 ms deflated, while stored RGB
+23.289 ms beats deflated 46.733 ms. Archive size alone did not predict read cost.
+Inspection shows the stored/raw path copies its disjoint private input buffer to
+caller output byte by byte. The candidate replaces only this bounded copy with
+memcpy; CRC updates, completion/error checks and all stream offsets stay intact.
+Evidence: `zig-out/reports/perf-zip-copy-460/`. Seven alternating fresh-process
+trials with five measured reads after warmup reduce stored RGBA 32.733 →
+11.272 ms and stored RGB 23.211 → 7.888 ms. Deflated reads remain neutral,
+11.954/45.862 → 11.971/45.868 ms. Required CRCs match throughout. Combined
+with sequence 459's stored PNGs, RGB avoids the expensive outer inflation;
+RGBA no longer regresses. Connected native build/contracts and all six four-fixture
+headless replays pass in sequence 459.
+
+## Sequence 459 — perf-png-archive — package equivalence and connected comparison passed
+
+The actual neural package contains 223 PNG entries: 1663003797 PNG bytes are
+wrapped in another deflate layer, which saves only 6145429 bytes (0.370%). The
+next experiment isolates the actual bundled ZIP reader, including required CRC
+completion, from graphics and then compares an isolated package variant. Neural
+writers now share one compression policy: store exact PNG bytes, continue
+deflating models/scripts/manifests. Entry hashes/signatures/CRCs and ZIP32 admission
+remain required. The original installation and converted generation are unchanged.
+A connected writer regression checks deterministic output, unchanged entry bytes,
+mixed methods and normal package validation. No runtime gain is claimed yet.
+Evidence: `zig-out/reports/perf-png-archive-459/`.
+An isolated 2202283688-byte variant is 6145429 bytes larger than the original
+2196138259-byte package. All 940 entry SHA-256 values, native ZIP32 constraints,
+CRCs and complete validation receipts match; source package SHA is unchanged.
+Seven shared package tests pass. All connected writers use the existing classic
+archive context so the real greater-than-2-GiB package remains ZIP32-compatible.
+The actual-reader benchmark passes both methods and rejects damaged CRCs. The
+first seven alternating trials reveal the stored-copy bottleneck in sequence 460;
+the packaging change remains unqualified pending that connected experiment.
+First replay failures are preserved: the identity recorder required a fixture
+binary link; the next attempt correctly rejected SaveAssetMismatch because the
+fixture-copy script followed the neural archive symlink and picked up different
+map packages. A preflight then found the older diagnostic fixture used a base
+model package different from the neural overlay's validated source generation.
+Both new comparison fixtures use one matching model package, retain the exact
+stock map package for the supplied saves, and have identical non-neural package
+SHA-256 values. Both neural validation receipts match. See
+`validated-fixture-proof.json`. Earlier same-fixture performance comparisons keep
+their recorded scope; this correction is not a new release installation or an
+artistic acceptance claim. Fresh paired replays use only the corrected fixtures.
+Three alternating runs per method use the same frozen runtime461, ordinary
+validation, fresh private Mesa caches and the corrected fixed inputs. All six
+complete New Game, direct first map and both copied saves with zero pending/failed
+images, zero ordinary validation errors and unchanged source saves/configuration.
+Median first-map readiness is 4.033 → 3.924 s; second save 3.324 → 3.224 s.
+First save 3.426 → 3.426 s is neutral with variation, despite lower texture-read
+work. First-map/save image read/decode diagnostics are 1181/1394/1390 →
+1068/1338/1291 ms. Intro varies; no isolated intro speedup is claimed. Process
+RSS medians 2681672 → 2684516 KiB are effectively unchanged. The extra package
+size is the explicit disk tradeoff; no original installation/generation was
+overwritten. Full evidence and ranges are retained; the loop remains active.
+
+## Sequence 458 — perf-png-owner — CPU and connected renderer comparison verified
+
+The synchronous PNG loader decodes to malloc-owned pixels, then allocates a
+renderer-owned copy even when the decoded result cannot enter the bounded cache.
+The CPU benchmark now optionally runs that actual owner path on borrowed fixture
+bytes, separating allocation/copy overhead from archive I/O. Prediction: decoding
+uncached results directly into their final allocator removes one full-image copy
+and allocation while retaining the same cache, worker ownership and error cleanup.
+Source/artifact identities and evidence: `zig-out/reports/perf-png-owner-458/`.
+The shared decoder now accepts an output allocator/cleanup pair. Workers retain
+malloc ownership; owner cache candidates retain immutable malloc pixels; results
+that cannot enter the unchanged cache decode directly into renderer ownership.
+Failed output preparation invokes the matching cleanup callback. Cache hits still
+return fresh copies. Seven alternating fresh-process trials with two measured
+samples after warmup reduce actual owner-path RGBA 258.603 → 237.142 ms and RGB
+130.653 → 110.313 ms. Pixel CRCs and filtered checksums match throughout. These
+include allocation/cache-locality effects, not solely a timed memcpy. Median RGB
+peak RSS drops 151416 → 135124 KiB; RGBA peak stays near 185000 KiB. No major faults
+occur; user/system CPU samples are retained. An independently encoded valid-zlib
+PNG with an invalid scanline filter exercises cleanup after output allocation in
+both owner/cache modes. Shared aggregate passes 26/26 steps, 405/405 tests and C
+contracts; full build passes 85/85. Three alternating complete-admission headless
+trials per implementation compare the pre-455 runtime with combined 455–458 on
+identical HD assets, ordinary validation and fresh private Mesa caches. All six
+complete New Game, direct first map and both copied saves with zero pending/failed
+images and zero ordinary validation errors. Median first-map readiness reduces
+4.225 → 4.125 s; saves 3.725/3.624 → 3.479/3.424 s. Intro 3.974 → 3.723 s varies
+substantially across runs; no isolated intro gain is inferred. Save image
+read/decode diagnostics reduce 1537/1524 → 1399/1403 ms. Median whole-process
+peak RSS remains approximately 2.52 GiB. Source saves/configuration are unchanged;
+ownership R1–R11 remains zero. Baseline/current restored frames were inspected:
+scene/HUD are present in both; existing top-row developer glyph artifacts remain.
+These are software renderer results, not physical-GPU or complete artistic acceptance.
+
+## Sequence 457 — perf-inflate-refill — CPU and connected verification passed
+
+Actual optimized machine code still loads and shifts each byte separately for
+the two-byte bit refill. A local candidate assembles exactly the same two
+little-endian bytes and shifts once; input/output bounds and parser state stay.
+Both direct CPU variants use identical compiler flags, full source fingerprints,
+and retained disassembly. Prediction: fewer dependent shifts reduce the measured
+inflation cost without skipping checks. No new renderer code is admitted yet.
+Evidence: `zig-out/reports/perf-inflate-refill-457/`. Seven alternating fresh-process
+pairs, with two measured decodes after warmup, give RGBA decode 240.233 →
+237.358 ms (inflate 163.215 → 160.866 ms) and RGB decode 115.517 → 114.706 ms
+(inflate 90.303 → 88.939 ms). All decoded CRCs and filtered checksums match.
+The candidate is admitted to source; the connected build, contracts and six
+four-fixture headless replays pass as recorded in sequence 458.
+
+## Sequence 456 — perf-inflate-matches — CPU and connected verification passed
+
+Instrumented actual-inflater counters characterize match lengths/distances on the
+fixed PNGs; diagnostic timings are discarded. RGBA has 11.24 million matches per
+inflate, 87.95% length 4–7 and 10.64% length 8–15; RGB has 2.10 million matches,
+64.16% length 4–7 and 21.38% length 8–15. Neither fixture uses window fallback in
+this full-output workload. The candidate copies exact four-byte groups when
+distance is at least four, then exact tail bytes; each group is disjoint, and
+successive groups preserve forward overlapping expansion. Existing distance-one,
+long disjoint, short-distance and sliding-window paths stay. Prediction: fewer
+dependent byte stores improve short-match-heavy inflation, with exact output and
+no extra memory. Evidence: `zig-out/reports/perf-inflate-matches-456/`.
+Seven paired trials first show only a small gain for the general four-byte loop.
+The retained variant specializes lengths 4–7 before the other match-copy cases.
+A separate seven-pair comparison gives RGBA decode 246.540 → 240.679 ms and
+inflate 170.289 → 164.347 ms; RGB decode 116.874 → 115.190 ms and inflate
+91.776 → 90.322 ms. All decoded CRCs and filtered checksums match. Independent
+fixed-code fixture coverage spans every distance 1–33 and length 3–35,257,258,
+including unaligned outputs, tiny input/output chunks and window crossings.
+Python's standard zlib independently validates the encoded fixture. The shared
+aggregate passes 26/26 steps, 405/405 tests and C contracts. No whole-load gain
+is inferred from these component results.
+The full build and connected six four-fixture headless replays pass in sequence 458.
+
+## Sequence 455 — perf-image-alpha — CPU and integrated verification passed
+
+The remaining CPU image preparation includes a scalar full-image alpha scan.
+The candidate checks bounded vectors of RGBA pixels and retains a scalar tail,
+without altering pixels, mip levels, average color or the transparency decision.
+Prediction: opaque large images improve; an image with early alpha remains near
+neutral. The actual CPU preparation benchmark and exact golden outputs are the
+acceptance metric before any integrated claim. Evidence:
+`zig-out/reports/perf-image-alpha-455/`.
+Seven alternating source-fingerprinted fresh-process trials with two measured
+preparations after warmup give RGBA 27.628 → 27.234 ms, opaque RGB 32.965 →
+31.623 ms. The 64-case exact output/metadata matrix passes. Permanent tests check
+every alpha lane, early/last transparency, vector boundaries and unaligned inputs.
+Full build passes 85/85; shared aggregate passes 26/26 with 405/405 tests and C
+contracts. Memory allocation and image bytes are unchanged. This is a modest
+component gain; no additional whole-load improvement is claimed. The CPU benchmark
+now embeds and prints the actual image implementation's SHA-256 as well.
+Current headless software-Vulkan New Game, direct first map and both copied saves
+pass with zero pending/failed images and zero ordinary validation errors. Source
+configuration/save hashes remain unchanged; ownership R1–R11 remains zero. This
+qualification replay does not establish a further whole-load timing gain.
+
+## Sequence 454 — perf-inflate — alternative rejected
+
+Inflation remains approximately 170 ms of the 248 ms RGBA decode in the fixed
+4096-square fixture. The next CPU-only experiment compares the actual bundled
+inflater with Zig 0.16's standard-library inflater on the same concatenated IDAT
+bytes. Both paths must complete the exact output bound, consume the stream and
+validate the zlib checksum; the Zig API only exposes the footer, so the experiment
+explicitly verifies it with the existing checksum implementation. Full filtered
+output SHA-256 must match. No replacement decoder has been admitted to the engine.
+Evidence: `zig-out/reports/perf-inflate-454/`. Five alternating fresh-process
+trials per input/implementation, with two measured samples after warmup, compare
+one ReleaseSafe native-CPU executable. The Zig path is slower: RGBA 167.697 →
+265.015 ms, RGB 88.421 → 154.627 ms, with identical full filtered SHA-256.
+The bundled implementation stays; no runtime code or format validation changes.
+
+## Sequence 453 — perf-experiment-integrity — source/build proof passed
+
+The owner supplied Brendan Gregg's *Systems Performance*, second edition, as
+the ongoing experiment guide. Relevant local PDF sections were read: scientific
+method, USE, workload characterization, observing observability, active
+benchmarking, sanity checks, statistics and benchmark questions. The adapted perf
+skill now applies these methods explicitly. Evidence workspace:
+`zig-out/reports/perf-experiment-integrity-453/` records the supplied book's identity.
+
+A benchmark sanity check found `bench-png` reusing an unchanged executable after
+its included decoder .c changed. No sequence-452 gain was measured or accepted
+from that artifact. Explicit included-source content stamps now enter C-only
+benchmark/contract build keys, alongside header stamps; the benchmark prints its
+source/header fingerprints. Fresh original/candidate builds have distinct verified
+source stamps and executable hashes, recorded in `build-proof.json`. The rebuilt
+shared aggregate passes 26/26 steps, 404/404 tests and C contracts. This is a
+measurement integrity repair, not a claimed decoder speedup.
+
+## Sequence 452 — perf-png-pairs — candidate rejected
+
+The Paeth candidate shares RGBA input/output operations across adjacent pixels
+while evaluating each left dependency in order. The predictor formula, tie order,
+byte wrapping and scalar tail remain unchanged. Independent forward-filtered
+coverage now spans 1–19 columns for every 1–8-byte stride and all five filters.
+Evidence: `zig-out/reports/perf-png-pairs-452/`. The exact prior decoder/source are
+retained. The first attempted build was stale (sequence 453); only fresh,
+source-stamped original/candidate executables enter the seven alternating trials
+with two measured decodes and one discarded warmup per process. RGBA filtering
+59.401 → 57.183 ms does not improve complete decode (247.639 → 248.475 ms);
+RGB decode is 116.903 → 118.378 ms. All decoded CRCs and filtered checksums match.
+The candidate is removed; expanded independent filter coverage remains. Active
+250-ms process observations show one running thread, no physical input reads,
+no major faults or swap. Scheduler statistics are disabled, so runqueue wait
+counters cannot establish absence of contention. This is a warm CPU workload,
+not evidence about cold storage or physical-GPU performance.
+
+## Sequence 451 — perf-adler — CPU and integrated verification passed
+
+The actual PNG-decoder benchmark now times an additional Adler-32 pass over its
+filtered output, separately from decode/inflate/unfilter, and records the checksum.
+Evidence: `zig-out/reports/perf-adler-451/`. The pass accounts for about 14 ms in
+the RGBA fixture and 10 ms in RGB. The candidate folds sixteen byte updates into
+exact weighted SSE2 sums, preserving upstream NMAX/modulo boundaries and the
+portable fallback. Notices remain intact and the source alteration is marked.
+Seven alternating fresh-process trials per implementation reduce checksum medians
+13.838 → 2.777 ms and 10.401 → 2.110 ms; full PNG decode medians reduce
+262.798 → 246.179 ms and 124.767 → 114.534 ms. Both filtered Adler-32 and decoded
+pixel CRCs match in every sample. No validation is skipped. These are decoder
+measurements, not a further whole-load claim.
+
+Added independent scalar checksum comparisons cover short/vector/NMAX boundaries,
+alignment, worst-case bytes, deterministic random input, seeds and streaming.
+Four permanent mip/color golden tests join `test-runtime` through the new
+`test-image-levels` target, covering the related 449/450 changes without a graphics
+device. The full build passes 85/85 steps; the shared aggregate passes 26/26
+steps, 404/404 tests and C contracts, including all new checksum boundaries and
+permanent golden pixels. Current headless software-Vulkan New Game, direct first
+map and both copied saves complete with zero pending/failed images and zero
+ordinary validation errors. Original configuration/save hashes remain unchanged;
+ownership remains R1–R11 zero. No additional whole-load speedup is inferred from
+this single qualification replay. The optimization loop remains active.
+
+## Sequence 450 — perf-image-mips — CPU and connected renderer comparison verified
+
+The remaining measured CPU preparation cost includes the scalar RGBA box filter.
+It now sums adjacent pixels from two rows in widened vector lanes, preserving
+the original truncation and independent alpha exactly. Small/tail columns retain
+the clamped scalar path. Evidence workspace: `zig-out/reports/perf-image-mips-450/`.
+The existing 64-case exact mip/color matrix passes against the retained scalar
+goldens, including odd rows and alpha tails. Seven alternating fresh-process
+trials per implementation, with one discarded warmup and two measured samples,
+reduce preparation 53.493 → 36.692 ms for the RGBA fixture and 61.148 → 41.191 ms
+for RGB. Every uploaded-mip SHA-256 matches. Host load differs from sequence 449;
+these are paired comparisons within this experiment, not compounded cross-run
+whole-load percentages. The connected renderer build passes 85/85 steps.
+
+Three alternating complete-admission headless trials per implementation compare
+the pre-449 CPU preparation against combined 449/450, with identical assets,
+ordinary Khronos validation and fresh private Mesa disk caches. All six complete
+New Game, direct first map and both copied saves, with zero pending/failed images
+and zero ordinary validation errors. Median readiness changes 4.480 → 4.278 s for
+intro, 5.186 → 4.884 s for first map, and 4.843/4.641 → 4.330/4.290 s for the saves.
+Save preparation/upload diagnostics reduce 940/923 → 606/600 ms. Host variation
+remains; complete timing and stage samples are retained in this report. Source
+configuration/saves remain unchanged; ownership remains R1–R11 zero. The existing
+instrumented shader arithmetic issue from 448 is still open; these changes do not
+modify shader source or establish physical-GPU/artistic acceptance.
+
+## Sequence 449 — perf-image-levels — CPU equivalence and connected replay verified
+
+CPU image preparation previously rewrote every RGB byte even when gamma/intensity
+tables were identities. It now composes the two byte lookups at initialization
+and skips identity passes. Nonidentity mappings retain the same integer lookup
+results. The actual mip/color implementation is exposed to a pure CPU profiling
+target, `zig build bench-image-levels`, with the actual bundled PNG decoder,
+discarded warmup and complete uploaded-mip SHA-256/metadata output. It initializes
+no window or graphics device. Evidence: `zig-out/reports/perf-image-levels-449/`.
+Seven alternating fresh-process trials per implementation, with discarded warmups
+and two measured preparations each, reduce median preparation 65.816 → 46.049 ms
+for the 4096² RGBA fixture and 71.935 → 52.145 ms for the RGB fixture. Every
+uploaded-mip SHA-256 matches. A 64-case equivalence matrix also matches all mip
+bytes, dimensions, skip/count, alpha and average-color metadata across actual
+textures, gamma/intensity changes, plain/unscaled paths, picmip/device limits,
+odd/small widths and a final transparent pixel. The pure CPU benchmark links only
+libc; no graphics library/device is initialized. The full build passes 85/85 steps.
+Connected renderer replay is verified together with sequence 450, as recorded
+above, rather than repeating the same scenarios between related CPU changes.
+
+## Sequence 448 — perf-image-commit — complete-admission comparison passed; shader issue open
+
+The pending-image trace shows small weapon skins decoding in under a millisecond,
+then waiting for the one-image-per-frame upload gate. Deferred uploads now admit
+at most eight images and 4 MiB per frame. One oversized image may progress by
+itself, preserving the prior large-texture behavior. Decoding, mip generation,
+pixels, texture resolution and fresh bindless-slot ownership are unchanged.
+Per-commit byte/time counters expose the actual burst. Evidence workspace:
+`zig-out/reports/perf-image-commit-448/`, with an exact baseline runtime. The
+integrated build passes 85/85 steps. Three alternating trials per implementation
+use identical assets and fresh private Mesa disk caches, requiring zero pending
+and failed images before readiness/captures. Median direct first-map readiness
+changes 4.679 → 4.380 s; two save loads change 4.437/4.382 → 3.980/4.029 s.
+Initial New Game varies 3.873/3.722 s, without isolating a batching-specific gain.
+Input timings are recorded separately; the first save's median input readiness
+is essentially unchanged at 3.727/3.728 s. This gain is completion of image
+admission after input restores, not faster simulation or reduced texture quality.
+
+Logs show at most six images/1,441,784 bytes in a measured batch, within both
+bounds. Median fresh-process peak RSS is essentially unchanged, 2,662,604 versus
+2,662,472 KiB. Individual software-driver commit calls may still block (maximum
+207 ms observed); this does not claim all frame stalls are eliminated. Source
+configuration/save hashes remain unchanged across all six runs.
+
+GPU-AV completes all four fixtures but reproduces the preexisting fragment FMax
+NaN report at SPIR-V instruction 4315, also seen before this change in sequence
+446. No buffer/lifetime/API error is reported. This later replay means the earlier
+zero-NaN run does not establish general shader numerical acceptance; the arithmetic
+issue remains open. Shader source is unchanged by the upload scheduling change.
+
+## Sequence 447 — perf-admission-ready — complete-admission scenario verified
+
+The Vulkan backend exposes owner-thread deferred-image pending/failure counts.
+The loading probe separates first processed input from complete CPU image
+admission, waits for decoding/mip preparation/commit before its readiness mark,
+and refuses a failed placeholder. Captures then fence the submitted uploads.
+Synchronous GL backends retain their existing readiness definition. Evidence
+workspace: `zig-out/reports/perf-admission-ready-447/`. The full build passes
+85/85 steps; current headless software-Vulkan New Game/first-map/two-save replay
+passes with zero validation errors, zero failed placeholders, and original source
+configuration/saves unchanged. Ownership remains R1–R11 zero; the adapted skill
+validates. No duplicate runtime aggregate was run for these renderer/tool changes.
+
+The single diagnostic sample finds two deferred images still pending on the first
+map and six after each save restores input. First-map input is observed at
+3.070 s and zero pending images at 4.728 s; the two saves observe input at
+3.774/3.675 s and zero pending at 4.529/4.482 s. These are observed upper bounds,
+including command delivery/frame waits, not isolated worker times or speedups.
+New Game's first status response already reports zero pending images. The probe
+now prevents snapshot-ready timing from being mistaken for completed admission.
+
+## Sequence 446 — perf-pipeline — cache rejected; software-renderer fixes verified
+
+The software-Vulkan baseline crashed while capturing its first scene. Khronos
+validation identified VUID 00605: color/motion attachments use different blend
+states, but independentBlend was not enabled. Device qualification/creation now
+require/enable the feature. GDB also identified a null lighting-buffer load in a
+lavapipe worker. Zero-light views now supply one neutral 32-byte record while
+keeping the actual light count zero. This removes the observed crash. The later
+sequence-448 numerical finding limits the earlier zero-NaN observation. No
+lighting feature or quality setting is disabled.
+
+Evidence: `zig-out/reports/perf-pipeline-446/`. Both ordinary Khronos validation
+and instrumented GPU-AV runs complete New Game, direct first map and both copied
+saves, with zero validation errors and inspected captures. The full native build
+passes 85/85 steps. These are focused software-renderer scenarios; physical-GPU,
+complete campaign and artistic acceptance remain separate.
+
+The in-memory Vulkan pipeline-cache candidate was compared using the corrected
+renderer, identical shaders and a fresh private Mesa disk-cache directory for
+each trial. Three alternating trials per setting each create the same 27
+pipelines. Median total compilation is 1,274.223 ms without the candidate and
+1,265.822 ms with it: no material gain established. The candidate was removed;
+its source and exact runtime remain in the report. Developer compilation timers
+remain for subsequent profiling. Snapshot/input timings from that experiment do
+not establish completion of deferred texture admission; sequence 447 checks it.
+
+The loading probe now retains crash reports before deleting disposable profiles,
+kills a private engine after failed graceful shutdown, preserves source hashes on
+failure, and supports longer response bounds and batch GDB traces. Ordinary input
+keeps its five-second default; all 14 input-tool tests pass. Original configurations
+and saves remain unchanged. The optimization loop remains active.
+
+## Sequence 445 — perf-inflate — match copying verified; loop ongoing
+
+The bundled inflater now fills distance-one output matches and uses memcpy only
+for disjoint matches of at least 16 bytes. Other overlapping matches retain
+upstream forward copying; window handling, bounds and format/checksum admission
+are unchanged. The alterations are marked in the source and upstream notices
+remain intact. No new library or runtime dependency was admitted.
+
+Evidence: `zig-out/reports/perf-inflate-445/`. Five alternating fresh-process
+trials per configuration, each with one discarded warmup and two measured decodes,
+reduce the RGB fixture's median decode 147.664 → 136.036 ms and inflate
+118.825 → 107.485 ms. RGBA decode is approximately unchanged (269.034/273.759 ms),
+with inflate 193.176/192.352 ms. All decoded pixel CRCs match. These are decoder
+measurements, not a claimed whole-game loading or physical-GPU rendering gain.
+
+The full native build passes 85/85 steps. All 400 Zig runtime tests and the other
+C contracts pass; the new inflater boundary fixture initially failed because its
+manually transcribed compressed bytes were truncated (system zlib also rejected
+them). Regenerating the independent fixture repairs the test; focused PNG/C worker
+checks pass 3/3 steps. Coverage combines 1/7/full-byte input chunks with 1/257/258/
+8192-byte output buffers across repeating matches and sliding-window boundaries.
+Current headless software-GL2 New Game and both copied save loads pass. Source
+configuration/saves remain unchanged. No duplicate 400-test aggregate was run
+after the test-only fixture correction. The performance loop remains active.
+
+## Sequence 444 — perf-png-input — lower scratch memory verified; loop ongoing
+
+Single-IDAT PNGs now borrow the already validated contiguous immutable compressed
+input through inflation, avoiding a redundant allocation/copy. Multi-IDAT images
+retain their existing concatenation path. The input owner outlives inflation;
+borrowed input is never freed by the decoder. Exact output bounds, zlib checksum
+and trailing-input rejection remain unchanged.
+
+Evidence: `zig-out/reports/perf-png-input-444/`. Five fresh-process comparisons
+retain exact pixel CRCs. The single-IDAT RGB fixture reduces median peak RSS
+153,296 → 134,788 KiB. Timings do not establish a consistent decode speedup.
+A broader multi-IDAT streaming candidate reduced memory but regressed RGBA decode
+287.714 → 347.349 ms; it was reverted. This pass claims the smaller memory gain.
+
+The full native build passes 85/85 steps; runtime checks pass 23/23 steps and
+400/400 tests plus C contracts. Added independent IDAT repackaging covers every
+split of the fixture stream, empty IDATs, bytewise fragmentation and trailing
+nonempty input. The first contract failure was signed overflow in the test-only
+CRC byte-swap helper; unsigned byte stores repair it. Current New Game and both
+copied save loads pass via dkguard software/headless execution. Source-save and
+configuration preservation checks pass. The ownership baseline remains zero.
+
+## Sequence 443 — perf-admission — shared CRC/hash reads verified; loop ongoing
+
+Converted package admission now derives canonical gameplay entry SHA-256 values
+during its complete CRC-checked reads, instead of decompressing gameplay packages
+again. Reads use bounded 1-MiB blocks. Compatibility retains package order,
+sorted entry order, lowercase names, directory exclusion and duplicate-name
+semantics; every cosmetic entry still receives its CRC check. The separate full
+package SHA-256 checks remain mandatory.
+
+Evidence: `zig-out/reports/perf-admission-443/`. Seven alternating focused trials
+per implementation have medians 2.539 → 2.184 s and identical compatibility SHA.
+Heavy concurrent host workloads produce wide timing ranges. Three full preparation
+trials per implementation have medians 5.832/5.635 s but overlapping, noisy ranges
+(baseline 5.539–7.071 s, combined 5.559–9.072 s); these do not establish a reliable
+whole-preparation gain. All six retain the same installation-generation identity.
+Eight installation tests pass, including both ZIP storage methods, multi-block
+entries, empty entries, canonical ordering, and gameplay/cosmetic CRC corruption
+with matching package SHA-256. No runtime code changed in this pass.
+
+## Sequence 442 — perf-identity — parallel full hashes verified; loop ongoing
+
+Installation identity still hashes every product in full. Large builds now use
+at most four independent readers, scheduling large files first; small builds
+remain sequential. Failure joins the workers before returning, and published key
+order and SHA-256 values are unchanged. No admission check is skipped or cached.
+
+Local evidence: `zig-out/reports/perf-identity-442/`. Three alternating warm
+preparation trials per configuration reduce the median 7.506 → 5.823 s against
+the immediately preceding implementation. All six retain the sequence-441
+installation identity. Six installation tests pass, including worker failure,
+cleanup and a subsequent successful reread. This measures warm preparation with
+private assets, not compilation, cold publication or game loading. Runtime code
+was unchanged; no duplicate native aggregate was run.
+
+## Sequence 441 — perf-prepare — complete warm preparation comparison passed
+
+Local evidence: `zig-out/reports/perf-prepare-441/`. A private development prefix
+was seeded with independent Btrfs CoW files, preserving source inode permissions
+and original installations. Publication/copying is excluded from measured trials.
+The existing-generation preparation path runs all package CRC/hash checks,
+compatibility generation and installation identity construction. The reconstructed
+baseline uses the retained original neural validator and uncached campaign
+derivation; optimized trials use the current streaming/parallel validator and
+validated derivation cache. All other stages and inputs are identical.
+
+Three alternating trials per configuration reduce median preparation 21.469 →
+7.462 s. All six produce exactly the same installation-generation identity,
+`d12de96805a7d7bf23358c36aa813bca1e13b5b6549a895d3cf4c60bc4d3d844`.
+The original material overlay's SHA-256 remains unchanged. This is the full warm
+preparation function, not Zig compilation, cold publication or game-menu time.
+The loop remains active; repeated hash/check overhead is a next profiling target,
+not an implemented or claimed additional optimization.
+
+## Sequence 440 — perf-derived — warm authoring reuse verified; loop ongoing
+
+Development installation previously regenerated the campaign authoring manifest
+from all maps on every invocation. The derived output is now reused only when
+the already-verified map-package SHA-256, derivation/parser source hashes, Python
+version and output SHA-256 match its private receipt. Missing, damaged, changed or
+incompatible cached data is regenerated. Publication is locked and atomic; a bad
+new map does not replace the prior output. Package hash/CRC admission still runs.
+
+Local evidence: `zig-out/reports/perf-derived-440/`. Three uncached derivations of
+the same installed maps take a median 1.526 s. A cache miss takes 1.471 s; nine
+warm derivations take a median 0.091 ms after the caller's package verification,
+with identical output SHA-256. This excludes package validation and is not a
+whole-launch claim. Eight campaign tests and five installation tests pass,
+including output corruption, changed map geometry, changed tooling and failed
+new input preserving old output. No runtime aggregate was repeated for this
+Python-only change.
+
+## Sequence 439 — perf-png-threshold — candidate rejected; verified implementation retained
+
+An alternative SIMD predictor used endpoint thresholds in place of three Paeth
+distances. Nine direct-decoder samples measured filter-stage medians 60.495 and
+59.979 ms, which do not establish a material gain. The candidate was reverted;
+the production decoder matches the verified baseline source SHA-256 exactly.
+Evidence and the rejection remain in `zig-out/reports/perf-png-439/`. Exhaustive
+predictor coverage was retained for the existing implementation: all 16,777,216
+byte triples across four lane permutations, in addition to scanline/PNG/caching
+contracts. The focused `zig build test-png --summary all` passes 3/3 steps;
+the actual contract executable takes 100 ms. No new end-to-end speedup is claimed.
+
+## Sequence 438 — perf-png-cache — bounded cache verified; loop ongoing
+
+The remaining measured loading cost includes decoding identical large textures
+after renderer content resets. The owner-thread PNG loader now retains a bounded
+initial working set of immutable source bytes and canonical RGBA pixels across
+map resets. Cache hits require equality of every source byte, and return a new
+renderer-owned copy before gamma/mipmap/material processing. Missing, changed or
+damaged files cannot use a path-only stale result. Background decode workers keep
+their existing independent lifetime and never access this cache.
+
+`r_imageDecodeCacheMegs` defaults to 256 MiB, may be disabled with 0, and is capped
+at 1024 MiB. Both encoded input and decoded output count against the bound; only
+images with at least 32 MiB of decoded pixels are eligible, and entry count is
+bounded to 16. A full cache skips new admissions rather than thrashing its initial
+working set. GL1, GL2 and Vulkan clear it on full renderer shutdown. Lowering the
+budget clears retained data on the next PNG request. No texture quality is reduced.
+
+Local evidence: `zig-out/reports/perf-png-cache-438/`. Three software-GL2 headless
+samples per cache setting, with identical executable/modules/maps/overlays/saves,
+change median direct-e1m1a readiness 3.916 → 3.133 s and two save-load medians
+4.513/4.470 → 3.847/4.060 s. Logs confirm reuse of three large images, retaining
+251,946,208 bytes including their encoded inputs. These are warm-cache gains;
+initial New Game does not gain a cold-decode improvement from caching.
+
+A separate fresh-process resource sample checks the cost: cache off peaks at
+1,576,600 KiB RSS, 256 MiB at 1,820,480 KiB, and 512 MiB at 2,099,276 KiB. The
+512-MiB experiment loads the two saves in 3.330/3.592 s in its single trial; that
+does not change the conservative 256-MiB default or establish a three-sample median.
+Timing variation and software-renderer limits still apply.
+
+The integrated build, source-preservation checks and headless scenarios pass.
+`zig build test-runtime -j4 --summary all` passes 23/23 steps, 400/400 tests and
+the C contracts. Added actual-loader checks cover caller-copy isolation, aliases,
+same-length corrupt source replacement, disable/shrink behavior, admission limits,
+entry bounds and full cache cleanup. Ownership remains zero for R1–R11. Native
+Vulkan shutdown is built, but its visual/hardware behavior is not claimed by GL2
+headless acceptance. Further optimization work remains active.
+
+## Sequence 437 — perf-frame — measured; software-backend limit recorded
+
+Local evidence: `zig-out/reports/perf-frame-437/`. A headless software-GL2 opening-map
+fixture runs ten seconds after admission/warmup with `com_speeds 1`, at 960x540,
+HD overlays, uncapped FPS and unchanged quality. Across 419 frames, median total
+frame work is 24 ms, including 21 ms in the renderer backend; game work is below
+the timer's one-millisecond resolution. The total-frame p95 is 30 ms. There are
+no invalid-model-frame warnings in this fixture. This supports further loading
+work rather than an unmeasured game-simulation rewrite. No physical-GPU throughput
+or complete gameplay/rendering acceptance is inferred.
+
+## Sequence 436 — perf-package-stream — verified; loop ongoing
+
+The next measured cost was CPU-bound validation of independent ZIP entries.
+Admission streams SHA-256/CRC checks in one-MiB blocks, hashes the base package
+without a whole-file allocation, and uses at most four workers for archives above
+32 MiB. Small packages remain sequential. Workers own their decompressor/hash
+state; `ZipFile` serializes shared-file access, and all workers join before the
+archive closes, including exceptions/cancellation. Required validation is retained.
+
+Local evidence: `zig-out/reports/perf-package-stream-436/`. Three alternating trials
+in fresh processes, with identical validation-receipt SHA-256, reduce median
+admission from 6.280 to 2.625 s. Median process peak RSS falls from 489,836 to 51,440
+KiB. The tradeoff is higher total user CPU (5.154 → 7.241 s), bounded to four workers,
+for lower latency and memory. The earlier original validator took 12.897 s.
+These are package-admission results, not whole-application launch timings.
+
+Six package tests and five installation tests pass, including concurrent integrity
+failure propagation and a healthy reopen after a failed worker. Runtime/renderer
+code was not changed in this iteration, so its still-valid 434 runtime checks were
+not repeated. Further work remains active.
+
+## Sequences 434–435 — perf-loop — initial optimizations verified; loop ongoing
+
+The owner requested a continuing optimization loop on 1 November 2026. The local
+`.agents/skills/perf/SKILL.md` adapts codefang's measurement-first workflow to
+dk3's Zig/C ownership, headless-only runs and integrated verification cadence.
+No desktop input, physical display runs, deployment or Git operations are part
+of the loop. The preserved installation, profiles and saves remain untouched.
+
+**434, PNG decoding.** Direct measurements of the actual bundled decoder separated
+inflate from filter reversal. Linux sampling was denied by the host's perf/MAC
+policy; the retained logs record that limitation. The `bench-png` build target
+provides actual-decoder stage timings, a discarded warmup, output CRCs and process
+resource counters without a renderer or desktop. Fixed 4096x4096 RGBA and RGB
+fixtures measured nine times give median decode changes of 394.825 → 290.006 ms
+and 194.152 → 158.160 ms. The RGBA filter stage changes 147.328 → 61.646 ms.
+
+The decoder dispatches the PNG filter once per scanline, copies 8-bit RGBA rows,
+specializes opaque RGB conversion and uses SSE2's independent byte channels for
+four-channel Paeth prediction, retaining the scalar path on other architectures.
+Predictor ties and byte wraparound remain exact. Both real inputs retain their
+baseline decoded CRCs; forward-encoded tests cover all five filters, channel
+strides 1–8, first rows, leading bytes, malformed streams and worker cleanup.
+
+Local evidence: `zig-out/reports/perf-png-434/`. A controlled replay uses the exact
+sequence-433 baseline renderer recovered by SHA-256, with current executable/game
+modules and identical packages/profile/save fixtures. Three headless software-GL2
+samples per variant show median direct-e1m1a readiness 4.161 → 3.952 s and save
+readiness 4.972/5.006 → 4.771/4.777 s. Intro readiness is effectively unchanged
+(2.687 → 2.695 s); the decoder microbenchmark gain is not the total-load gain.
+
+**435, neural-package admission.** Validation previously decompressed the archive
+for a CRC pass, read every entry again for SHA-256, and reread PNGs for their
+signature. Complete `ZipFile.read` already verifies CRC. Admission now shares a
+single image read between the hash and signature checks and omits the redundant
+archive pass; namespace, exact-base identity, ZIP32, CRC, per-file SHA-256, PNG
+signature and skeleton validation remain. CRC failures are normalized to the
+existing admission error. Payload buffers are released before the next entry.
+
+Local evidence: `zig-out/reports/perf-package-435/`. Three alternating before/after
+trials on the same 2.1-GiB package reduce median validation 12.897 → 6.270 s and
+user CPU 10.659 → 5.292 s. These are validator timings, not whole-launch timings.
+
+Validation: the integrated native build and headless loading scenarios pass;
+`zig build test-runtime -j4 --summary all` passes 23/23 steps and 400/400 tests
+plus the actual PNG/engine C contracts. Five package tests and five installation
+tests pass, including damaged payload/manifest CRCs, bad SHA-256, bad PNG signature,
+ZIP64 refusal and preservation of existing installations/saves. The ownership
+baseline remains zero for R1–R11. Further measured optimizations remain active.
+
+## Sequence 433 — loading-performance — headless stage measurements passed
+
+Investigated 1 November 2026. Developer timing now separates UI save validation,
+engine save validation/staging, filesystem restart, collision loading, gameplay
+spawn, save read/decode, and restoration. Existing client resource timing remains.
+`developer 1` enables `dk3_menu_loading new-game` and `dk3_menu_loading load <slot>`;
+these invoke the actual menu actions, including `Browser.validate`, through the
+command pipe without keyboard, mouse, window focus or desktop access.
+
+`dkq3/tools/runtime_loading_timing_probe.py` runs under `dkguard --headless` on a
+private 960x540 X display, software OpenGL2, dummy audio and temporary profiles.
+It copies the supplied configuration and saves, records runtime/package/source
+hashes, checks that source configurations/saves remain unchanged, and requires
+observed cinematic/normal input plus completed screenshot files. The opening
+movie's playback duration is excluded; the first playable map is a separate
+direct-map timing fixture. These are loading diagnostics, not campaign acceptance.
+
+Private evidence: `zig-out/reports/loading-performance-433/`. Each completed
+configuration has three samples, each with New Game, direct e1m1a, and two copied
+e1m1b saves (796,907 and 725,677 bytes). Medians, seconds to observed readiness:
+
+| Runtime/assets and entry path | New Game / intro | Direct e1m1a | Arrival save | Latest autosave |
+| --- | ---: | ---: | ---: | ---: |
+| Preserved installed runtime and stock assets, console baseline | 1.064 | 0.922 | 1.130 | 1.131 |
+| Instrumented current runtime, installed stock assets, UI actions | 1.168 | 0.975 | 1.029 | 1.083 |
+| Instrumented current runtime, same stock maps plus development HD/neural/material overlays, UI actions | 2.648 | 4.146 | 5.047 | 5.024 |
+
+The installed-runtime console baseline omits the Zig UI's extra validation and
+is labelled accordingly. `headless-stock-gl2-001/` and `headless-hd-gl2-002/`
+exercise that validation through the real action handler. The original development
+installation has different e1m1b geometry, so `matched-hd/` references the installed
+stock maps with the existing development cosmetic overlays; this prevents a save
+geometry mismatch from confounding the comparison. No source assets are rewritten.
+
+Across the six UI save loads in each configuration:
+
+| Measured stage | Stock, ms | HD overlays, ms |
+| --- | ---: | ---: |
+| UI read, full snapshot decode/validation and cleanup | 7–10 | 6–11 |
+| Engine portable validation and internal save staging | 8–14 | 8–13 |
+| Filesystem restart | 41–45 | 73–83 |
+| Server collision load | 13–18 | 13–15 |
+| Gameplay spawn | 16–23 | 16–18 |
+| Server snapshot decode | 6–8 | 6–7 |
+| Gameplay restoration | 35–50 | 32–40 |
+| Complete engine server initialization (includes several rows above) | 131–144 | 159–181 |
+| Client model registration | 167–216 | 3,720–3,889 |
+
+HD save-load image diagnostics account for 2,716–2,808 ms of reading/decoding
+and 479–537 ms of preparation/upload inside model registration. Initial e1m1a
+model registration takes 3,244–3,546 ms with overlays versus 181–187 ms stock.
+The supplied 4096x4096 character PNGs load synchronously during model registration;
+ordinary map loading tears down renderer content, so later loads repeat the work.
+This is the measured dominant HD loading cost. Save validation, entity setup and
+restoration do not explain the several-second HD difference. Nested stage timings
+must not be added together, and image diagnostics omit individual loads below
+their logging threshold.
+
+The larger installed-game delay reported by the owner remains unreproduced in
+these headless CPU-path measurements. Hardware behavior and cold-cache storage
+performance are not inferred. The probe records frame capture as an upper bound
+including readback, encoding and polling; readiness timing excludes that work.
+Earlier fullscreen/windowed GPU attempts were abandoned at the owner's request.
+Two software Vulkan attempts crashed during the opening-frame capture; their
+failure logs remain in `headless-stock-001/` and `headless-stock-002/`. Neither
+those failures nor the mismatched-map setup are counted as passing timings.
+
+Validation: the native build and `zig build test-runtime -j4 --summary all` pass
+(23/23 steps, 400/400 tests and the C engine contracts). The ownership baseline
+remains zero for R1–R11; changed Zig files pass formatting checks. A separate
+headless scenario confirms that the diagnostic command cannot start a map with
+`developer 0`, and that an absent save is refused without starting a server.
+The probe also checks that its display is served by Xvfb before creating an engine
+process, rejecting desktop execution even if software-rendering variables are set.
+
 ## Sequence 427 — game-state-assessment — focused input and persistence replay passed
 
 Assessed 20 October 2026, after PR #1 merged the native runtime into `main`.

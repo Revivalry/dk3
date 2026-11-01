@@ -99,10 +99,11 @@ void ZLIB_INTERNAL inflate_fast(z_streamp strm, unsigned start) {
        input data or output space */
     do {
         if (bits < 15) {
-            hold += (unsigned long)(*in++) << bits;
-            bits += 8;
-            hold += (unsigned long)(*in++) << bits;
-            bits += 8;
+            /* dk3 alteration: assemble the same two little-endian bytes
+               before shifting once. Read exactly the original two bytes. */
+            hold += (unsigned long)(in[0] | ((unsigned)in[1] << 8)) << bits;
+            in += 2;
+            bits += 16;
         }
         here = lcode + (hold & lmask);
       dolen:
@@ -130,10 +131,10 @@ void ZLIB_INTERNAL inflate_fast(z_streamp strm, unsigned start) {
             }
             Tracevv((stderr, "inflate:         length %u\n", len));
             if (bits < 15) {
-                hold += (unsigned long)(*in++) << bits;
-                bits += 8;
-                hold += (unsigned long)(*in++) << bits;
-                bits += 8;
+                /* Same bounded two-byte refill as the literal loop. */
+                hold += (unsigned long)(in[0] | ((unsigned)in[1] << 8)) << bits;
+                in += 2;
+                bits += 16;
             }
             here = dcode + (hold & dmask);
           dodist:
@@ -247,6 +248,39 @@ void ZLIB_INTERNAL inflate_fast(z_streamp strm, unsigned start) {
                 }
                 else {
                     from = out - dist;          /* copy direct from output */
+#ifdef HAVE_MEMCPY
+                    /* dk3 alteration: short matches dominate the admitted HD
+                       texture streams. Copy exactly four bytes when disjoint,
+                       then only the remaining bytes. Later bytes may depend on
+                       the just-written group, preserving forward expansion. */
+                    if (len >= 4 && len < 8 && dist >= 4) {
+                        zmemcpy(out, from, 4);
+                        out += 4;
+                        from += 4;
+                        len -= 4;
+                        if (len) {
+                            *out++ = *from++;
+                            if (len > 1) *out++ = *from++;
+                            if (len > 2) *out++ = *from++;
+                        }
+                        continue;
+                    }
+                    /* dk3 alteration: a distance-one match repeats exactly the
+                       last byte. Fill only the validated match length; retain
+                       the upstream forward-copy path for all other distances. */
+                    if (dist == 1) {
+                        memset(out, *from, len);
+                        out += len;
+                        continue;
+                    }
+                    /* dk3 alteration: only disjoint long matches may use
+                       memcpy. Overlapping LZ expansion keeps forward copying. */
+                    if (len >= 16 && dist >= len) {
+                        zmemcpy(out, from, len);
+                        out += len;
+                        continue;
+                    }
+#endif
                     do {                        /* minimum length is three */
                         *out++ = *from++;
                         *out++ = *from++;

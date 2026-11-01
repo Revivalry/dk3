@@ -19,7 +19,7 @@ import dkimg
 import dkm2md3
 import md3
 import skeletal_iqm as sk
-from neural_package import MANIFEST, NON_CHARACTER_MODELS, validate_package
+from neural_package import MANIFEST, NON_CHARACTER_MODELS, validate_package, entry_compression, classic_archive
 
 CHARACTERS = ('hiro', 'mikiko', 'superfly', 'mishima', 'usagi')
 # Additional story identities are generated from this checkout's original models.
@@ -1112,10 +1112,10 @@ def build(source, assets, output, meshes=None, characters=CHARACTERS):
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_suffix('.partial')
     files['dk3/neural-assets.json'] = json.dumps(document, sort_keys=True, indent=2).encode()
-    with zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+    with classic_archive(temporary) as archive:
         for name, data in sorted(files.items()):
             info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_DEFLATED
+            info.compress_type = entry_compression(name)
             archive.writestr(info, data)
     validate_package(temporary, base)
     temporary.replace(output)

@@ -117,6 +117,7 @@ fn init(server_message: i32, sequence: i32, client: i32, boundary: i32) !void {
         if (loaded % 8 == 0) try loadingProgress(loaded, resources);
     }
     loading.mark("inline-models", loadingNow());
+    try @import("mechanics/client/models.zig").prefetch(&game);
     for (1..c.MAX_MODELS) |i| if ((try engine.config(&game, c.CS_MODELS + i)).len > 0) {
         const model = try engine.config(&game, c.CS_MODELS + i);
         if (std.mem.endsWith(u8, model, ".sp2")) {

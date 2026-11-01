@@ -60,6 +60,20 @@ pub const Menu = struct {
         self.open();
         self.selectPage(page);
     }
+    /// Developer-only headless entry to the real menu actions and save validation.
+    pub fn probeLoading(self: *Menu, slot: ?[]const u8) !void {
+        if (slot) |name| {
+            self.openPage(2);
+            for (0..self.saves.count) |index| {
+                if (!std.mem.eql(u8, name, self.saves.name(index))) continue;
+                self.saves.choice.selected = index;
+                try self.activate(.save_commit, 1);
+                return;
+            }
+            return error.MissingSaveSlot;
+        }
+        try self.activate(.{ .difficulty = 1 }, 1);
+    }
     pub fn open(self: *Menu) void {
         if (!self.active) engine.sound("sounds/menus/enter menu_001.wav");
         self.active = true;

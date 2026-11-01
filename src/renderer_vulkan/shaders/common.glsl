@@ -4,6 +4,9 @@
 #extension GL_EXT_buffer_reference_uvec2 : require
 #extension GL_EXT_nonuniform_qualifier : require
 
+// Vertex shader working value, not a buffer wire layout.
+struct Vtx { vec3 pos; vec3 normal; vec2 st; vec2 lm; vec4 color; };
+
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Record {
     mat4 clip;
     vec4 modelView[3];
@@ -25,7 +28,7 @@ layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Re
     uvec2 indices;
     uvec2 frameB;
     uvec2 extra;
-    vec4 misc;         // backlerp, depth hack, unused, unused
+    vec4 misc;         // backlerp, unused, unused, unused
     vec4 clipPlane;    // world-space portal plane: keep dot(p, xyz) - w >= 0
     vec4 material;     // roughness, metalness, bump strength, emissive
     vec4 material2;    // specular strength, liquid kind, exposure hint, unused

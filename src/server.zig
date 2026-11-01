@@ -72,7 +72,14 @@ fn shutdown(restart: bool) void {
     active.arena = null;
     active.handle = null;
 }
+fn loadingMark(stage: []const u8, started: isize) void {
+    if (engine.integer("developer") < 1) return;
+    var text: [128]u8 = undefined;
+    engine.print(std.fmt.bufPrintZ(&text, "dk3 loading timing: stage={s} total_ms={d}\n", .{ stage, engine.gateway.call(c.G_MILLISECONDS, .{}) - started }) catch unreachable);
+}
 fn init(now: i64, restart: bool) !void {
+    const started = engine.gateway.call(c.G_MILLISECONDS, .{});
+    defer loadingMark("game-init", started);
     shutdown(restart);
     engine.register("dk3_runtime_probe", "0", 0);
     engine.register("g_residentWorlds", "0", c.CVAR_ARCHIVE);
@@ -141,7 +148,9 @@ fn init(now: i64, restart: bool) !void {
         _ = try active.world.?.create(null, .{ object.binding, object.transform });
     }
     if (engine.integer("dk3_runtime_probe") == 2) {
+        const spawn_started = engine.gateway.call(c.G_MILLISECONDS, .{});
         try active.systems.spawn(active.arena.?.allocator(), &active.world.?, &active.slots, &active.projection, now, active.clients.episode, &active.clients.weapon_table, restart, false);
+        loadingMark("game-spawn", spawn_started);
         active.targets.scripts = &active.systems.scripts;
         active.targets.cinematics = &active.systems.cinematics;
         active.targets.actors = &active.systems.actors;
@@ -195,6 +204,8 @@ fn init(now: i64, restart: bool) !void {
 }
 /// Ownership transfers only after all admission/rebasing checks have succeeded.
 fn restore(loaded: *@import("mechanics/domain/snapshot.zig").Loaded, visit: bool) !void {
+    const started = engine.gateway.call(c.G_MILLISECONDS, .{});
+    defer loadingMark("game-restore", started);
     // Session planning is transient: a restored party plans afresh.
     inline for (session.classes) |Class| if (@hasDecl(Class, "sessionReset")) Class.sessionReset();
     // Earlier native schema-1 snapshots predate exit latches. Reconstruct their

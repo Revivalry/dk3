@@ -7,6 +7,7 @@ the initial tools release with the bundled engines, runtime, converters and buil
 | Component | Disposition | Evidence / remaining work |
 |---|---|---|
 | Complete pinned ioquake3 source | Retain with original notices | `engine/UPSTREAM.json`; GPL engine and separately licensed third-party code remain under their own terms |
+| libdeflate 1.26 decoder subset | Admit unmodified subset, MIT notices retained; focused CPU/headless qualification passed | `engine/LIBDEFLATE-UPSTREAM.json` pins archive and all 21 copied files; `engine/ioquake3/code/thirdparty/libdeflate-1.26/DK3-REVIEW.md` records API/bounds/threading/build review; only full-buffer PNG decoding and Adler code build, no compressor/gzip; streaming ZIP keeps bundled zlib; build/development/release assembly retain COPYING; acceptance sequence 465 records limits |
 | Existing engine extensions | Retain as ordinary source | `engine/CHANGES.json`: submodels, entity state/large gamestate handling, drawable dimensions, sound-update interface; no Gold includes or library imports |
 | Zig engine source/flag mappings and GLSL generator | Retain independent tooling | `build/ioq3_sources.zig`, `ioq3_config.zig`, `stringify_shader.zig`; derived from ioquake3 build inputs, not Gold implementation |
 | QVM build orchestration | Retain independent tooling | `build/qvm.zig`; compiler code is bundled upstream, optional targets only |

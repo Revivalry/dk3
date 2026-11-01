@@ -3627,7 +3627,7 @@ static void CL_LoadSaveMenu_f(void) {
     dkSaveField_t field;
     char kind[DK_SAVE_NAME], map[DK_SAVE_NAME] = "", error[160] = "Invalid save request.";
     unsigned int id;
-    int length, skill = 0, i;
+    int length, skill = 0, i, loadingStarted = Sys_Milliseconds();
     const char *slot = Cmd_Argv(1);
     qboolean previous = Cmd_Argc() == 3 && !strcmp(Cmd_Argv(2), "previous");
     if (clc.state > CA_DISCONNECTED || Cmd_Argc() < 2 || Cmd_Argc() > 3 ||
@@ -3658,6 +3658,7 @@ static void CL_LoadSaveMenu_f(void) {
     Cvar_Set("dk3_loadRequest", ""); Cvar_Set("dk3_loadPrevious", "0");
     Cvar_Set("dk3_travel", ""); Cvar_Set("dk3_entry", "");
     Cvar_Set("dk3_resume", "1"); Cvar_Set("dk3_menuResume", "1");
+    Com_DPrintf("dk3 loading timing: stage=engine-save-validate-stage bytes=%d total_ms=%d\n", length, Sys_Milliseconds() - loadingStarted);
     Cbuf_AddText(va("map %s\n", map));
     return;
 refused:

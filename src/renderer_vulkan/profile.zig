@@ -24,6 +24,8 @@ const Total = struct { name: []const u8, ms: f64 = 0, samples: u32 = 0 };
 var totals: [max_scopes]Total = undefined;
 var total_count: usize = 0;
 var frames: u32 = 0;
+var dropped_scopes: u32 = 0;
+var traced_frame = false;
 var cpu_ms: f64 = 0;
 var wait_ms: f64 = 0;
 var last_frame_ns: i128 = 0;
@@ -101,6 +103,16 @@ pub fn frameStart(cmd: c.VkCommandBuffer, waited_ms: f64) void {
         var values: [max_scopes * 2][2]u64 = undefined;
         const result = vk.d.GetQueryPoolResults.?(vk.s.device, slot.pool, 0, slot.count * 2, @sizeOf(@TypeOf(values)), &values, @sizeOf([2]u64), c.VK_QUERY_RESULT_64_BIT | c.VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
         if (result == c.VK_SUCCESS or result == c.VK_NOT_READY) {
+            if (enabled() and cvars.vkStatsTrace.integer != 0 and !traced_frame and slot.count > 0 and values[0][1] != 0) {
+                traced_frame = true;
+                const origin = values[0][0];
+                for (0..slot.count) |k| {
+                    const a = values[k * 2];
+                    const b = values[k * 2 + 1];
+                    if (a[1] == 0 or b[1] == 0 or a[0] < origin or b[0] < a[0]) continue;
+                    common.info("vk query trace: index={d} name={s} start_ms={d:.3} end_ms={d:.3}\n", .{ k, slot.names[k], @as(f64, @floatFromInt(a[0] - origin)) * period_ns / 1e6, @as(f64, @floatFromInt(b[0] - origin)) * period_ns / 1e6 });
+                }
+            }
             for (0..slot.count) |k| {
                 const a = values[k * 2];
                 const b = values[k * 2 + 1];
@@ -118,6 +130,7 @@ pub fn frameStart(cmd: c.VkCommandBuffer, waited_ms: f64) void {
         }
     }
     slot.count = 0;
+    if (!enabled()) traced_frame = false;
     slot.recorded = enabled();
     if (slot.recorded) vk.d.CmdResetQueryPool.?(cmd, slot.pool, 0, max_scopes * 2);
     const now = common.nanoseconds();
@@ -138,7 +151,11 @@ pub fn frameStart(cmd: c.VkCommandBuffer, waited_ms: f64) void {
 /// Opens a timed scope; returns its index for `end` (or null when not timing).
 pub fn begin(cmd: c.VkCommandBuffer, name: []const u8) ?u32 {
     const slot = &slots[vk.frame_index];
-    if (!slot.recorded or slot.count == max_scopes) return null;
+    if (!slot.recorded) return null;
+    if (slot.count == max_scopes) {
+        dropped_scopes += 1;
+        return null;
+    }
     const index = slot.count;
     slot.names[index] = name;
     slot.count += 1;
@@ -165,7 +182,9 @@ pub fn report() void {
             return a.ms > b.ms;
         }
     }.more);
-    for (totals[0..total_count]) |total| common.info("  gpu {s}: {d:.3} ms ({d} samples/frame)\n", .{ total.name, total.ms / n, @divTrunc(total.samples, frames) });
+    for (totals[0..total_count]) |total| common.info("  gpu {s}: {d:.3} ms ({d:.2} samples/frame)\n", .{ total.name, total.ms / n, @as(f64, @floatFromInt(total.samples)) / n });
+    if (dropped_scopes != 0) common.info("  gpu profile: dropped_scopes={d}; category times are incomplete\n", .{dropped_scopes});
+    dropped_scopes = 0;
     for (cpu_totals[0..cpu_count]) |total| common.info("  cpu {s}: {d:.3} ms\n", .{ total.name, @as(f64, @floatFromInt(total.ns)) / 1e6 / n });
     total_count = 0;
     cpu_count = 0;
