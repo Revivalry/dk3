@@ -8,6 +8,35 @@
 #define FIELD_HEADER_BYTES 8
 static const byte magic[8] = {'D', 'K', '3', 'S', 'A', 'V', 'E', 0};
 
+/* Main-thread UI/server handoff, bounded to one immutable prepared snapshot.
+ * Validation remains the native consumer's responsibility. Original saves and
+ * native-module lifetimes are independent of this engine-owned allocation. */
+static byte *prepared_save;
+static int prepared_save_length;
+void DK_PreparedSaveClear(void) {
+    free(prepared_save);
+    prepared_save = NULL;
+    prepared_save_length = 0;
+}
+qboolean DK_PreparedSaveStore(const byte *bytes, int length) {
+    byte *copy;
+    DK_PreparedSaveClear();
+    if (!length) return qtrue;
+    if (!bytes || length < 32 || length > 64 * 1024 * 1024) return qfalse;
+    copy = malloc((size_t)length);
+    if (!copy) return qfalse;
+    memcpy(copy, bytes, (size_t)length);
+    prepared_save = copy;
+    prepared_save_length = length;
+    return qtrue;
+}
+int DK_PreparedSaveRead(byte *bytes, int capacity) {
+    if (!bytes && !capacity) return prepared_save_length;
+    if (!bytes || capacity < prepared_save_length || capacity < 0) return -1;
+    if (prepared_save_length) memcpy(bytes, prepared_save, (size_t)prepared_save_length);
+    return prepared_save_length;
+}
+
 static unsigned int Read32(const byte *data) {
     return (unsigned int)data[0] | ((unsigned int)data[1] << 8) |
            ((unsigned int)data[2] << 16) | ((unsigned int)data[3] << 24);

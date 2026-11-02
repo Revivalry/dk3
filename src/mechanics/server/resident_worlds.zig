@@ -71,6 +71,11 @@ pub const State = struct {
     pub fn retainRegion(self: *State, saved: *snapshot.Loaded, manifest: *const @import("../domain/campaign_regions.zig").Manifest) !void {
         const seed = manifest.find(saved.map) orelse return;
         const wanted = manifest.region(seed);
+        for (saved.cold) |member| {
+            if (member.bytes.len == 0) return error.InvalidResident;
+            try self.stashBytes(member.map, member.namespace, member.bytes);
+        }
+        saved.cold = &.{};
         var kept: usize = 0;
         for (saved.residents, 0..) |*member, index| {
             const place = manifest.find(member.map);
@@ -79,12 +84,16 @@ pub const State = struct {
                 kept += 1;
                 continue;
             }
-            try self.stash(member.map, member.header.namespace orelse return error.MissingWorldNamespace, &member.world, member.header, member.skill);
+            const namespace = member.header.namespace orelse return error.MissingWorldNamespace;
+            if (saved.input_storage != null and member.encoded.len != 0 and member.encoded_schema <= 2) {
+                try self.stashBytes(member.map, namespace, member.encoded);
+            } else try self.stash(member.map, namespace, &member.world, member.header, member.skill);
             var message: [160]u8 = undefined;
             engine.print(try std.fmt.bufPrintZ(&message, "dk3 resident: map={s} dormant=restore namespace={d}\n", .{ member.map, member.header.namespace.? }));
             member.deinit(std.heap.c_allocator);
         }
         saved.residents = saved.residents[0..kept];
+        saved.releaseInput(std.heap.c_allocator);
     }
     /// Release prepared worlds outside the current region and the regions one
     /// exit away, keeping their state dormant (a client publication under way

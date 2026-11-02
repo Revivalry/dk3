@@ -2,6 +2,7 @@
 //! Shared mechanism: Native snapshot ingestion, shared movement prediction and world rendering.
 //! Never names a concrete class: classes plug in through checked contracts (docs/runtime-zig.md "Class contract").
 const std = @import("std");
+pub const snapshot_runtime_identity = @import("runtime_build").identity;
 const abi = @import("engine/abi.zig");
 const engine = @import("engine/client.zig");
 const bridge = @import("mechanics/player_state.zig");

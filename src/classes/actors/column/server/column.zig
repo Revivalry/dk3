@@ -63,7 +63,7 @@ fn moving(chosen: u3) bool {
 }
 pub fn move(frame: *Frame) !void {
     if (frame.actor.column.phase == .asleep) return common.hold(frame);
-    try common.move(frame);
+    try common.moveWithLimits(frame, .{ .maximum_drop = policy.maximum_drop });
 }
 /// Asleep, it holds the first frame of its awakening.
 pub fn playback(view: context.View) !?Playback {

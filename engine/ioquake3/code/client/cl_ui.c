@@ -21,6 +21,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #include "client.h"
+#include "../qcommon/dk_save_format.h"
 
 #include "../botlib/botlib.h"
 
@@ -796,6 +797,8 @@ intptr_t CL_UISystemCalls( intptr_t *args ) {
 	case UI_FS_WRITE:
 		FS_Write( VMA(1), args[2], args[3] );
 		return 0;
+    case UI_DK3_PREPARED_SAVE_V1:
+        return DK_PreparedSaveStore(VMA(1), args[2]) ? 0 : -1;
 
 	case UI_FS_FCLOSEFILE:
 		FS_FCloseFile( args[1] );

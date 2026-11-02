@@ -57,6 +57,17 @@ int main(void) {
         assert(read32(data + 20) == 0);
         assert(DK_SaveValidate(data, 24, error, sizeof(error)));
     }
+    assert(DK_PreparedSaveStore(payload, 65536));
+    assert(DK_PreparedSaveRead(NULL, 0) == 65536);
+    assert(DK_PreparedSaveRead(buffer, 65535) == -1);
+    assert(DK_PreparedSaveRead(buffer, 65536) == 65536);
+    assert(!memcmp(payload, buffer, 65536));
+    assert(!DK_PreparedSaveStore(NULL, 32));
+    assert(DK_PreparedSaveRead(NULL, 0) == 0);
+    assert(!DK_PreparedSaveStore(payload, 64 * 1024 * 1024 + 1));
+    assert(DK_PreparedSaveStore(payload, 32));
+    DK_PreparedSaveClear();
+    assert(DK_PreparedSaveRead(NULL, 0) == 0);
     free(payload); free(buffer);
     puts("save CRC compatibility: 256 payload/alignment cases plus empty streams passed");
     return 0;

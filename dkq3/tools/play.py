@@ -23,7 +23,7 @@ else:
 LEGACY_RUNTIME_MEDIA = ('scripts/dk3-projectile-weather.shader',)
 ONLINE_METADATA = ('rules.json', 'compatibility.json')
 RUNTIME_MEDIA = (*LEGACY_RUNTIME_MEDIA, 'rules.json')
-RUNTIME_NOTICES = ('share/licenses/dk3/libdeflate-COPYING',)
+RUNTIME_NOTICES = ('share/licenses/dk3/libdeflate-COPYING', 'share/licenses/dk3/zig-stdlib-MIT')
 PACKAGES = ('base', 'textures', 'maps', 'shaders', 'models', 'sprites', 'hud', 'sound', 'music', 'voice', 'data', 'navigation')
 REQUIRED_ENTRIES = ('default.cfg', 'fonts/con_font.dkf', 'fonts/con_font.tga', 'maps/e1m1a.bsp',
                     'dk3/navigation/e1m1a.cfg')
@@ -170,7 +170,7 @@ def ensure_surface_lights(package, source):
 def install(prefix, assets, hd_textures=None, *, hd_textures_fallback=None,
             neural_assets=None, neural_assets_fallback=None, hd_weapons=None, hd_weapons_fallback=None,
             hd_weapons_preview=None,
-            materials=None, materials_fallback=None):
+            materials=None, materials_fallback=None, prepared_gpu=None):
     if not (current_generation(assets) / 'manifest.json').is_file():
         raise ValueError(f'no completed asset generation in {assets}; run zig build assets '
                          '-DDK_DATA=/path/to/data -Dasset-profile=retail first, '
@@ -236,10 +236,16 @@ def install(prefix, assets, hd_textures=None, *, hd_textures_fallback=None,
                 raise ValueError(f'{material_package}: corrupt entry {invalid}')
         ensure_surface_lights(material_package, source)
         files['share/dk3/zz-dk3-materials.pk3'] = material_package
+    if prepared_gpu is not None:
+        from prepare_gpu_assets import validate_generation
+        for package in validate_generation(prepared_gpu):
+            files[f'share/dk3/{package.name}'] = package
     # Canonical package entries ignore ZIP timestamps/compression and native ELF
     # bytes. Approved texture-only overlays do not change gameplay compatibility.
     compatibility = json.loads((prefix / 'share/dk3/rules.json').read_text())
     compatibility.update(gameplay=gameplay, cosmetic='hd-textures-v1' if 'share/dk3/zz-dk3-textures-hd.pk3' in files else 'stock-v1')
+    if prepared_gpu is not None:
+        compatibility['cosmetic'] += '+gpu-prepared-v1'
     if 'share/dk3/zz-dk3-neural.pk3' in files:
         compatibility['cosmetic'] += '+neural-v1'
     if 'share/dk3/zz-dk3-hd-weapons.pk3' in files:
@@ -345,6 +351,7 @@ def main(argv=None):
     prepare.add_argument('--hd-weapons-fallback', type=Path, help='shared local HD weapon package')
     prepare.add_argument('--hd-weapons-preview', type=Path, help='explicit unverified HD weapon package for guarded visual review')
     prepare.add_argument('--materials', type=Path, help='optional materialgen.py remaster material package')
+    prepare.add_argument('--prepared-gpu', type=Path, help='completed prepare_gpu_assets.py package generation')
     prepare.add_argument('--materials-fallback', type=Path, help='shared locally generated material package')
     run = sub.add_parser('launch')
     run.add_argument('--prefix', type=Path, required=True)
@@ -360,7 +367,8 @@ def main(argv=None):
                     neural_assets=arguments.neural_assets, neural_assets_fallback=arguments.neural_assets_fallback,
                     hd_weapons=arguments.hd_weapons, hd_weapons_fallback=arguments.hd_weapons_fallback,
                     hd_weapons_preview=arguments.hd_weapons_preview,
-                    materials=arguments.materials, materials_fallback=arguments.materials_fallback)
+                    materials=arguments.materials, materials_fallback=arguments.materials_fallback,
+                    prepared_gpu=arguments.prepared_gpu)
         else:
             return launch(prefix, arguments.dkguard, extra[1:] if extra[:1] == ['--'] else extra, arguments.headless)
         return 0

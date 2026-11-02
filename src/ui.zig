@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Shared mechanism: Native UI ABI boundary. Typed menu state and rendering live in ui/.
 const std = @import("std");
+/// Prepared handoffs certify the same pure class checks as the server decoder.
+pub const saved_classes = @import("mechanics/server/saved_classes.zig");
+pub const snapshot_runtime_identity = @import("runtime_build").identity;
 const abi = @import("engine/abi.zig");
 const engine = @import("engine/ui.zig");
 const c = abi.c;

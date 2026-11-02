@@ -2,6 +2,9 @@
 //! Pure CPU profiler of the actual renderer mip/color implementation; no graphics initialization.
 const std = @import("std");
 const image = @import("image.zig");
+test {
+    _ = @import("world.zig");
+}
 const image_source_sha256 = blk: {
     @setEvalBranchQuota(10_000_000);
     var digest: [32]u8 = undefined;
@@ -10,6 +13,56 @@ const image_source_sha256 = blk: {
 };
 
 extern fn R_DecodePNG(bytes: [*]const u8, length: c_int, pic: *?[*]u8, width: *c_int, height: *c_int, maximum: usize) void;
+
+test "source-bound prepared chains match CPU pixels, color tables and metadata" {
+    const cached_texture = @import("prepared_texture.zig");
+    var pixels: [64]u8 = undefined;
+    for (&pixels, 0..) |*byte, i| byte.* = @intCast(i);
+    image.setCpuColorMappings(1, 1);
+    var plain = try image.prepareLevels(&pixels, 8, 2, .{ .mipmap = true }, 0, 16384);
+    defer plain.deinit();
+    var source: [33]u8 = @splat(0);
+    source[0..8].* = "\x89PNG\r\n\x1a\n".*;
+    std.mem.writeInt(u32, source[16..20], 8, .big);
+    std.mem.writeInt(u32, source[20..24], 2, .big);
+    source[24] = 8;
+    source[25] = 6;
+    var storage: [256]u8 = @splat(0);
+    storage[0..8].* = "DK3TEX1\x00".*;
+    std.mem.writeInt(u32, storage[8..12], 8, .little);
+    std.mem.writeInt(u32, storage[12..16], 2, .little);
+    std.mem.writeInt(u32, storage[16..20], @intCast(plain.count), .little);
+    std.crypto.hash.sha2.Sha256.hash(&source, storage[24..56], .{});
+    var cursor: usize = 64 + 16 * plain.count;
+    for (plain.levels[0..plain.count], 0..) |level, i| {
+        const at = 64 + i * 16;
+        std.mem.writeInt(u32, storage[at..][0..4], @intCast(cursor), .little);
+        std.mem.writeInt(u32, storage[at + 4 ..][0..4], @intCast(level.len), .little);
+        std.mem.writeInt(u32, storage[at + 8 ..][0..4], @max(@as(u32, 8) >> @intCast(i), 1), .little);
+        std.mem.writeInt(u32, storage[at + 12 ..][0..4], @max(@as(u32, 2) >> @intCast(i), 1), .little);
+        @memcpy(storage[cursor..][0..level.len], level);
+        cursor += level.len;
+    }
+    std.mem.writeInt(u32, storage[56..60], std.hash.Crc32.hash(storage[64..cursor]), .little);
+    const cached = try cached_texture.decode(storage[0..cursor], &source);
+    for ([_]f32{ 1, 2 }) |gamma| for ([_]image.Flags{ .{ .mipmap = true, .picmip = true }, .{}, .{ .mipmap = true, .no_light_scale = true } }) |flags| {
+        image.setCpuColorMappings(gamma, 2);
+        var expected = try image.prepareLevels(&pixels, 8, 2, flags, 1, 2);
+        defer expected.deinit();
+        var actual = try image.prepareCached(&cached, flags, 1, 2);
+        defer actual.deinit();
+        try std.testing.expectEqual(expected.skip, actual.skip);
+        try std.testing.expectEqual(expected.average, actual.average);
+        try std.testing.expectEqual(expected.has_alpha, actual.has_alpha);
+        for (expected.used(), actual.used()) |a, b| try std.testing.expectEqualSlices(u8, a, b);
+    };
+    storage[cursor - 1] ^= 1;
+    try std.testing.expectError(error.InvalidPreparedTexture, cached_texture.decode(storage[0..cursor], &source));
+    storage[cursor - 1] ^= 1;
+    source[32] ^= 1;
+    try std.testing.expectError(error.StalePreparedTexture, cached_texture.decode(storage[0..cursor], &source));
+    image.setCpuColorMappings(1, 1);
+}
 
 test "RGBA mip pixels retain truncation and alpha across vector and scalar levels" {
     var pixels: [64]u8 = undefined;
@@ -130,9 +183,10 @@ test "borrow requests keep independent color mapping fallback and unscaled sourc
 pub fn main(init: std.process.Init) !void {
     const allocator = init.arena.allocator();
     const args = try init.minimal.args.toSlice(allocator);
-    if (args.len != 8 and args.len != 9) return error.ExpectedPngRepeatsGammaIntensityModePicmipLimit;
+    if (args.len != 8 and args.len != 9 and args.len != 10) return error.ExpectedPngRepeatsGammaIntensityModePicmipLimit;
     const borrow = args.len == 9;
     if (borrow and !std.mem.eql(u8, args[8], "borrow")) return error.ExpectedBorrowOption;
+    if (args.len == 10 and !std.mem.eql(u8, args[8], "cached")) return error.ExpectedCachedOption;
     const repeats = try std.fmt.parseInt(u16, args[2], 10);
     const gamma = try std.fmt.parseFloat(f32, args[3]);
     const intensity = try std.fmt.parseFloat(f32, args[4]);
@@ -142,6 +196,8 @@ pub fn main(init: std.process.Init) !void {
     const limit = try std.fmt.parseInt(u32, args[7], 10);
     if (repeats == 0 or repeats > 10000 or !std.math.isFinite(gamma) or gamma <= 0 or !std.math.isFinite(intensity) or intensity < 1 or limit == 0) return error.InvalidBounds;
     const bytes = try std.Io.Dir.cwd().readFileAlloc(init.io, args[1], allocator, .limited(256 << 20));
+    const cache = if (args.len == 10) try std.Io.Dir.cwd().readFileAlloc(init.io, args[9], allocator, .limited(256 << 20)) else null;
+    const cached = if (cache) |stored| try @import("prepared_texture.zig").decode(stored, bytes) else null;
     var decoded: ?[*]u8 = null;
     var width: c_int = 0;
     var height: c_int = 0;
@@ -155,7 +211,9 @@ pub fn main(init: std.process.Init) !void {
     var expected: [32]u8 = undefined;
     for (0..@as(usize, repeats) + 1) |sample| {
         const start = std.Io.Clock.awake.now(init.io).nanoseconds;
-        var levels = if (borrow)
+        var levels = if (cached) |*stored|
+            try image.prepareCached(stored, flags, picmip, limit)
+        else if (borrow)
             try image.prepareLevelsBorrowed(pixels, @intCast(width), @intCast(height), flags, picmip, limit)
         else
             try image.prepareLevels(pixels, @intCast(width), @intCast(height), flags, picmip, limit);

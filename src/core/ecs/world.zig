@@ -6,6 +6,71 @@ pub const chunk_bytes = 16 * 1024;
 pub const max_entities = 2046;
 pub const Error = error{ OutOfMemory, Capacity, StaleEntity, DuplicateId, MissingComponent, StructuralMutation, TooManyArchetypes, ArchetypeTooLarge };
 
+test "bulk construction preserves prefix archetypes, rows, IDs and query epochs" {
+    const A = struct { x: i32 };
+    const B = struct { y: i32 };
+    const W = World(.{ A, B });
+    const Fields = struct {
+        ids: [3]u6 = undefined,
+        count: usize = 0,
+        cursor: usize = 0,
+        i: i32,
+        pub fn next(self: *@This()) !?u6 {
+            if (self.cursor == self.count) return null;
+            defer self.cursor += 1;
+            return self.ids[self.cursor];
+        }
+        pub fn reset(self: *@This()) void {
+            self.cursor = 0;
+        }
+        pub fn value(self: *@This(), comptime T: type) !T {
+            return if (T == A) A{ .x = self.i + (if (self.cursor == 1) @as(i32, 0) else 100) } else B{ .y = -self.i };
+        }
+        fn append(self: *@This(), index: u6) void {
+            self.ids[self.count] = index;
+            self.count += 1;
+        }
+    };
+    var original = W.init(std.testing.allocator, 8);
+    defer original.deinit();
+    var bulk = W.init(std.testing.allocator, 8);
+    defer bulk.deinit();
+    try original.beginConstruction();
+    try bulk.beginConstruction();
+    for (0..24) |i| {
+        const id: u32 = @intCast(i + 1);
+        const entity = try original.create(id, .{});
+        var fields: Fields = .{ .i = @intCast(i) };
+        if (i % 3 != 0) {
+            try original.put(entity, A{ .x = @intCast(i) });
+            fields.append(W.componentId(A));
+        }
+        if (i % 2 == 0) {
+            try original.put(entity, B{ .y = -@as(i32, @intCast(i)) });
+            fields.append(W.componentId(B));
+        }
+        if (i % 3 != 0) {
+            try original.put(entity, A{ .x = @intCast(i + 100) });
+            fields.append(W.componentId(A));
+        }
+        try std.testing.expectEqual(entity, try bulk.constructFrom(id, &fields));
+    }
+    try original.finishConstruction();
+    try bulk.finishConstruction();
+    try std.testing.expectEqual(original.epoch, bulk.epoch);
+    try std.testing.expectEqual(original.next_id, bulk.next_id);
+    try std.testing.expectEqualSlices(W.Slot, &original.slots, &bulk.slots);
+    for (original.archetypes.items, bulk.archetypes.items) |left, right| {
+        try std.testing.expectEqual(left.mask, right.mask);
+        try std.testing.expectEqual(left.chunks.items.len, right.chunks.items.len);
+        for (left.chunks.items, right.chunks.items) |a, b| {
+            try std.testing.expectEqual(a.count, b.count);
+            try std.testing.expectEqualSlices(Entity, W.handles(a)[0..a.count], W.handles(b)[0..b.count]);
+            if (left.mask & W.mask(.{A}) != 0) try std.testing.expectEqualSlices(A, W.column(A, &left, a)[0..a.count], W.column(A, &right, b)[0..b.count]);
+        }
+    }
+}
+
 pub fn World(comptime Components: anytype) type {
     comptime {
         @setEvalBranchQuota(10000);
@@ -201,6 +266,44 @@ pub fn World(comptime Components: anytype) type {
             const a = &self.archetypes.items[s.archetype];
             const chunk = a.chunks.items[s.chunk];
             inline for (std.meta.fields(@TypeOf(bundle))) |field| column(field.type, a, chunk)[s.row] = @field(bundle, field.name);
+            return entity;
+        }
+        /// Stage an isolated restore row, registering the same prefix archetypes
+        /// as successive puts, but allocating/copying only the completed row.
+        /// Keeping those empty archetypes preserves subsequent query ordering.
+        /// source.next() plans component IDs; reset() replays their immutable
+        /// field views; value(T) materializes only that column. On failure the
+        /// isolated construction transaction must be discarded, never queried.
+        pub fn constructFrom(self: *Self, requested_id: u32, source: anytype) anyerror!Entity {
+            if (!self.construction_reuse) return error.StructuralMutation;
+            const entity = try self.create(requested_id, .{});
+            var bits: Mask = 0;
+            var additions: u64 = 0;
+            while (try source.next()) |index| {
+                if (index >= Components.len) return error.InvalidRestorePlan;
+                const next = bits | (@as(Mask, 1) << index);
+                if (next != bits) {
+                    _ = try self.archetype(next);
+                    additions += 1;
+                }
+                bits = next;
+            }
+            try self.relocate(entity, bits);
+            if (additions > 0) self.epoch += additions - 1;
+            const s = try self.slot(entity);
+            const a = &self.archetypes.items[s.archetype];
+            source.reset();
+            var initialized: Mask = 0;
+            while (try source.next()) |index| {
+                if (index >= Components.len or bits & (@as(Mask, 1) << index) == 0) return error.InvalidRestorePlan;
+                switch (index) {
+                    inline else => |i| if (comptime i < Components.len) {
+                        column(Components[i], a, a.chunks.items[s.chunk])[s.row] = try source.value(Components[i]);
+                    } else unreachable,
+                }
+                initialized |= @as(Mask, 1) << index;
+            }
+            if (initialized != bits) return error.IncompleteRestoreRow;
             return entity;
         }
         fn reserveEntity(self: *Self, requested_id: ?u32, bits: Mask) Error!Entity {

@@ -18,7 +18,9 @@ captures does not relicense that artwork under the project's GPL grant.
 
 The PAK/WAL tools implement file-format rules and use synthetic test fixtures. References to
 original filenames in comments document format research; those source files are not distributed.
-The process runner uses Zig's standard library and Linux interfaces. The development tree
+The process runner uses Zig's standard library and Linux interfaces. The separately
+qualified SHA-256 backend also uses that unmodified standard library, under the
+[Zig contributors' MIT notice](docs/licenses/zig-stdlib.txt). The development tree
 also bundles ioquake3 and its third-party sources with their original notices. This project's
 GPL grant does not replace those licenses; see [component dispositions](docs/provenance.md).
 

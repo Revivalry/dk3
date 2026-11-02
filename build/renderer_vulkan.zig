@@ -9,10 +9,32 @@ const lists = @import("ioq3_sources.zig");
 const source_root = "engine/ioquake3";
 const shader_dir = "src/renderer_vulkan/shaders";
 
+fn addLoadJobs(b: *std.Build, module: *std.Build.Module) void {
+    module.addImport("runtime_digest", @import("sha256.zig").moduleFor(b, module));
+    module.addImport("load_jobs", b.createModule(.{
+        .root_source_file = b.path("src/core/ecs/jobs.zig"),
+        .target = module.resolved_target.?,
+        .optimize = module.optimize.?,
+        .link_libc = true,
+    }));
+}
+
 /// Pure CPU admission profiling: the actual PNG decoder and Vulkan mip/color implementation.
 /// No window, Vulkan device, renderer callbacks or graphics library are initialized.
 pub fn declareCpuImageBench(b: *std.Build, optimize: std.builtin.OptimizeMode) *std.Build.Step {
+    const world_module = b.createModule(.{ .root_source_file = b.path("src/renderer_vulkan/world_prepare_tool.zig"), .target = b.graph.host, .optimize = optimize, .link_libc = true });
+    addLoadJobs(b, world_module);
+    @import("header_inputs.zig").track(b, world_module, &.{"engine/ioquake3/code"});
+    for ([_][]const u8{ "code/qcommon", "code/renderercommon", "code/sdl", "code/thirdparty/SDL2-2.32.8/include" }) |directory|
+        world_module.addIncludePath(b.path(b.pathJoin(&.{ source_root, directory })));
+    world_module.addSystemIncludePath(vulkanHeaders(b));
+    world_module.linkSystemLibrary("m", .{});
+    const world_tool = b.addExecutable(.{ .name = "prepare-world-assets", .root_module = world_module });
+    world_tool.link_gc_sections = true;
+    b.step("prepare-world-assets", "Build offline GPU-ready geometry/HDR converter (no graphics initialization)").dependOn(&b.addInstallArtifact(world_tool, .{}).step);
+    declareGpuContracts(b, optimize);
     const module = b.createModule(.{ .root_source_file = b.path("src/renderer_vulkan/image_levels_bench.zig"), .target = b.graph.host, .optimize = optimize, .link_libc = true });
+    addLoadJobs(b, module);
     @import("header_inputs.zig").track(b, module, &.{"engine/ioquake3/code"});
     @import("libdeflate.zig").add(b, module);
     for ([_][]const u8{ "code/qcommon", "code/renderercommon", "code/sdl", "code/thirdparty/SDL2-2.32.8/include" }) |directory|
@@ -33,18 +55,62 @@ pub fn declareCpuImageBench(b: *std.Build, optimize: std.builtin.OptimizeMode) *
     return &run.step;
 }
 
+fn declareGpuContracts(b: *std.Build, optimize: std.builtin.OptimizeMode) void {
+    const module = b.createModule(.{ .target = b.graph.host, .optimize = optimize, .link_libc = true });
+    module.addSystemIncludePath(vulkanHeaders(b));
+    module.linkSystemLibrary("vulkan", .{});
+    module.addCSourceFile(.{ .file = b.path("src/tests/vulkan_preparation.c"), .flags = &.{ "-std=c11", "-Wall", "-Wextra", "-Werror" } });
+    const exe = b.addExecutable(.{ .name = "vulkan-preparation-contracts", .root_module = module });
+    b.step("bench-vulkan-preparation", "Build standalone offscreen Vulkan preparation contracts").dependOn(&b.addInstallArtifact(exe, .{}).step);
+    const run = b.addRunArtifact(exe);
+    const glslc = b.findProgram(&.{"glslc"}, &.{}) catch return;
+    for ([_][]const u8{ "texture_prepare.comp", "world_draws.comp" }) |name| {
+        const compile = b.addSystemCommand(&.{ glslc, "--target-env=vulkan1.3", "-O", "-Werror", "-I" });
+        compile.addDirectoryArg(b.path(shader_dir));
+        compile.addArgs(&.{ "-MD", "-MF" });
+        _ = compile.addDepFileOutputArg(b.fmt("{s}.d", .{name}));
+        compile.addArg("-o");
+        const output = compile.addOutputFileArg(b.fmt("{s}.spv", .{name}));
+        compile.addFileArg(b.path(b.pathJoin(&.{ shader_dir, name })));
+        run.addFileArg(output);
+    }
+    b.step("test-vulkan-preparation", "Run offscreen Vulkan contracts; VK_DRIVER_FILES selects the device").dependOn(&run.step);
+}
+
 /// Every shader stage compiled into the module, embedded as `<file>.spv`.
 pub const shaders = [_][]const u8{
-    "weather.vert",       "weather.frag",          "weather_prepare.vert",
-    "stage.vert",         "stage.frag",            "composite.vert",
-    "composite.frag",     "display.frag",          "post_histogram.comp",
-    "post_exposure.comp", "bloom_down.comp",       "bloom_up.comp",
-    "froxel_inject.comp", "froxel_integrate.comp", "froxel_tiles.comp",
-    "taa.comp",           "light_cull.comp",       "ddgi.comp",
-    "rt_skin.comp",       "bake.vert",             "bake.frag",
-    "pt_trace.comp",      "pt_temporal.comp",      "pt_atrous.comp",
-    "pt_composite.comp",  "light_visibility.comp", "depth.frag",
-    "lightstyle.comp",    "motion_fill.comp",      "fsr_reactive.comp",
+    "texture_prepare.comp",
+    "world_draws.comp",
+    "weather.vert",
+    "weather.frag",
+    "weather_prepare.vert",
+    "stage.vert",
+    "stage.frag",
+    "composite.vert",
+    "composite.frag",
+    "display.frag",
+    "post_histogram.comp",
+    "post_exposure.comp",
+    "bloom_down.comp",
+    "bloom_up.comp",
+    "froxel_inject.comp",
+    "froxel_integrate.comp",
+    "froxel_tiles.comp",
+    "taa.comp",
+    "light_cull.comp",
+    "ddgi.comp",
+    "rt_skin.comp",
+    "bake.vert",
+    "bake.frag",
+    "pt_trace.comp",
+    "pt_temporal.comp",
+    "pt_atrous.comp",
+    "pt_composite.comp",
+    "light_visibility.comp",
+    "depth.frag",
+    "lightstyle.comp",
+    "motion_fill.comp",
+    "fsr_reactive.comp",
 };
 
 /// renderercommon sources used unchanged: decoders, the resident PNG batches, noise and inflate.
@@ -88,6 +154,7 @@ pub fn addProduct(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
     @import("system_library.zig").add(b, module, target, config.sdl2);
     module.addSystemIncludePath(vulkanHeaders(b));
     addShaders(b, module);
+    addLoadJobs(b, module);
     if (target.result.os.tag != .windows) for ([_][]const u8{ "dl", "m", "pthread" }) |library| module.linkSystemLibrary(library, .{});
     const artifact = b.addLibrary(.{ .name = "renderer_vulkan", .linkage = .dynamic, .root_module = module });
     return artifact;

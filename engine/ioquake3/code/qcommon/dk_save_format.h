@@ -44,5 +44,9 @@ int DK_SaveInt(const dkSaveField_t *field, int index);
 float DK_SaveFloat(const dkSaveField_t *field, int index);
 qboolean DK_SaveString(const dkSaveField_t *field, char *out, int capacity);
 qboolean DK_SaveValidate(const byte *buffer, int length, char *error, int capacity);
+/* Engine-owned byte cache: no module pointers or allocator vtables cross DLLs. */
+qboolean DK_PreparedSaveStore(const byte *bytes, int length);
+int DK_PreparedSaveRead(byte *bytes, int capacity);
+void DK_PreparedSaveClear(void);
 
 #endif

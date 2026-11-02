@@ -13,6 +13,33 @@ import play
 
 
 class PlayInstallTest(unittest.TestCase):
+    def test_prepared_gpu_generation_is_additive_and_corruption_keeps_current_installation(self):
+        import io
+        from PIL import Image
+        import prepare_gpu_assets
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prefix, assets = self.fixture(root)
+            play.install(prefix, assets)
+            original = (prefix/'play/current').resolve()
+            before = json.loads((original/'share/dk3/compatibility.json').read_text())
+            encoded = io.BytesIO()
+            Image.new('RGBA', (7, 3), (17, 32, 64, 255)).save(encoded, format='PNG')
+            source = root/'textures.pk3'
+            with zipfile.ZipFile(source, 'w') as archive:
+                archive.writestr('textures/fixture.png', encoded.getvalue())
+            prepare_gpu_assets.build_generation([source], root/'prepared')
+            play.install(prefix, assets, prepared_gpu=root/'prepared')
+            installed = (prefix/'play/current').resolve()
+            after = json.loads((installed/'share/dk3/compatibility.json').read_text())
+            self.assertEqual(before['gameplay'], after['gameplay'])
+            self.assertIn('+gpu-prepared-v1', after['cosmetic'])
+            self.assertTrue((installed/'share/dk3/zz-dk3-gpu-000.pk3').is_file())
+            package = root/'prepared/zz-dk3-gpu-000.pk3'
+            package.write_bytes(package.read_bytes() + b'corrupt')
+            with self.assertRaises(ValueError):
+                play.install(prefix, assets, prepared_gpu=root/'prepared')
+            self.assertEqual(installed, (prefix/'play/current').resolve())
     def test_admission_stream_retains_canonical_gameplay_identity(self):
         with tempfile.TemporaryDirectory() as temporary:
             _, assets = self.fixture(Path(temporary))

@@ -137,6 +137,8 @@ fn stageVariant(flags: u32) u8 {
 }
 
 pub const Mesh = struct {
+    indirect_buffer: c.VkBuffer = null,
+    indirect_offset: u64 = 0,
     kind: u32 = 0,
     weather_style: weather.Style = .rain,
     vertices: u64 = 0,
@@ -761,7 +763,7 @@ fn renderRainMap(view: *View, owner: *world.World, boxes: []const [4]f32, count:
             }
         }
         if (surface.shader.sort <= shader_mod.Sort.see_through or w.owner.surfaces[w.surface].liquid != .none) {
-            if (world.mergeIndices(w.owner, surfaces[index..end])) |mesh| drawBatch(&map_view, surface.shader, null, mesh, false, false);
+            if (world.mergeIndices(w.owner, surfaces[index..end], &map_view)) |mesh| drawBatch(&map_view, surface.shader, null, mesh, false, false);
         }
         index = end;
     }
@@ -1465,7 +1467,7 @@ fn drawView(view: *View, surfaces: []DrawSurf) void {
                     }
                     dlight_bits |= next.dlights;
                 }
-                const mesh = world.mergeIndices(w.owner, surfaces[index..end]) orelse {
+                const mesh = world.mergeIndices(w.owner, surfaces[index..end], view) orelse {
                     index = end;
                     continue;
                 };
@@ -1516,7 +1518,7 @@ fn depthPrepass(view: *View, surfaces: []DrawSurf) void {
                     }
                 }
                 if (w.owner.surfaces[w.surface].liquid == .none and prepassable(view, surface.shader, entity, .none)) {
-                    if (world.mergeIndices(w.owner, surfaces[index..end])) |mesh| drawBatch(view, surface.shader, entity, mesh, false, false);
+                    if (world.mergeIndices(w.owner, surfaces[index..end], view)) |mesh| drawBatch(view, surface.shader, entity, mesh, false, false);
                 }
                 index = end;
             },
@@ -2006,6 +2008,8 @@ fn drawStage(view: *const View, batch: *const Batch, stage: *const Stage) void {
         std.debug.assert(batch.mesh.count % 6 == 0 and batch.mesh.count / 6 <= weather.max_particles);
         vk.d.CmdBindIndexBuffer.?(cmd, weather.indexBuffer(), 0, c.VK_INDEX_TYPE_UINT32);
         vk.d.CmdDrawIndexed.?(cmd, batch.mesh.count, 1, 0, 0, 0);
+    } else if (batch.mesh.indirect_buffer != null) {
+        vk.d.CmdDrawIndirect.?(cmd, batch.mesh.indirect_buffer, batch.mesh.indirect_offset, 1, @sizeOf(c.VkDrawIndirectCommand));
     } else vk.d.CmdDraw.?(cmd, batch.mesh.count, 1, 0, 0);
     stats.draws += 1;
 }

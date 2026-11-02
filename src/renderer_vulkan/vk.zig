@@ -107,6 +107,7 @@ const Device = struct {
     CmdBindDescriptorSets: c.PFN_vkCmdBindDescriptorSets = null,
     CmdPushConstants: c.PFN_vkCmdPushConstants = null,
     CmdDraw: c.PFN_vkCmdDraw = null,
+    CmdDrawIndirect: c.PFN_vkCmdDrawIndirect = null,
     CmdBindIndexBuffer: c.PFN_vkCmdBindIndexBuffer = null,
     CmdDrawIndexed: c.PFN_vkCmdDrawIndexed = null,
     CmdDispatch: c.PFN_vkCmdDispatch = null,
@@ -860,7 +861,7 @@ pub const Ring = struct {
             const offset = std.mem.alignForward(u64, self.used, alignment);
             if (offset + size <= chunk.size) {
                 self.used = offset + size;
-                return .{ .buffer = chunk.buffer, .offset = offset, .address = chunk.address + offset, .bytes = chunk.mapped.?[offset .. offset + size] };
+                return .{ .buffer = chunk.buffer, .offset = offset, .address = chunk.address + offset, .bytes = if (chunk.mapped) |mapped| mapped[offset .. offset + size] else &.{} };
             }
             if (!growable) return null;
             if (self.current + 1 >= self.chunks.items.len) {
@@ -900,6 +901,7 @@ pub const Frame = struct {
     stream: Ring = .{},
     weather_scratch_used: u64 = 0,
     records: Ring = .{},
+    image_scratch: Ring = .{},
     upload_used: bool = false,
     retired: std.ArrayList(Buffer) = .empty,
 };
@@ -947,7 +949,7 @@ pub fn createFrames() void {
         slot.present = buffers[2];
         must(d.CreateSemaphore.?(s.device, &binary, null, &slot.acquired), "vkCreateSemaphore");
         slot.staging.init(staging_size, c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false);
-        slot.stream.init(stream_size, c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
+        slot.stream.init(stream_size, c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | c.VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, true);
         slot.records.init(records_size, c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
         slot.value = 0;
     }
@@ -963,6 +965,7 @@ pub fn destroyFrames() void {
         slot.staging.deinit();
         slot.stream.deinit();
         slot.records.deinit();
+        slot.image_scratch.deinit();
         for (slot.retired.items) |*retired| destroyBuffer(retired);
         slot.retired.clearAndFree(common.gpa);
         slot.* = .{};
@@ -1004,6 +1007,7 @@ fn beginUploads(slot: *Frame) void {
     slot.stream.reset();
     slot.weather_scratch_used = 0;
     slot.records.reset();
+    slot.image_scratch.reset();
     slot.upload_used = false;
     beginBuffer(slot.upload);
 }
@@ -1140,6 +1144,22 @@ pub fn stage(size: u64) struct { buffer: c.VkBuffer, offset: u64, bytes: []u8 } 
 
 pub fn uploadCommands() c.VkCommandBuffer {
     return frame().upload;
+}
+
+/// Fixed device scratch, reused only after this frame's timeline completion.
+/// Oversized/busy frames fall back to CPU preparation instead of growing VRAM.
+pub fn imageScratch(size: u64) ?Space {
+    const ring = &frame().image_scratch;
+    if (size > 96 * 1024 * 1024) return null;
+    if (ring.chunks.items.len == 0) {
+        const saved = content_arena;
+        content_arena = false;
+        defer content_arena = saved;
+        const buffer = createBuffer(96 * 1024 * 1024, c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT | c.VK_BUFFER_USAGE_TRANSFER_DST_BIT, device_flags);
+        ring.* = .{ .growable = false };
+        ring.chunks.append(common.gpa, buffer) catch @panic("OOM");
+    }
+    return ring.allocRemaining(size, 16);
 }
 
 pub fn uploadBuffer(target: c.VkBuffer, offset: u64, bytes: []const u8) void {

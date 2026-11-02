@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "q_shared.h"
 #include "qcommon.h"
+#include "dk_save_format.h"
 #include <setjmp.h>
 #ifndef _WIN32
 #include <netinet/in.h>
@@ -3292,6 +3293,7 @@ Com_Shutdown
 =================
 */
 void Com_Shutdown (void) {
+    DK_PreparedSaveClear();
 	if (logfile) {
 		FS_FCloseFile (logfile);
 		logfile = 0;

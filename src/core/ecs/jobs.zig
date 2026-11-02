@@ -56,6 +56,32 @@ pub const Job = struct {
     context: *anyopaque,
     failure: ?anyerror = null,
 };
+
+test "asynchronous batches let the owner progress and drain all failures in order" {
+    const C = struct {
+        gate: *std.atomic.Value(bool),
+        ran: bool = false,
+        first: bool = false,
+        fn run(raw: *anyopaque) !void {
+            const self: *@This() = @ptrCast(@alignCast(raw));
+            while (!self.gate.load(.acquire)) std.Thread.yield() catch {};
+            self.ran = true;
+            if (self.first) return error.FirstFailure;
+            return error.LaterFailure;
+        }
+    };
+    var gate: std.atomic.Value(bool) = .init(false);
+    const pool = try Pool.create(std.testing.allocator, 2);
+    defer pool.destroy();
+    var contexts = [_]C{ .{ .gate = &gate, .first = true }, .{ .gate = &gate } };
+    var batch = [_]Job{ .{ .context = &contexts[0], .run = C.run }, .{ .context = &contexts[1], .run = C.run } };
+    try pool.begin(&batch);
+    const pending = !(try pool.poll());
+    gate.store(true, .release);
+    try std.testing.expectError(error.FirstFailure, pool.finish());
+    try std.testing.expect(pending and contexts[0].ran and contexts[1].ran);
+    try std.testing.expect(try pool.poll());
+}
 pub const Pool = struct {
     allocator: std.mem.Allocator,
     owner: std.Thread.Id,
@@ -89,31 +115,57 @@ pub const Pool = struct {
         self.mutex.unlock();
     }
     pub fn run(self: *Pool, jobs: []Job) !void {
+        try self.begin(jobs);
+        try self.finish();
+    }
+    /// The caller owns the stable jobs/contexts until finish or a successful
+    /// poll. Only the owner publishes results; workers never run engine hooks.
+    pub fn begin(self: *Pool, jobs: []Job) !void {
         if (std.Thread.getCurrentId() != self.owner) return error.WrongThread;
         if (self.active) return error.NestedBatch;
-        if (jobs.len == 0) return;
         for (jobs) |*job| job.failure = null;
+        self.lock();
+        self.active = true;
+        self.jobs = jobs;
+        self.next = 0;
+        self.remaining = jobs.len;
         if (self.thread_count == 0) {
-            self.active = true;
-            defer self.active = false;
+            self.unlock();
             for (jobs) |*job| job.run(job.context) catch |err| {
                 job.failure = err;
             };
+            self.remaining = 0;
+            self.next = jobs.len;
         } else {
-            self.lock();
-            self.active = true;
-            self.jobs = jobs;
-            self.next = 0;
-            self.remaining = jobs.len;
             self.wake.broadcast();
+            self.unlock();
+        }
+    }
+    pub fn poll(self: *Pool) !bool {
+        if (std.Thread.getCurrentId() != self.owner) return error.WrongThread;
+        if (!self.active) return true;
+        self.lock();
+        const ready = self.remaining == 0;
+        self.unlock();
+        if (!ready) return false;
+        try self.finish();
+        return true;
+    }
+    /// Drain even a failed/cancelled batch before releasing its contexts.
+    pub fn finish(self: *Pool) !void {
+        if (std.Thread.getCurrentId() != self.owner) return error.WrongThread;
+        if (!self.active) return;
+        {
+            self.lock();
             while (self.remaining != 0) self.done.wait(&self.mutex);
+            const completed = self.jobs;
             self.jobs = &.{};
             self.next = 0;
             self.active = false;
             self.unlock();
+            // Completion order never determines which failure is reported.
+            for (completed) |job| if (job.failure) |err| return err;
         }
-        // Completion order never determines which failure is reported.
-        for (jobs) |job| if (job.failure) |err| return err;
     }
     fn worker(self: *Pool) void {
         self.lock();

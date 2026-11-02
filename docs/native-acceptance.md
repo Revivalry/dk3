@@ -5,7 +5,195 @@ with the merged source as of 20 October 2026. Results below retain their origina
 runtime, assets and limits. Implementation and focused passes do not establish
 complete episode/campaign or artistic acceptance.
 
-## Session handoff — optimization paused; retained through 563
+## Sequence 569 — canonical launch path and guardian locomotion
+
+The owner clarified that normal play runs `zig build play` from `~/sources/dk3`.
+That checkout did not contain sequence 568's fix. The water correction and its
+regression are now also applied there, preserving the owner's other source
+changes. Both actual pool side exits pass against its rebuilt native modules.
+
+The performance checkout's reported launch failure was missing local converted
+assets, not a native compilation error. Its ignored `zig-out/assets` and artwork
+directories now link to the canonical local caches. Plain `zig build play-install
+test-runtime` passes 136/136 steps and 430/430 tests. A private profile and copies
+of the owner's save slots were prepared; original profile/saves are unchanged.
+Canonical `zig build play-install` prepares its corrected native generation
+without starting a game. Full performance features remain in this performance
+checkout; the gameplay fixes are present in both checkouts.
+
+The e2m3b guardian's chase animation hid a locomotion failure at its plinth. The
+default support descent was 32 units, but the surrounding floor is 48 lower.
+Its class now supplies a 64-unit limit to the shared mechanism. Direct clearance
+also used a diagonal floor-to-floor sweep that cut through the departing plinth;
+the repaired query measures support from the previous height and tests horizontal
+clearance before the actual body falls. Default classes retain their bounded
+descent; cliffs and hazardous floors remain rejected.
+
+The first unit failure and the intermediate statue-still-stuck native replay are
+retained. The final canonical build passes 411/411 runtime tests, including water
+contents, class descent and cliff/hazard rejection. In `canonical-column-after-v3`,
+the guardian moves about 113 units from its authored position, descends onto the
+surrounding floor and attacks the player (health 100→33, damage source 501).
+Actual pool side exits also pass with canonical modules. The performance build
+is replayed separately with all GPU optimization defaults at 1. Engine runs stay
+guarded/headless and use diagnostic placement plus normal movement/combat, not
+desktop input or a claim of complete campaign traversal. Canonical evidence:
+`../dk3/zig-out/reports/pool-statue-569/`; detailed working evidence remains in
+`zig-out/reports/perf-water-defaults-568/`.
+
+## Sequence 568 — water-exit-contents and optimization defaults
+
+The owner requested all implemented optimization paths enabled by default and
+reported being unable to jump out of the Greece pool near a living statue after
+a level transition. `r_vkGpuTexturePrep` and `r_vkGpuWorldDraws` now default to 1,
+alongside `r_vkPreparedAssets=1`. Explicit archived settings still apply. Missing
+prepared assets and unsupported/exhausted GPU preparation retain source/CPU
+fallback. Prior sequence 567's opt-in defaults and timing results are historical;
+they do not describe the new default configuration or prove hardware FPS gains.
+
+The shared movement motor's upper ledge probe incorrectly required contents == 0.
+The e2m3b pool beside `monster_column` has `CONTENTS_DETAIL|CONTENTS_MONSTERCLIP`
+(`0x08020000`) above its bank, starting above z=-256. These contents do not block
+the player's collision mask. The motor now tests that mask instead of rejecting
+all nonzero contents; solid, player clip and body obstructions still reject a
+water jump. Both authoritative and predicted movement use the same correction.
+No gravity, jump height, water speed, map geometry or save schema changes.
+
+| Scenario | Result | Evidence / limit |
+|---|---|---|
+| Connected build/contracts | Passed | `perf-water-defaults-568/build.log`: 134/134 steps, 429/429 runtime tests, C movement/image/collision contracts; ownership R1–R11 zero. |
+| Upper-ledge contents regression | Passed | Actual motor with water/trigger/area contents permits ascent; solid, player clip and bodies retain rejection. Existing differential walk/swim/jump replays pass. |
+| New defaults in real engine | Passed | Private profile omits all three optimization variables; console reports each as `1`, the default. Default GPU paths render/load under software Vulkan validation without errors. |
+| Statue pool west edge | Passed | Frozen old build remains wet at x=15.125,z=-269.017; corrected build reaches dry bank x=-240.874,z=-231.875. |
+| Statue pool east edge | Passed | Old build remains wet at x=688.875,z=-275.594; corrected build reaches dry bank x=944.874,z=-231.875. |
+
+Evidence: `zig-out/reports/perf-water-defaults-568/`, frozen runtime/module hashes,
+source hashes, trajectories, captures and `water-exit-results.json`. Engine runs
+use `dkguard --headless`, no `--gpu`, private profiles and copied arrival save.
+The decisive replay loads standalone e2m3b, places the player **above** each pool
+edge through the existing diagnostic command, lets gravity settle, then uses
+ordinary movement/jump commands. This qualifies the actual bank collision and
+movement correction, not traversal from the saved arrival position. The first
+unrelated/resident placements and the north placement overlapped geometry and
+are retained as invalid setups, not passing water-exit scenarios. The owner had
+not saved at the exact screenshot position; no exact saved-pose replay is claimed.
+No owner installation, save, asset or desktop display is modified.
+
+## Sequence 567 — perf-parallel-preparation — all six directions implemented
+
+The owner authorized the complete larger-refactor plan: bounded concurrent loading,
+GPU-ready assets, deferred world restoration, GPU texture preparation/uploads,
+bulk ECS/save restoration and GPU visibility/index compaction/indirect drawing.
+Implementation and qualification stay in the isolated performance checkout;
+the canonical checkout, owner installation, original assets and owner saves remain
+untouched. No commit, push, PR update or installation refresh is part of this pass.
+See [architecture and usage](performance-pipeline.md). Evidence is local under
+`zig-out/reports/perf-pipeline-567/`.
+
+Gregg's scientific method, workload characterization, USE and measurement sanity
+checks guide the experiments. This hybrid CPU has four faster physical cores and
+eight slower cores; unpinned component runs split into timing bands. Those first
+runs remain in the report, but component comparisons use the same four fast cores
+and SMT siblings. Engine runs use private Xvfb through `dkguard --headless`, no
+`--gpu`, dummy audio, private profiles and copied saves. Standalone physical-GPU
+contracts create no window, SDL instance, surface or swapchain.
+
+| Scenario | Result | Evidence and limits |
+|---|---|---|
+| Integrated build and aggregate | Passed | `final-build-and-contracts.log`: 173/173 steps, 571/571 native tests, 389 Python tests; Zig 0.16.0, pinned Python/dependencies. Class ownership R1–R11 remains zero. |
+| New SHA qualification | Passed | Exact known vectors, every 0–256-byte tail at 32 alignments and concurrent callers against portable stdlib; separately targeted archive exports only `dk3_sha256_hardware`, contains SHA instructions and no compiler-rt overrides. Unsupported CPUs retain portable SHA; other physical CPU families were not exercised. |
+| GPU compute output | Passed | `gpu-contracts-hardware-v2.log` and software evidence: 40 texture cases (including 4K, odd/thin sizes, color tables, separate/in-place output) and 14 world batches (1–256 surfaces, culling/no-cull), zero failures under validation. Kernel/test source hashes match final source. Physical device: RTX 5090 Laptop GPU; no hardware engine/FPS claim. |
+| Owner-save restoration | Passed | Three newly copied saves and the immutable controlled crossing fixture; full UI/class validation, save/reload, preserved player/gameplay state and source history. Greece restores 3 worlds and retains 29 original cold snapshots; the smaller save retains 21. |
+| Prepared assets, bad-cache fallback and cancellation | Passed | `qualification-final-prepared-fallback`: four loads, save/reload, B→C crossing, crossed save/reload and renderer restart during admission followed by successful re-request. 19 prepared-world and 2387 prepared-texture admissions; source/settings mismatch, payload CRC damage and a truncated world cache fall back to original assets. Zero failed images or Vulkan validation errors. |
+| GPU paths without sidecars | Passed | `qualification-final-raw-gpu`: same four loads/crossing/restart; four deferred 4K GPU texture chains, ordinary synchronous GPU preparations and indirect world drawing; all four save handoffs hit, no failed images/validation errors. |
+| Natural Greece exit retry | Passed | `qualification-natural-final`: ordinary movement from copied B save to authored party refusal; save with unlatched timed retry, reload, companion catch-up and automatic B→A transition while still at the exit; health/player retained and no bounce. This is a bounded exit scenario, not full-map/campaign traversal. |
+| Deferred-world correctness | Passed with limit | Namespace/state/opaque-byte and malformed-input contracts, cold save preservation and current-region engine crossings. Full campaign travel across every cold-region boundary remains unverified. |
+| Local prepared generation | Passed | 591 textures and 6 BSPs in four additive stored shards, 1,445,711,987 package bytes from the 434,474,981-byte fixture package. Exact integer mip/color and geometry/HDR contracts; deterministic overrides, bounded shards, installer hash/CRC/namespace rejection. More disk/I/O in exchange for avoided conversion. |
+| Notice propagation | Passed | MIT stdlib notice retained in source/native prefix/development install/release bundle. Ten focused install tests and the release-contents test pass after the packaging-only update. |
+
+Coherent accepted runtime: `runtime-accepted/`, twelve artifact hashes in
+`runtime-accepted-identities.json`, 1204 compiled/tool source identities in
+`source-accepted-identities.json`, compiler/std-sha2/rules identity in
+`compiler-final.json`. Final rules are
+`21f07514c020456a7afd77e32b709ccb5e6039be53562f780746294e1c4e5d8b`;
+protocol 1351, durable snapshot schema 2, volatile prepared schema 4. Frozen v3
+runtime, failed builds and first benchmark artifacts remain available separately.
+`runtime-final/` preserves the version before the deferred small-skin repair.
+Only `renderer_vulkan.so` and `src/renderer_vulkan/image.zig` differ. Its first
+fresh-load block found that routing every small cached skin through the two
+large-cache slots serialized cheap work across frames: B/A prepared readiness
+5.233/5.991 s versus published 4.026/4.778 s. The failed experiment remains in
+`final-loading-comparison.json`. Chains up to 2 MiB now retain the original
+background PNG/inline admission path; large sidecars retain bounded async reads.
+The affected build/contracts (`deferred-small-build.log`, 110/110 steps and ten
+image tests) and four-load/restart/bad-cache replay
+(`qualification-accepted-prepared-fallback`) pass. It records 18 prepared-world
+and 2381 prepared-texture admissions, four save-cache hits and no validation errors.
+Gameplay/module identities and rules match the aggregate-qualified runtime.
+
+Three interleaved component trials use one warmup and five samples per process.
+Values below are medians of those trial medians, B/A respectively:
+
+| Work | Before → after | Interpretation |
+|---|---|---|
+| Complete source-validated save handoff wall | Two decodes 157.555/168.338 → prepared handoff 120.126/125.824 ms | 23.8%/25.3%; includes full UI decode, compact encoding/planning/exact allocation, two SHA checks, two byte copies, selected restore and source rebinding. Excludes renderer, dormant-store publication and asset admission. |
+| Initial handoff regression repaired | 173.264/179.400 → 120.126/125.824 ms | Initial version lost to two decodes and excluded scratch allocation from its timer; not accepted as a gain. Final timing includes that allocation. |
+| Handoff component peak RSS | Initial 131780/131280 → 69128/67864 KiB | About 47.5%/48.3% below the first handoff; the two-decode control is smaller at 45348/44384 KiB. Engine byte-cache reuse has a real memory cost. |
+| Selected server reconstruction wall | 4.995/4.830 ms | Three current-region worlds; full UI validation/encoding is accounted above. Never present this isolated decoder speed as whole-load speed. |
+| Full ordinary decode | Approximately unchanged | The initial 9.5 KiB/entity temporary regressed decode to 93–95 ms; direct final-column writes and compact wire work restore the published 76–78 ms band in the matched wire experiment. Final block has host variation; no universal full-decode speedup claim. |
+| Canonical durable output | Exact | Every roundtrip sample has the original save's SHA-256; IDs, component data, residents and ordering survive. Roundtrip timing is mixed, no writer speedup claimed. |
+
+Fresh settled-menu engine comparisons use three interleaved trials per arm/save,
+one save per fresh process and a private initially empty Mesa cache. The OS page
+cache is uncontrolled. Lavapipe has four threads; ordinary CPU affinity and host
+pressure are recorded. Readiness includes normal input and zero deferred images,
+not all future-region preparation. Results are medians, with the three-sample
+range in brackets, B/A respectively (`accepted-loading-summary.json`):
+
+| Workload | Published 563 | Accepted without sidecars | Accepted prepared packages |
+|---|---|---|---|
+| B ready, seconds | 4.129 [3.873–4.232] | 4.026 [3.927–4.130], −2.5% | 4.177 [4.125–4.931], +1.2% |
+| A ready, seconds | 4.578 [4.277–4.729] | 4.528 [4.478–4.581], −1.1% | 4.129 [4.125–4.379], −9.8% |
+| Process CPU, seconds B/A | 10.298/11.768 | 10.073/11.652 | 8.856/8.861, −14.0%/−24.7% |
+| Peak RSS, KiB B/A | 1839960/1819644 | 1838300/1826972 | 1694472/1669400, −7.9%/−8.3% |
+
+Prepared current-map loading improves A while B is approximately flat/slower; a
+universal speedup or confidence/tail claim is unsupported. Without sidecars the
+small wall gains are within observed run variation. These engine results include
+validation/encoding, source/cache reads, rendering and completed image admission;
+component timers cannot replace them. Prepared packages are an explicit local
+installation option, with the disk-space tradeoff recorded above.
+
+Real CPU mip preparation (`image-component-comparison.json`) covers 256², 512²
+and 4096² PNGs, identity and nonidentity gamma/intensity, picmip/device limits,
+and copied/borrowed/prepared paths: 27 arms, seven samples after one warmup.
+Every pixel digest, dimension, mip/skip count, alpha and average matches. At 4096²
+with identity tables, borrowed CPU preparation is 8.088 ms versus 0.032 ms for an
+already validated prepared chain, with owned mip bytes 22369620 → 0. With gamma=2,
+intensity=2, full resolution, copied/borrowed/prepared are 43.053/42.551/38.649 ms;
+with picmip 1 they are 32.267/32.413/28.245 ms. Cache validation, PNG decode, reads
+and GPU upload are outside these component timers; especially the identity-table
+reuse is not a whole-load speedup.
+
+No sum of independent speedups is meaningful.
+GPU preparation and GPU drawing remain opt-in (`r_vkGpuTexturePrep=0`,
+`r_vkGpuWorldDraws=0`) pending measured hardware-frame benefit. CPU parallel and
+prepared-cache paths remain available by default, with source fallback.
+Previously saved exits that were already latched by the old refusal bug still
+require leaving and re-entering the brush: their saved latch is indistinguishable
+from intentional arrival protection. New refusals and saves made while waiting
+are repaired; no speculative durable-save rewrite is performed.
+
+First failures retained: parameter shadow/missing dedicated link; UI identity
+dependency across the pure-layer boundary; default test-runner identity fallback;
+benchmark-only first directory setup; SHA inline-asm output syntax; notice-test
+invocation missing `PYTHONPATH`. Each was repaired and its affected check passed.
+The rejected bulk temporary and oversized scratch/hashing experiments are retained
+in `source-before-wire/`, frozen binaries and paired reports. Inspected loaded
+Greece and post-restart scenes retain textured geometry/HUD; JPEG inspection is
+not exact frame equivalence or full artistic/campaign acceptance.
+
+## Historical session handoff — optimization paused; retained through 563
 
 The owner paused optimization and requested publication. The unfinished 566
 serialization experiment only built a baseline harness; its temporary repack mode

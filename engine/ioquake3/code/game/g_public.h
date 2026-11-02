@@ -411,6 +411,7 @@ typedef enum {
     , G_DK3_WORLD_ACTIVATE_V1 = 717
     , G_DK3_WORLD_CONFIGSTRING_V1 = 718
     , G_DK3_SAVE_LINK_V1 = 719
+    , G_DK3_PREPARED_SAVE_V1 = 720
 } gameImport_t;
 
 

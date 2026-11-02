@@ -8,6 +8,8 @@ const cext = @import("c.zig");
 const common = @import("common.zig");
 const cvars = @import("cvars.zig");
 const vk = @import("vk.zig");
+const jobs = @import("load_jobs");
+const prepared_texture = @import("prepared_texture.zig");
 
 pub const Flags = packed struct(u8) {
     mipmap: bool = false,
@@ -245,6 +247,7 @@ fn loadPixels(name: []const u8, allow_borrow: bool) ?Pixels {
 /// registration made in play (`defer_requests`) a PNG decodes in the background instead.
 pub fn find(name: []const u8, flags: Flags) ?*Image {
     if (name.len == 0 or name.len >= c.MAX_QPATH) return null;
+    if (!by_name.contains(name) and !defer_requests) if (findPrepared(name, flags)) |found| return found;
     if (defer_requests and !by_name.contains(name)) if (deferPng(name, flags)) |image| return image;
     if (by_name.get(name)) |existing| {
         if (!std.mem.eql(u8, name, "*white") and @as(u8, @bitCast(existing.flags)) != @as(u8, @bitCast(flags)))
@@ -333,6 +336,12 @@ pub fn prepareLevelsBorrowed(pixels: []const u8, width: u32, height: u32, flags:
     return prepareLevelsInternal(pixels, width, height, flags, picmip, limit, true);
 }
 fn prepareLevelsInternal(pixels: []const u8, width: u32, height: u32, flags: Flags, picmip: i32, limit: u32, allow_borrow: bool) !Levels {
+    return prepareSource(pixels, width, height, flags, picmip, limit, allow_borrow, null);
+}
+pub fn prepareCached(cached: *const prepared_texture.Texture, flags: Flags, picmip: i32, limit: u32) !Levels {
+    return prepareSource(cached.levels[0], cached.width, cached.height, flags, picmip, limit, true, cached);
+}
+fn prepareSource(pixels: []const u8, width: u32, height: u32, flags: Flags, picmip: i32, limit: u32, allow_borrow: bool, cached: ?*const prepared_texture.Texture) !Levels {
     const allocator = std.heap.c_allocator;
     var result: Levels = .{ .upload_width = width, .upload_height = height };
     errdefer result.deinit();
@@ -349,10 +358,20 @@ fn prepareLevelsInternal(pixels: []const u8, width: u32, height: u32, flags: Fla
     var h = height;
     if (flags.mipmap) {
         while ((w > 1 or h > 1) and result.count < result.levels.len) {
-            const next = try allocator.alloc(u8, @as(usize, @max(w >> 1, 1)) * @max(h >> 1, 1) * 4);
-            mipLevel(result.levels[result.count - 1], w, h, next);
-            result.levels[result.count] = next;
-            result.owned[result.count] = next;
+            if (cached) |source| {
+                if (flags.no_light_scale or identity) {
+                    result.levels[result.count] = source.levels[result.count];
+                } else {
+                    const next = try allocator.dupe(u8, source.levels[result.count]);
+                    result.levels[result.count] = next;
+                    result.owned[result.count] = next;
+                }
+            } else {
+                const next = try allocator.alloc(u8, @as(usize, @max(w >> 1, 1)) * @max(h >> 1, 1) * 4);
+                mipLevel(result.levels[result.count - 1], w, h, next);
+                result.levels[result.count] = next;
+                result.owned[result.count] = next;
+            }
             result.count += 1;
             w = @max(w >> 1, 1);
             h = @max(h >> 1, 1);
@@ -364,6 +383,23 @@ fn prepareLevelsInternal(pixels: []const u8, width: u32, height: u32, flags: Fla
     result.skip = skip;
     result.upload_width = @max(width >> @intCast(skip), 1);
     result.upload_height = @max(height >> @intCast(skip), 1);
+    setMetadata(pixels, &result);
+    // Compose the byte lookups once at initialization. Identity mappings need
+    // no pixel pass; all other mappings preserve the original integer results.
+    const color_table = if (flags.mipmap) &mip_color_table else &gamma_table;
+    if (!flags.no_light_scale and !identity) for (result.owned[result.skip..result.count]) |allocation| {
+        const level = allocation.?;
+        var index: usize = 0;
+        while (index < level.len) : (index += 4) {
+            for (0..3) |channel| {
+                const value = level[index + channel];
+                level[index + channel] = color_table[value];
+            }
+        }
+    };
+    return result;
+}
+fn setMetadata(pixels: []const u8, result: *Levels) void {
     {
         var sum: [3]f64 = .{ 0, 0, 0 };
         const step: usize = @max(pixels.len / 4 / 4096, 1);
@@ -394,20 +430,6 @@ fn prepareLevelsInternal(pixels: []const u8, width: u32, height: u32, flags: Fla
             break;
         }
     };
-    // Compose the byte lookups once at initialization. Identity mappings need
-    // no pixel pass; all other mappings preserve the original integer results.
-    const color_table = if (flags.mipmap) &mip_color_table else &gamma_table;
-    if (!flags.no_light_scale and !identity) for (result.owned[result.skip..result.count]) |allocation| {
-        const level = allocation.?;
-        var index: usize = 0;
-        while (index < level.len) : (index += 4) {
-            for (0..3) |channel| {
-                const value = level[index + channel];
-                level[index + channel] = color_table[value];
-            }
-        }
-    };
-    return result;
 }
 /// The GPU half: a new texture holding the prepared levels, bound to a fresh bindless slot.
 fn commit(image: *Image, prepared: *const Levels) void {
@@ -426,6 +448,18 @@ fn deviceLimit() u32 {
 
 /// `R_CreateImage`: registers `name` with RGBA8 `pixels` and uploads it.
 pub fn create(name: []const u8, pixels: []const u8, width: u32, height: u32, flags: Flags) *Image {
+    if (flags.mipmap and pixels.len >= 512 * 512 * 4 and cvars.vkGpuTexturePrep.integer != 0)
+        if (createGpu(name, pixels, width, height, flags, null)) |image| return image;
+    var prepared = prepareLevelsBorrowed(pixels, width, height, flags, cvars.picmip.integer, deviceLimit()) catch @panic("OOM");
+    defer prepared.deinit();
+    return registerPrepared(name, width, height, flags, &prepared);
+}
+fn registerPrepared(name: []const u8, width: u32, height: u32, flags: Flags, prepared: *const Levels) *Image {
+    const image = registerImage(name, width, height, flags);
+    commit(image, prepared);
+    return image;
+}
+fn registerImage(name: []const u8, width: u32, height: u32, flags: Flags) *Image {
     const image = common.gpa.create(Image) catch @panic("OOM");
     image.* = .{
         .width = width,
@@ -437,13 +471,127 @@ pub fn create(name: []const u8, pixels: []const u8, width: u32, height: u32, fla
         .has_alpha = false,
     };
     _ = common.qpath(&image.name, name);
-    var prepared = prepareLevelsBorrowed(pixels, width, height, flags, cvars.picmip.integer, deviceLimit()) catch @panic("OOM");
-    defer prepared.deinit();
     // The registry owns the image before any GPU commands can reference it.
     images.append(common.gpa, image) catch @panic("OOM");
     by_name.put(common.gpa, image.nameSlice(), image) catch @panic("OOM");
-    commit(image, &prepared);
     return image;
+}
+
+/// Generate raw mips first: mapping the source before filtering changes integer
+/// truncation and is deliberately forbidden. Scratch and commands belong to
+/// the current frame; submission orders preparation/copies before every draw.
+fn createGpu(name: []const u8, pixels: []const u8, width: u32, height: u32, flags: Flags, existing: ?*Image) ?*Image {
+    var offsets: [16]u64 = undefined;
+    var widths: [16]u32 = undefined;
+    var heights: [16]u32 = undefined;
+    var count: usize = 0;
+    var total: u64 = 0;
+    var w = width;
+    var h = height;
+    while (count < offsets.len) {
+        offsets[count] = total;
+        widths[count] = w;
+        heights[count] = h;
+        total += @as(u64, w) * h * 4;
+        count += 1;
+        if (w == 1 and h == 1) break;
+        w = @max(w >> 1, 1);
+        h = @max(h >> 1, 1);
+    }
+    const space = vk.imageScratch(total + 1024) orelse return null;
+    var skip: usize = if (flags.picmip and cvars.picmip.integer > 0) @min(@as(usize, @intCast(cvars.picmip.integer)), count - 1) else 0;
+    while (skip + 1 < count and (widths[skip] > deviceLimit() or heights[skip] > deviceLimit())) skip += 1;
+    var table: [256]u32 = undefined;
+    for (&table, 0..) |*entry, i| entry.* = if (flags.no_light_scale) @intCast(i) else mip_color_table[i];
+    vk.uploadBuffer(space.buffer, space.offset, pixels);
+    vk.uploadBuffer(space.buffer, space.offset + total, std.mem.asBytes(&table));
+    const cmd = vk.uploadCommands();
+    const compute = c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+    const shader_write = c.VK_ACCESS_2_SHADER_WRITE_BIT;
+    const shader_read = c.VK_ACCESS_2_SHADER_READ_BIT;
+    const Push = @import("post.zig").Push;
+    for (1..count) |i| {
+        vk.dispatch(cmd, "texture_prepare.comp", Push{
+            .size = .{ widths[i], heights[i], widths[i - 1], heights[i - 1] },
+            .buffer0 = space.address + offsets[i - 1],
+            .buffer1 = space.address + offsets[i],
+        }, widths[i], heights[i], 1, .{ 8, 8, 1 });
+        vk.memoryBarrier(cmd, compute, shader_write, compute, shader_read);
+    }
+    // Every raw level has finished before mapping in place. Mapping earlier
+    // would change later levels' filter rounding/color semantics.
+    vk.memoryBarrier(cmd, compute, shader_write | shader_read, compute, shader_read | shader_write);
+    const table_address = space.address + total;
+    if (!flags.no_light_scale and !mip_color_identity) for (skip..count) |i| {
+        vk.dispatch(cmd, "texture_prepare.comp", Push{
+            .slots = .{ 1, 0, @truncate(table_address), @truncate(table_address >> 32) },
+            .size = .{ widths[i], heights[i], 0, 0 },
+            .buffer0 = space.address + offsets[i],
+            .buffer1 = space.address + offsets[i],
+        }, widths[i], heights[i], 1, .{ 8, 8, 1 });
+    };
+    vk.memoryBarrier(cmd, compute, shader_write, vk.stage_copy, vk.access_transfer_read);
+    const image = existing orelse registerImage(name, width, height, flags);
+    image.width = width;
+    image.height = height;
+    var metadata: Levels = .{ .upload_width = widths[skip], .upload_height = heights[skip] };
+    setMetadata(pixels, &metadata);
+    image.average = metadata.average;
+    image.has_alpha = metadata.has_alpha;
+    image.upload_width = widths[skip];
+    image.upload_height = heights[skip];
+    image.texture = contentTexture(image.upload_width, image.upload_height, @intCast(count - skip));
+    vk.barrier(cmd, image.texture.image, c.VK_IMAGE_ASPECT_COLOR_BIT, c.VK_IMAGE_LAYOUT_UNDEFINED, c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, vk.stage_all, 0, vk.stage_copy, vk.access_transfer_write);
+    var regions: [16]c.VkBufferImageCopy = undefined;
+    for (skip..count) |i| regions[i - skip] = std.mem.zeroInit(c.VkBufferImageCopy, .{
+        .bufferOffset = space.offset + offsets[i],
+        .imageSubresource = .{ .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT, .mipLevel = @as(u32, @intCast(i - skip)), .baseArrayLayer = 0, .layerCount = 1 },
+        .imageExtent = .{ .width = widths[i], .height = heights[i], .depth = 1 },
+    });
+    vk.d.CmdCopyBufferToImage.?(cmd, space.buffer, image.texture.image, c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, @intCast(count - skip), &regions);
+    vk.barrier(cmd, image.texture.image, c.VK_IMAGE_ASPECT_COLOR_BIT, c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, vk.stage_copy, vk.access_transfer_write, vk.stage_fragment | vk.stage_vertex, shader_read);
+    vk.bindTexture(&image.texture, samplerFor(flags));
+    return image;
+}
+
+fn resolvedPath(name: []const u8, buffer: *[c.MAX_QPATH + 8]u8) ?[:0]const u8 {
+    const ext = extension(name);
+    var local = name;
+    var original: ?usize = null;
+    for (loaders, 0..) |loader, i| if (std.ascii.eqlIgnoreCase(ext, loader.ext)) {
+        const path = std.fmt.bufPrintZ(buffer, "{s}", .{name}) catch return null;
+        if (common.fileExists(path.ptr)) return path;
+        original = i;
+        local = stripExtension(name);
+        break;
+    };
+    for (loaders, 0..) |loader, i| {
+        if (original == i) continue;
+        const path = std.fmt.bufPrintZ(buffer, "{s}.{s}", .{ local, loader.ext }) catch continue;
+        if (common.fileExists(path.ptr)) return path;
+    }
+    return null;
+}
+fn findPrepared(name: []const u8, flags: Flags) ?*Image {
+    if (cvars.vkPreparedAssets.integer == 0) return null;
+    var source_path: [c.MAX_QPATH + 8]u8 = undefined;
+    const source_name = resolvedPath(name, &source_path) orelse return null;
+    if (!std.ascii.eqlIgnoreCase(extension(source_name), "png")) return null;
+    var cache_path: [64]u8 = undefined;
+    const cache_name = prepared_texture.path(source_name, &cache_path) catch return null;
+    if (!common.fileExists(cache_name.ptr)) return null;
+    const bytes = common.readFile(cache_name.ptr) orelse return null;
+    defer common.freeFile(bytes);
+    const source = common.readFile(source_name.ptr) orelse return null;
+    defer common.freeFile(source);
+    const cached = prepared_texture.decode(bytes, source) catch |err| {
+        common.developer("dk3 prepared texture fallback: name={s} reason={s}\n", .{ name, @errorName(err) });
+        return null;
+    };
+    var levels = prepareCached(&cached, flags, cvars.picmip.integer, deviceLimit()) catch return null;
+    defer levels.deinit();
+    common.developer("dk3 prepared texture: name={s} bytes={d} levels={d}\n", .{ name, bytes.len, levels.used().len });
+    return registerPrepared(name, cached.width, cached.height, flags, &levels);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -459,9 +607,16 @@ pub var defer_requests: bool = false;
 const Deferred = struct {
     image: *Image,
     batch: ?*cext.ImageBatch,
-    stage: enum { decoding, mipping } = .decoding,
+    stage: enum { cache_start, cache_reading, decoding, waiting, mipping, gpu_ready } = .decoding,
+    source_name: [c.MAX_QPATH]u8 = @splat(0),
+    cache_name: [64]u8 = @splat(0),
+    source_job: ?*c.struct_fsReadJob_s = null,
+    cache_job: ?*c.struct_fsReadJob_s = null,
+    source_bytes: []const u8 = &.{},
+    cache_bytes: []const u8 = &.{},
+    cached_attempt: bool = false,
+    cache_failure: ?anyerror = null,
     pixels: ?Pixels = null,
-    thread: ?std.Thread = null,
     done: std.atomic.Value(bool) = .init(false),
     prepared: ?Levels = null,
     mip_nanoseconds: u64 = 0,
@@ -470,24 +625,80 @@ const Deferred = struct {
     limit: u32,
     fn work(self: *Deferred) void {
         const started = common.nanoseconds();
+        defer {
+            self.mip_nanoseconds = @intCast(@max(0, common.nanoseconds() - started));
+            self.done.store(true, .release);
+        }
+        if (self.cached_attempt) {
+            const cached = prepared_texture.decode(self.cache_bytes, self.source_bytes) catch |err| {
+                self.cache_failure = err;
+                return;
+            };
+            self.pixels = .{ .data = cached.levels[0].ptr, .allocation = null, .width = cached.width, .height = cached.height };
+            self.prepared = prepareCached(&cached, self.image.flags, self.picmip, self.limit) catch null;
+            return;
+        }
         const pixels = self.pixels.?;
         self.prepared = prepareLevels(pixels.data[0 .. @as(usize, pixels.width) * pixels.height * 4], pixels.width, pixels.height, self.image.flags, self.picmip, self.limit) catch null;
-        self.mip_nanoseconds = @intCast(@max(0, common.nanoseconds() - started));
-        self.done.store(true, .release);
+    }
+    fn run(raw: *anyopaque) !void {
+        const self: *Deferred = @ptrCast(@alignCast(raw));
+        self.work();
     }
     fn release(self: *Deferred) void {
-        if (self.thread) |thread| thread.join();
-        self.thread = null;
         if (self.prepared) |*prepared| prepared.deinit();
         self.prepared = null;
         if (self.pixels) |pixels| pixels.deinit();
         self.pixels = null;
         cext.R_FreeImageBatch(self.batch);
         self.batch = null;
+        self.clearReads();
+    }
+    fn clearReads(self: *Deferred) void {
+        if (self.source_job) |job| common.ri.EndBackgroundRead.?(job);
+        if (self.cache_job) |job| common.ri.EndBackgroundRead.?(job);
+        if (self.source_job != null and self.cache_job != null) cached_reads -= 1;
+        self.source_job = null;
+        self.cache_job = null;
+        self.source_bytes = &.{};
+        self.cache_bytes = &.{};
+    }
+    fn fallback(self: *Deferred) bool {
+        self.clearReads();
+        if (self.pixels) |pixels| pixels.deinit();
+        self.pixels = null;
+        self.cached_attempt = false;
+        self.done.store(false, .release);
+        self.stage = .decoding;
+        self.batch = cext.R_CreateImageBatch(1) orelse return false;
+        return prepare(self.batch, self.image.nameSlice());
     }
 };
 var deferred: std.ArrayList(*Deferred) = .empty;
 var deferred_failures: usize = 0;
+var preparation_pool: ?*jobs.Pool = null;
+var preparation_jobs: [4]jobs.Job = undefined;
+var cached_reads: usize = 0;
+
+fn submitPreparations() void {
+    if (preparation_pool == null) preparation_pool = jobs.Pool.create(common.gpa, @min(4, jobs.Pool.defaultWorkers())) catch
+        jobs.Pool.create(common.gpa, 0) catch @panic("OOM");
+    const pool = preparation_pool.?;
+    if (pool.active) return;
+    var count: usize = 0;
+    var bytes: usize = 0;
+    for (deferred.items) |entry| {
+        if (entry.stage != .waiting) continue;
+        const charge = @as(usize, entry.pixels.?.width) * entry.pixels.?.height * 4;
+        if (count != 0 and charge > 64 * 1024 * 1024 -| bytes) break;
+        bytes += charge;
+        entry.stage = .mipping;
+        preparation_jobs[count] = .{ .run = Deferred.run, .context = entry };
+        count += 1;
+        if (count == preparation_jobs.len) break;
+    }
+    if (count != 0) pool.begin(preparation_jobs[0..count]) catch unreachable;
+}
 
 /// Owner-thread admission status, including decoding, mip preparation and commit.
 pub fn pendingCount() usize {
@@ -519,8 +730,22 @@ fn resolvesToPng(name: []const u8) bool {
 }
 fn deferPng(name: []const u8, flags: Flags) ?*Image {
     if (!resolvesToPng(name)) return null;
-    const batch = cext.R_CreateImageBatch(1) orelse return null;
-    if (!prepare(batch, name)) {
+    var source_path: [c.MAX_QPATH + 8]u8 = undefined;
+    var cache_path: [64]u8 = @splat(0);
+    const source = resolvedPath(name, &source_path);
+    const use_cache = blk: {
+        if (cvars.vkPreparedAssets.integer == 0 or source == null) break :blk false;
+        const path = prepared_texture.path(source.?, &cache_path) catch break :blk false;
+        // Small skins already decode in parallel and share an inline/upload
+        // frame. Routing them through two cache-read slots serializes cheap
+        // work behind large chains and adds frame hops. Reserve this path for
+        // chains large enough to avoid material conversion work. This is a
+        // metadata-only length query; source fallback and upload budgets stay
+        // identical. Synchronous registrations may still use every valid cache.
+        break :blk common.ri.FS_ReadFile.?(path.ptr, null) > 2 * 1024 * 1024;
+    };
+    const batch: ?*cext.ImageBatch = if (use_cache) null else (cext.R_CreateImageBatch(1) orelse return null);
+    if (!use_cache and !prepare(batch, name)) {
         cext.R_FreeImageBatch(batch);
         return null;
     }
@@ -529,12 +754,18 @@ fn deferPng(name: []const u8, flags: Flags) ?*Image {
     const image = create(name, &grey, 4, 4, flags);
     const entry = common.gpa.create(Deferred) catch @panic("OOM");
     entry.* = .{ .image = image, .batch = batch, .picmip = cvars.picmip.integer, .limit = deviceLimit() };
+    if (use_cache) {
+        _ = common.qpath(&entry.source_name, source.?);
+        entry.cache_name = cache_path;
+        entry.stage = .cache_start;
+    }
     deferred.append(common.gpa, entry) catch @panic("OOM");
     return image;
 }
 
 /// Advances deferred images; called once per frame before drawing.
 pub fn pollDeferred() void {
+    if (preparation_pool) |pool| _ = pool.poll() catch unreachable;
     // Small skins share an upload frame rather than waiting one frame each.
     // A single oversized texture may progress, retaining the prior large-image
     // behavior. Bound both bytes and API work for mixed-size queues.
@@ -552,6 +783,61 @@ pub fn pollDeferred() void {
     while (index < deferred.items.len) {
         const entry = deferred.items[index];
         switch (entry.stage) {
+            .cache_start => {
+                // At most two read pairs: <=320 MiB encoded input buffers.
+                // Hashing, validation and mip/color preparation run on workers.
+                if (cached_reads >= 2) {
+                    index += 1;
+                    continue;
+                }
+                entry.source_job = common.ri.BeginBackgroundRead.?(&entry.source_name, 64 * 1024 * 1024);
+                entry.cache_job = common.ri.BeginBackgroundRead.?(&entry.cache_name, 96 * 1024 * 1024);
+                if (entry.source_job == null or entry.cache_job == null) {
+                    if (!entry.fallback()) {
+                        deferred_failures += 1;
+                        drop(index);
+                    }
+                    continue;
+                }
+                cached_reads += 1;
+                entry.stage = .cache_reading;
+                index += 1;
+            },
+            .cache_reading => {
+                var source_ptr: ?*const anyopaque = null;
+                var cache_ptr: ?*const anyopaque = null;
+                var source_length: c_int = 0;
+                var cache_length: c_int = 0;
+                const source_ready = common.ri.PollBackgroundRead.?(entry.source_job, &source_ptr, &source_length);
+                const cache_ready = common.ri.PollBackgroundRead.?(entry.cache_job, &cache_ptr, &cache_length);
+                if (source_ready == 0 or cache_ready == 0) {
+                    index += 1;
+                    continue;
+                }
+                if (source_ready != 1 or cache_ready != 1 or source_ptr == null or cache_ptr == null or cache_length < 64) {
+                    if (!entry.fallback()) {
+                        deferred_failures += 1;
+                        drop(index);
+                    }
+                    continue;
+                }
+                entry.source_bytes = @as([*]const u8, @ptrCast(source_ptr.?))[0..@intCast(source_length)];
+                entry.cache_bytes = @as([*]const u8, @ptrCast(cache_ptr.?))[0..@intCast(cache_length)];
+                const width = std.mem.readInt(u32, entry.cache_bytes[8..12], .little);
+                const height = std.mem.readInt(u32, entry.cache_bytes[12..16], .little);
+                if (width == 0 or height == 0 or width > 16384 or height > 16384) {
+                    if (!entry.fallback()) {
+                        deferred_failures += 1;
+                        drop(index);
+                    }
+                    continue;
+                }
+                // No pixel is read before the worker validates the package.
+                entry.pixels = .{ .data = undefined, .allocation = null, .width = width, .height = height };
+                entry.cached_attempt = true;
+                entry.stage = .waiting;
+                index += 1;
+            },
             .decoding => {
                 const ready = cext.R_PollImageBatch(entry.batch);
                 if (ready == 0) {
@@ -574,25 +860,54 @@ pub fn pollDeferred() void {
                     drop(index);
                     continue;
                 }
-                entry.stage = .mipping;
+                entry.stage = .waiting;
                 const pixel_bytes = @as(usize, entry.pixels.?.width) * entry.pixels.?.height * 4;
+                if (entry.image.flags.mipmap and pixel_bytes >= 512 * 512 * 4 and cvars.vkGpuTexturePrep.integer != 0) {
+                    entry.stage = .gpu_ready;
+                    continue;
+                }
                 if (pixel_bytes <= inline_image_bytes and pixel_bytes <= inline_frame_bytes - inline_bytes) {
                     inline_bytes += pixel_bytes;
                     entry.owner_mip = true;
+                    entry.stage = .mipping;
                     entry.work();
                     // Revisit this entry immediately so the existing upload
                     // budget can admit it without another frame/worker hop.
                     continue;
                 }
-                entry.thread = std.Thread.spawn(.{}, Deferred.work, .{entry}) catch blk: {
-                    entry.work();
-                    break :blk null;
-                };
                 index += 1;
             },
-            .mipping => {
-                if (!entry.done.load(.acquire)) {
+            .waiting => index += 1,
+            .gpu_ready => {
+                const pixels = entry.pixels.?;
+                const charge = gpuUploadBytes(pixels.width, pixels.height, entry.image.flags, entry.picmip, entry.limit);
+                if (committed_images != 0 and (committed_images >= image_budget or committed_bytes >= upload_budget or charge > upload_budget - committed_bytes)) {
                     index += 1;
+                    continue;
+                }
+                const prior = entry.image.texture;
+                if (createGpu(entry.image.nameSlice(), pixels.data[0 .. @as(usize, pixels.width) * pixels.height * 4], pixels.width, pixels.height, entry.image.flags, entry.image) == null) {
+                    entry.stage = .waiting;
+                    index += 1;
+                    continue;
+                }
+                replaced.append(common.gpa, prior) catch @panic("OOM");
+                committed_bytes += charge;
+                committed_images += 1;
+                common.developer("dk3 deferred GPU image: name={s} bytes={d}\n", .{ entry.image.nameSlice(), charge });
+                drop(index);
+            },
+            .mipping => {
+                if ((preparation_pool != null and preparation_pool.?.active) or !entry.done.load(.acquire)) {
+                    index += 1;
+                    continue;
+                }
+                if (entry.cached_attempt and entry.prepared == null) {
+                    common.developer("dk3 prepared texture fallback: name={s} reason={s}\n", .{ entry.image.nameSlice(), if (entry.cache_failure) |err| @errorName(err) else "preparation" });
+                    if (!entry.fallback()) {
+                        deferred_failures += 1;
+                        drop(index);
+                    }
                     continue;
                 }
                 var upload_bytes: usize = 0;
@@ -605,8 +920,6 @@ pub fn pollDeferred() void {
                     index += 1;
                     continue;
                 }
-                if (entry.thread) |thread| thread.join();
-                entry.thread = null;
                 if (entry.prepared) |*prepared| {
                     const image = entry.image;
                     // A frame in flight may still sample the placeholder; it is released at shutdown.
@@ -626,6 +939,7 @@ pub fn pollDeferred() void {
             },
         }
     }
+    if (deferred.items.len != 0) submitPreparations();
 }
 fn drop(index: usize) void {
     const entry = deferred.orderedRemove(index);
@@ -637,6 +951,23 @@ fn samplerFor(flags: Flags) vk.SamplerKind {
     if (flags.nearest) return .nearest_clamp;
     if (flags.mipmap) return if (flags.clamp) .clamp_mip else .repeat_mip;
     return if (flags.clamp) .clamp else .repeat;
+}
+fn gpuUploadBytes(width: u32, height: u32, flags: Flags, picmip: i32, limit: u32) usize {
+    var w = width;
+    var h = height;
+    var skip: u32 = if (flags.picmip) @intCast(@max(picmip, 0)) else 0;
+    while ((w > 1 or h > 1) and (skip != 0 or w > limit or h > limit)) {
+        w = @max(w >> 1, 1);
+        h = @max(h >> 1, 1);
+        skip -|= 1;
+    }
+    var bytes: usize = 0;
+    while (true) {
+        bytes += @as(usize, w) * h * 4;
+        if (w == 1 and h == 1) return bytes;
+        w = @max(w >> 1, 1);
+        h = @max(h >> 1, 1);
+    }
 }
 
 /// Replaces level 0 of a non-mipmapped image, recreating it when the size changes.
@@ -792,11 +1123,17 @@ pub fn createBuiltins() void {
 
 /// Destroys every content image; the caller releases their memory blocks.
 pub fn shutdown() void {
+    if (preparation_pool) |pool| {
+        pool.finish() catch unreachable;
+        pool.destroy();
+        preparation_pool = null;
+    }
     for (deferred.items) |entry| {
         entry.release();
         common.gpa.destroy(entry);
     }
     deferred.clearAndFree(common.gpa);
+    std.debug.assert(cached_reads == 0);
     deferred_failures = 0;
     var unused_storage: usize = 0;
     for (&storage_pool) |*entry| if (entry.*) |*value| {
@@ -839,6 +1176,17 @@ pub fn list() void {
 pub fn prepare(batch: ?*cext.ImageBatch, name: []const u8) bool {
     if (name.len == 0 or name[0] == '$' or name[0] == '*' or name.len >= c.MAX_QPATH) return true;
     if (by_name.contains(name)) return true;
+    if (!defer_requests and cvars.vkPreparedAssets.integer != 0) {
+        var source_path: [c.MAX_QPATH + 8]u8 = undefined;
+        if (resolvedPath(name, &source_path)) |source_name| {
+            var cache_path: [64]u8 = undefined;
+            if (prepared_texture.path(source_name, &cache_path)) |cache_name| {
+                // A stale package takes the normal synchronous decoder fallback
+                // in findPrepared; it never substitutes mismatched pixels.
+                if (common.fileExists(cache_name.ptr)) return true;
+            } else |_| {}
+        }
+    }
     var buffer: [c.MAX_QPATH]u8 = undefined;
     var local: []const u8 = name;
     const ext = extension(name);

@@ -22,6 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // sv_game.c -- interface to the game dll
 
 #include "server.h"
+#include "../qcommon/dk_save_format.h"
 
 #include "../botlib/botlib.h"
 
@@ -372,6 +373,8 @@ intptr_t SV_GameSystemCalls( intptr_t *args ) {
         return FS_DK3SaveWrite(args[1], VMA(2), VMA(3), args[4]);
     case G_DK3_SAVE_READ:
         return FS_DK3SaveRead(args[1], VMA(2), VMA(3), args[4], args[5]);
+    case G_DK3_PREPARED_SAVE_V1:
+        return DK_PreparedSaveRead(VMA(1), args[2]);
     case G_DK3_SAVE_LINK_V1:
         return FS_DK3SaveLink(VMA(1), VMA(2));
     case G_DK3_HOLD_WORLD:

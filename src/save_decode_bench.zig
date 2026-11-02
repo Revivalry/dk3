@@ -3,6 +3,8 @@
 const std = @import("std");
 const stream = @import("core/domain/save_stream.zig");
 const snapshot = @import("mechanics/domain/snapshot.zig");
+pub const snapshot_runtime_identity = @import("runtime_build").identity;
+pub const saved_classes = if (@import("save_bench_options").server) @import("mechanics/server/saved_classes.zig") else struct {};
 
 const Stamp = struct { wall: u64, cpu: u64 };
 fn stamp() Stamp {
@@ -43,13 +45,32 @@ fn canonical(allocator: std.mem.Allocator, loaded: *snapshot.Loaded) anyerror![]
 pub fn main(init: std.process.Init) !void {
     const allocator = std.heap.c_allocator;
     const args = try init.minimal.args.toSlice(init.arena.allocator());
-    if (args.len != 4) return error.ExpectedSaveModeRepeats;
+    if (args.len != 4 and args.len != 5) return error.ExpectedSaveModeRepeats;
     const mode = args[2];
-    if (!std.mem.eql(u8, mode, "crc") and !std.mem.eql(u8, mode, "stream") and !std.mem.eql(u8, mode, "decode") and !std.mem.eql(u8, mode, "roundtrip")) return error.InvalidMode;
+    const Mode = enum { crc, stream, decode, roundtrip, parallel, prepared, selected, handoff, double_decode };
+    const operation = std.meta.stringToEnum(Mode, mode) orelse return error.InvalidMode;
     const repeats = try std.fmt.parseInt(usize, args[3], 10);
     if (repeats == 0 or repeats > 1000) return error.InvalidRepeats;
     const bytes = try std.Io.Dir.cwd().readFileAlloc(init.io, args[1], allocator, .limited(snapshot.maximum));
     defer allocator.free(bytes);
+    const Pool = @import("core/ecs/jobs.zig").Pool;
+    const pool: ?*Pool = if (operation == .parallel or operation == .prepared or operation == .selected or operation == .handoff) try Pool.create(allocator, 4) else null;
+    defer if (pool) |workers| workers.destroy();
+    var encoded_storage: ?[]u8 = null;
+    defer if (encoded_storage) |storage| allocator.free(storage);
+    var prepared: []const u8 = &.{};
+    if (operation == .prepared or operation == .selected) {
+        var loaded = try snapshot.decode(allocator, bytes);
+        defer loaded.deinit(allocator);
+        const plan = try snapshot.planPrepared(&loaded);
+        encoded_storage = try allocator.alloc(u8, plan.bytes);
+        prepared = try snapshot.capturePreparedPlanned(allocator, encoded_storage.?, &loaded, plan);
+    }
+    const Manifest = @import("mechanics/domain/campaign_regions.zig").Manifest;
+    const manifest_bytes = if (args.len == 5) try std.Io.Dir.cwd().readFileAlloc(init.io, args[4], allocator, .limited(256 * 1024)) else null;
+    defer if (manifest_bytes) |input| allocator.free(input);
+    var manifest: ?Manifest = if (manifest_bytes) |input| try Manifest.parse(input) else null;
+    if (operation == .selected and manifest == null) return error.ExpectedCampaignManifest;
     var digest: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(bytes, &digest, .{});
     var buffer: [4096]u8 = undefined;
@@ -58,6 +79,11 @@ pub fn main(init: std.process.Init) !void {
     var expected_canonical: ?[32]u8 = null;
     for (0..repeats + 1) |sample| {
         const before = stamp();
+        var engine_cache: ?[]u8 = null;
+        defer if (engine_cache) |copy| allocator.free(copy);
+        var consumer_copy: ?[]u8 = null;
+        defer if (consumer_copy) |copy| allocator.free(copy);
+        var ui_digest: [32]u8 = undefined;
         var state: Identity = .{};
         var canonical_digest: [32]u8 = @splat(0);
         var canonical_bytes: usize = 0;
@@ -69,8 +95,38 @@ pub fn main(init: std.process.Init) !void {
             // opaque; full recursive reconstruction is measured by decode.
             try stream.Reader.validate(bytes);
         } else {
-            var loaded = try snapshot.decode(allocator, bytes);
+            if (operation == .double_decode or operation == .handoff) {
+                var ui = try snapshot.decode(allocator, bytes);
+                defer ui.deinit(allocator);
+                if (operation == .handoff) {
+                    const plan = try snapshot.planPrepared(&ui);
+                    const storage = try allocator.alloc(u8, plan.bytes);
+                    defer allocator.free(storage);
+                    prepared = try snapshot.capturePreparedPlanned(allocator, storage, &ui, plan);
+                    @import("core/domain/sha256_runtime.zig").hash(bytes, &ui_digest);
+                    // Match the engine store/read byte ownership and account
+                    // for both copies, not just the faster typed decoder.
+                    engine_cache = try allocator.dupe(u8, prepared);
+                    consumer_copy = try allocator.dupe(u8, engine_cache.?);
+                    prepared = consumer_copy.?;
+                }
+            }
+            if (operation == .handoff) {
+                var server_digest: [32]u8 = undefined;
+                @import("core/domain/sha256_runtime.zig").hash(bytes, &server_digest);
+                if (!std.mem.eql(u8, &ui_digest, &server_digest)) return error.SourceMismatch;
+            }
+            var loaded = switch (operation) {
+                .parallel => try snapshot.decodeWithPool(allocator, bytes, pool),
+                .prepared => try snapshot.decodeWithPool(allocator, prepared, pool),
+                .selected, .handoff => if (manifest) |*graph|
+                    try snapshot.decodeCertifiedSelection(allocator, prepared, graph, pool)
+                else
+                    try snapshot.decodeWithPool(allocator, prepared, pool),
+                else => try snapshot.decode(allocator, bytes),
+            };
             defer loaded.deinit(allocator);
+            if (operation == .selected or operation == .handoff) try loaded.bindOriginal(bytes);
             state = identity(&loaded);
             if (std.mem.eql(u8, mode, "roundtrip")) {
                 const encoded = try canonical(allocator, &loaded);

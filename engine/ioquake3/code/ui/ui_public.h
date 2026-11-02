@@ -133,7 +133,8 @@ typedef enum {
 	UI_ATAN2,
 	UI_SQRT,
 	UI_FLOOR,
-	UI_CEIL
+	UI_CEIL,
+    UI_DK3_PREPARED_SAVE_V1 = 700
 } uiImport_t;
 
 typedef enum {

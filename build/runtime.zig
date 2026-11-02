@@ -35,6 +35,9 @@ pub fn declareTests(b: *std.Build, optimize: std.builtin.OptimizeMode) *std.Buil
     const step = b.step("test-runtime", "Check native runtime domain, ECS and adapter contracts");
     step.dependOn(image_tests);
     const root = runtimeModule(b, b.graph.host, optimize, "src/runtime_tests.zig");
+    const test_identity = b.addOptions();
+    test_identity.addOption([]const u8, "identity", "prepared-snapshot-contracts");
+    root.addOptions("runtime_build", test_identity);
     root.addIncludePath(b.path("src/tests/reference"));
     root.addIncludePath(b.path("src/tests"));
     for ([_][]const u8{ "engine/ioquake3/code/game/bg_pmove.c", "engine/ioquake3/code/game/bg_slidemove.c", "engine/ioquake3/code/qcommon/q_math.c", "src/tests/movement_reference.c" }) |source| root.addCSourceFile(.{ .file = b.path(source), .flags = &.{ "-std=gnu99", "-ffp-contract=off" } });
@@ -115,6 +118,10 @@ pub fn declareTests(b: *std.Build, optimize: std.builtin.OptimizeMode) *std.Buil
         .cpu_model = .baseline,
     });
     const save_bench = b.addExecutable(.{ .name = "save-decode-benchmark", .root_module = runtimeModule(b, save_target, optimize, "src/save_decode_bench.zig") });
+    save_bench.root_module.addOptions("runtime_build", test_identity);
+    const bench_options = b.addOptions();
+    bench_options.addOption(bool, "server", b.option(bool, "SAVE_BENCH_SERVER", "Use real server class validators in the save CPU profiler") orelse false);
+    save_bench.root_module.addOptions("save_bench_options", bench_options);
     b.step("bench-save-decode", "Build actual save decoding CPU characterization").dependOn(&b.addInstallArtifact(save_bench, .{}).step);
     return step;
 }
@@ -136,6 +143,7 @@ pub fn addProduct(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
 
 fn runtimeModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, source: []const u8) *std.Build.Module {
     const module = b.createModule(.{ .root_source_file = b.path(source), .target = target, .optimize = optimize, .link_libc = true });
+    @import("sha256.zig").linkHardware(b, module);
     if (target.result.os.tag == .windows) module.addCMacro("_FORTIFY_SOURCE", "0");
     for ([_]struct { name: []const u8, path: []const u8 }{
         .{ .name = "appearance_catalog", .path = "src/multiplayer/appearance.zig" },

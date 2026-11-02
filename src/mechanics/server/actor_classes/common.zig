@@ -43,6 +43,10 @@ pub fn move(frame: *Frame) !void {
 pub fn moveAt(frame: *Frame, speed: f32) !void {
     try @import("../actor_motion.zig").step(frame.actor, frame.pose, frame.body, frame.velocity, frame.navigation, frame.threat, speed * frame.slow, frame.slot, frame.now, frame.elapsed);
 }
+/// A class supplies its supported descent bound; collision and gravity remain shared.
+pub fn moveWithLimits(frame: *Frame, limits: @import("../actor_motion.zig").Limits) !void {
+    try @import("../actor_motion.zig").stepLimited(limits, frame.actor, frame.pose, frame.body, frame.velocity, frame.navigation, frame.threat, frame.definition.speed * frame.slow, frame.slot, frame.now, frame.elapsed);
+}
 /// Pain for classes without their own pain controller: a hit from the current enemy (not the one
 /// that makes its attacker the enemy) flinches with `hita` `chance` percent of the time, with no
 /// damage threshold. True while the reaction plays: the class step yields, holding still.

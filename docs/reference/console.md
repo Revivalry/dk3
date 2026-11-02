@@ -37,6 +37,9 @@ Slot names use lowercase letters, digits, underscores and hyphens. See
 | `vid_restart` | Restart the renderer |
 | `screenshotJPEG <name>` | Write a JPEG capture to the game's screenshot directory |
 | `r_imageDecodeCacheMegs` | CPU cache limit for large decoded PNGs and their source bytes; default 256 MiB, 0 disables, maximum 1024 |
+| `r_vkPreparedAssets` | Use source/settings-matched prepared mip, geometry and HDR sidecars when installed; default 1, ordinary source fallback. See [prepared assets](../performance-pipeline.md). |
+| `r_vkGpuTexturePrep` | Exact integer GPU mip/color preparation; default 1, bounded scratch and CPU fallback. Physical-GPU engine timing remains unverified. |
+| `r_vkGpuWorldDraws` | Static-world GPU surface visibility, stable index compaction and indirect drawing; default 1, CPU PVS/material sorting retained. |
 | `r_modelImagePrefetch` | Vulkan initial model PNG preparation: default 1 enables bounded CPU slots; 0 uses ordinary registration |
 | `r_modelImagePrefetchSlots` | Model preparation slot limit, clamped 1–4; default 4 for unset configurations (acceptance sequence 509). Saved limits still apply. Lower values reduce temporary PNG memory without changing image quality; four slots raise the approximate worst preparation bound from 1248 to 1664 MiB, although measured save-load RSS was mostly lower. |
 
