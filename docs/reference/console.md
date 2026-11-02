@@ -38,7 +38,7 @@ Slot names use lowercase letters, digits, underscores and hyphens. See
 | `screenshotJPEG <name>` | Write a JPEG capture to the game's screenshot directory |
 | `r_imageDecodeCacheMegs` | CPU cache limit for large decoded PNGs and their source bytes; default 256 MiB, 0 disables, maximum 1024 |
 | `r_modelImagePrefetch` | Vulkan initial model PNG preparation: default 1 enables bounded CPU slots; 0 uses ordinary registration |
-| `r_modelImagePrefetchSlots` | Model preparation slot limit, clamped 1–3; default 3 after the bounded resource/readiness comparison (acceptance sequence 464) |
+| `r_modelImagePrefetchSlots` | Model preparation slot limit, clamped 1–4; default 4 for unset configurations (acceptance sequence 509). Saved limits still apply. Lower values reduce temporary PNG memory without changing image quality; four slots raise the approximate worst preparation bound from 1248 to 1664 MiB, although measured save-load RSS was mostly lower. |
 
 [Renderer settings](rendering.md) lists resolution, upscaling and lighting variables.
 

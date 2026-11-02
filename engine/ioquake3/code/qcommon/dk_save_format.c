@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "q_shared.h"
 #include "dk_save_format.h"
+#include "../thirdparty/zlib-1.3.1/zlib.h"
 
 #define HEADER_BYTES 24
 #define RECORD_HEADER_BYTES 12
@@ -18,13 +19,9 @@ static void Write32(byte *data, unsigned int value) {
 }
 
 static unsigned int Checksum(const byte *data, int length) {
-    unsigned int crc = ~0u;
-    int i, bit;
-    for (i = 0; i < length; ++i) {
-        crc ^= data[i];
-        for (bit = 0; bit < 8; ++bit) crc = (crc >> 1) ^ (0xedb88320u & (0u - (crc & 1u)));
-    }
-    return ~crc;
+    /* Same IEEE polynomial, initial state and final complement as the portable
+       save stream. Length is already bounded by DK_SAVE_LIMIT (< UINT_MAX). */
+    return (unsigned int)crc32(0L, data, (uInt)length);
 }
 
 static qboolean WriterError(dkSaveWriter_t *writer, const char *message) {

@@ -16,6 +16,7 @@ pub var centerWindow: *c.cvar_t = undefined;
 pub var picmip: *c.cvar_t = undefined;
 pub var modelImagePrefetch: *c.cvar_t = undefined;
 pub var modelImagePrefetchSlots: *c.cvar_t = undefined;
+pub var regionLoading: *c.cvar_t = undefined;
 pub var roundImagesDown: *c.cvar_t = undefined;
 pub var gamma: *c.cvar_t = undefined;
 pub var intensity: *c.cvar_t = undefined;
@@ -104,7 +105,7 @@ pub fn register() void {
     centerWindow = get("r_centerWindow", "0", archive_latch);
     picmip = get("r_picmip", "1", archive_latch);
     modelImagePrefetch = get("r_modelImagePrefetch", "1", c.CVAR_ARCHIVE);
-    modelImagePrefetchSlots = get("r_modelImagePrefetchSlots", "3", c.CVAR_ARCHIVE);
+    modelImagePrefetchSlots = get("r_modelImagePrefetchSlots", "4", c.CVAR_ARCHIVE);
     roundImagesDown = get("r_roundImagesDown", "1", archive_latch);
     gamma = get("r_gamma", "1", c.CVAR_ARCHIVE);
     intensity = get("r_intensity", "1", c.CVAR_LATCH);
@@ -135,6 +136,8 @@ pub fn register() void {
     vkValidation = get("r_vkValidation", "0", c.CVAR_LATCH);
     vkRayTracing = get("r_vkRayTracing", "0", archive_latch);
     vkMaterialScan = get("r_vkMaterialScan", "0", c.CVAR_TEMP);
+    // Published by the native client's held-region admission state.
+    regionLoading = get("dk3_region_loading", "0", 0);
     vkStats = get("r_vkStats", "0", c.CVAR_TEMP);
     vkStatsTrace = get("r_vkStatsTrace", "0", c.CVAR_TEMP);
     vkRemaster = get("r_vkRemaster", "0", archive_latch);

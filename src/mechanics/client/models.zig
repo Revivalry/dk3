@@ -40,6 +40,10 @@ pub fn prefetch(game: *const c.gameState_t) !void {
     }
     _ = engine.gateway.call(c.CG_DK3_MODEL_PREPARE_V1, .{ &paths, @as(isize, @intCast(count)) });
 }
+/// Empty initial hints cancel outstanding reads/decodes without changing registration.
+pub fn cancelPrefetch() void {
+    _ = engine.gateway.call(c.CG_DK3_MODEL_PREPARE_V1, .{ @as(isize, 0), @as(isize, 0) });
+}
 pub fn get(game: *const c.gameState_t, index: i32) !c.qhandle_t {
     if (index <= 0 or index >= c.MAX_MODELS) return 0;
     const i: usize = @intCast(index);

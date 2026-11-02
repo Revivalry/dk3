@@ -12,7 +12,7 @@ const Slot = struct {
     batch: ?*cext.ImageBatch = null,
     status: c_int = 0,
 };
-var slots: [3]Slot = .{ .{}, .{}, .{} };
+var slots: [4]Slot = .{ .{}, .{}, .{}, .{} };
 var names: [c.MAX_MODELS][c.MAX_QPATH]u8 = undefined;
 var count: usize = 0;
 var cursor: usize = 0;
@@ -36,7 +36,8 @@ pub fn cancel() void {
     prepare = null;
 }
 
-fn poll() void {
+/// Advance reads/decodes during other owner-thread admission work, without filling slots.
+pub fn pump() void {
     for (&slots) |*slot| if (slot.batch != null and slot.status == 0) {
         slot.status = cext.R_PollImageBatch(slot.batch);
     };
@@ -67,10 +68,10 @@ fn fill() void {
             common.developer("dk3 model prefetch: name={s} model_bytes={d} active_slots={d}\n", .{ std.mem.sliceTo(path, 0), bytes.len, active });
             // Start this independent read while the next model metadata loads.
             slot.status = cext.R_PollImageBatch(batch);
-            poll(); // Earlier reads can dispatch while later model metadata loads.
+            pump(); // Earlier reads can dispatch while later model metadata loads.
         }
     }
-    poll();
+    pump();
 }
 
 pub fn begin(paths: [*c]const u8, length: c_int, callback: Prepare, requested_slots: c_int) bool {
@@ -103,12 +104,12 @@ pub fn begin(paths: [*c]const u8, length: c_int, callback: Prepare, requested_sl
 /// work. An unsupported/failed hint keeps normal validated registration available.
 pub fn select(name: []const u8) ?Ticket {
     if (selected != null) return null;
-    poll();
+    pump();
     for (&slots, 0..) |*slot, index| {
         if (slot.batch == null or !std.mem.eql(u8, std.mem.sliceTo(&slot.name, 0), name)) continue;
         const started = common.milliseconds();
         while (slot.status == 0) {
-            poll();
+            pump();
             if (slot.status == 0) c.SDL_Delay(1);
         }
         selected = index;

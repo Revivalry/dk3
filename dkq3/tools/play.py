@@ -28,6 +28,7 @@ PACKAGES = ('base', 'textures', 'maps', 'shaders', 'models', 'sprites', 'hud', '
 REQUIRED_ENTRIES = ('default.cfg', 'fonts/con_font.dkf', 'fonts/con_font.tga', 'maps/e1m1a.bsp',
                     'dk3/navigation/e1m1a.cfg')
 _HASH_PARALLEL_MIN_BYTES = 32 << 20
+_ADMISSION_PARALLEL_MIN_BYTES = 32 << 20
 _GAMEPLAY_PACKAGES = ('base', 'maps', 'data', 'navigation')
 
 
@@ -63,7 +64,7 @@ def checked_assets(directory):
         raise ValueError(f'{directory}: unsupported asset manifest format')
     entries = set()
     gameplay_entries = {}
-    for name in PACKAGES:
+    def admit(name):
         filename = f'dk3-{name}.pk3'
         path = directory / 'packages' / filename
         record = manifest['packages'].get(filename)
@@ -85,12 +86,30 @@ def checked_assets(directory):
                     raise ValueError(f'{path}: corrupt entry {entry}') from error
                 if entry_hash is not None:
                     hashes[entry] = entry_hash.digest()
-            if name in _GAMEPLAY_PACKAGES:
-                # Keep duplicate-name and sorted/case-normalized semantics of
-                # the previous ZipFile.read(name) compatibility calculation.
-                gameplay_entries[name] = [(entry, hashes[entry]) for entry in sorted(names)
-                                          if not entry.endswith('/')]
+            # Keep duplicate-name and sorted/case-normalized semantics of
+            # the previous ZipFile.read(name) compatibility calculation.
+            gameplay = ([(entry, hashes[entry]) for entry in sorted(names)
+                         if not entry.endswith('/')] if name in _GAMEPLAY_PACKAGES else [])
+            return name, names, gameplay
+    # Packages have independent readers and decompression state. Bound workers
+    # and streaming buffers; collect in package order and always join on error.
+    # Small installations stay serial, avoiding pool overhead for tiny inputs.
+    workers = min(4, os.cpu_count() or 1)
+    size = sum(path.stat().st_size for name in PACKAGES
+               if (path := directory / 'packages' / f'dk3-{name}.pk3').is_file())
+    if workers <= 1 or size < _ADMISSION_PARALLEL_MIN_BYTES:
+        admitted = map(admit, PACKAGES)
+        for name, names, gameplay in admitted:
             entries.update(names)
+            gameplay_entries[name] = gameplay
+    else:
+        executor = ThreadPoolExecutor(max_workers=workers)
+        try:
+            for name, names, gameplay in executor.map(admit, PACKAGES):
+                entries.update(names)
+                gameplay_entries[name] = gameplay
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
     missing = set(REQUIRED_ENTRIES) - entries
     if missing:
         raise ValueError('installation lacks required assets: ' + ', '.join(sorted(missing)))

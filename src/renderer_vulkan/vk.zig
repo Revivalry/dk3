@@ -550,17 +550,29 @@ fn memoryType(bits: u32, flags: c.VkMemoryPropertyFlags) ?u32 {
     return null;
 }
 
-fn allocate(requirements: c.VkMemoryRequirements, flags: c.VkMemoryPropertyFlags, linear: bool) Allocation {
-    const type_index = memoryType(requirements.memoryTypeBits, flags) orelse
-        memoryType(requirements.memoryTypeBits, flags & ~@as(u32, c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) orelse
-        common.fail(c.ERR_FATAL, "Vulkan: no memory type for flags {x}", .{flags});
-    for (blocks.items) |*block| {
+const ExistingAllocation = struct { allocation: Allocation, block_index: usize, previous_used: u64 };
+
+fn allocationType(requirements: c.VkMemoryRequirements, flags: c.VkMemoryPropertyFlags) ?u32 {
+    return memoryType(requirements.memoryTypeBits, flags) orelse
+        memoryType(requirements.memoryTypeBits, flags & ~@as(u32, c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
+}
+
+fn allocateExisting(requirements: c.VkMemoryRequirements, type_index: u32, linear: bool) ?ExistingAllocation {
+    for (blocks.items, 0..) |*block, index| {
         if (block.type_index != type_index or block.linear != linear or block.content != content_arena) continue;
         const offset = std.mem.alignForward(u64, block.used, requirements.alignment);
         if (offset + requirements.size > block.size) continue;
+        const previous_used = block.used;
         block.used = offset + requirements.size;
-        return .{ .memory = block.memory, .offset = offset, .mapped = if (block.mapped) |m| m + offset else null };
+        return .{ .allocation = .{ .memory = block.memory, .offset = offset, .mapped = if (block.mapped) |m| m + offset else null }, .block_index = index, .previous_used = previous_used };
     }
+    return null;
+}
+
+fn allocate(requirements: c.VkMemoryRequirements, flags: c.VkMemoryPropertyFlags, linear: bool) Allocation {
+    const type_index = allocationType(requirements, flags) orelse
+        common.fail(c.ERR_FATAL, "Vulkan: no memory type for flags {x}", .{flags});
+    if (allocateExisting(requirements, type_index, linear)) |existing| return existing.allocation;
     const size = @max(block_size, std.mem.alignForward(u64, requirements.size, 1 << 20));
     const flags_info = std.mem.zeroInit(c.VkMemoryAllocateFlagsInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO,
@@ -599,6 +611,16 @@ pub fn freeContentMemory() void {
             _ = blocks.swapRemove(index);
         } else index += 1;
     }
+}
+
+pub fn contentMemoryUsage() struct { blocks: usize, bytes: u64, used: u64 } {
+    var result: struct { blocks: usize = 0, bytes: u64 = 0, used: u64 = 0 } = .{};
+    for (blocks.items) |block| if (block.content) {
+        result.blocks += 1;
+        result.bytes += block.size;
+        result.used += block.used;
+    };
+    return .{ .blocks = result.blocks, .bytes = result.bytes, .used = result.used };
 }
 
 pub const Buffer = struct {
@@ -662,8 +684,8 @@ pub const Texture = struct {
     slot: u32 = 0,
 };
 
-pub fn createImage(width: u32, height: u32, levels: u32, format: c.VkFormat, usage: c.VkImageUsageFlags, aspect: c.VkImageAspectFlags) Texture {
-    const info = std.mem.zeroInit(c.VkImageCreateInfo, .{
+fn imageCreateInfo(width: u32, height: u32, levels: u32, format: c.VkFormat, usage: c.VkImageUsageFlags) c.VkImageCreateInfo {
+    return std.mem.zeroInit(c.VkImageCreateInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = c.VK_IMAGE_TYPE_2D,
         .format = format,
@@ -676,22 +698,61 @@ pub fn createImage(width: u32, height: u32, levels: u32, format: c.VkFormat, usa
         .sharingMode = c.VK_SHARING_MODE_EXCLUSIVE,
         .initialLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
     });
-    var image: c.VkImage = null;
-    must(d.CreateImage.?(s.device, &info, null, &image), "vkCreateImage");
-    var requirements: c.VkMemoryRequirements = undefined;
-    d.GetImageMemoryRequirements.?(s.device, image, &requirements);
-    const allocation = allocate(requirements, device_flags, false);
-    must(d.BindImageMemory.?(s.device, image, allocation.memory, allocation.offset), "vkBindImageMemory");
-    const view_info = std.mem.zeroInit(c.VkImageViewCreateInfo, .{
+}
+
+fn imageViewInfo(image: c.VkImage, levels: u32, format: c.VkFormat, aspect: c.VkImageAspectFlags) c.VkImageViewCreateInfo {
+    return std.mem.zeroInit(c.VkImageViewCreateInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = image,
         .viewType = c.VK_IMAGE_VIEW_TYPE_2D,
         .format = format,
         .subresourceRange = .{ .aspectMask = aspect, .baseMipLevel = 0, .levelCount = levels, .baseArrayLayer = 0, .layerCount = 1 },
     });
+}
+
+pub fn createImage(width: u32, height: u32, levels: u32, format: c.VkFormat, usage: c.VkImageUsageFlags, aspect: c.VkImageAspectFlags) Texture {
+    const info = imageCreateInfo(width, height, levels, format, usage);
+    var image: c.VkImage = null;
+    must(d.CreateImage.?(s.device, &info, null, &image), "vkCreateImage");
+    var requirements: c.VkMemoryRequirements = undefined;
+    d.GetImageMemoryRequirements.?(s.device, image, &requirements);
+    const allocation = allocate(requirements, device_flags, false);
+    must(d.BindImageMemory.?(s.device, image, allocation.memory, allocation.offset), "vkBindImageMemory");
+    const view_info = imageViewInfo(image, levels, format, aspect);
     var view: c.VkImageView = null;
     must(d.CreateImageView.?(s.device, &view_info, null, &view), "vkCreateImageView");
     return .{ .image = image, .view = view, .width = width, .height = height, .levels = levels };
+}
+
+pub const ImageReservation = struct { texture: Texture, charge: u64 };
+
+/// Best effort, owner-thread only: no new memory block and no submitted references.
+/// Failure releases objects before rolling the exclusive bump reservation back.
+pub fn tryReserveImage(width: u32, height: u32, levels: u32, format: c.VkFormat, usage: c.VkImageUsageFlags, aspect: c.VkImageAspectFlags, maximum_charge: u64) ?ImageReservation {
+    if (!content_arena or maximum_charge == 0) return null;
+    const info = imageCreateInfo(width, height, levels, format, usage);
+    var texture: Texture = .{ .width = width, .height = height, .levels = levels };
+    if (d.CreateImage.?(s.device, &info, null, &texture.image) != c.VK_SUCCESS) return null;
+    var reservation: ?ExistingAllocation = null;
+    var committed = false;
+    defer if (!committed) {
+        destroyImage(&texture);
+        if (reservation) |existing| blocks.items[existing.block_index].used = existing.previous_used;
+    };
+    var requirements: c.VkMemoryRequirements = undefined;
+    d.GetImageMemoryRequirements.?(s.device, texture.image, &requirements);
+    if (requirements.size > maximum_charge or requirements.alignment - 1 > maximum_charge - requirements.size) return null;
+    const charge = requirements.size + requirements.alignment - 1;
+    const type_index = allocationType(requirements, device_flags) orelse return null;
+    const existing = allocateExisting(requirements, type_index, false) orelse return null;
+    reservation = existing;
+    if (d.BindImageMemory.?(s.device, texture.image, existing.allocation.memory, existing.allocation.offset) != c.VK_SUCCESS) return null;
+    const view_info = imageViewInfo(texture.image, levels, format, aspect);
+    var view: c.VkImageView = null;
+    if (d.CreateImageView.?(s.device, &view_info, null, &view) != c.VK_SUCCESS) return null;
+    texture.view = view;
+    committed = true;
+    return .{ .texture = texture, .charge = charge };
 }
 
 pub fn destroyImage(texture: *Texture) void {

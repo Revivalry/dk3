@@ -7,6 +7,23 @@ const c = @import("../../engine/abi.zig").c;
 const v = @import("../../core/domain/vector.zig");
 const Admission = @import("world_admission.zig").State;
 const wire = @import("../../core/domain/world_admission.zig");
+// This IO instance only reads clocks: it cannot allocate or start workers.
+var admission_clock: std.Io.Threaded = .init_single_threaded;
+var admission_cpu_resolution_ns: i96 = -1;
+const low_cpu_ns = std.time.ns_per_ms / 2;
+fn admissionCpuNow() ?i96 {
+    const io = admission_clock.io();
+    if (admission_cpu_resolution_ns < 0) {
+        const resolution = std.Io.Clock.cpu_thread.resolution(io) catch {
+            admission_cpu_resolution_ns = 0;
+            return null;
+        };
+        admission_cpu_resolution_ns = resolution.nanoseconds;
+    }
+    if (admission_cpu_resolution_ns <= 0 or admission_cpu_resolution_ns > low_cpu_ns / 16) return null;
+    const now = std.Io.Clock.cpu_thread.now(io).nanoseconds;
+    return if (now > 0) now else null;
+}
 pub const Entry = struct { name: [64]u8 = @splat(0), handle: u32, ready: bool = false, failed: bool = false, total_ms: isize = 0, max_step_ms: isize = 0, polls: usize = 0, admission: ?*Admission = null };
 pub const State = struct {
     entries: [128]?Entry = @splat(null),
@@ -264,16 +281,27 @@ pub const State = struct {
         };
     }
     pub fn step(self: *State) !void {
-        // Background preparation yields after one resource. While gameplay is
+        // Background preparation can advance several cheap worker polls, but
+        // yields once they consume a millisecond. While gameplay is
         // held for admission, cheap resources must not each consume a frame,
         // and only the loading screen draws: spend most of each frame on the
         // load (about 30 bar redraws a second). Bound both elapsed time and
         // work, including polls awaiting worker I/O.
+        const started_cpu = if (self.waiting) null else admissionCpuNow();
         const started = engine.gateway.call(c.CG_MILLISECONDS, .{});
-        const budget_ms: isize = if (self.waiting) 30 else 8;
-        for (0..if (self.waiting) @as(usize, 256) else 1) |_| {
+        const budget_ms: isize = if (self.waiting) 30 else 1;
+        for (0..if (self.waiting) @as(usize, 256) else 8) |step_index| {
             if (!try self.stepOne()) break;
-            if (engine.gateway.call(c.CG_MILLISECONDS, .{}) - started >= budget_ms) break;
+            if (engine.gateway.call(c.CG_MILLISECONDS, .{}) - started >= budget_ms) {
+                // A first API wait can exhaust wall time without using much
+                // owner CPU. Continue only once, keeping the existing work cap.
+                if (!self.waiting and step_index == 0) if (started_cpu) |before| {
+                    if (admissionCpuNow()) |after| {
+                        if (after >= before and after - before < low_cpu_ns) continue;
+                    }
+                };
+                break;
+            }
         }
         if (self.waiting) {
             var count: usize = 0;

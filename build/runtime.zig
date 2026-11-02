@@ -48,6 +48,13 @@ pub fn declareTests(b: *std.Build, optimize: std.builtin.OptimizeMode) *std.Buil
     const configuration_contract = b.addExecutable(.{ .name = "server-configuration-contracts", .root_module = configuration });
     configuration_contract.link_gc_sections = true;
     step.dependOn(&b.addRunArtifact(configuration_contract).step);
+    const save_crc = b.createModule(.{ .target = b.graph.host, .optimize = optimize, .link_libc = true });
+    @import("header_inputs.zig").track(b, save_crc, &.{ "engine/ioquake3/code", "src/tests" });
+    for ([_][]const u8{ "src/tests/save_format_crc.c", "engine/ioquake3/code/qcommon/dk_save_format.c", "engine/ioquake3/code/qcommon/q_shared.c", "engine/ioquake3/code/thirdparty/zlib-1.3.1/crc32.c" }) |source|
+        save_crc.addCSourceFile(.{ .file = b.path(source), .flags = &.{ "-std=gnu99", "-ffunction-sections", "-fdata-sections" } });
+    const save_crc_contract = b.addExecutable(.{ .name = "save-crc-contracts", .root_module = save_crc });
+    save_crc_contract.link_gc_sections = true;
+    step.dependOn(&b.addRunArtifact(save_crc_contract).step);
     const collision = b.createModule(.{ .target = b.graph.host, .optimize = optimize, .link_libc = true });
     @import("header_inputs.zig").track(b, collision, &.{ "engine/ioquake3/code", "src/tests" });
     collision.addIncludePath(b.path("engine/ioquake3/code/qcommon"));
@@ -101,6 +108,14 @@ pub fn declareTests(b: *std.Build, optimize: std.builtin.OptimizeMode) *std.Buil
     const audit = b.addExecutable(.{ .name = "dk3-runtime-audit", .root_module = b.createModule(.{ .root_source_file = b.path("src/audit.zig"), .target = b.graph.host, .optimize = optimize }) });
     const audit_step = b.step("runtime-audit", "Build read-only save compatibility inspector");
     audit_step.dependOn(&b.addInstallArtifact(audit, .{}).step);
+    const save_target = b.resolveTargetQuery(.{
+        .cpu_arch = b.graph.host.result.cpu.arch,
+        .os_tag = b.graph.host.result.os.tag,
+        .abi = b.graph.host.result.abi,
+        .cpu_model = .baseline,
+    });
+    const save_bench = b.addExecutable(.{ .name = "save-decode-benchmark", .root_module = runtimeModule(b, save_target, optimize, "src/save_decode_bench.zig") });
+    b.step("bench-save-decode", "Build actual save decoding CPU characterization").dependOn(&b.addInstallArtifact(save_bench, .{}).step);
     return step;
 }
 pub fn addProduct(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, product: config.Product, rules_identity: []const u8) *std.Build.Step.Compile {

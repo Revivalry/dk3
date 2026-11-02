@@ -270,7 +270,7 @@ def main():
     parser.add_argument("--decode-cache-mib", type=int, choices=range(0, 1025), metavar="0..1024")
     parser.add_argument("--model-prefetch", type=int, choices=(0, 1),
                         help="compare bounded initial model preparation with ordinary registration")
-    parser.add_argument("--model-prefetch-slots", type=int, choices=(1, 2, 3),
+    parser.add_argument("--model-prefetch-slots", type=int, choices=(1, 2, 3, 4),
                         help="bounded model preparation slots for controlled CPU/resource comparisons")
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--timeout", type=float, default=90)

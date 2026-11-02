@@ -106,6 +106,9 @@ pub const World = struct {
     draw_indexes: []i32 = &.{},
     lightmap_bytes: []u8 = &.{},
     lightmap_next: u32 = 0,
+    lightmap_pending: [8]?image.RawReservation = @splat(null),
+    lightmap_pending_count: usize = 0,
+    lightmap_pending_next: usize = 0,
     surface_next: u32 = 0,
     image_batch: ?*cext.ImageBatch = null,
     materials_ready: []bool = &.{},
@@ -272,6 +275,7 @@ pub fn poll(handle_value: u32) c_int {
     if (w.status == .failed) {
         cext.R_FreeImageBatch(w.image_batch);
         w.image_batch = null;
+        discardLightmapReservations(w);
     }
     common.ri.EndBackgroundRead.?(job);
     w.read = null;
@@ -287,10 +291,13 @@ pub fn load(name_ptr: [*c]const u8) void {
     const bytes = common.readFile(common.qpath(&path, name).ptr) orelse common.fail(c.ERR_DROP, "Invalid render world {s}", .{name});
     defer common.freeFile(bytes);
     if (!validHeader(bytes)) common.fail(c.ERR_DROP, "Invalid render world {s}", .{name});
-    while (!admit(w, bytes)) {
+    while (true) {
+        @import("model_prefetch.zig").pump();
+        if (admit(w, bytes)) break;
         if (w.status == .failed) {
             cext.R_FreeImageBatch(w.image_batch);
             w.image_batch = null;
+            discardLightmapReservations(w);
             common.fail(c.ERR_DROP, "Cannot prepare render world {s}", .{name});
         }
     }
@@ -310,9 +317,22 @@ pub fn shutdown() void {
     applyShaderContext(null);
 }
 
+fn discardLightmapReservations(w: *World) void {
+    var discarded: usize = 0;
+    for (&w.lightmap_pending) |*pending| if (pending.*) |reservation| {
+        reservation.discard();
+        pending.* = null;
+        discarded += 1;
+    };
+    if (discarded != 0) common.developer("dk3 lightmap reservations: map={s} discarded={d}\n", .{ w.nameSlice(), discarded });
+    w.lightmap_pending_count = 0;
+    w.lightmap_pending_next = 0;
+}
+
 fn freeWorld(w: *World) void {
     const a = common.gpa;
     if (w.status == .free) return;
+    discardLightmapReservations(w);
     @import("bake.zig").destroyWorld(&w.bake);
     @import("rt.zig").destroyWorld(&w.rt);
     vk.destroyBuffer(&w.vertex_buffer);
@@ -371,6 +391,9 @@ fn admit(w: *World, bytes: []const u8) bool {
     loading = w;
     applyShaderContext(w);
     const phase = w.admission;
+    const previous_storage_scope = image.content_storage_scope;
+    image.content_storage_scope = phase == 4 and selected != null and cvars.regionLoading.integer == 0 and image.pendingCount() == 0;
+    defer image.content_storage_scope = previous_storage_scope;
     const started = common.milliseconds();
     const done = decode(w, bytes);
     if (done and w.status != .failed) w.status = .ready;
@@ -479,9 +502,27 @@ fn colorShift(input: [3]u8) [3]u8 {
 
 fn loadLightmaps(w: *World) bool {
     const started = common.milliseconds();
+    // A first image view can wait for earlier rendering. In normal background
+    // admission, allow one more fixed-size page before yielding to another
+    // foreground frame. Primary, held and unfinished deferred-image admission
+    // keep checking every page before normal background batching is eligible.
+    const minimum_pages: usize = if (selected == null or cvars.regionLoading.integer != 0 or image.pendingCount() != 0) 1 else 2;
+    var pages: usize = 0;
     const on_disk = w.lightmap_bytes.len / (lightmap_size * lightmap_size * 3);
     var pixels: [lightmap_size * lightmap_size * 4]u8 = undefined;
     while (w.lightmap_next < w.lightmaps.len) {
+        if (@import("window.zig").remaster and minimum_pages == 2 and w.lightmap_pending_count == 0) {
+            const count = @min(w.lightmap_pending.len, w.lightmaps.len - w.lightmap_next);
+            for (0..count) |offset| {
+                var reserved_name: [c.MAX_QPATH]u8 = undefined;
+                const reserved_label = std.fmt.bufPrint(&reserved_name, "*w{d}/lightmap{d}", .{ w.handle(), w.lightmap_next + offset }) catch "*lightmap";
+                w.lightmap_pending[offset] = image.reserveRaw(reserved_label, lightmap_size, lightmap_size, c.VK_FORMAT_R16G16B16A16_SFLOAT, .{ .no_light_scale = true, .clamp = true });
+            }
+            w.lightmap_pending_count = count;
+            w.lightmap_pending_next = 0;
+            // Keep reservation and texel work in separate cooperative calls.
+            return false;
+        }
         const i = w.lightmap_next;
         const source = if (on_disk == 0) &[_]u8{} else w.lightmap_bytes[(i % on_disk) * lightmap_size * lightmap_size * 3 ..][0 .. lightmap_size * lightmap_size * 3];
         var name: [c.MAX_QPATH]u8 = undefined;
@@ -498,7 +539,17 @@ fn loadLightmaps(w: *World) bool {
                 for (0..3) |k| texels[j * 4 + k] = half(linear[k]);
                 texels[j * 4 + 3] = half(1);
             }
-            w.lightmaps[i] = image.createRaw(label, std.mem.sliceAsBytes(&texels), lightmap_size, lightmap_size, c.VK_FORMAT_R16G16B16A16_SFLOAT, .{ .no_light_scale = true, .clamp = true });
+            if (w.lightmap_pending_count != 0) {
+                const pending = &w.lightmap_pending[w.lightmap_pending_next];
+                const reservation = pending.*.?;
+                pending.* = null;
+                w.lightmaps[i] = reservation.finish(std.mem.sliceAsBytes(&texels));
+                w.lightmap_pending_next += 1;
+                if (w.lightmap_pending_next == w.lightmap_pending_count) {
+                    w.lightmap_pending_count = 0;
+                    w.lightmap_pending_next = 0;
+                }
+            } else w.lightmaps[i] = image.createRaw(label, std.mem.sliceAsBytes(&texels), lightmap_size, lightmap_size, c.VK_FORMAT_R16G16B16A16_SFLOAT, .{ .no_light_scale = true, .clamp = true });
         } else {
             for (0..lightmap_size * lightmap_size) |j| {
                 const shifted = if (source.len == 0) [3]u8{ 0, 0, 0 } else colorShift(.{ source[j * 3], source[j * 3 + 1], source[j * 3 + 2] });
@@ -507,7 +558,8 @@ fn loadLightmaps(w: *World) bool {
             w.lightmaps[i] = image.create(label, &pixels, lightmap_size, lightmap_size, .{ .no_light_scale = true, .clamp = true });
         }
         w.lightmap_next = i + 1;
-        if (w.lightmap_next < w.lightmaps.len and common.milliseconds() - started >= 4) return false;
+        pages += 1;
+        if (w.lightmap_next < w.lightmaps.len and pages >= minimum_pages and common.milliseconds() - started >= 4) return false;
     }
     return true;
 }
@@ -524,6 +576,9 @@ fn shaderFor(w: *World, shader_num: i32, lightmap_num: i32) *Shader {
 /// (R_LoadSurfaces with R_QueueShaderImages).
 fn loadSurfaces(w: *World) bool {
     const started = common.milliseconds();
+    // Primary/held loading keeps the existing short chunks and worker-pump
+    // cadence. Normal background polls use their time slice.
+    const short_chunks = selected == null or cvars.regionLoading.integer != 0;
     while (w.surface_next < w.surfaces_lump.len) {
         const i = w.surface_next;
         const in = w.surfaces_lump[i];
@@ -556,7 +611,7 @@ fn loadSurfaces(w: *World) bool {
         w.image_batch = null;
         w.materials_ready[index] = true;
         w.surface_next = i + 1;
-        if (w.surface_next < w.surfaces_lump.len and (common.milliseconds() - started >= 4 or (i & 63) == 63)) return false;
+        if (w.surface_next < w.surfaces_lump.len and (common.milliseconds() - started >= 4 or (short_chunks and (i & 63) == 63))) return false;
     }
     return true;
 }

@@ -57,6 +57,69 @@ pub const Image = struct {
 var images: std.ArrayList(*Image) = .empty;
 var by_name: std.StringHashMapUnmanaged(*Image) = .empty;
 
+/// Set only around eligible normal world surface admission.
+pub var content_storage_scope = false;
+const StorageKey = struct {
+    width: u32,
+    height: u32,
+    levels: u32,
+    fn eql(a: StorageKey, b: StorageKey) bool {
+        return a.width == b.width and a.height == b.height and a.levels == b.levels;
+    }
+};
+const Storage = struct { key: StorageKey, reservation: vk.ImageReservation };
+const storage_budget: u64 = 4 * 1024 * 1024;
+var storage_pool: [4]?Storage = @splat(null);
+var storage_history: [8]?StorageKey = @splat(null);
+var storage_history_cursor: usize = 0;
+var storage_charge: u64 = 0;
+var storage_requests: u64 = 0;
+var storage_hits: u64 = 0;
+var storage_prefills: u64 = 0;
+var storage_failures: u64 = 0;
+
+pub fn storageInfo() void {
+    var unused: usize = 0;
+    for (storage_pool) |entry| if (entry != null) {
+        unused += 1;
+    };
+    const memory = vk.contentMemoryUsage();
+    common.info("dk3 image storage: requests={d} hits={d} prefills={d} failures={d} unused={d} charge={d} memory_blocks={d} memory_bytes={d} memory_used={d}\n", .{ storage_requests, storage_hits, storage_prefills, storage_failures, unused, storage_charge, memory.blocks, memory.bytes, memory.used });
+}
+
+fn contentTexture(width: u32, height: u32, levels: u32) vk.Texture {
+    const format = c.VK_FORMAT_R8G8B8A8_UNORM;
+    const usage = c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if (!content_storage_scope) return vk.createImage(width, height, levels, format, usage, c.VK_IMAGE_ASPECT_COLOR_BIT);
+    const key: StorageKey = .{ .width = width, .height = height, .levels = levels };
+    storage_requests += 1;
+    var repeated = false;
+    for (storage_history) |previous| if (previous) |value| {
+        if (key.eql(value)) repeated = true;
+    };
+    storage_history[storage_history_cursor] = key;
+    storage_history_cursor = (storage_history_cursor + 1) % storage_history.len;
+    for (&storage_pool) |*entry| if (entry.*) |value| {
+        if (!key.eql(value.key)) continue;
+        entry.* = null;
+        storage_charge -= value.reservation.charge;
+        storage_hits += 1;
+        return value.reservation.texture;
+    };
+    const texture = vk.createImage(width, height, levels, format, usage, c.VK_IMAGE_ASPECT_COLOR_BIT);
+    if (repeated and width > 0 and height > 0 and width <= 512 and height <= 512 and storage_charge < storage_budget) {
+        for (&storage_pool) |*entry| if (entry.* == null) {
+            if (vk.tryReserveImage(width, height, levels, format, usage, c.VK_IMAGE_ASPECT_COLOR_BIT, storage_budget - storage_charge)) |reservation| {
+                entry.* = .{ .key = key, .reservation = reservation };
+                storage_charge += reservation.charge;
+                storage_prefills += 1;
+            } else storage_failures += 1;
+            break;
+        };
+    }
+    return texture;
+}
+
 pub var default_image: *Image = undefined;
 pub var white: *Image = undefined;
 pub var identity_light: *Image = undefined;
@@ -353,7 +416,7 @@ fn commit(image: *Image, prepared: *const Levels) void {
     image.upload_height = prepared.upload_height;
     image.average = prepared.average;
     image.has_alpha = prepared.has_alpha;
-    image.texture = vk.createImage(image.upload_width, image.upload_height, @intCast(used.len), c.VK_FORMAT_R8G8B8A8_UNORM, c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT, c.VK_IMAGE_ASPECT_COLOR_BIT);
+    image.texture = contentTexture(image.upload_width, image.upload_height, @intCast(used.len));
     vk.uploadTexture(&image.texture, used, true);
     vk.bindTexture(&image.texture, samplerFor(image.flags));
 }
@@ -376,9 +439,10 @@ pub fn create(name: []const u8, pixels: []const u8, width: u32, height: u32, fla
     _ = common.qpath(&image.name, name);
     var prepared = prepareLevelsBorrowed(pixels, width, height, flags, cvars.picmip.integer, deviceLimit()) catch @panic("OOM");
     defer prepared.deinit();
-    commit(image, &prepared);
+    // The registry owns the image before any GPU commands can reference it.
     images.append(common.gpa, image) catch @panic("OOM");
     by_name.put(common.gpa, image.nameSlice(), image) catch @panic("OOM");
+    commit(image, &prepared);
     return image;
 }
 
@@ -593,18 +657,39 @@ pub fn replace(image: *Image, pixels: []const u8, width: u32, height: u32) void 
     vk.uploadRegion(&image.texture, 0, 0, width, height, pixels);
 }
 
-/// A non-mipmapped image of another format from raw texels (float lightmaps).
-pub fn createRaw(name: []const u8, texels: []const u8, width: u32, height: u32, format: c.VkFormat, flags: Flags) *Image {
+/// Unpublished raw storage: no GPU commands or descriptors refer to it yet.
+/// The owner must either finish it once or discard it before releasing its state.
+pub const RawReservation = struct {
+    image: *Image,
+
+    pub fn finish(self: RawReservation, texels: []const u8) *Image {
+        const image = self.image;
+        // Transfer lifetime ownership before recording any GPU references.
+        images.append(common.gpa, image) catch @panic("OOM");
+        by_name.put(common.gpa, image.nameSlice(), image) catch @panic("OOM");
+        const levels = [_][]const u8{texels};
+        vk.uploadTexture(&image.texture, &levels, true);
+        vk.bindTexture(&image.texture, samplerFor(image.flags));
+        return image;
+    }
+
+    pub fn discard(self: RawReservation) void {
+        vk.destroyImage(&self.image.texture);
+        common.gpa.destroy(self.image);
+    }
+};
+
+pub fn reserveRaw(name: []const u8, width: u32, height: u32, format: c.VkFormat, flags: Flags) RawReservation {
     const image = common.gpa.create(Image) catch @panic("OOM");
     image.* = .{ .width = width, .height = height, .upload_width = width, .upload_height = height, .flags = flags, .texture = .{}, .has_alpha = false };
     _ = common.qpath(&image.name, name);
     image.texture = vk.createImage(width, height, 1, format, c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT, c.VK_IMAGE_ASPECT_COLOR_BIT);
-    const levels = [_][]const u8{texels};
-    vk.uploadTexture(&image.texture, &levels, true);
-    vk.bindTexture(&image.texture, samplerFor(flags));
-    images.append(common.gpa, image) catch @panic("OOM");
-    by_name.put(common.gpa, image.nameSlice(), image) catch @panic("OOM");
-    return image;
+    return .{ .image = image };
+}
+
+/// A non-mipmapped image of another format from raw texels (float lightmaps).
+pub fn createRaw(name: []const u8, texels: []const u8, width: u32, height: u32, format: c.VkFormat, flags: Flags) *Image {
+    return reserveRaw(name, width, height, format, flags).finish(texels);
 }
 
 /// A keyword starts or ends one of the letter runs of the file name (materialgen.py `has`):
@@ -713,6 +798,21 @@ pub fn shutdown() void {
     }
     deferred.clearAndFree(common.gpa);
     deferred_failures = 0;
+    var unused_storage: usize = 0;
+    for (&storage_pool) |*entry| if (entry.*) |*value| {
+        vk.destroyImage(&value.reservation.texture);
+        entry.* = null;
+        unused_storage += 1;
+    };
+    if (unused_storage != 0) common.developer("dk3 image storage cleanup: unused={d} charge={d}\n", .{ unused_storage, storage_charge });
+    storage_charge = 0;
+    storage_history = @splat(null);
+    storage_history_cursor = 0;
+    storage_requests = 0;
+    storage_hits = 0;
+    storage_prefills = 0;
+    storage_failures = 0;
+    content_storage_scope = false;
     for (images.items) |image| {
         vk.destroyImage(&image.texture);
         common.gpa.destroy(image);

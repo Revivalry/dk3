@@ -4,6 +4,7 @@ import hashlib
 import struct
 from pathlib import Path
 import tempfile
+from threading import Event
 import unittest
 import zipfile
 from unittest.mock import patch
@@ -35,9 +36,12 @@ class PlayInstallTest(unittest.TestCase):
                                 continue
                             reference.update(entry.lower().encode() + b'\0')
                             reference.update(hashlib.sha256(archive.read(entry)).digest())
-                admitted, actual = play.checked_assets(source)
-                self.assertEqual(admitted, manifest)
-                self.assertEqual(actual, reference.hexdigest())
+                for threshold in (0, 1 << 60):
+                    with patch('play._ADMISSION_PARALLEL_MIN_BYTES', threshold), \
+                            patch('play.os.cpu_count', return_value=4):
+                        admitted, actual = play.checked_assets(source)
+                    self.assertEqual(admitted, manifest)
+                    self.assertEqual(actual, reference.hexdigest())
                 if expected is not None:
                     self.assertEqual(actual, expected)
                 expected = actual
@@ -59,11 +63,43 @@ class PlayInstallTest(unittest.TestCase):
                 # A matching package SHA must not bypass the entry CRC check.
                 manifest['packages'][path.name]['sha256'] = play.digest(path)
                 (source / 'manifest.json').write_text(json.dumps(manifest))
-                with self.assertRaisesRegex(ValueError, 'corrupt entry'):
-                    play.checked_assets(source)
+                for threshold in (0, 1 << 60):
+                    with patch('play._ADMISSION_PARALLEL_MIN_BYTES', threshold), \
+                            patch('play.os.cpu_count', return_value=4):
+                        with self.assertRaisesRegex(ValueError, 'corrupt entry'):
+                            play.checked_assets(source)
                 path.write_bytes(original)
                 manifest['packages'][path.name]['sha256'] = play.digest(path)
                 (source / 'manifest.json').write_text(json.dumps(manifest))
+
+    def test_failed_admission_joins_other_active_package_readers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            _, assets = self.fixture(Path(temporary))
+            started, release, completed = Event(), Event(), Event()
+            original = play.digest
+            def failed(path):
+                if path.name == 'dk3-base.pk3':
+                    try:
+                        if not started.wait(5):
+                            raise AssertionError('second package reader did not start')
+                        raise OSError('controlled admission reader failure')
+                    finally:
+                        release.set()
+                if path.name == 'dk3-textures.pk3':
+                    started.set()
+                    if not release.wait(5):
+                        raise AssertionError('failed reader did not release peer')
+                    result = original(path)
+                    completed.set()
+                    return result
+                return original(path)
+            with patch('play._ADMISSION_PARALLEL_MIN_BYTES', 0), \
+                    patch('play.os.cpu_count', return_value=2), \
+                    patch('play.digest', side_effect=failed):
+                with self.assertRaisesRegex(OSError, 'controlled admission reader failure'):
+                    play.checked_assets(assets / 'current')
+            self.assertTrue(completed.is_set(), 'failure returned with a reader still active')
+            play.checked_assets(assets / 'current')
 
     def test_parallel_product_hashes_retain_identity_and_join_after_failure(self):
         with tempfile.TemporaryDirectory() as temporary, \

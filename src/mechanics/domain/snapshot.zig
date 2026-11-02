@@ -116,8 +116,13 @@ pub fn captureRegion(allocator: std.mem.Allocator, storage: []u8, world: *data.W
     return writer.finish();
 }
 fn parse(comptime T: type, allocator: std.mem.Allocator, field: stream.Field) !T {
+    var parser = @import("../../core/domain/json_struct.zig").Parser.init(allocator);
+    defer parser.deinit();
+    return parseUsing(T, allocator, field, &parser);
+}
+fn parseUsing(comptime T: type, allocator: std.mem.Allocator, field: stream.Field, parser: *@import("../../core/domain/json_struct.zig").Parser) !T {
     if (field.kind != .bytes or field.data.len > 1024 * 1024) return error.InvalidSnapshotField;
-    const result = try std.json.parseFromSliceLeaky(T, allocator, field.data, .{ .allocate = .alloc_always, .max_value_len = 65536 });
+    const result = try parser.parseOwned(T, allocator, field.data, 65536);
     try bounded(result);
     return result;
 }
@@ -178,6 +183,8 @@ fn decodeWorld(allocator: std.mem.Allocator, bytes: []const u8, allow_visited: b
     arena.* = std.heap.ArenaAllocator.init(allocator);
     errdefer arena.deinit();
     const strings = arena.allocator();
+    var json_parser = @import("../../core/domain/json_struct.zig").Parser.init(allocator);
+    defer json_parser.deinit();
     var map: ?[]const u8 = null;
     var skill: ?u8 = null;
     var version: ?i32 = null;
@@ -193,7 +200,7 @@ fn decodeWorld(allocator: std.mem.Allocator, bytes: []const u8, allow_visited: b
         } else if (std.mem.eql(u8, field.name, "native_schema")) {
             if (field.count != 1) return error.InvalidSnapshotSchema;
             version = try field.integer(0);
-        } else if (std.mem.eql(u8, field.name, "state")) header = try parse(Header, strings, field) else return error.UnsupportedSnapshotField;
+        } else if (std.mem.eql(u8, field.name, "state")) header = try parseUsing(Header, strings, field, &json_parser) else return error.UnsupportedSnapshotField;
     }
     if (version == null or (version.? != 1 and version.? != schema)) return error.UnsupportedSnapshotSchema;
     var state = header orelse return error.MissingSnapshotState;
@@ -202,6 +209,7 @@ fn decodeWorld(allocator: std.mem.Allocator, bytes: []const u8, allow_visited: b
     if (state.namespace == null) state.namespace = 0;
     var world = data.World.initNamespaced(allocator, 1024, state.namespace.?);
     errdefer world.deinit();
+    try world.beginConstruction();
     var archives: std.ArrayList(Archive) = .empty;
     var residents: std.ArrayList(Loaded) = .empty;
     errdefer for (residents.items) |*member| member.deinit(allocator);
@@ -238,18 +246,20 @@ fn decodeWorld(allocator: std.mem.Allocator, bytes: []const u8, allow_visited: b
         if (version.? == 1 and record.id > world.id_last) return error.InvalidLegacyIdentity;
         const entity = try world.create(record.id, .{});
         while (try reader.nextField()) |field| {
-            var known = false;
-            inline for (std.meta.fields(data.Component)) |component| if (std.mem.eql(u8, field.name, component.name)) {
-                if (known) return error.DuplicateComponent;
-                try world.put(entity, try parse(component.type, strings, field));
-                known = true;
-            };
-            if (!known) return error.UnsupportedSnapshotComponent;
+            const component = std.meta.stringToEnum(data.ComponentId, field.name) orelse return error.UnsupportedSnapshotComponent;
+            switch (component) {
+                inline else => |id| {
+                    const T = std.meta.fields(data.Component)[@intFromEnum(id)].type;
+                    try world.put(entity, try parseUsing(T, strings, field, &json_parser));
+                },
+            }
         }
     }
     if (state.next_id < world.next_id or state.next_id == std.math.maxInt(u32)) return error.InvalidNextIdentity;
     world.next_id = state.next_id;
     if (state.namespace != null and state.next_id > world.id_last + 1) return error.InvalidNextIdentity;
+    // Release detached storage before copying the completed world's ownership.
+    try world.finishConstruction();
     var result: Loaded = .{ .arena = arena, .world = world, .header = state, .map = map orelse return error.InvalidSaveMap, .skill = skill orelse return error.InvalidSaveSkill, .visited = archives.items, .residents = residents.items, .region_member = region_member };
     if (!region_member) try validateRegion(allocator, &result);
     return result;

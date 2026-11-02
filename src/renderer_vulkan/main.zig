@@ -46,6 +46,7 @@ const commands = [_]struct { name: [*:0]const u8, function: *const fn () callcon
     .{ .name = "minimize", .function = minimize },
     .{ .name = "vk_materialscan", .function = materialScan },
     .{ .name = "dk3_image_pending", .function = imagePending },
+    .{ .name = "dk3_image_storage", .function = imageStorage },
 };
 
 fn addCommands() void {
@@ -61,6 +62,9 @@ fn imageList() callconv(.c) void {
 }
 fn imagePending() callconv(.c) void {
     common.info("dk3 pending images: count={d} failed={d}\n", .{ image.pendingCount(), image.failedCount() });
+}
+fn imageStorage() callconv(.c) void {
+    image.storageInfo();
 }
 fn shaderList() callconv(.c) void {
     shader.list();
@@ -86,6 +90,7 @@ fn gfxInfo() callconv(.c) void {
 /// Waits for the GPU and releases every content resource; the device and window stay.
 fn releaseContent() void {
     @import("model_prefetch.zig").cancel();
+    common.error_cleanup = null;
     scene.end2DProfile();
     if (window.recording) _ = window.endFrame();
     vk.flushUploads();
@@ -116,6 +121,8 @@ fn shutdownC(destroy_window: c.qboolean) callconv(.c) void {
 
 fn beginRegistration(config: [*c]c.glconfig_t) callconv(.c) void {
     if (!initialized) init();
+    @import("model_prefetch.zig").cancel();
+    common.error_cleanup = null;
     config.* = window.config;
     scene.clearScene();
     registered = true;
@@ -152,15 +159,20 @@ fn setWorldVisData(_: [*c]const u8) callconv(.c) void {
 }
 fn endRegistration() callconv(.c) void {
     @import("model_prefetch.zig").cancel();
+    common.error_cleanup = null;
     in_play = true;
 }
 
 fn prepareModels(paths: [*c]const u8, count: c_int) callconv(.c) c.qboolean {
     if (cvars.modelImagePrefetch.integer == 0) {
         @import("model_prefetch.zig").cancel();
+        common.error_cleanup = null;
         return 0;
     }
-    return @intFromBool(@import("model_prefetch.zig").begin(paths, count, model.prepareImages, cvars.modelImagePrefetchSlots.integer));
+    common.error_cleanup = @import("model_prefetch.zig").cancel;
+    const accepted = @import("model_prefetch.zig").begin(paths, count, model.prepareImages, cvars.modelImagePrefetchSlots.integer);
+    if (!accepted or count == 0) common.error_cleanup = null;
+    return @intFromBool(accepted);
 }
 
 fn clearScene() callconv(.c) void {

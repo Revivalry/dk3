@@ -5,6 +5,1793 @@ with the merged source as of 20 October 2026. Results below retain their origina
 runtime, assets and limits. Implementation and focused passes do not establish
 complete episode/campaign or artistic acceptance.
 
+## Session handoff — optimization paused; retained through 563
+
+The owner paused optimization and requested publication. The unfinished 566
+serialization experiment only built a baseline harness; its temporary repack mode
+has been restored out of production. No experiment is running. All fourteen
+selected source and eleven runtime identities match qualified 563. Historical
+entries below describe their state at the time, including requests to continue.
+
+Changes since the previous publication at 503 retain the following matched gains.
+Each row has its own preceding control: percentages are not additive, and there
+is no same-environment start-to-final whole-branch comparison. B/A denote the
+copied Greece e2m3b/e2m3a saves. Engine measurements use isolated software-only
+headless runs; original installation/assets/saves stay unchanged.
+
+| Retained change | Matched result | Scope and cost |
+| --- | --- | --- |
+| Earlier model prefetch, 506 | Resident B 4.128 → 3.981 s; A 4.585 → 4.283 s; first-model waits 194/206 → 0/0 ms in the separate standalone block | Complete loading; resident A peak RSS +21416 KiB, CPU mixed. Profiles differ between blocks and are not pooled. |
+| Four model slots, 509 | Same binary, three/four slots: standalone B 2.826 → 2.766 s; A 3.276 → 3.124 s. Resident B 4.029 → 3.828 s; A 4.389 → 4.229 s | Resident B RSS +36036 KiB; standalone A CPU increases. Worst temporary bound 1248 → 1664 MiB. |
+| Parallel package admission, 512 | Warm preparation 5.286 → 4.752 s; stored-PNG block 4.547 → 4.088 s (both 10.1%) | Identical generation; stored-PNG CPU +6.4%; bounded four readers. |
+| Engine save CRC, 514 | Engine validation/staging 156 → 12 ms; B ready 4.135 → 3.927 s; A 4.688 → 4.636 s | All checks retained; A process CPU increases. |
+| Portable native CRC, 516 | Actual payload CRC about 23.1 → 4.1 ms | Historical step, subsequently extended by 551; fresh A did not improve. |
+| Surface admission cadence, 517v2 | Remaining renderer target 33.081 → 18.134 s (45.2%) | Target readiness, not complete region/gameplay readiness or FPS. |
+| Cheap normal polls, 520 | Remaining target 19.127 → 11.824 s (38.2%) | Same 9903 surfaces/47 pages; peak RSS +24.2 MiB. |
+| Prioritized lightmap batching, 526 | Remaining target 12.272 → 9.418 s (23.3%) | Fresh loads mixed; unchanged budgets and pages. |
+| Eight HDR view reservations, 527 | Remaining target 9.319 → 8.095 s (13.1%) | Bounded earlier storage; fresh A consistently +36/+51/+53 ms. |
+| Four-slot/4-MiB RGBA8 storage pool, 530 | Remaining target 8.264873 → 7.551208 s (8.6%) | Peak RSS median +8484 KiB; exact pixels/lifetimes verified. |
+| Component-name dispatch, 538 | UI decode B 95.576 → 91.201 ms; A 94.243 → 91.231 ms | 4.6%/3.2% component gains; no whole-load claim. |
+| One bounded low-CPU continuation, 542 | Remaining target 7.174411 → 6.273695 s (12.6%) | At most one extra step/eight total; frames/fresh loads mixed. |
+| JSON field dispatch, 543 | UI decode −1.28%/−0.88%; server −1.55%/−1.92% | Eleven of twelve pairs faster; no causal whole-load claim. |
+| Lowest-free-slot hint, 548 | UI decode −0.61%/−1.21% | Same slot/ID/failure ordering; one of six pairs slower. |
+| Runtime-dispatched native CRC, 551 | UI decode 85.990 → 79.539 / 85.903 → 79.639 ms; canonical roundtrip 243.605 → 219.628 / 241.289 → 222.803 ms | UI 7.5%/7.3%, server 6.8%/7.1%; exact bytes, portable fallback and concurrent callers verified. |
+| Reused scanner nesting storage, 560 | UI decode −4.34%/−4.55%; server −5.93%/−4.96%; decoder RSS about 2.6–3.0 MiB lower | Whole-load effect unresolved: four of six A pairs slower, median paired +79.9 ms; same-binary controls also vary. |
+| Construction-only chunk reuse, 563 | Decoder RSS 58900 → 44500 / 59004 → 43264 KiB (24.45%/26.68%); retained chunks 1703 → 820, empty 883 → 0 | 13.85 MiB less retained chunk storage; server CPU −2.17%/−1.64%; UI B flat/A −2.55%; fresh/frame/roundtrip CPU mixed. |
+
+Final qualified build: 90/90 steps. Latest aggregate: 59/59 steps, 560 native
+tests plus C contracts and 384 Python tests in the recorded pinned environment.
+Ownership R1–R11 remains zero. Actual original saves preserve all 32 worlds,
+canonical bytes, active slots, masks, query/view order and epochs; malformed
+errors match. Native UI/intro/E1/Greece saves and reloads, controlled B→C arrival
+reload and cold cancellation/restart/re-request pass validation. All seventeen
+latest normal logs are GPU-query-free; owner saves are hash-unchanged.
+
+Rejected work stays out: weather empty-marker shortcut, extra image pumping,
+material handoffs, larger/blind texture-pool policies, JSON scratch/writer reuse,
+engine-to-native CRC bridge, eight CRC streams, nested/ordered/key-token JSON
+specializations. Static inspection also falsified duplicate chunk initialization.
+The separate 507 Greece companion catch-up fix remains isolated, not deployed or
+included in this performance branch. Physical-GPU and full-campaign acceptance
+remain unverified. Detailed individual costs, controls and failures follow.
+
+## Sequence 566 — perf-save-field-initialization — paused before prototype
+
+The owner stopped the loop after a baseline-only repack harness build (3/3).
+Restore the temporary benchmark mode exactly to retained 563; no writer change
+was implemented, timed, retained or published. Private design/baseline artifacts
+remain under zig-out/reports/perf-save-field-initialization-566/ for a future
+explicit resume.
+
+## Sequence 565 — perf-save-writer-initialization — characterization complete
+
+Actual retained 563 generic ReleaseSafe Writer.raw emits one full reservation
+memset followed by separate name/data memcpy calls; source reservation size is
+8+name+payload, so the payload clear survives before its overwrite. The bounded
+record header/name also clears before copying. Integers has no standalone emitted
+symbol; do not infer staging cost from source alone. No timing gain or source
+change yet. Preserve full self-validation/CRC and allocator safety; consider
+header-only initialization with an unchanged alias fallback. Evidence:
+zig-out/reports/perf-save-writer-initialization-565/.
+
+## Sequence 564 — perf-json-key-token — rejected; restored 563
+
+Read complete Scanner object-key tokens directly through its public next API,
+avoiding nextAllocMax's generic peek/list path. Partial tokens retain standard
+continuation/ownership; other sources keep the stock API. No UTF8/grammar/value
+validation bypass or borrowed-value change. Preserve stock complete borrowed-key
+limit behavior, including its difference from allocated escaped keys. Six focused
+contracts pass with standard-parser differential Unicode/surrogate/escape/error/
+length cases and scratch-OOM/reuse. Freeze a private generic CPU candidate and
+restore normal source before three interleaved pairs per original save. No
+accepted gain. Evidence: zig-out/reports/perf-json-key-token-564/.
+
+Private build passes 3/3. Initial arrival CPU 72.526267 → 72.910336 ms (+0.53%);
+autosave 74.238915 → 72.647456 ms (−2.14%). A bounded counterbalanced confirmation
+gives 73.171811 → 72.812262 ms (−0.49%) and 73.133283 → 72.692541 ms (−0.60%).
+All six autosave pairs improve, but four of six arrival pairs are slower, with
+paired increases including +2.133/+4.297 ms. Keep every sample. Reject the
+inconsistent representative-input result without native rollout or layout tuning.
+Normal fourteen source and eleven runtime identities match retained 563 before
+both blocks; no duplicate broad suite for the discarded prototype.
+
+## Sequence 563 — perf-save-chunk-reuse — retained memory gain
+
+Private isolated-world construction may retain two empty tail chunks for reuse,
+counted inside the physical chunk cap. Detach only the tail so active row/chunk
+indices and archetype registration stay stable. Restore a consumed spare on
+append OOM; finish frees spares before copying ownership into Loaded, and deinit
+cleans failed construction. Default live-world retention stays unchanged. Select
+from 562's 883 empty chunks/1703 total and zero row swaps in actual reconstruction.
+Current 560 generic CPU baseline build passes 3/3. Nine focused core contracts
+pass, including new cap/OOM/retry/lifecycle and values/slots/query-order/epoch
+parity across large components, middle-row changes and handle reuse. Freeze the
+candidate CPU build and restore both normal sources before interleaved real-save
+measurements. Evidence:
+zig-out/reports/perf-save-chunk-reuse-563/.
+
+Both actual 32-world saves preserve exact active slots, masks, archetype/chunk
+views, query order, epochs, next IDs and free-slot hints, with exact canonical
+bytes. Final retained chunks fall 1703 → 820, empty chunks 883 → 0, saving
+14523584 bytes (13.85 MiB) of retained chunk storage. Private diagnostic timings
+are excluded. Matched generic UI decode process peak RSS falls 58900 → 44500 KiB
+(24.45%) and 59004 → 43264 KiB (26.68%); minor faults fall roughly 3700–4100 per
+process. Server RSS falls 58512 → 44192 and 59004 → 42712 KiB. These are decoder
+component measurements, not whole-engine RSS reductions.
+
+Three interleaved process pairs per save, seven measured decodes after warmup:
+UI arrival CPU 76.715952 → 76.767675 ms (+0.067%, roughly flat), autosave
+78.459080 → 76.459885 ms (2.55% better); five of six pairs improve. Server CPU
+76.623317 → 74.963793 ms (2.17%) and 76.036471 → 74.789074 ms (1.64%), all six
+pairs faster. Canonical roundtrip CPU is mixed (−0.31%/+0.83% arm medians),
+with every measured output exact. Roundtrip RSS medians fall about 13.5/17.3 MiB.
+
+Normal fresh-load timings are mixed: B medians 3.776819 → 3.783285 s, paired
++97/−45/−42 ms; A 4.334370 → 4.385222 s, paired +207/−154/−96 ms. Preserve all
+samples; claim no overall load speedup. Unique model/PNG sets and player state
+match; A duplicate PNG counts vary. Two dynamic frame pairs have means
+21.733 → 22.864 and 23.114 → 22.044 ms, maxima 41 → 45 and 42 → 36 ms.
+Unequal windows and two pairs do not establish FPS/tail changes. Renderer
+allocated ELF sections remain exact 560; no physical-GPU performance claim.
+
+Five original/produced saves canonically match all four baseline/candidate UI/
+server readers; seven malformed cases return exact errors. Coherent UI intro/E1,
+both Greece saves and in-place save/reload, controlled B→C with arrival reload,
+and cold cancellation/vid_restart/re-request pass under validation. Controlled
+nearby-party crossing does not qualify the separate natural catch-up fix 507.
+Native build passes 90/90; one aggregate 59/59 steps, 560 native tests plus C
+contracts and 384 pinned Python tests. Ownership R1–R11 stays zero. Seventeen
+normal engine logs are GPU-query-free and contain no validation errors. All
+fourteen source and eleven runtime files match frozen identities; all three
+owner saves are hash-unchanged, and diff checks pass. Rules
+`309d101604c95b94bcb205548b93eb91e6f67c94bd13812120b07745fbe66600` match 708
+selected source files and all three modules; protocol 1351/schema unchanged.
+Retain for demonstrated memory gains and continue the active optimization loop.
+
+## Sequence 562 — perf-ecs-storage-work — characterization complete
+
+Private generic ReleaseSafe counters observe both actual 32-world saves: 1703
+chunks allocated/destroyed, 28010944 bytes, with 883 empty chunks remaining after
+reconstruction. Final rows/entities/worlds match identity (14168/14174 entities).
+All 61890/61910 component puts relocate; no row swaps occur. Archetype requests
+scan 903717/904991 entries; row reservations scan 79980/80006 chunks, maximum
+twelve per archetype. Logical existing-component copies total about 5.91 MB and
+new undefined-column writes 5.86 MB; these are logical sizes, not bus traffic.
+Select bounded reconstruction-only empty-chunk reuse before tuning searches.
+Freeze the diagnostic then restore both normal sources; all fourteen source and
+eleven runtime identities match retained 560 before samples. First diagnostic
+loop-syntax failure is preserved; repaired build passes 3/3. Instrumented timings
+are excluded, no normal source change or duplicate aggregate. Evidence:
+zig-out/reports/perf-ecs-storage-work-562/.
+
+## Sequence 561 — perf-ecs-chunk-initialization — hypothesis rejected
+
+Inspect actual 551 and retained 560 generic ReleaseSafe reserveRow disassembly,
+using 559's captured allocation call stack. Both emit one 16448-byte 0xAA fill
+then the count=1 store. The compiler already removes the suspected duplicate
+whole-chunk initialization. Other fills initialize/free pointer-array buffers;
+they are separate allocations. No source change, prototype, performance claim
+or duplicate suite. Evidence: zig-out/reports/perf-ecs-chunk-initialization-561/.
+
+## Sequence 560 — perf-json-scanner-reuse — retained component gain
+
+Retain one scanner nesting allocation across a decodeWorld's component payloads.
+Reset every scanner state between complete inputs, retaining only nesting
+capacity; owned values stay on the existing strings arena. Parser lifetime ends
+on success or failure, with recursive worlds owning independent parsers. This
+differs from rejected 540's per-call local fallback buffer. Predict less repeated
+allocation/free/poison work observed by 559. Freeze private CPU candidate and
+restore both normal sources before interleaved original-save measurements;
+expand qualification only if useful. No disabled safety or depth bound.
+Evidence: zig-out/reports/perf-json-scanner-reuse-560/.
+
+Three interleaved process pairs per original save, seven measured samples after
+warmup, improve actual UI decode median CPU 79.336367 → 75.890019 ms for arrival
+(4.34%) and 80.249599 → 76.598040 ms for autosave (4.55%). Server-root decoding
+improves 80.970692 → 76.168607 ms (5.93%) and 86.608256 → 82.312655 ms (4.96%).
+All twelve decode pairs improve. Isolated decoder peak RSS medians fall about
+2.6–3.0 MiB; this is not a whole-engine memory claim. Canonical decode/encode/SHA/
+deinit CPU improves 1.47%/1.70%, all six pairs faster and every measured output's
+bytes/hash exact. Roundtrip peak RSS is mixed; do not generalize the memory gain.
+
+Owned-value/input replacement, repeated reuse without further nesting allocation,
+reordered/escaped/duplicate/unknown/malformed fields, recovery after errors,
+allocation failure and 1200-level nesting growth pass. Two original plus three
+native-produced saves canonically match through baseline/candidate UI/server
+readers; all seven malformed cases produce exact errors. Three final native saves
+also canonically match all four readers. Final coherent UI intro/E1, both Greece
+saves and in-place saves/reloads, controlled B→C with arrival reload, and cold
+admission cancellation/vid_restart/re-request pass under validation. Controlled
+nearby-party crossing does not qualify the separate 507 natural catch-up fix.
+
+Whole-load effect remains unresolved. Original arrival ready median is 3.777351 →
+3.724608 s (paired −251/−53/+0.4 ms). Original autosave is 4.232968 → 4.378216 s,
+all three slower (+50/+194/+146 ms); counterbalanced confirmation yields
+−149/+110/−197 ms. Across all six A pairs, four are slower and the median paired
+cost is +79.9 ms. Identical-binary baseline controls yield +8.5/−3.9/−99.7 ms,
+showing appreciable variation, not proving the candidate cost absent. Retain for
+demonstrated component gains with this explicit unresolved end-to-end limit;
+claim no whole-load speedup. Unique model/PNG work and player state match; A PNG
+duplicate counts vary. All original, confirmation and control samples are kept.
+
+Two dynamic frame pairs have means 22.1825 → 22.2133 and 22.1818 → 22.2612 ms;
+maxima 40 → 40 and 36 → 35 ms. Unequal task windows and two pairs cannot establish
+FPS/tail changes. Renderer allocated ELF sections remain exact 551; file metadata
+differs. Normal thirty engine logs are GPU-query-free and contain no validation
+errors. No physical-GPU performance claim.
+
+Final native build passes 90/90; aggregate retry passes 59/59 steps, 558 native
+tests plus C contracts and 384 pinned-environment Python tests. First aggregate's
+functional tests all pass but its formatting gate fails; preserve that attempt.
+Repair is whitespace-only in a test fixture; rebuild/replay qualify final rules
+`a43f99eec6c41edcc75d88335e00a007a849a750c1e63df5c580649a23a46ac3`, verified
+against 708 selected source files and all three native modules. Ownership R1–R11
+remains zero. All fourteen final source and eleven runtime identities match;
+temporary benchmark/profiling modules are absent and all three owner saves are
+unchanged. Protocol 1351 and portable schema remain unchanged. Active loop continues.
+
+## Sequence 559 — perf-save-decode-stacks — characterization complete
+
+Twenty-four bounded GDB owner snapshots of retained 551's actual UI decoder all
+succeed. All 300 interrupted decode iterations finish with exact input hash and
+32-world identity. Repeated scanner token/peek/whitespace paths occur for Body,
+MapObject, Actor, Pose and Binding. Other observations include ECS chunk allocation
+poison filling, scanner nesting-stack free/poison and push/capacity, numeric
+conversion and validation. Sparse stacks do not establish profile percentages;
+optimized locals can be unavailable. Interrupted timings are diagnostic only.
+No production change. Evidence: zig-out/reports/perf-save-decode-stacks-559/.
+
+## Sequence 558 — perf-json-ordered-field-hint — rejected; restored 551
+
+Check the next declaration's field name before retained static lookup. A matching
+ordered field bypasses the general lookup; reordered/omitted fields fall back,
+with existing unknown/duplicate/default/ownership/scanner handling. No nested
+parser change. Predict lower actual save decode CPU. Freeze generic ReleaseSafe
+private CPU executable and restore normal source before three interleaved process
+pairs per original save. Expand qualification only for useful component benefit.
+Evidence: zig-out/reports/perf-json-ordered-field-hint-558/.
+
+Private build 3/3 passes. Arrival median decode CPU 79.529291 → 80.003851 ms
+(+0.597%); autosave 79.461494 → 80.317296 ms (+1.077%). All six paired
+processes are slower, with paired increases 0.437–2.865 ms. Preserve all twelve
+processes, seven measured decodes each, exact input digest/world identities.
+Reject; no canonical/native acceptance or extra broad suite for the discarded
+prototype. Normal fourteen source and eleven runtime identities remain 551.
+
+## Sequence 557 — perf-json-nested-dispatch — rejected; restored 551
+
+Extend retained top-level static JSON field dispatch to directly nested plain
+nonempty structs, keeping tuples, custom parsers, arrays and optionals on stock
+parsing. Typed JSON remains the measured decode CPU limiter. Predict a component
+gain for nested actor state with the same ownership/default/error contracts.
+Freeze a private generic-x86_64 ReleaseSafe CPU executable and restore normal
+source before three interleaved process pairs per original save. No engine or
+normal runtime change at this stage. Evidence:
+zig-out/reports/perf-json-nested-dispatch-557/.
+
+Private CPU build passes 3/3. UI arrival median CPU 80.170824 → 80.477689 ms
+(+0.383%); autosave 80.847270 → 81.172659 ms (+0.402%). Five of six paired
+processes are slower; retain all samples. Each completes seven measured decodes
+after warmup with exact input digest and 32-world identity. No useful component
+gain: reject without expanded engine/canonical qualification or broad suite.
+All fourteen normal sources and eleven runtime files remain exact 551.
+
+## Sequence 556 — perf-view-driver-stacks — characterization complete
+
+Four bounded batch GDB attachments during the actual copied-save e2m3b/background
+e2m4a workload all succeed. Two owner snapshots show libc syscall → driver
+futex_wait → lvp_CreateImageView, respectively HDR 128²/one mip lightmap storage
+and RGBA8 256²/nine mip surface storage. Concurrent software-renderer workers are
+inside shade_quads/JIT shader code. The other snapshots show normal server input
+and scene shadow preparation. This establishes blocking inside the driver in
+those observations; sparse snapshots do not quantify its frequency or prove
+which driver's synchronization condition is being waited on. Preserve all worker
+stacks and driver identities. Completed target readiness, pending zero, no
+validation errors; all timings include debugger interruption and are diagnostic.
+No production change. Evidence: zig-out/reports/perf-view-driver-stacks-556/.
+
+## Sequence 555 — perf-view-resource-waits — characterization complete
+
+Recharacterize normal-admission 2D image-view wall/owner CPU by required/reserved
+resource, actual format/extent/mips/usage/aspect, world and admission phase. Reuse
+531's phase/API instrumentation on byte-identical renderer source, adding bounded
+512-group counts and >=1/10 ms events. Check group/API/phase/window accounting,
+no dropped groups, exact completed work and player state. Freeze the private build
+and restore normal 551 sources/all eleven runtime files, including dedicated,
+before off/on/off headless validation samples. No shader/storage change, GPU query
+or normal timing claim. Evidence: zig-out/reports/perf-view-resource-waits-555/.
+
+All three off/on/off samples pass accounting, zero overflow/failures, complete
+9903-face/47-page target readiness, pending zero, and unchanged player identity,
+health, armor and ammo. Normal 2D image views take 1.62/1.75/1.66 s wall but
+1.77/8.57/1.86 ms owner CPU. RGBA8 surface views account for 1.26/1.35/1.23 s;
+HDR lightmap views account for 0.363/0.402/0.432 s. The 127 finalization RGBA8
+views collectively take only 0.120/0.486/0.105 ms. Optional reserves remain cheap,
+10.6–13.0 ms total across 52–53 views. Counts cover profiled normal admission,
+not earlier initialization or other view types. Runnable-delay counters remain
+unavailable. API elapsed time alone does not identify a driver lock or GPU wait.
+All fourteen normal source identities and eleven runtime files remain exact 551;
+private profiling module absent. No production change or duplicate broad suite.
+
+## Sequence 554 — perf-crc-eight-streams — rejected; restored 551
+
+Test eight independent 128-bit folding streams versus retained 551's four,
+using the same reviewed polynomial/reduction, CPU gate and portable/tail paths.
+Some upstream targets need more streams for latency hiding; benefit on this CPU
+is unproven. Compare exact vectors and actual save payloads at their real +24
+unaligned buffer offset, freezing the prototype and restoring normal 551 before
+timing. Only proceed to complete decode/native qualification for a useful gain;
+otherwise restore and choose a separate limiter. Evidence:
+zig-out/reports/perf-crc-eight-streams-554/.
+
+All 33,220 vectors pass, but actual save CRC remains about 0.75 ms with either
+implementation; paired variation is only microseconds, with no useful gain. Reject
+and retain the four-stream implementation. The initial expanded compilation exceeds
+the 5,000-branch comptime-formatting quota; selecting the three literal assembly
+immediates fixes compilation without a runtime/ISA change. Preserve both the failure
+and prototype, but retain no unrelated formatting change. Normal 551 source/runtime
+hashes match before and after timing; its aggregate remains valid. Move to renderer
+image-view resource-class/wait characterization instead of further CRC tuning.
+
+## Sequence 553 — perf-engine-save-checksum — rejected; restored 551
+
+Route the engine save-format checksum through a small ioquake3 ABI/export root
+and shared static library using the retained native Zig CRC. Client/server and
+the independent C compatibility contracts link the same implementation. Keep
+streaming ZIP, protocol, saved bytes and all validation unchanged, with assertions
+enabled. Build the connected ABI/C/build batch before native scenarios, compare
+actual production C validation and binary/resource costs, then fresh/frame guards
+and one aggregate before retention. Evidence:
+zig-out/reports/perf-engine-save-checksum-553/.
+
+Actual production ABI C validation improves about 60%, but A fresh-load guards
+are +97/+156/+196 ms. Three justified targeted follow-ups give -0.027/+297/+9.8 ms:
+five of six are slower, one effectively equal; median paired cost is +126.6 ms,
+arm medians 4.32798→4.43034 s. This outweighs the ~1.2 ms validation component
+gain; reject without assigning an unproven layout/scheduling cause. B improves
+or stays equal; frame means are mixed (22.609→21.910 and 21.954→23.170 ms), with
+no FPS/tail claim. Preserve every sample. A separate ABI library initially adds
+~0.8 MB of allocated code/data; composing exports with the existing native ABI
+reduces this to +17,328 allocated file bytes/-944 zero bytes and retains all 59
+network exports in both products. That resource iteration is recorded but rejected
+with the integration.
+
+Candidate native scenarios, C bitwise/unaligned/empty/corrupt/truncated contracts
+and one aggregate 61/61 steps, 556 native/C plus 384 Python tests pass. Three
+produced saves canonically match input through retained 551 UI/server readers.
+All 22 normal logs are query-free and original owner saves are unchanged. Restore
+the original network root/C/build sources, remove prototype ABI files, and rebuild
+the normal prefix from cache: 90/90 passes, all fourteen tracked sources/ten frozen
+runtime files match 551 exactly, and the dedicated engine is also restored/frozen.
+No duplicate broad suite for unchanged restored code; 551 acceptance remains valid.
+Next test eight-stream CRC privately before any further production change.
+
+## Sequence 552 — perf-engine-save-crc — component probe complete
+
+Compile unchanged actual C save-format validation with bundled zlib versus a
+private macro-selected native Zig checksum shim, identical generic compiler/FFI
+and preloaded inputs. Three interleaved batches/input, seven groups of eight calls
+after warmup, reduce C validation CPU B 2.120328→0.928967 ms (-56.2%) and A
+2.101091→0.899575 ms (-57.2%); all six pairs improve. Same actual record/field
+counts, original bytes and corruption/truncation errors. Existing independent
+bitwise CRC contracts pass 256 payload/alignment plus empty-stream cases against
+the candidate. Preserve the initial NDEBUG compilation refusal; all C units were
+rebuilt with assertions explicitly enabled before successful comparison. Internal
+symbol binding prevents system-zlib interposition. This is engine flat-stream
+validation, not nested class/JSON admission or whole-load acceptance. Production
+551 remains unchanged during probes. Next integrate/qualify the actual engine ABI.
+Evidence: zig-out/reports/perf-engine-save-crc-552/.
+
+## Sequence 551 — perf-save-crc-folding — retained
+
+Integrate the 550-qualified native Zig CRC prototype for actual UI/shared and
+server-class-hook save decode comparisons against retained 548. Keep checksums,
+numeric bounds, owned values, protocol/schema and malformed rejection unchanged.
+Extend portable/accelerated equivalence and concurrent-caller contracts; qualify
+unsupported-target/forced-portable paths, coherent native saves/transitions and
+fresh/frame guards before one aggregate acceptance. No speedup beyond the isolated
+550 checksum result was accepted before qualification. Evidence:
+zig-out/reports/perf-save-crc-folding-551/.
+
+All twelve paired decode processes improve: UI/shared B 85.990426→79.538716 ms
+(-7.50%), A 85.903010→79.639111 (-7.29%); server B 87.092334→81.155975 (-6.82%),
+A 86.609659→80.467529 (-7.09%). Three process pairs/input/root, seven samples after
+warmup. Canonical roundtrip CPU, including decode/encode/SHA/deinit, falls B
+243.604510→219.628458 ms (-9.84%), A 241.288922→222.803443 (-7.66%), all six pairs
+faster and every output byte-identical to input. No isolated encoding claim.
+
+Both original 32-world and three native-produced saves roundtrip byte for byte
+through old/new UI/server readers. Seven malformed cases retain errors, including
+invalid root CRC and invalid child CRC inside a repaired parent stream. Actual
+new-native UI, both Greece restores/reloads, controlled crossing/arrival reload,
+cancellation/restart/re-request pass validation. Forced fallback passes 33,218
+vectors and AArch64 compilation; no AArch64 execution claim. ReleaseSafe contracts
+cover portable equivalence and four concurrent callers. Actual CRC disassembly
+contains legacy PCLMUL without AVX/VEX/EVEX mnemonics.
+
+Fresh B pairs -95/+511/+52 ms and A +42/-557/+202 ms are mixed: no established
+whole-load gain. Same unique PNG/model sets; A duplicate events vary. Frame mean
+pairs 22.007→21.924 and 22.052→21.867 ms, maxima 41→36 and 36→41 ms, are dynamic
+unequal windows, not FPS/tail evidence. Renderer bytes match retained 548. Build
+90/90 and one aggregate 59/59 steps, 556 native/C and 384 Python tests pass with
+pinned environment; R1–R11 stays zero. The 708-source rules hash, all three native
+modules, fourteen tracked sources/ten runtime files, sixteen query-free measurement
+logs, original owner saves and retained MIT notices pass audits. No new hash-time
+allocation or system dependency. Software-only scope and separate 507 retry-fix
+status remain. Next measure the remaining engine save-format CRC path.
+
+## Sequence 550 — perf-bundled-crc-review — complete; native accepted by 551
+
+Recover the original pinned 465 archive after web-cache/DNS failures; verify its
+existing SHA/size and reviewed CRC/template/multiplier files against the archive.
+Review IEEE polynomial, 128-bit folding, Barrett reduction, input bounds and CPU
+dispatch. Prototype the mechanism in Zig with full upstream MIT notice, four
+independent 128-bit streams, bounded loads and the existing scalar tail. Runtime
+CPUID is atomically cached; legacy SSE/PCLMUL requires no AVX state. Unsupported
+targets and short inputs retain slice-16. No C files or system dependency are added.
+
+All 33,220 vectors match portable, installed-system and independent zlib CRCs.
+Three interleaved batches/input reduce actual payload CRC CPU about 4.1→0.75 ms
+(~82%). This is isolated component evidence, not native load acceptance. Freeze
+the prototype library/source and restore normal 548 source/all ten runtime files
+before sampling. Next 551 measures full actual UI/server decode and qualifies
+fallback/portability/native scenarios. Evidence:
+zig-out/reports/perf-bundled-crc-review-550/.
+
+## Sequence 549 — perf-native-crc-dispatch — characterization complete
+
+Compare a generic x86-64 ReleaseSafe export of the actual portable slice-16 CRC
+with installed libdeflate 1.26 through the same ctypes signature and preloaded
+actual save payloads. All 33,220 vectors (known/empty, 32 alignments, short tails,
+large boundaries and two actual save CRCs) match independent zlib and input guards
+remain unchanged. Three interleaved batches/input, seven measured groups of eight
+calls after warmup, reduce B CRC CPU 4.101937→0.232661 ms and A 4.089402→0.240687 ms
+(about 94%, 17–18x). This is a CRC component probe, not native load acceptance or
+a whole-load percentage. The admitted decoder subset deliberately excludes CRC;
+no system-library dependency or production CRC change is introduced. All retained
+548 source/runtime files remain exact. Next review the pinned upstream CRC subset
+and test a standalone bundled build before integration. Evidence:
+zig-out/reports/perf-native-crc-dispatch-549/.
+
+## Sequence 548 — perf-ecs-free-slot-hint — retained
+
+Following 539's measured entity-creation CPU, replace repeated slot-zero prefix
+scans with a conservative lowest-free-slot hint. Advance only after successful
+creation and lower on valid destruction. Preserve lowest-slot ordering, retired
+generation-zero checks, clone allocation, persistent identities and failure behavior.
+No allocation or format change. Benchmark actual save decode and canonical output
+before native acceptance. Evidence: zig-out/reports/perf-ecs-free-slot-hint-548/.
+
+UI/shared actual save decode CPU falls B 86.936630→86.404638 ms (-0.61%) and A
+86.735115→85.684995 ms (-1.21%), three interleaved process pairs/save and seven
+samples after warmup. Five pairs improve; one B pair is +0.512 ms. Two original
+32-world and three native-produced saves canonically match input through both
+readers; five malformed checkpoints retain errors. Real coherent native UI,
+both Greece restores/reloads, controlled crossing/arrival reload and cancellation/
+restart/re-request pass validation. Full-pool/lowest-slot, stale/retired-generation
+and failed-creation regressions pass. Fresh medians B 3.924718→3.824467 s and A
+4.429772→4.332268 s exceed the measured decoder gain: no causal whole-load claim.
+Same unique PNG/model sets; A duplicate events vary. Frame means 21.970→22.044 and
+22.245→21.926 ms, maxima 42→36 and 43→44 ms, establish no FPS/tail improvement.
+
+Native build 90/90 and one aggregate 59/59 steps, 555 native/C plus 384 Python
+tests pass; R1–R11 remains zero. Rules from 707 sources, all three native modules,
+twelve tracked sources/ten runtime files, sixteen query-free normal measurement
+logs and original owner saves pass audits. One usize hint per world; no allocation
+or serialized-format addition. Retain prior 542/543 gains without compounding;
+software-only scope and separate 507 natural companion-retry status remain.
+
+## Sequence 547 — perf-save-serializer-codegen — characterization complete
+
+Inspect frozen 546 baseline/candidate symbol sizes and capture disassembly. Reuse
+reduces capture text from 95,508 to 87,255 bytes and static indirect call sites
+from 74 to 15; generic serializer write-function size multisets match. These are
+static counts, not executed calls or cost attribution, and do not explain 546's
+measured regression. Keep both allocation prototypes rejected and target a separate
+measured limiter. No production changes. Evidence:
+zig-out/reports/perf-save-serializer-codegen-547/.
+
+## Sequence 546 — perf-save-json-reuse — rejected; restored 543
+
+Use one standard allocating JSON writer per capture, clear its length before each
+value, serialize with the unchanged options/bounds and synchronously copy bytes
+into the existing portable save writer. Release capacity on every capture exit;
+no global cache or borrowed save data. This targets 545's measured allocation and
+shrink churn. Compare matched canonical roundtrip CPU and exact bytes first; normal
+543 sources/runtime will be restored while frozen CPU binaries are measured.
+Evidence: zig-out/reports/perf-save-json-reuse-546/.
+
+All six paired processes are slower: B median canonical roundtrip CPU
+243.746440→247.502337 ms (+1.54%), A 245.772511→249.100663 ms (+1.35%). Preserve
+one A process's +76.7 ms outlier; the other five pairs are also slower. Every
+measured canonical result remains byte-identical to input. Allocation counts alone
+did not predict endpoint CPU benefit; inspect code generation before assigning a
+cause. Normal sources/all ten runtime files match retained 543 before and after
+frozen measurements. No broad suite for discarded code; 543 acceptance stays valid.
+
+## Sequence 545 — perf-save-encode-allocations — characterization complete
+
+Use a private transparent allocator wrapper around actual JSON serialization to
+count allocations, resizes, remaps and frees, output bytes and bounded size buckets
+per registry field. Reset for each canonical benchmark sample; account for observer
+overhead separately and verify exact save bytes. Freeze this diagnostic and restore
+retained 543 source/runtime before sampling. This determines whether reusing one
+allocating JSON writer per capture is justified after 544's negative result.
+Evidence: zig-out/reports/perf-save-encode-allocations-545/.
+
+B/A captures perform 61,922/61,942 temporary output allocations, 98,344/98,313
+successful remaps and matching allocation/free counts, for 13,445,905/13,435,245
+JSON bytes. About 97% of outputs are at most 512 bytes. Sizes sum to calls; these
+are the final measured roundtrip's counts after resetting each loop, excluding
+warmup. Three measured canonical samples per input/arm match original bytes.
+Reference/diagnostic CPU differs -1.7%/+0.27% in one process pair per input: this
+is observer-sensitive characterization, not an optimization or overhead bound.
+Normal source/all ten runtime files match 543. Next test one reusable standard
+allocating JSON writer per capture, retaining validation, ownership and output.
+
+## Sequence 544 — perf-save-json-scratch — rejected; restored 543
+
+Test 512-byte local scratch with the original allocator as fallback for temporary
+JSON serialization output, then copy into the existing portable save writer before
+the local buffer expires. Large outputs retain heap allocation; owned decoded values
+and all serialization/bounds checks stay unchanged. This targets save-encoding
+buffers, distinct from 540's rejected parser nesting scratch. Compare actual canonical
+roundtrip CPU and exact output on both original 32-world saves before native acceptance.
+Evidence: zig-out/reports/perf-save-json-scratch-544/.
+
+All six process pairs are slower. Canonical roundtrip median CPU changes B
+244.132386→252.103905 ms (+3.27%) and A 243.960897→251.621926 ms (+3.14%).
+Every measured sample retains input-identical canonical bytes, but there is no
+useful gain. Preserve all samples and resource observations; do not assign the
+cost to one allocator/copy/layout cause without evidence. Normal sources and all
+ten runtime files match retained 543 before and after frozen CPU measurements.
+No extra broad suite for discarded code; 543's acceptance remains valid. Next
+characterize actual serialization allocations/output sizes before another change.
+
+## Sequence 543 — perf-json-field-dispatch — retained
+
+Following 539's JSON CPU profile, test generic static lookup of plain top-level
+struct field names before typed dispatch to the unchanged standard nested parser.
+Keep owned values, scanner limits, defaults, unknown/duplicate-field errors and
+snapshot numeric/region checks. Custom JSON types, tuples and nonstruct values
+retain the standard parser. Portable UI/shared and actual server-class-hook
+benchmark roots match their frozen baselines. Evidence:
+zig-out/reports/perf-json-field-dispatch-543/.
+
+Three interleaved process pairs/save/root, seven samples after warmup, reduce
+UI/shared decode CPU by 1.28% (B) and 0.88% (A), actual server by 1.55% and 1.92%.
+Eleven of twelve process pairs improve; one server-B pair is 0.451 ms slower.
+Both original 32-world saves and three native-produced saves canonically match
+their input bytes through old/new UI/server readers; five malformed checkpoints
+retain exact errors. Differential standard-parser and ownership/limit tests pass.
+Real new-native UI, both saves/reloads, controlled crossing/arrival reload and
+cancellation/restart/re-request pass under validation. All six fresh-load pairs
+are faster, with medians B 4.025772→3.775018 s and A 4.489322→4.381080 s, but these
+changes exceed the measured 1–2 ms decoder gain and include a large baseline
+outlier: no causal whole-load claim. Unique PNG/model sets match; A duplicate PNG
+events vary. Frame mean pairs 21.886→22.530 and 22.311→22.451 ms, maxima 43→40
+and 64→37 ms, are dynamic unequal windows, with no frame/FPS/tail claim. Renderer
+bytes are unchanged and all client allocated code/data differ solely in the actual
+compatibility identifier; server/UI code size decreases.
+
+Build 90/90 and one aggregate 59/59 steps, 553 native/C and 384 Python tests pass
+with pinned environment recorded; ownership R1–R11 is zero. The 707-file rules
+hash, all three native module identities, eleven tracked source/ten runtime hashes,
+sixteen query-free normal measurement logs and three unchanged owner saves pass.
+Software rendering only. Retain 542's scheduler and the separate status of 507's
+natural companion-retry fix. Next measure save-encoding temporary allocation.
+
+## Sequence 542 — perf-low-cpu-admission-continuation — retained
+
+Test one extra normal admission step after a first-step wall-limit exit whose
+owner-thread CPU consumption is below 500 us. Preserve the eight-step cap and
+held-loading policy. Require CPU clock resolution at most 31.25 us; unavailable
+or coarse clocks retain the existing wall policy. Only the client module changes;
+rules and all other frozen runtime files match retained 538. The full build passes
+90/90 after correcting and preserving a shadowed-capture compilation failure.
+Candidate acceptance requires actual headless save/reload, crossing, cancellation
+and paired background measurements, with foreground and fresh-load guards if useful.
+Evidence:
+zig-out/reports/perf-low-cpu-admission-continuation-542/.
+
+Three query-free interleaved pairs reduce completed background world preparation
+from median 7.174411 to 6.273695 seconds (-12.6%); all three pairs improve, with
+the same 9,903 faces/47 pages and stable player state. Background process CPU,
+including continued rendering/simulation, falls from median 81.73 to 70.98 seconds;
+complete-process peak RSS changes by -9,296 KiB. Fresh B loads have paired changes
+-146/+103/+55 ms and A +97/+202/-54 ms: no established fresh-load gain. Same unique
+PNG/model sets; one A run has an extra duplicate PNG event. Four frame-processing
+pairs have mean changes +1.072/-0.046/+0.385/-0.405 ms and maxima 36→34/40→42/
+36→40/45→43 ms. Mixed dynamic windows establish neither a consistent regression
+nor FPS/tail guarantees; the extra two pairs resolve the original mixed result
+without discarding samples.
+
+Real coherent-native UI, both Greece restores and private save/reloads, controlled
+B→C crossing/arrival reload, PNG cancellation and restart/re-request pass validation.
+All three produced saves canonically roundtrip byte for byte. Private diagnostics
+observe 26 grants, at most one per frame and eight normal steps, all below 500 us;
+coarse/unavailable resolution injections grant none. Diagnostic hooks are absent
+from restored normal source/runtime. One aggregate passes 59/59 steps, 551 native/C
+and 384 Python tests; ownership R1–R11 stays zero. All ten tracked sources and ten
+runtime files match frozen 542, all 26 normal measurement logs are query-free, and
+the three original owner saves are unchanged. Software rendering only; the natural
+companion-retry fix remains separate. Continue with measured JSON parsing costs.
+
+## Sequence 541 — perf-native-admission-budget — characterization complete
+
+Recharacterize current 538 normal admission after retained renderer batching.
+Measure per-frame/per-step owner thread CPU and monotonic wall, eight-step versus
+one-ms time/idle exits, step histograms, and CPU work at wall-limit exits. Leave
+the scheduling policy unchanged. Use a private subcommand on the existing world
+diagnostic; client presentation-only instrumentation preserves the actual rules
+identity without overrides. Freeze artifacts and restore normal source/all ten
+runtime files before off/on/off headless samples, hiding notifications with GPU
+queries disabled. Millisecond wall-clock quantization and timer overhead matter;
+do not blindly replace this with a precise one-ms CPU quota or attribute all
+wall-minus-CPU to a specific lock. Evidence:
+zig-out/reports/perf-native-admission-budget-541/.
+
+All three off/on/off samples complete 9,903 surfaces/47 pages with no pending or
+failed images, stable player fields and no GPU queries. Time exits account for
+93.3/96.9/94.5% of normal passes. Among those exits, owner CPU is below one ms in
+53.6/52.9/51.6%, and below 500 us in 27.3/14.2/21.1%. First-step time exits number
+181/192/170. Total admission wall is 2.328/2.620/2.370 seconds versus CPU
+0.478/0.564/0.480. This supports testing one bounded continuation after a first
+low-CPU wall-limit exit, not replacing the entire quota or assuming every pause
+is one named lock. A controller result-key typo occurred after the first engine
+finished successfully; preserve it and recover that sample without rerunning it.
+All normal 538 source/runtime files are restored exactly. Next compare actual
+endpoints/frame/fresh/cancellation for a single-extra-step prototype, with a
+qualified CPU clock and the existing wall policy where that clock is unsuitable.
+
+## Sequence 540 — perf-json-scanner-scratch — rejected; restored 538
+
+Use 64 bytes of local scratch for JSON scanner nesting with the original allocator
+as fallback; parsed values keep their existing caller allocator and ownership.
+Use the same standard parser/options, with no depth cap, format change or skipped
+validation. The scanner documents its allocator as nesting-only. Prediction: avoid
+repeated transient arena allocations across 62,000 JSON values and reduce CPU or
+memory. Compare full uninstrumented UI/shared and server-hook decoders against
+538; do not infer a speedup from the 539 profile. If promising, verify scratch
+lifetime and deep fallback plus canonical/error/native acceptance before retaining.
+Evidence: zig-out/reports/perf-json-scanner-scratch-540/.
+
+Both UI/server prototypes build 3/3 and complete all 24 processes with matching
+input hashes/world counts. However, 11 of 12 process pairs are slower. UI CPU
+medians B 86.970 to 89.832 ms, A 88.652 to 89.640; server B 88.824 to 88.995,
+A 89.521 to 90.138. UI paired changes are +2.655/+2.761/+4.572 ms and
++2.944/+0.988/+4.829; server B +0.114/+0.171/+0.239, A -16.034/+0.588/+1.682.
+The negative server delta includes a baseline outlier, preserved. Peak RSS has
+no consistent benefit. Remove the prototype helper and restore all normal 538
+source/runtime identities and benchmark exactly. Additional acceptance suites
+are unnecessary for the discarded change. Return to the larger measured
+background admission waits and characterize current scheduler CPU versus wall
+budget exits before changing them.
+
+## Sequence 539 — perf-save-phase-costs — characterization complete
+
+Separate UI/shared validation from the real server saved_classes hooks. Freeze
+unprofiled UI/server and instrumented UI/server CPU benchmarks of the actual 538
+decoder. Measure checksum/header, typed JSON, bounds, entity creation, ECS put,
+region validation and deinit; keep per-component counts/bytes/costs and calibrate
+empty MONOTONIC clock pairs. Check disjoint accounting against whole decode wall
+and process CPU. Restore all ten normal 538 source and runtime identities before
+sampling; no engine or private game-module run is needed. Observer overhead and
+code placement are diagnostics, not normal speedups. Evidence:
+zig-out/reports/perf-save-phase-costs-539/.
+
+All counts and disjoint phase accounting pass; both private roles round-trip both
+32-world inputs to original bytes. UI reference 87.46/89.10 ms versus profile
+93.91/93.99; server reference 88.74/89.14 versus profile 96.42/95.56, about 5–9%
+observer overhead. Clock pairs have 10-ns minimum and 16–21-ns mean. JSON totals
+62–64 ms, including about 21 ms for map_object (13,939 calls/4.23 MB) and 16–17 ms
+for actor state (604 calls/3.97 MB). Nested CRC is 8.1–8.2 ms, ECS put 8.4–8.6,
+creation about 2, validation 4.1 UI/4.9 server, bounds about 2.5 including clock
+floor, deinit about 0.9. These are diagnostic wall costs, not deployed gains.
+Normal 538 source, runtime and benchmark binary remain exactly restored.
+
+## Sequence 538 — perf-save-component-dispatch — retained
+
+Resolve each component field name once through the component registry's static
+enum lookup, then dispatch generically to its existing typed parser. Keep portable
+field validation, owned JSON values, numeric bounds, region validation and schema
+unchanged. No concrete class branch or component-ID change. Three interleaved
+process pairs/save, seven samples after one warmup, lower full decode CPU medians
+95.576 to 91.201 ms for Greece B (-4.6%) and 94.243 to 91.231 ms for A (-3.2%);
+every pair improves. This is the UI/shared-validation benchmark root; real server
+class hooks are included in native qualification and runtime tests, and profiled
+separately in 539. Timing includes identity counting and deinit, with preloaded
+input/generic x86_64/ReleaseSafe. It is not a whole-load speedup claim.
+
+Both actual saves decode and reserialize all 32 worlds to exactly their original
+14.8-MB bytes with baseline and candidate. Unknown component, wrong component kind,
+duplicate component, duplicate JSON member and unbounded-number fixtures reject
+with identical errors. Freeze timing and roundtrip binaries separately; the
+roundtrip harness additions are not pooled with the earlier timing measurements.
+A coherent native build and actual UI/save/reload/crossing, fresh-load guards and
+one applicable aggregate qualify the change. Snapshot changes alter the
+conservative rules identity; all three modules use current 32c40af4... rules,
+independently verified against 706 source files. Production checks remain enabled;
+the old 516 recording is not used as acceptance of the new native modules.
+Evidence: zig-out/reports/perf-save-component-dispatch-538/.
+
+Both real Greece saves pass in-place save/reload, and the controlled world crossing
+passes saving/reloading at arrival. All three candidate-produced save files also
+decode and roundtrip byte-identically through the baseline reader. Intro/E1 and
+renderer restart/PNG cancellation/rerequest pass under validation. The renderer's
+whole-file equality assertion initially fails; exhaustive comparison proves every
+byte outside nonallocated debug_line matches qualified 530. Preserve that failure
+and the actual whole-file hashes; no renderer executable/data change is admitted.
+
+Fresh B medians 3.827191 to 3.834300 seconds have +103/-8/-46 ms paired changes;
+A 4.429426 to 4.492790 has +205/-51/-48 ms. These mixed results establish no
+whole-load gain. Unique image/model sets and player state agree; A's strict PNG
+job multiset varies and remains a measurement limitation. Frame CPU means are
+21.653595 to 21.767442 and 21.987220 to 21.783172 ms, maxima 40 to 41 and 36 to 37;
+unequal dynamic windows support no FPS/tail claims. Component peak RSS median B
+61,548 to 61,696 KiB (+148); A 61,756 unchanged. One aggregate passes 59/59 steps,
+551 native/C and 384 Python tests with the verified pinned environment. Ownership
+R1–R11 remains zero; 16 engine timing/diagnostic logs are GPU-query-free. Frozen
+source/artifact identities and all three original owner saves remain exact.
+Headless software only; hardware/full-campaign behavior remains unverified.
+
+## Sequence 537 — perf-save-decode-characterization — complete
+
+Add a read-only actual save-decoder CPU benchmark with CRC/header, outer portable
+stream and full typed snapshot reconstruction modes. Use immutable 513 Greece
+saves, generic production CPU, ReleaseSafe, preloaded input and one discarded
+warmup followed by seven repetitions. Both full decodes take about 95 ms CPU;
+outer CRC is 4.13 ms and outer stream validation 4.16–4.18 ms. The latter treats
+nested checkpoint bytes as opaque, so it is not full recursive validation.
+Build with zig build bench-save-decode. The installed save-decode-benchmark takes
+FILE MODE REPEATS, where modes are crc, stream, decode and roundtrip. The last
+includes canonical encoding/hashing and is correctness evidence, not decode-only
+timing. Input characterization finds 32 streams, about 14,200 records, 62,000 fields and
+13.4 MB of JSON, with only 137,000 possible prior-name comparisons. Avoid an
+unsupported duplicate-field hashing hypothesis; examine the component registry
+scan and typed reconstruction. No loading gain admitted from characterization.
+Evidence: zig-out/reports/perf-save-decode-characterization-537/.
+
+## Sequence 536 — perf-surface-material-handoff — rejected; restored 530
+
+After the normal eligible surface phase uses its four-ms slice, walk at most 64
+already admitted surfaces and start/poll the next unprepared material's PNG batch
+before yielding. Keep that batch's existing world ownership and defer compiling
+the new material to a later call, even if its read is already ready. Primary,
+held and pending-image loads retain their previous cadence. Retain 530's storage
+pool unchanged. Prediction: overlap the next material read with foreground work
+instead of beginning it a frame later. This differs from the rejected 519
+intrabatch handoff and still needs actual paired endpoints/frame/fresh checks.
+Evidence: zig-out/reports/perf-surface-material-handoff-536/.
+
+Build 90/90 and validation intro/E1/two Greece saves/controlled crossing/restart/
+cancellation/rerequest pass. Three normal background pairs improve the remaining
+full target endpoint 6.888300 to 6.633150 seconds median (3.7%), every pair faster.
+Baseline 6.639291/6.888300/7.285732; candidate 6.428167/6.633150/6.678492. All
+9,903 surfaces/47 pages complete with no GPU queries or errors. Polls 157 to 144;
+owner admission wall rises 690 to 759 ms, consistent with doing additional bounded
+work before yielding. Process CPU 78.17 to 74.42 seconds includes foreground work;
+peak RSS 2,101,672 to 2,107,672 KiB. This screening triggered queued-only handoff
+lifetime, exact pixels, frame and fresh-load guards against 530. Shared image/
+allocator helpers are unchanged from 530's qualified aggregate. Measurements use
+the frozen 536 source and runtime identities.
+
+Private held handoff checks pass: a real queued batch stays world-owned before
+surface compilation; existing failure and shutdown cleanup release it, then a
+rerequest finishes all 44 pages. Exact two TGA/private RGB outputs pass; all 22
+normal timing/diagnostic logs are query-free and stable player state is preserved.
+However Greece A fresh loads are slower in all three pairs (+346/+150/+4 ms),
+median 4.380632 to 4.530467 seconds (+3.4%). Its PNG job multiset varies, so the
+precise causal share is unproven; this tradeoff does not justify retention.
+Fresh B has +50/-1229/-49 ms paired changes, including a large baseline outlier;
+do not claim its apparent median improvement. Frame processing means are
+22.618 to 24.251 and 24.140 to 22.814 ms, maxima 44 to 41 and 47 to 46; unequal
+dynamic windows are not FPS/tail evidence. Reject and restore all six source and
+nine runtime identities exactly to qualified 530. All three owner saves remain
+identical. Next characterize actual save decoding, whose menu/server timings
+exceed the already optimized CRC cost. No duplicate unchanged aggregate suite.
+
+## Sequence 535 — perf-storage-retirement-model — not implemented
+
+Model stale unused-entry retirement with every abandoned bump allocation charged
+until content shutdown, keeping live plus retired charges below four MiB. On the
+three current traces, one-spare retirement improves only one trace by one modeled
+hit; two-spare variants range 43–59 hits, add 3–7 extra creations and abandon
+0.36–1.94 MiB. No consistent advantage warrants lifecycle complexity or wasted
+space. Retain 530 unchanged and move to the material-read handoff at the surface
+time yield. Evidence: zig-out/reports/perf-storage-retirement-model-535/.
+
+## Sequence 534 — perf-storage-order-trace — characterization complete
+
+Trace current retained 530 eligible texture dimensions, actual allocation
+requirements and cumulative hit/prefill/failure/unused charge at each commit.
+Freeze the private renderer, then restore normal source and all nine artifacts
+exactly before validation off/on/off samples. Hide notifications and keep GPU
+queries off. Save both complete and post-request traces at the full target-ready
+event; post-endpoint reporting is separate. Reconstruct pool ownership/charge
+from observed actions before simulating alternatives. Instrumentation can change
+ordering, and counterfactual policies can change existing-block availability.
+No timing gain follows from this diagnostic. Evidence:
+zig-out/reports/perf-storage-order-trace-534/.
+
+All actual pool actions reconstruct exactly over 133/133/134 requests: 51/46/50
+hits, 1/2/2 unused entries, peak charge 2,980,348/2,980,348/2,630,908 bytes. Optional
+failures 1/1/2 all have logical budget room, which alone cannot distinguish
+existing-memory exhaustion from creation/bind/view failure. Requirements are
+stable by shape; full target/readiness/validation/query-free checks pass. Normal
+530 source/runtime remain exact. On these current-order traces, optimistic fixed
+two-spare models yield only 30/39/28 hits versus one-spare 51/50/51. Five-prior
+frequency gating yields 55/52/54 with 1/1/3 unused: too modest and speculative to
+justify implementation alone. Earlier trace predictions do not transfer reliably.
+Next model stale-entry retirement only with explicit per-content charges for
+abandoned bump allocations; no unaccounted eviction or larger bounds.
+
+## Sequence 533 — perf-storage-policy-model — characterization complete
+
+Replay the original 529 request sequences with a second spare gated on two,
+three, four or five prior occurrences in the eight-request history. Preserve
+four slots/four-MiB bounds, no eviction and no lookahead. Two-prior gating models
+63/59 hits versus one-spare 51/52, but leaves an extra unused object on both traces.
+Other thresholds trade hits against unused objects without a clear winner.
+Evidence: zig-out/reports/perf-storage-policy-model-533/. No source change or gain
+accepted. These traces precede 530; the rejected 532 real-world counterexample
+shows why predicted hits alone cannot justify another policy. Collect current
+530 request order, actual allocation/failure and pool state before selecting it.
+
+## Sequence 532 — perf-content-storage-depth — rejected; restored 530
+
+Test up to two spare empty textures after a repeated shape instead of one. Keep
+530's four unused slots, four-MiB conservative charge, existing-block-only fallback,
+history and eligibility; stop filling on budget exhaustion or failure. Sequence
+529 modeled more hits, while 531 found spare views cheap and required views still
+dominant. This is a prediction, not an accepted gain. Compare actual endpoint,
+unused memory, frame/fresh guards and exact outputs against retained 530.
+Evidence: zig-out/reports/perf-content-storage-depth-532/.
+
+Build 90/90 and intro/E1/two Greece saves/controlled crossing/restart/cancellation
+qualification pass under validation. Full target work and query-free checks pass
+in all six normal background runs. However, median endpoint worsens 6.981361 to
+7.182287 seconds (+2.9%), with two of three pairs slower. Baseline samples are
+6.877285/6.981361/7.283582; candidate 7.182287/7.338216/6.691221. Actual hits vary
+57/37/67 with unused entries 2/3/2: deeper speculation is order-sensitive and can
+hold the wrong shapes. No gain admitted; preserve all samples and the candidate.
+Restore all six normal source identities and nine runtime artifacts exactly to
+qualified 530. Additional acceptance suites are unnecessary for the discarded
+prototype. Continue with offline policy characterization before another change.
+
+## Sequence 531 — perf-content-api-waits — diagnostic complete
+
+Recharacterize retained 530 with owner wall/thread CPU timers around required
+and optional create/requirements/allocation/bind/view calls, texture uploads and
+descriptor writes, plus complete owner admission phase costs. Freeze the private
+renderer, restore normal source and all nine runtime artifacts exactly to 530,
+then sample validation off/on/off with notifications hidden and GPU queries off.
+Scheduling delay stays unavailable when kernel schedstats is disabled. Use full
+target readiness and additive accounting checks; infer no normal speedup from
+instrumented endpoints. Evidence: zig-out/reports/perf-content-api-waits-531/.
+
+All three off/on/off samples complete full target work with additive accounting
+and no GPU queries. Required image-view calls take 1.802/1.840/1.820 seconds wall
+versus 1.889/9.625/2.022 ms owner CPU; 52 spare views take 9.940/12.416/12.221 ms.
+Combined view calls account for 78.7/76.1/77.4% of measured owner admission wall.
+These totals include all coexisting normal-admission worlds, not only e2m4a.
+Phase surface wall is 1.721/1.742/1.693 seconds; lightmaps 0.484/0.576/0.571.
+No exact lock or GPU cause is proven from wall-minus-CPU. Source and all nine normal
+runtime artifacts remain exactly retained 530; private module removed. Next test
+bounded two-spare policy, retaining normal endpoint and memory regression guards.
+
+## Sequence 530 — perf-content-storage-pool — retained
+
+Prototype four unused RGBA8 texture slots with a four-MiB conservative allocation
+charge. A repeated shape within eight eligible surface requests may prepare one
+empty texture using existing content memory only. Taking a slot transfers ownership
+before upload; failed optional allocation destroys its objects and restores the
+exclusive bump cursor. No eviction, new optional memory blocks or pixel changes.
+Required allocations retain their existing path. Qualification covers lifetime,
+fallback, memory growth, exact pixels and paired completion/frame/fresh loads.
+Evidence: zig-out/reports/perf-content-storage-pool-530/.
+
+Build 90/90, intro/E1/two Greece saves/controlled crossing/PNG cancellation and
+rerequest pass under validation. A frozen private renderer proves a hit transfers
+the exact image/view without advancing the allocator, a forced post-view failure
+destroys temporary objects and rolls back the cursor, and restart destroys the one
+unused entry and resets state. Private hooks are absent from normal source/binary.
+Both TGA captures and private-screen RGB exactly match qualified 527. Only the
+Vulkan renderer differs among nine runtime artifacts; native rules remain 507.
+
+Three interleaved pairs lower complete remaining e2m4a renderer admission from
+8.264873 to 7.551208 seconds median (8.6%); every pair improves. Individual baseline
+samples are 7.946490/8.610627/8.264873, candidate 7.551208/6.924728/7.894171.
+All 9,903 surfaces and 47 lightmap pages complete with pending/failed images zero.
+Owner admission wall falls 1.108 to 0.700 seconds, polls 175 to 161. Process CPU
+92.08 to 81.07 seconds includes fewer foreground rendering/simulation frames.
+Post-endpoint storage reporting occurs only in the candidate and is excluded from
+that interval; complete-process CPU is not used as a paired gain. Each candidate
+serves 51/134 requests from storage. End unused count is 0/2/2, charge 0/1,579,646/
+1,579,646 bytes. Pool bounds remain four objects/four MiB; existing-block-only
+reservation can consume space earlier and does not prove unchanged later growth.
+Peak RSS median rises 2,098,540 to 2,107,024 KiB (+8,484 KiB); paired changes range
+from -3,896 to +27,800 KiB. This is a measured memory tradeoff.
+
+Fresh Greece B medians 3.925064 to 3.925379 seconds are neutral. Greece A medians
+4.485113 to 4.429146 have mixed paired changes +208/0/-349 ms. Its initial PNG job
+multisets differ (287/288 jobs), despite identical 263 unique image/dimension pairs,
+models and stable player state. The strict audit failure and duplicate-name delta
+are preserved; no fresh-A gain or strict work-equivalence claim. Two frame pairs
+show mean CPU processing 34.666 to 22.545 and 22.427 to 22.000 ms; the first baseline
+is an outlier, retained without attributing its cause. Unequal dynamic windows and
+only two pairs do not establish FPS/tail improvements. All 22 timing/diagnostic
+logs are GPU-query-free. One aggregate passes 59/59 steps, 551 native/C and 384
+Python tests with the pinned virtual environment; ownership baseline stays zero.
+Original three saves remain byte-identical. Headless software rendering only;
+physical GPU and full-campaign behavior remain unverified. Continue by measuring
+the remaining waits on this retained implementation, without publishing/deploying.
+
+## Sequence 529 — perf-content-texture-shapes — characterization complete
+
+Record chronological RGBA8 content texture dimensions, mip counts, texel bytes and
+actual Vulkan allocation size/alignment/type bits only during eligible normal
+world surface admission. Compare validation off/on with notifications hidden and
+GPU queries disabled. Freeze the private renderer, then restore source and all
+nine runtime files exactly to retained 527 before sampling. The trace will guide
+a bounded reuse simulation before implementation; it is not a normal timing run.
+Evidence: zig-out/reports/perf-content-texture-shapes-529/.
+
+Off/on traces contain 134/133 eligible allocations. Both include 59 square512
+images with 10 levels and 1,399,040 allocation bytes, plus 39 square256 images
+with 9 levels and 350,464 bytes: about 73% share these two shapes. Observed
+requirements are stable by shape, alignment64/typebits1. Full target admission
+and validation/query-free checks pass; actual production source/runtime remain
+exactly retained 527.
+
+A non-evicting simulation with four unused slots, a four-MiB allocation/alignment
+charge, dimensions at most512 and one prefill after a repeat within eight requests
+models 51/134 and 52/133 hits (38–39%). Peak unused charge is 2,799,805 bytes;
+both traces end with zero unused objects and no added total view creations.
+This predicts requests served from already-created empty storage, not seconds
+saved. More aggressive prefill is not automatically better and can fill the pool
+with unused shapes. Instrumentation/order effects, optional allocation failures,
+actual GPU lifetime and physical allocator-block growth need real testing.
+No pool or performance gain is admitted from this simulation. Next prototype
+bounded best-effort storage reuse with complete fallback and direct ownership/
+pixel/frame/fresh-load comparisons; do not evict uncharged bump allocations.
+
+## Sequence 528 — perf-lightmap-reservation-progress — rejected; restored 527
+
+Continue from bounded image-view reservation into the existing texel/page/time
+checks instead of returning pending with no uploaded pages. Keep the eight-slot
+bound, formats, priority conditions and required work. Prediction: remove empty
+admission passes and reduce waiting; the consistent small Greece A cost from 527
+may change, but its cause is unproven. Measure frame/step costs because work can
+continue after a blocking view call. Verify mixed committed/unpublished cleanup
+with a private paused variant before timing. Evidence:
+zig-out/reports/perf-lightmap-reservation-progress-528/.
+
+Build 90/90 and normal intro/E1/two Greece saves/controlled crossing/restart/
+rerequest qualification pass. A private pause/reject variant verifies two
+committed pages remain in the image registry while six pending pages are absent;
+failure and cancellation each discard exactly six, then a rerequest finishes all
+44 E3 pages under validation. No production hold hook remains, verified in source
+and actual binaries. The shared image helper is unchanged from 527, so its broad
+551/C/384 aggregate is not duplicated. Actual pixel/frame/paired loading checks
+are rerun. The prior A timing differences already start before region-ready;
+an empty-pass explanation is unproven and will not be inferred from medians alone.
+
+Normal background medians 8.048 -> 8.158 seconds (+1.4%) give two slower pairs
+despite two to four fewer target polls. Fresh B 3.925 -> 3.885 seconds is mixed;
+A 4.381 -> 4.431 remains consistently slower (+139, +49, +2 ms paired).
+CPU medians 92.51 -> 89.48 seconds include foreground variation and do not establish
+a useful loading gain. Exact pixels and all functional/ownership checks pass, but
+the scheduling change is rejected. Source and all nine runtime artifacts are
+restored exactly to retained 527; raw measurements and mixed-state proof remain.
+Next characterize actual content texture shapes/mips and order before designing
+any bounded storage reuse. Unused speculative images cannot be evicted freely
+without accounting for the engine's content-lifetime bump allocations.
+
+## Sequence 527 — perf-lightmap-view-reservations — retained; ownership and output verified
+
+Reserve up to eight unpublished HDR lightmap image/view objects in one normal
+background call, then upload the identical pages through existing time checks.
+Primary, held, pending-image and non-HDR paths retain immediate creation.
+Reservations have no descriptors or GPU command references; finishing moves
+lifetime ownership to the image registry before recording references, and world
+cleanup destroys every unused reservation. At most eight pages (about one MiB)
+per active world are allocated ahead; no extra workers, formats or shader changes.
+Prediction: share an expensive image-view quiet interval across a bounded group,
+reducing repeated waits while keeping complete pixels and readiness. Add a private
+paused-upload cancellation scenario before accepting this new ownership state.
+Evidence: zig-out/reports/perf-lightmap-view-reservations-527/.
+
+Final connected build and normal intro/E1/two Greece saves/controlled crossing/
+cancellation qualification pass. An isolated paused-upload renderer then proves
+eight unpublished reservations are absent from the image registry, eight are
+discarded on forced admission failure, another eight on vid_restart, and a fresh
+request completes all 44 E3 lightmap pages with zero pending/failed images under
+validation. The temporary hold exists only in its frozen diagnostic binary;
+production source/runtime are restored before timing. It is excluded from timing.
+
+The integrated shared-image batch passes 59/59 steps, 551 native plus C contracts
+and 384 Python tests with the recorded pinned interpreter. After those checks,
+only a per-group success log and stale comment are removed; ownership/upload/
+failure cleanup source is otherwise identical, explicitly compared in the report.
+The quiet timing artifact is frozen separately and checked to contain no private
+hold flag. Pixel/frame/normal loading comparisons against retained 526 follow;
+normal results below use that quiet artifact.
+
+Remaining target renderer admission is 9.120/9.372/9.319 seconds before and
+8.412/7.738/8.095 after: medians 9.319 -> 8.095 (13.1%), all three pairs
+faster. All 9,903 surfaces/47 lightmap pages finish, pending/failed images reach
+zero, and player identity/health/armor/weapon/ammo remain unchanged. Owner
+admission wall medians 1.331 -> 1.026 seconds and target polls 186 -> 172 support
+reduced scheduling/wait cycles; the required texture/view count is unchanged.
+Process CPU 102.90 -> 91.68 seconds includes fewer coexisting foreground frames.
+Peak RSS medians 2,100,624 -> 2,101,692 KiB add about 1.04 MiB. Earlier allocation
+is bounded by eight pages per world; device-memory bump blocks keep their existing
+content lifetime even when an unused image object is discarded.
+
+Fresh Greece B medians 3.87626 -> 3.87616 seconds are neutral. Greece A
+4.43206 -> 4.48264 (+1.1%) has consistent paired costs +36, +51, +53 ms;
+preserve this cost rather than claiming uniform loading gains. Separate
+query-free frame processing means are 21.854 -> 21.835 and 23.227 -> 21.907 ms,
+observed maxima 45 -> 43 and 46 -> 46. Dynamic task windows differ; no FPS,
+hardware or tail claim is made. The first extra reservation-only pass is a
+candidate for further measurement, not a proven explanation of the A cost.
+
+All 22 timing/frame-diagnostic logs are GPU-query-free; six source and nine runtime
+identities match the frozen quiet candidate. Only Vulkan differs from retained
+526. Original owner saves remain unchanged; ownership R1–R11 remains zero.
+Global PNG sets vary with coexisting worlds/cache, and this metric remains target
+renderer admission after a post-load request, not whole-region gameplay readiness.
+Exact pixels retain the established E1/foreign-preview scope, with actual Greece
+functional checks separate; full campaign and physical GPU acceptance stay open.
+
+## Sequence 526 — perf-lightmap-image-priority — retained; priority guards verified
+
+Keep one-page lightmap time checks while deferred images remain pending, as well
+as during primary/held loading. Permit normal two-page batching only after that
+admission clears. Prediction: preserve background gain without competing for
+owner/driver work before initial images finish. This tests a priority hypothesis;
+525's earlier native/held-stage variation lies outside the changed branch and
+cannot be attributed to it. Compare against retained 520, with the same full
+scenario/output/frame/fresh-load guards. Evidence:
+`zig-out/reports/perf-lightmap-image-priority-526/`.
+
+Normal remaining target renderer admission is 12.272/12.892/11.862 seconds
+before and 9.418/9.009/9.629 after, medians 12.272 -> 9.418 (23.3%). All
+three pairs improve with the full 9,903 surfaces and 47 lightmap pages, pending
+and failed images zero, and player state preserved. Process CPU medians
+134.95 -> 106.36 seconds include fewer foreground simulation/rendering frames;
+they are not raw decoder or FPS gains. Peak RSS medians 2,111,244 -> 2,099,016
+KiB vary with scheduling/cache; resource budgets are unchanged. Other restored
+worlds coexist and global PNG job sets differ. This is the remaining renderer
+endpoint after a post-load request, not whole-region gameplay readiness.
+
+Fresh e2m3b first-block medians 3.92469 -> 3.87504 seconds have mixed pairs.
+Opposite-order confirmation is 3.82771 -> 3.87536, also mixed; all six candidate
+B samples stay below four seconds in this experiment. The earlier 525 spikes
+do not repeat, but this small sample does not prove their cause or rule out
+tails. Fresh e2m3a 4.48317 -> 4.53987 seconds (+1.3%) has paired deltas
++246, -103, +8 ms. No uniform fresh-load gain is claimed. Preserve both B blocks,
+the A cost and all superseded 525 data.
+
+Separate GPU-query-free frame diagnostics give processing-wall means
+21.665 -> 21.911 and 21.980 -> 22.014 ms, observed maxima 45 -> 41 and
+44 -> 45 ms. These unequal dynamic task windows have millisecond resolution
+and establish no FPS/tail result. Every diagnostic and normal timing log is
+checked for absent GPU-stat queries.
+
+Build 90/90; real intro/E1, both original Greece saves, controlled B-to-C crossing,
+loading-flag reset and cold E3 partial-batch cancellation/restart/full rerequest
+pass under validation. Exact TGAs/private RGB match retained 520 with the same
+unmodified native516 E1 recording and limited correctness-only settings. Seven
+other frozen artifacts match exactly; rebuilt cgame's allocated sections,
+addresses, sizes and bytes match 520 despite a debug-metadata hash difference,
+with proof tied to the same frozen 525 cgame binary. Only Vulkan world behavior
+changes; no version override or disabled checks. Original owner saves remain
+unchanged, ownership R1–R11 stays zero. Unchanged native551/C/Python384 broad
+inputs retain their results without another duplicate suite. Actual affected
+renderer/client scenarios above are rerun. Hardware and full campaign acceptance
+remain unverified.
+
+## Sequence 525 — perf-lightmap-page-pairs — superseded; not retained
+
+Allow at least two fixed 128x128 lightmap pages before the normal background
+4-ms check; primary and held loading still check after each page. At most one
+extra page precedes the existing yield; workers, memory budgets, formats and
+required work remain unchanged. Prediction: reuse the quiet interval after an
+expensive first image-view call instead of submitting another foreground frame
+between pages. The driver wait mechanism is inferred from clocks, not a stack
+proof. Compare full readiness/output, frame costs and fresh-load guards before
+retaining. Evidence: `zig-out/reports/perf-lightmap-page-pairs-525/`.
+
+Build 90/90, actual UI/intro/E1/two saves/controlled crossing/cancellation and
+exact pixels pass. Normal background medians 11.800 -> 9.513 seconds (19.4%)
+improve in all three pairs, with full 9,903 surfaces/47 pages. However, fresh
+e2m3b has a +1.123-second paired outlier; an opposite-order confirmation adds a
++0.614-second outlier. Both B block medians are about 53 ms slower. Keep both
+blocks and all first failures. e2m3a is 4.582 -> 4.484 seconds with mixed/neutral
+pairs. These data do not establish startup neutrality.
+
+Frame diagnostic processing means 22.40 -> 26.21 and 23.05 -> 22.17 ms include
+maxima 43 -> 81 and 41 -> 47 ms; the first candidate's surface stage reaches
+61 ms. A later normal candidate lightmap step peaks at 57 ms. These are observed
+costs with unequal dynamic windows, not tail estimates or FPS evidence. Seven
+other files match exactly; rebuilt cgame's allocated sections match retained 520
+byte-for-byte despite different debug metadata. Preserve the first overly strict
+identity assertion and section proof. No 525 gain is retained. Some added startup
+delay occurs after input while deferred images remain pending, motivating 526's
+guard; the precise cause remains unproven.
+
+## Sequence 524 — perf-vulkan-admission-api — diagnostic complete
+
+Scope nonoverlapping image-create/requirements/allocation/bind/view, texture-upload
+and descriptor-write paths with owner CPU and wall clocks only during normal
+admission. Retain whole-phase totals and observation-window accounting. Parent
+main-thread CPU/context-switch/scheduler observations distinguish unavailable
+runnable-delay counters from zero. Compare validation off/on/off before deciding
+which wait to remove or batch. Freeze the private renderer and restore all three
+production files, remove its temporary profiler module, and restore retained 520
+runtime before sampling. Evidence: `zig-out/reports/perf-vulkan-admission-api-524/`.
+
+Validation off/on/off samples spend 6.004/5.638/5.823 seconds in image-view
+creation, against only 5.75/20.52/5.69 ms of owner CPU. This is 90–92% of
+whole measured normal-admission wall. Other flat scopes are small: descriptor
+writes take 0.56/7.79/0.53 ms, and texture uploads remain tens of milliseconds.
+Do not attribute the major wait to these other calls or optimize raw owner
+compute. Kernel sched_schedstats is disabled; runnable delay is unavailable,
+recorded as null, and no system settings change. Main-thread context switches
+include coexisting rendering and command delivery; they do not identify a lock.
+
+All three copied-save/full-target runs pass. Flat API wall/CPU sums fit within
+whole-phase totals, and CPU <= wall <= parent-window checks hold. Build 90/90;
+all production source/runtime files remain retained 520 and the temporary module
+is removed. No normal performance gain is claimed from these private diagnostics.
+
+## Sequence 523 — perf-renderer-owner-costs — diagnostic complete
+
+A private renderer measures normal admission subphases with monotonic wall time
+and CLOCK_THREAD_CPUTIME_ID, without GPU queries. Reset/query commands bracket
+the same target window. Freeze the variant, restore source/runtime exactly to
+520, then run validation off/on/off. Evidence:
+`zig-out/reports/perf-renderer-owner-costs-523/`.
+
+Aggregate owner CPU is 0.516/0.541/0.510 seconds against wall 6.533/6.387/6.333.
+Lightmaps contribute wall 3.787/3.692/3.603 seconds but CPU 0.110/0.141/0.105;
+surfaces wall 2.619/2.581/2.614 and CPU 0.350/0.345/0.353. Raw owner compute
+does not explain most renderer wall time. Wall minus CPU includes blocking,
+runnable delay and measurement overhead; it does not identify a GPU wait or
+particular lock. Next scope actual Vulkan allocation/upload/descriptor calls
+and check main-thread scheduling delay before choosing an optimization.
+
+All three copied-save/full-target runs pass; owner CPU <= wall and summed phase
+wall <= the parent observation-window bound. Build 90/90; original source and
+all nine runtime files are restored to retained 520 before sampling. Worker CPU
+is excluded from the owner clock. Instrumentation/code-layout effects and command
+boundaries prevent using these runs for normal loading/FPS claims.
+
+## Sequence 522 — perf-resident-owner-phases — diagnostic complete
+
+Attribute each existing normal resident step to actual renderer, collision,
+config, inline-model, model, sound or finalization work, reusing existing engine
+millisecond stamps. Counters are private; freeze the diagnostic cgame and restore
+both source files/all nine runtime files to retained 520 before sampling.
+Evidence: `zig-out/reports/perf-resident-owner-phases-522/`.
+
+Validation off/on/off runs attribute renderer wall totals 8,537/9,741/6,435 ms,
+versus collision 31/41/36, model 52/82/48 and inline 0/1/0 ms. Other native
+phases have no work in this target window. Renderer exceeds 98% of attributed
+owner wall in all three. Step/call additivity holds and copied-save/background
+completion checks pass. Time-budget exits also dominate validation-off calls
+(510/522 and 508/516), confirming that 521's conclusion is not solely validation
+overhead. Preserve both off samples and their variation. These are integer wall
+times, not CPU or GPU measurements. Other worlds coexist; target renderer-ready
+does not finish every native resource admission. Next split renderer subphases
+and owner-thread CPU versus wall before choosing a compute/wait optimization.
+
+## Sequence 521 — perf-resident-poll-limits — diagnostic complete; no cap increase
+
+Measure whether retained 520's normal owner calls stop at eight steps, one
+millisecond, or no pending work before tuning either cap. A private diagnostic
+cgame adds counters without extra per-step clocks; a private console command
+prints/resets them around the same background target. Timings are diagnostic
+only and exclude normal performance comparisons. Freeze the diagnostic, then
+restore production source/runtime exactly to retained 520 before sampling.
+Evidence: `zig-out/reports/perf-resident-poll-limits-521/`.
+
+Both copied-save/background-target diagnostic runs pass under validation. Normal
+calls/steps/time exits/count exits/idle exits are 518/818/509/9/0 and
+519/861/501/18/0; additive and step-bound checks pass. Time ends 96.5–98.3% of
+calls, the count cap only 1.7–3.5%, so raising the poll count lacks support.
+Next attribute actual owner work to renderer and native resource phases using
+existing clocks. These are instrumented call counts, not per-frame/FPS evidence;
+console reset/read boundaries include command delivery. Production source and
+all nine runtime files remain exactly retained 520. No optimization is admitted
+from this diagnostic, and its timings are not pooled with normal measurements.
+All 521 runs enable Vulkan validation, so its normal-mode distribution initially
+applies to that diagnostic workload. Sequence 522 repeats without validation
+before using the distribution to choose further work.
+
+## Sequence 520 — perf-resident-cheap-polls — retained; bounded progress verified
+
+Normal resident admission currently performs one global resource poll per frame,
+even if it only checks an unfinished worker. Permit at most eight existing steps,
+yielding after one millisecond of elapsed owner work; held admission retains its
+256-step/30-ms path. Each existing resource remains cooperative and can exceed
+the time budget on its own. Earlier cheap work can add less than one millisecond
+before that operation. Preserve round-robin fairness, complete readiness, worker
+and image bounds, resources and output. Prediction: reduce round-robin worker
+scheduling gaps; compare complete renderer admission, fresh loads and query-free
+frame diagnostics before retaining. Baseline is qualified 517v2, with rejected
+518/519 absent. Evidence: `zig-out/reports/perf-resident-cheap-polls-520/`.
+
+Normal paired background renderer readiness is 20.056/19.127/17.939 seconds
+before and 11.824/12.489/11.718 after: medians 19.127 -> 11.824 (38.2%), all
+three pairs faster. The target retains 9,903 surfaces and all 47 lightmap pages;
+pending/failed images finish at zero and player state is preserved. Owner
+admission wall medians are 1.827 -> 1.734 seconds; this gain reduces scheduling gaps rather
+than proving faster decoding. Process CPU 204.60 -> 133.61 seconds includes fewer
+coexisting foreground frames. Peak RSS median 2,086,144 -> 2,110,924 KiB adds
+24.2 MiB despite unchanged worker/cache budgets. Other restored worlds coexist;
+global PNG work differs. This is remaining target renderer admission after a
+post-load request, not whole-region gameplay readiness or cold-storage latency.
+
+Fresh e2m3b medians 3.97834 -> 3.97650 seconds are neutral. e2m3a 4.43870 ->
+4.47991 seconds (+0.9%) includes paired deltas +298, -108, -150 ms. Keep every
+sample and make no fresh-load improvement claim. Separate query-free frame
+diagnostics give processing-wall means 22.11 -> 21.81 and 21.90 -> 23.11 ms,
+maxima 43 -> 43 and 35 -> 42 ms. Timers resolve milliseconds and task windows
+have different durations/work densities; these establish neither FPS nor tail
+latencies. GPU stats are absent from every verified diagnostic log.
+
+Build 90/90, intro/E1, both actual Greece saves, tighter controlled B-to-C
+crossing, loading-flag reset and cold E3 partial-batch cancellation/restart/reuse
+pass under validation. Exact TGAs/private RGB match the qualified 517v2 reference
+with the same unmodified native516 E1 recording/rules identity. This remains a
+limited single-world/foreign-preview pixel fixture. Original Greece saves remain
+unchanged. Seven other frozen files match 517v2 exactly; cgame changes behavior.
+Rebuilt Vulkan has a different whole-file hash but every allocated ELF section,
+address, size and byte matches 517v2: nonallocated debug metadata differs. Preserve
+the first overly strict whole-file identity assertion failure and section proof.
+Ownership R1–R11 remains zero; unchanged native/C/Python aggregate inputs retain
+their 551/C/384 results without a duplicate broad suite. Actual client paths,
+outputs and timing guards above are rerun. No full campaign/hardware acceptance.
+
+## Sequence 519 — perf-image-read-handoff — rejected; source/runtime restored
+
+Replace experimental 518's extra frame hook with a bounded handoff in the existing
+image-batch poll. Once one image completes, release its input and decoder, then
+dispatch only the next asynchronous read. Do not poll that read, decode inline,
+iterate over more completions, or alter the one-read/one-decoder pixel budgets.
+Prediction: remove one owner scheduling gap per image while preserving complete
+readiness and output. Compare against qualified 517v2, with the same immutable
+Greece inputs and separate diagnostics. Add contracts for decoder/cache completion,
+next-read dispatch failure, cancellation immediately after handoff, and premature
+batch selection. Evidence: `zig-out/reports/perf-image-read-handoff-519/`.
+
+Build 90/90, real UI/intro/two Greece saves/controlled crossing/cancellation pass.
+A fresh recording with unmodified native modules gives exact TGAs/private RGB
+across two baseline processes and the candidate. The added C tests change the
+conservative native identifier because the rules hash includes tests: comparison
+arms use identical new unmodified modules, changing only renderers. No version
+override or disabled check. Aggregate 59/59 steps, 551 native plus C contracts and
+384 Python tests pass with the recorded pinned interpreter. PNG contracts cover
+decoder/cache completion, next-read failure and cancellation after handoff.
+
+Background median 17.920 -> 17.732 seconds is mixed across pairs. Fresh e2m3b
+median 3.8782 -> 3.8765 seconds is effectively neutral; e2m3a 4.581 -> 4.490
+includes a final paired 251-ms regression. All samples remain. This is insufficient
+evidence to retain the added handoff. Restore C/tests and all nine runtime files
+exactly to 517v2, including its native rules manifest. Many per-material batches
+cannot benefit unless they contain multiple images; batch-size frequency has not
+been measured. No loading/CPU/FPS gain is accepted from 519.
+
+## Sequence 518 — perf-world-image-progress — superseded; measurements preserved
+
+Advance at most one existing background material-image batch after frame
+submission, round-robin across pending worlds. Keep primary/held and reentrant
+admission unchanged. Never create, select, fill or release batches in this hook;
+GPU admission and uploads remain in their existing owner path. Reset the cursor
+on shutdown. Existing byte/thread bounds stay fixed, but earlier completion/cache
+copies cost owner CPU. Keep that work outside the old submit/present timer and
+give it a separate optional CPU profile label. Prediction: reduce frame-level
+read/decode/completion gaps and complete background renderer admission. Compare
+actual output, endpoints, frame intervals, memory and cancellation before retaining.
+Evidence: `zig-out/reports/perf-world-image-progress-518/`.
+
+Build passes; only the Vulkan renderer differs from qualified 517v2. Both actual
+Greece saves load under validation. Preserve the first controlled-crossing failure:
+the old follow fixture refuses once, then remains latched even when Mikiko catches
+up to 73 units, matching the separately verified 507 bug. A tighter private
+fixture puts the existing companion at the portal with the existing Stay order;
+the same 150-unit rule remains. Intro/E1, both actual saves and this controlled
+B-to-C movement/stable arrival pass. No production party behavior is changed.
+
+A fresh private single-world E1 cancellation diagnostic starts a cold E3 image
+batch, observes PNG progress before world readiness, interrupts with vid_restart,
+then requests the world again and reaches readiness. No owner save is converted
+to another residency mode. Reproducible foreign-preview TGAs/private RGB match
+517v2 exactly with the same unmodified native recording and limited correctness
+settings. All normal Greece timing retains resident1 and normal visual settings.
+Frame-stat diagnostics precede uninstrumented matched endpoint trials.
+
+GPU-query frame diagnostics expose an observer effect: baseline target readiness
+is 12.830 seconds/113 polls with r_vkStats, versus roughly 17–18 seconds/194–198
+polls without it. Owner admission wall also shifts substantially. Preserve this
+measurement-path difference and do not use GPU-query timing to assert normal
+frame cost. The new scope is present; its largest printed group average is
+0.059 ms/frame, not a per-call maximum. The instrumented frame means 29.14 ->
+30.71 ms have unequal task windows/work densities and establish no normal FPS
+regression or improvement.
+
+A separate query-free diagnostic uses unchanged engine com_speeds timers and a
+report-only copy of the collector that timestamps console frame completions.
+GPU stats stay off in all four verified logs; debug notification text is hidden.
+Two opposite-order pairs give completion-interval means 22.29 -> 22.40 and
+24.21 -> 22.16 ms; engine processing wall means 21.78 -> 22.03 and 23.68 ->
+21.78 ms. Engine timers resolve milliseconds; console timestamps include delivery
+jitter. These dynamic task windows are diagnostics, not per-frame tail/steady FPS
+claims. Raw groups, all samples and the original profiler difference remain.
+
+Normal background renderer readiness falls from median 17.279 to 14.552 seconds
+over three pairs, with all target surfaces/lightmaps complete. Fresh e2m3b is
+neutral (3.822 -> 3.824 seconds), but the original e2m3a block is slower in all
+three pairs (4.279 -> 4.444 seconds). An opposite-order confirmation is mixed
+(4.379 -> 4.282 seconds); keep both blocks, with no uniform fresh-load claim.
+A structural r_vkStats=1 load trace contains no hook CPU scope during held
+admission; the helper's positive-control assertion then fails because no hook
+ran before capture ended. Actual hook activity is established separately in
+background diagnostics. This does not support adding a priority guard to explain
+held-load variation. Preserve all failed assertions and outputs. Remove 518's
+extra frame hook while evaluating 519's narrower existing-poll handoff against
+qualified 517v2. Frozen 518 binaries and measurements remain; 518 is not retained.
+
+## Sequence 517 — perf-world-surface-budget — retained v2; renderer modes verified
+
+Greece maps contain 7491/7491/10636 surfaces. The extra 64-surface yield imposes
+at least 118/118/167 calls to the surface stage even when work takes less than
+its existing 4 ms allowance. Final v2 removes that count-based yield only during
+normal background work; primary and held loading retain it. Always retain the
+elapsed-time check after every surface, asynchronous waits, ordering, validation,
+memory ownership and complete readiness. A single shader operation may exceed
+the cooperative time budget in either implementation. Prediction: reduce required
+resident-world admission delays without reducing work or changing pixels. Freeze
+qualified 516 as baseline, build the connected renderer and compare actual native
+UI/loading, counts and phase peaks before retaining. Evidence:
+`zig-out/reports/perf-world-surface-budget-517/`.
+
+Initial causal hypothesis is corrected before acceptance: the client pumps up to
+256 calls per frame with a 30 ms allowance while waiting, and actual ready-world
+logs show thousands of polls. The count cap does not force one frame per chunk
+during initial loading. Normal background admission performs one step per frame,
+so measure that separately as well as matched complete fresh loads. Preserve the
+original design and this falsification; no gain is accepted from primed smoke
+times compared with fresh-process baseline times. Candidate native UI/intro/
+e1m1a/two-save qualification passes under validation; original inputs are intact.
+
+Only the Vulkan renderer artifact changes; the other eight frozen 516 artifacts
+match exactly. A fresh unmodified 516 demo in the previously qualified E1/459
+fixture gives exact repeated TGAs/private RGB across two baseline processes and
+the candidate after complete foreign e2m4a admission and a visible authored-start
+preview. This correctness-only fixture fixes the clock and disables TAA/auto
+exposure; normal current-Greece UI and timings retain resident1 and normal visual
+settings. Both complete reference/candidate runs pass validation and clean exit.
+
+Keep first useful failures: a broad helper initially treated expected demo-start
+disconnect as an error; scoping that transition exposes unchanged-516 resident
+Greece demo InvalidWorldChunk. Latest Greece with residency disabled also emits
+checkpoint InvalidRegion, so it is not admitted as a correctness fixture. The
+established E1 fixture avoids both without disabling validation. Its first pixel
+callback finishes but shared cleanup waits for a server already disconnected by
+demo playback; cancel that exact private guard and fix callback cleanup to return
+to a live private map. Raw failures and first pixels remain; later complete runs
+are the acceptance reference. No production workaround is introduced for these
+baseline/harness limits. Background and matched fresh-load evidence is pending.
+
+First candidate v1 completes three interleaved background pairs: target e2m4a's
+9903 surfaces/47 pages become ready at median 41.724 -> 18.380 seconds (55.9%),
+ranges 32.533–43.259 / 17.827–20.044. Target polls fall 358/358/361 -> 199 each;
+player state remains stable. Coexisting normal restored-world work makes global
+PNG sets differ at this target endpoint; do not claim whole-region completion or
+equal global work. Every target page finishes and static preview pixels match.
+
+Twelve matched fresh-load trials expose v1's tradeoff: e2m3b median 3.830 -> 3.774
+seconds, but e2m3a 4.379 -> 4.579, all three e2m3a pairs slower by 110–205 ms,
+with CPU medians 18.288 -> 19.961 seconds. Preserve v1's source/runtime/results
+and supersede it. Connected v2 reads the existing client-owned dk3_region_loading
+flag and whether a primary world is selected: retain the original 64-surface cap
+during primary/held admission, use the existing
+4 ms time allowance alone during normal background work. No new game policy,
+native ABI, thread, memory or format change. Build and qualify both modes before
+acceptance; source/native modules remain otherwise fixed to 516. Evidence lives
+under the same report's `v2/`. Keeping primary registration unchanged also retains
+506's model-prefetch pump cadence between synchronous admission chunks. The first
+held-only v2 build is preserved as unqualified; final v2 covers both cases.
+
+Final v2 passes its integrated build with the other eight runtime artifacts
+byte-identical to 516. Static foreign-world TGAs/private RGB remain exact against
+the reproducible baseline. Native current-asset resident1 qualification covers
+intro/e1m1a, both actual Greece saves, controlled authored B-to-C movement and
+stable arrival with player/loadout preserved. The existing region-loading flag
+reads zero after every completed admission. This controlled crossing does not
+claim the separate party-retry fix is installed or natural full-map traversal.
+
+Six interleaved live background trials with unchanged visual settings measure
+remaining e2m4a renderer preparation after the post-load request: median 33.081 -> 18.134
+seconds (45.2%), ranges 31.557–33.157 / 17.935–18.139. All three pairs improve.
+Target polls 358/360/361 -> 201/196/198; every target's 9903 surfaces and 47 pages
+finish. Other normal restored background worlds coexist, so global PNG/skin work
+at this target endpoint differs: no whole-region, full gameplay admission or
+equal-global-work claim. The endpoint is the render world's ready event.
+Process CPU during the interval falls 371.59 -> 204.39 seconds, including fewer
+foreground rendering/simulation frames before target completion; this is not a
+steady FPS or per-frame compute gain. Peak RSS medians 2088868 -> 2088712 KiB
+are effectively unchanged; the first candidate pair increases 16436 KiB. Observed
+maximum poll-step times span 27–30 ms in both arms, not a hard 4 ms guarantee.
+
+Twelve matched fresh loads give e2m3b median 3.774 -> 3.877 seconds, including a
+291 ms slower candidate pair; e2m3a 4.430 -> 4.328. CPU medians fall slightly in
+that block. Resolve the e2m3b concern with a separate six-process reversed-order
+block using the same immutable inputs/binaries: 3.774 -> 3.773 seconds, two paired
+deltas within 2 ms and one candidate +54 ms. Its CPU median rises 13.967 ->
+14.713 seconds. Preserve both blocks and every outlier; no uniform fresh-load or
+CPU improvement is claimed. Stable player fields, required models and completed
+image admission pass throughout; time-dependent positions/global duplicate PNG
+preparations retain their raw variation. No physical-GPU or latency-tail claim.
+
+Source/runtime fingerprints remain frozen; ownership stays R1–R11 zero. The
+551-native/C/384-Python aggregate from 516 still covers unchanged native/tool/
+image-level inputs: this renderer-only batch uses the actual renderer build and
+affected scenarios above, without duplicating the unchanged broad suite. No Git
+publication, original save or installation write. Next inspect residual image-batch
+polling gaps while retaining the same foreground/held behavior.
+
+## Sequence 516 — perf-native-crc — retained; native components and integration verified
+
+The isolated portable Zig experiment compares std's byte-at-a-time CRC with
+eight/sixteen-byte lookup groups at the actual generic x86_64 target. All three
+algorithms match Python zlib for 131104 length/alignment cases. Three component
+blocks per actual save give about 23.1 / 5.2 / 4.1 ms for the outer body. These
+are resident-memory component results, not complete decoding or loading gains.
+
+Select sixteen-byte groups for the core IEEE CRC mechanism and connect both
+Reader.init and Writer.finish. Keep every outer/nested checksum and final writer
+validation, error, bound and format byte unchanged. The fixed table is 16 KiB
+per linked copy, with no per-save allocation or new CPU feature requirement.
+Include known vectors, all short tails, unaligned and larger boundaries against
+the independent std implementation. Prediction: reduce native decode/capture
+work and complete save loading; verify native UI/save compatibility and endpoint
+timings before accepting. Evidence: `zig-out/reports/perf-native-crc-516/`.
+
+Integrated build passes 90/90; renderer binary is byte-identical to 514. Both
+Greece saves pass native UI load, new write, independent Python outer/nested CRC
+validation, the original bitwise C validator, native reload and a second write
+with player loadout/keys preserved under Vulkan validation. Aggregate passes
+59/59 steps, 551/551 native tests plus C contracts and 384 Python tests. Class
+ownership stays R1–R11 zero. Source/runtime hashes remain exact after checks.
+
+Twelve interleaved fresh-process loads use identical original saves/profile/assets
+and private cold Mesa caches. e2m3b readiness median 4.028 -> 3.732 seconds (7.4%);
+all three pairs improve. e2m3a 4.488 -> 4.529, a 0.9% regression: preserve two
+slower pairs and claim no uniform endpoint improvement. Native menu decode
+medians 168 -> 103 / 142 -> 114 ms, server decode 147 -> 100 / 137 -> 102,
+restore 225 -> 149 / 228 -> 150. Retain the demonstrated component gain and
+e2m3b latency gain with e2m3a limits explicit. Full-process CPU medians rise
+14.233 -> 14.782 / 18.696 -> 19.119 seconds; RSS medians change -4976/-2140 KiB.
+Do not claim CPU/memory savings from this small complete-process comparison.
+
+Map/player/health/armor/loadout and completed admission match. e2m3b's 273 PNG
+preparations match across all trials. e2m3a has 288/287/288 preparations in each
+arm: one duplicate varies within unchanged baseline too, while every paired
+name/dimension multiset matches. Keep the raw across-trial work mismatch and
+moving-position variation; neither is suppressed as exact-state equivalence.
+New native rules identity 5071c870... requires a fresh recording before future
+demo performance tests; no version override entered these timing/acceptance runs.
+No Git publication or installation change. Next investigate the separate resident
+surface-admission cadence, retaining its existing time budget.
+
+## Sequence 515 — perf-native-save-profile — diagnostic verified; no runtime change
+
+An isolated shared probe calls the actual core save Reader and std CRC under
+generic x86_64 Linux ReleaseSafe, using the same two copied Greece saves. Five
+resident-memory samples after warmup measure about 23.1 ms for the outer 15 MB
+CRC, Reader.init and top-level Reader.validate alike. Full snapshot decoding is
+not measured by this probe. Each save contains 31 resident snapshots totaling
+nearly another complete body; snapshot.decode validates their individual CRCs
+as well. Do not remove either outer or nested validation. This identifies a
+portable native checksum component for a separate algorithm experiment; it does
+not establish a new loading gain or an additive time budget. No production source
+changes. Evidence: `zig-out/reports/perf-native-save-profile-515/`.
+
+## Sequence 514 — perf-save-crc — retained; component and integrated verified
+
+Replace the engine save stream's bit-at-a-time IEEE CRC32 with its already
+bundled zlib implementation, retaining the polynomial, initial/final state,
+256 MiB size limit, every format check and exact saved bytes. GCC component
+validation of copied 15 MB Greece saves falls from roughly 95–105 ms to 4–7 ms;
+keep those sequential component samples separate from actual engine results.
+Both accept original saves and reject payload corruption. The new C contract
+compares the writer against an independent bitwise reference for 256 payload/
+alignment cases plus empty streams, corruption and truncation.
+
+Final integrated build passes 90/90. Actual DK_SaveOpen calls bundled crc32;
+source and binary identities are frozen. Adding the C contract changes the
+conservative native rules identity; qualify both Greece saves with the complete
+unmodified final runtime under validation. For the matched comparison, compose
+the unchanged qualified 509 modules/renderer with only the new engine executable:
+no byte patch or version override. Final renderer allocated sections match 509;
+its raw hash changes only in .debug_line. No duplicate shader/pixel suite is run.
+
+Twelve balanced fresh-process trials use the same copied profile/saves and exact
+31db9148... assets, resident worlds enabled, private cold Mesa caches and warm/
+uncontrolled OS pages. Engine validation/staging median falls 156 -> 12 ms on
+both maps. e2m3b readiness median 4.135 -> 3.927 seconds (5.0%); all three pairs
+improve by 103–293 ms. e2m3a 4.688 -> 4.636 (1.1%); preserve the 5 ms slower pair
+and baseline staging outlier 235 ms. CPU medians 15.209 -> 14.723 / 18.616 ->
+19.511 seconds; all three e2m3a CPU values increase. RSS medians rise 5700 /
+13112 KiB, despite adding no per-save scratch allocation. These complete-process
+resource observations include startup, rendering, restored simulation and capture;
+do not attribute their changes solely to CRC or claim uniform CPU gains.
+
+Every load preserves input files and completes image admission with pending/
+failed zero. Map, player ID, health, armor, weapon and ammo match. The moving
+e2m3a save starts with velocity [98,-177,0]; sampled post-load positions vary
+slightly in both unchanged baseline and candidate as it decelerates. Preserve
+the raw exact-state mismatch rather than call these time-dependent positions
+byte-identical. CRC/stream compatibility is established independently above.
+Aggregate passes 59/59 steps, 550/550 native tests plus C contracts and 384 Python
+tests with the pinned interpreter. No installation, original save, schema, visual
+quality or Git publication changes. Evidence: `zig-out/reports/perf-save-crc-514/`.
+Next profile the remaining native save decode and resident admission costs.
+
+## Sequence 513 — perf-greece-loading — diagnostic verified; no new optimization
+
+Profile the owner's copied e2m3b/e2m3a saves and immutable profile from 507 under
+qualified 509/default4 with resident worlds enabled. This extends characterization
+beyond the e1m1b benchmark, rather than assuming its bottlenecks represent Greece.
+Use guarded headless software rendering, cold private Mesa caches and validation;
+times in this diagnostic are instrumented and establish no performance gain.
+Record source-save preservation, restored state, completed image admission and
+stage/model waits. No source/runtime change is introduced. Evidence:
+`zig-out/reports/perf-greece-loading-513/`.
+
+Preserve the first SaveAssetMismatch from the older 459 fixture: it does not match
+the latest saves. Correct the fixture to the exact read-only installed 31db9148...
+generation previously qualified in 507, without bypassing any save check. Both
+unmodified saves restore their actual Greece maps, state and complete images under
+validation, with input preservation passing. All three companion model waits are
+zero. Cumulative region-wait -> region-ready spans 849 -> 2405 ms / 691 -> 2798 ms;
+save menu decode is about 140 ms, engine validation/staging about 153–155 ms,
+server decode 133 ms, restore 229–230 ms. These instrumented single observations
+are diagnostic, not comparative gains. Investigate the engine's bitwise CRC before
+touching serialization/validation semantics; resident admission remains separate.
+
+## Sequence 512 — perf-package-admission — retained; tooling verified
+
+Sequence 511 profiles warm launcher preparation using a private CoW fixture with
+current runtime files and copied HD/neural/material overlays. Three warm calls
+take 4.32–5.15 seconds; package admission stays 1.384 seconds, neural validation
+1.70–2.21, final hashing 1.05–1.22. The initial seed/publication is excluded.
+Evidence: `zig-out/reports/perf-launcher-stages-511/`.
+
+Admit independent packages with at most four workers for inputs above 32 MiB;
+small installations remain serial. Preserve every full-package SHA, streamed
+entry CRC, gameplay entry SHA and namespace requirement. Collect results in
+original package order and join/cancel on error. Prediction: overlap independent
+hash/decompression work and reduce complete warm preparation without changing
+the published generation. Check corruption, cleanup, deterministic gameplay and
+installation identities before retaining. No engine build is needed for this
+tool-only change. Evidence: `zig-out/reports/perf-package-admission-512/`.
+
+Six interleaved fresh launcher processes with the older compressed neural overlay
+reduce complete warm preparation median 5.286 -> 4.752 seconds (10.1%); all three
+paired totals improve. Admission median 1.410 -> 0.974 seconds (31.0%). Full total
+ranges are 4.612–5.349 / 4.036–4.882; CPU medians 15.297 -> 15.122 seconds are
+near neutral and individual pairs vary. Peak RSS medians 61908 -> 61680 KiB do not
+remove the extra bound of four active streaming readers. All installed file
+records, gameplay compatibility and generation keys match exactly across arms.
+Focused checks cover both stored/deflated identity and CRC rejection under serial
+and parallel admission, plus peer-reader joining on error. All 384 Python tests
+pass with the pinned interpreter and explicit DKGUARD. Preserve first harness
+failures (missing PYTHONPATH, then missing DKGUARD) and corrected runs. No native
+source changed in this batch. Separate stored-PNG confirmation uses six fresh
+processes and an independently seeded private prefix. Preparation median falls
+4.547 -> 4.088 seconds (10.1%); all three pairs improve by 359–581 ms. Admission
+1.423 -> 1.116 seconds. CPU median rises 12.405 -> 13.205 seconds (6.4%), with all
+three candidate CPU samples higher; retain this cost rather than claim CPU savings.
+RSS medians 63252 -> 62564 KiB; every published record matches between arms.
+Keep the lower user-visible preparation latency with the CPU tradeoff explicit.
+Do not pool overlay workloads or extrapolate to cold storage, engine FPS or GPU
+throughput. Runtime 509 is unchanged. No additional Git publication is performed.
+
+## Sequence 510 — perf-model-image-progress — rejected; qualified 509 restored
+
+Advance existing model batches before and after synchronous owner image admission,
+so the next PNG read/decode can overlap other images' mip/upload work. Keep the
+calls out of worker-safe prepareLevels/Deferred.work. Pump never fills/releases
+slots or selects a different batch; selected pixels remain independently owned
+across cache eviction. Four slots, thread/pixel budgets, images and GPU ownership
+stay fixed. Prediction: reduce the remaining Superfly waits (30–97 ms in five of
+six four-slot samples) and complete loading. Cache copies still cost owner time;
+a lower wait timer alone is not an accepted gain. Build and native UI qualification
+pass, but twelve matched fresh-process loads regress readiness: arrival median
+2.765 -> 2.816 seconds; autosave 2.974 -> 3.070. Arrival CPU falls slightly
+11.229 -> 11.091 seconds, while autosave rises 12.795 -> 12.986. Retain all samples;
+reject the experiment. Restore image.zig and all nine frozen runtime artifacts
+exactly to qualified 509, with source/runtime hashes verified. No repeat aggregate
+or pixel suite is required for rejected code. Next measure warm launcher stages.
+Evidence:
+`zig-out/reports/perf-model-image-progress-510/`.
+
+## Sequence 509 — perf-model-four-slots — retained; integrated and aggregate verified
+
+Extend the bounded preparation array and probe control to four slots, keeping
+default three until endpoint evidence selects it. Qualified 506 early overlap
+still waits about 203–207 ms across later model groups. Prediction: preparing the
+fourth group during world work reduces those waits and complete fresh-save
+readiness. Per-slot limits stay 32 MiB model / 128 MiB pixels; the approximate
+worst temporary bound rises 1248 -> 1664 MiB when four are requested. Measure
+actual RSS/CPU, names/order, decoded work and complete image admission. Compare
+qualified 506/three, extended/three and extended/four in balanced three-arm
+processes using one immutable profile. Sequential build passes; four-slot native
+UI qualification is running. No gain/default change is accepted yet. Evidence:
+`zig-out/reports/perf-model-four-slots-509/`.
+
+Eighteen fresh-process trials complete with one immutable resident-disabled
+profile, cold private Mesa caches and uncontrolled/warm OS pages. Same extended
+binary three/four readiness medians: arrival 2.826 -> 2.766 seconds; autosave
+3.276 -> 3.124. All six paired readiness values improve. Arrival process CPU
+median falls 11.36 -> 10.71 seconds; autosave rises 12.65 -> 12.88, with all three
+autosave CPU deltas +0.205 to +0.441 seconds. These include startup/capture work,
+not isolated decoder CPU. RSS medians 2440396 -> 2428160 / 2478380 -> 2454756 KiB;
+one arrival pair increases 1096 KiB. Preserve the larger worst-case bound above
+despite lower measured RSS. Qualified 506/three control readiness is 2.966/3.321
+seconds; do not attribute its whole difference to the extra slot. All arms
+register the same eight model names/order and 64 PNG name/dimension jobs per save,
+restore identical state and complete admission with pending/failed zero.
+
+Select four as the default for unset configurations after the controlled setting
+comparison; explicit saved limits still apply. Final default-only build passes
+90/90. A private profile with the old limit removed proves actual four-slot native
+UI/intro/e1m1a/two-save admission. Cache-off/four and one-slot cases pass under
+validation and preserve inputs. Classic/Neutral/AgX TGA/private RGB match using
+the explicitly limited old-demo version-literal diagnostic; production renderer
+is exact and unmodified native modules qualify all UI/loading/timing results.
+Final source/runtime hashes match frozen runtime-default4. One aggregate passes
+57/57 steps, 550/550 native tests plus C contracts and 383 Python tests with the
+pinned interpreter/dependencies verified. Keep the modest latency gain and
+autosave CPU tradeoff without confidence/tail, cold-storage or physical-GPU claims.
+
+Separate resident-enabled qualification uses one immutable profile and the same
+final binary explicitly set to three/four slots. Twelve fresh-process loads
+reduce arrival readiness 4.029 -> 3.828 seconds and autosave 4.389 -> 4.229;
+CPU medians fall slightly. Arrival RSS rises 36036 KiB (about 35 MiB), autosave
+falls 13268 KiB. Preserve the first slower four-slot arrival pair and every other
+sample. Do not pool these measurements with the standalone workload. Four remains
+the selected default after both workload comparisons; resource costs remain real.
+
+## Sequence 508 — perf-weather-prepared-empty — rejected; qualified 506 shader source restored
+
+Use the otherwise-unused fourth component of each prepared splash corner as a
+has_position marker. The main vertex shader already loads that vec4; absent
+states have exactly zero color, so skip the separate color fetch only for those
+states. Corner xyz, invariant geometry dependency, all particle work/counts,
+80-byte layout, capacity and fallback stay fixed. This tests conditional buffer
+load overhead against the added branch; no throughput gain is accepted yet.
+The qualified baseline is frozen 506. A sequential build reuses its clean local
+cache; source/runtime identities and exact images precede timing. Use immutable
+copied profiles for every comparison. Evidence:
+`zig-out/reports/perf-weather-prepared-empty-508/`. The unrelated Greece fix
+remains isolated and verified under 507; continuous headless optimization resumes.
+
+Three rain modes/private RGB, two authored snow views and resize checks pass
+exactly. Actual embedded SPIR-V contains a conditional color load, but that is
+not a throughput gain. Record a new demo with the unmodified coherent 506 runtime
+so both timing arms use normal native checks; no compatibility override or RNG
+override enters timing. All eighteen work rows match. Three paired processes
+give frame-average median 52.18 -> 52.69 ms (ranges 50.06–55.27 / 50.78–56.17),
+CPU per 384 frames 137.25 -> 137.10 seconds, essentially neutral. Two paired
+frame medians regress. Preserve candidate CPU outlier 144.17 seconds and every
+other sample. Reject without additional cold-load or aggregate repetition and
+restore both shaders exactly to 506. Continue with bounded model concurrency.
+
+## Sequence 507 — save-world-transition — focused fix verified; isolated from perf PR
+
+The owner reports Greece exits failing to start the next world, possibly after
+save/load. Private copies of development-profile autosave-arrival (e2m3b),
+autosave (e2m3a), save2 (e2m1b), metadata/profile and exact installed generation
+31db9148... are preserved. Newest internal restart/resume files are e1m7b and
+are not substituted for the Greece fixtures. Original source saves are unchanged.
+Evidence: `zig-out/reports/save-world-transition-507/`.
+
+On the unchanged installation, normal movement from the actual e2m3b save into
+the return exit reproduces ExitRequiresCompanions. The exit stays latched after
+that refusal, even when Mikiko catches up to roughly 136 units (inside the
+required 150). There is no visible party-refusal explanation. Save/load itself
+passes, so this is not evidence of corrupt saves. A forward diagnostic additionally
+exposes missing reference behavior: an attempted departure must call required
+companions over, ahead of discretionary combat/collection. First wrong-side and
+800-coordinate forward setups are retained as limited/invalid diagnostics; a
+successful harness exit alone never establishes an actual crossing.
+
+Implement the connected fix in independent source snapshot
+`/home/dmitriy/sources/dk3-save-world-fix`, outside the perf branch and dirty co-op
+checkout. Exit-owned authored touch clears the latch on a party refusal and
+retries/messages after 2500 simulation milliseconds. A checked party hook calls
+only required living enabled members using their existing saved Come order and
+normal motor. Proximity remains below 150; no schema/field, teleport, spawn,
+asset or installation change. Arrival-disarmed latches still require leaving
+and reentering, preventing bounce-back. Shared contact handling now dispatches
+a checked hook instead of reading exit state directly. Reference provenance and
+limits are recorded in the exit/companion class review sheets.
+
+Latest frozen `runtime-summon` passes: actual copied user save, natural B-to-A
+movement, a save/load while waiting in the exit, real companion catch-up and
+automatic crossing without leaving/reentering, stable arrival and subsequent save.
+Player ID 433, health 100, weapon 9, ammo 2, inventory 7936 and keys 10240 persist.
+A separate controlled fixture at the exact authored B landing, with the existing
+required companion nearby, passes normal movement B-to-C and stable arrival with
+summons active. This is not full traversal of the Greek map. Source, input and
+runtime identities accompany both cases. Build 90/90 and one final aggregate
+57/57 steps, 553/553 native contracts plus C contracts, 383 Python tests pass;
+R1–R11 stay zero. Earlier latch-only 552-test aggregate is superseded for the
+connected summons change. Class contracts cover arrival disarming/reentry and
+selective summons without waiving distance requirements.
+
+No fix publication or deployment is performed. The reviewed patch is local at
+`save-world-transition-507/save-world-fix.patch`; the perf PR remains at 7f279fd.
+An old save already latched by the defective refusal cannot be distinguished
+from intentional arrival protection: leave/reenter once for that old state.
+Full campaign/cut/artistic acceptance and the refusal voice line remain open.
+The ongoing headless performance goal continues after this focused repair.
+
+## Sequence 506 — perf-model-prefetch-overlap — retained locally; integrated and aggregate verified
+
+Move the optional model preparation hint after collision admission and before
+renderer world admission, then advance existing model-image jobs between world
+admission phases. Keep three slots, all input/pixel bounds, model registration
+order and owner-thread GPU admission. Add explicit client init-error cancellation
+and a generic renderer error-cleanup hook before engine longjmp; format error text
+before releasing its possible borrowed inputs. Prediction: overlap the observed
+180 ms first-model wait with useful world work, reducing complete save readiness
+without more resident memory than justified by the gain. Earlier overlap can
+increase world/model contention and peak RSS; both require measurement. The
+sequential fresh-cache build and frozen runtime are prepared; headless native UI
+qualification is running. No performance gain is accepted yet. Evidence:
+`zig-out/reports/perf-model-prefetch-overlap-506/`.
+
+Final evidence: twelve fresh-process loads reduce median arrival readiness
+3.175 -> 3.068 seconds and autosave 3.520 -> 3.369; preserve the 3.792-second
+candidate arrival outlier. First-model waits fall 194/206 -> 0/0 ms, total model
+waits 410/417 -> 207/203 ms; all eight model names/order and restored state match.
+Native UI intro/e1m1a/two saves, cache-off Vulkan and optional-hint OpenGL2 pass,
+with complete images, clean ordinary validation and preserved original inputs.
+One aggregate passes 57/57 steps, 550/550 native contracts plus C contracts and
+383 Python tests with the pinned interpreter/dependencies verified.
+
+An independent twelve-process block uses a different owner profile: resident
+worlds changed from zero to one between blocks. Each block's arms share one
+verified profile hash throughout; retain recovered immutable copies and never
+pool the different workloads. In the resident-enabled block, arrival readiness
+4.128 -> 3.981 seconds; autosave 4.585 -> 4.283. Arrival RSS median falls 16096
+KiB; autosave rises 21416 KiB. CPU is mixed, and one autosave pair regresses.
+Initial RSS medians fall 6596/10348 KiB. Three slots and per-slot bounds stay
+unchanged; earlier overlap still has a real resident-workload memory tradeoff.
+Retain the modest loading gain in both settings without confidence/tail claims.
+
+The older frozen demo first fails RuntimeMismatch because src/client.zig is
+included in the conservative native rules hash. Preserve that failure. A separate
+correctness-only copy changes only recorded dk3-zig version literals in native
+modules; all differing offsets/hashes are recorded, and the renderer is exactly
+the production candidate. Classic/Neutral/AgX TGA/private RGB match exactly and
+resize admission/dimensions pass. This is limited diagnostic pixel evidence,
+separate from unmodified native UI/runtime acceptance and all timing. Production
+version checks remain intact. The owner-reported Greece issue is not closed by
+these loading results; focused transition diagnosis follows as 507.
+
+Qualified changes through 503 were committed as `7f279fd` and pushed to the perf
+branch; PR 14 now records matched gains, resource costs and rejected experiments.
+This newer experiment remains local and the continuous optimization loop is active.
+
 ## Sequence 505 — perf-weather-cache-read — rejected; qualified 503 restored
 
 Test the cached validity flag before unpacking the whole basis. An empty state

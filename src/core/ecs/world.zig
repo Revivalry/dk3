@@ -24,6 +24,9 @@ pub fn World(comptime Components: anytype) type {
         const Archetype = struct { mask: Mask, layout: Layout, chunks: std.ArrayList(*Chunk) = .empty };
         allocator: std.mem.Allocator,
         slots: [max_entities]Slot = @splat(.{}),
+        // Every earlier slot is occupied or retired. Destruction lowers this
+        // bound so creation retains the original lowest-free-slot ordering.
+        free_slot_hint: usize = 0,
         archetypes: std.ArrayList(Archetype) = .empty,
         ids: std.AutoHashMapUnmanaged(u32, Entity) = .empty,
         next_id: u32 = 1,
@@ -33,6 +36,9 @@ pub fn World(comptime Components: anytype) type {
         epoch: u64 = 0,
         chunk_count: usize = 0,
         max_chunks: usize,
+        construction_reuse: bool = false,
+        spare_chunks: [2]*Chunk = undefined,
+        spare_count: usize = 0,
 
         pub fn init(allocator: std.mem.Allocator, max_chunks: usize) Self {
             return .{ .allocator = allocator, .max_chunks = max_chunks };
@@ -43,12 +49,31 @@ pub fn World(comptime Components: anytype) type {
             const first = (@as(u32, namespace) << 24) | 1;
             return .{ .allocator = allocator, .max_chunks = max_chunks, .id_first = first, .id_last = first | 0xffffff, .next_id = first };
         }
+        /// An isolated empty world's construction may recycle empty tail chunks.
+        /// Spares remain included in the physical chunk budget until released.
+        pub fn beginConstruction(self: *Self) Error!void {
+            try self.editable();
+            if (self.construction_reuse or self.count() != 0 or self.spare_count != 0) return error.StructuralMutation;
+            self.construction_reuse = true;
+        }
+        pub fn finishConstruction(self: *Self) Error!void {
+            try self.editable();
+            if (!self.construction_reuse) return error.StructuralMutation;
+            self.releaseSpareChunks();
+            self.construction_reuse = false;
+        }
+        fn releaseSpareChunks(self: *Self) void {
+            for (self.spare_chunks[0..self.spare_count]) |chunk| self.allocator.destroy(chunk);
+            self.chunk_count -= self.spare_count;
+            self.spare_count = 0;
+        }
         pub fn deinit(self: *Self) void {
             std.debug.assert(self.query_depth == 0);
             for (self.archetypes.items) |*a| {
                 for (a.chunks.items) |chunk| self.allocator.destroy(chunk);
                 a.chunks.deinit(self.allocator);
             }
+            self.releaseSpareChunks();
             self.archetypes.deinit(self.allocator);
             self.ids.deinit(self.allocator);
             self.* = undefined;
@@ -95,12 +120,26 @@ pub fn World(comptime Components: anytype) type {
                 chunk.count += 1;
                 return .{ .chunk = @intCast(i), .row = row };
             };
-            if (self.chunk_count >= self.max_chunks) return error.Capacity;
-            const chunk = try self.allocator.create(Chunk);
-            errdefer self.allocator.destroy(chunk);
-            chunk.* = .{ .count = 1 };
+            var reused = false;
+            const chunk = if (self.construction_reuse and self.spare_count != 0) take: {
+                self.spare_count -= 1;
+                reused = true;
+                break :take self.spare_chunks[self.spare_count];
+            } else allocate: {
+                if (self.chunk_count >= self.max_chunks) return error.Capacity;
+                break :allocate try self.allocator.create(Chunk);
+            };
+            errdefer if (reused) {
+                chunk.count = 0;
+                self.spare_chunks[self.spare_count] = chunk;
+                self.spare_count += 1;
+            } else self.allocator.destroy(chunk);
+            // Allocator.create keeps its normal safety initialization. Reused
+            // storage, like an existing row, has every live column assigned by
+            // create/put/clone before the operation returns.
+            chunk.count = 1;
             try a.chunks.append(self.allocator, chunk);
-            self.chunk_count += 1;
+            if (!reused) self.chunk_count += 1;
             return .{ .chunk = @intCast(a.chunks.items.len - 1), .row = 0 };
         }
         fn handles(chunk: *Chunk) [*]Entity {
@@ -169,7 +208,7 @@ pub fn World(comptime Components: anytype) type {
             const id = requested_id orelse self.next_id;
             if (id == 0 or id == std.math.maxInt(u32) or (requested_id == null and id > self.id_last)) return error.Capacity;
             if (self.ids.contains(id)) return error.DuplicateId;
-            var index: usize = 0;
+            var index = self.free_slot_hint;
             while (index < max_entities and (self.slots[index].id != 0 or self.slots[index].generation == 0)) : (index += 1) {}
             if (index == max_entities) return error.Capacity;
             try self.ids.ensureUnusedCapacity(self.allocator, 1);
@@ -181,6 +220,7 @@ pub fn World(comptime Components: anytype) type {
             handles(chunk)[row.row] = entity;
             self.slots[index] = .{ .generation = entity.generation, .id = id, .archetype = ai, .chunk = row.chunk, .row = row.row };
             self.ids.putAssumeCapacity(id, entity);
+            self.free_slot_hint = index + 1;
             if (id >= self.id_first and id <= self.id_last) self.next_id = @max(self.next_id, id + 1);
             self.epoch += 1;
             return entity;
@@ -213,14 +253,21 @@ pub fn World(comptime Components: anytype) type {
             const a = &self.archetypes.items[s.archetype];
             const chunk = a.chunks.items[s.chunk];
             chunk.count -= 1;
-            if (s.row == chunk.count) return;
-            const moved = handles(chunk)[chunk.count];
-            handles(chunk)[s.row] = moved;
-            inline for (Components, 0..) |T, i| if (a.mask & (@as(Mask, 1) << i) != 0) {
-                const values = column(T, a, chunk);
-                values[s.row] = values[chunk.count];
-            };
-            self.slots[moved.index].row = s.row;
+            if (s.row != chunk.count) {
+                const moved = handles(chunk)[chunk.count];
+                handles(chunk)[s.row] = moved;
+                inline for (Components, 0..) |T, i| if (a.mask & (@as(Mask, 1) << i) != 0) {
+                    const values = column(T, a, chunk);
+                    values[s.row] = values[chunk.count];
+                };
+                self.slots[moved.index].row = s.row;
+            }
+            if (self.construction_reuse and chunk.count == 0 and self.spare_count < self.spare_chunks.len and s.chunk == a.chunks.items.len - 1) {
+                const removed = a.chunks.pop().?;
+                std.debug.assert(removed == chunk);
+                self.spare_chunks[self.spare_count] = chunk;
+                self.spare_count += 1;
+            }
         }
         pub fn destroy(self: *Self, entity: Entity) Error!void {
             try self.editable();
@@ -228,6 +275,7 @@ pub fn World(comptime Components: anytype) type {
             self.removeRow(s);
             _ = self.ids.remove(s.id);
             self.slots[entity.index] = .{ .generation = s.generation +% 1 };
+            self.free_slot_hint = @min(self.free_slot_hint, entity.index);
             self.epoch += 1;
         }
         fn relocate(self: *Self, entity: Entity, bits: Mask) Error!void {
@@ -331,6 +379,144 @@ pub fn World(comptime Components: anytype) type {
 const Position = struct { x: f32, y: f32, z: f32 };
 const Health = struct { value: i32 };
 const TestWorld = World(.{ Position, Health });
+test "construction spares honor physical capacity and survive failed row admission" {
+    const t = std.testing;
+    var failing = t.FailingAllocator.init(t.allocator, .{});
+    var world = TestWorld.init(failing.allocator(), 2);
+    defer world.deinit();
+    var empty_query = world.query(0, 0);
+    try t.expectError(error.StructuralMutation, world.beginConstruction());
+    empty_query.deinit();
+    try world.beginConstruction();
+    const entity = try world.create(7, .{});
+    try world.put(entity, Position{ .x = 1, .y = 2, .z = 3 });
+    try t.expectEqual(@as(usize, 2), world.chunk_count);
+    try t.expectEqual(@as(usize, 1), world.spare_count);
+    // The next new layout fits the archetype table; fail its pointer-array
+    // allocation after taking a spare, so the operation must restore ownership.
+    try world.archetypes.ensureUnusedCapacity(failing.allocator(), 1);
+    failing.fail_index = failing.alloc_index;
+    try t.expectError(error.OutOfMemory, world.put(entity, Health{ .value = 19 }));
+    try t.expectEqual(@as(usize, 1), world.spare_count);
+    try t.expectEqual(@as(usize, 2), world.chunk_count);
+    try t.expectEqual(@as(u16, 0), world.spare_chunks[0].count);
+    try t.expectEqual(@as(f32, 2), (try world.get(entity, Position)).y);
+    try t.expectError(error.MissingComponent, world.get(entity, Health));
+    failing.fail_index = std.math.maxInt(usize);
+    try world.put(entity, Health{ .value = 19 });
+    var live_query = world.query(0, 0);
+    try t.expectError(error.StructuralMutation, world.finishConstruction());
+    live_query.deinit();
+    try world.finishConstruction();
+    try t.expect(!world.construction_reuse);
+    try t.expectEqual(@as(usize, 0), world.spare_count);
+    try t.expectEqual(@as(usize, 1), world.chunk_count);
+    try t.expectEqual(@as(i32, 19), (try world.get(entity, Health)).value);
+    try t.expectEqual(@as(u32, 7), try world.persistentId(entity));
+    // Ordinary live-world mutations keep their existing retention behavior.
+    try world.remove(entity, Health);
+    try t.expectEqual(@as(usize, 2), world.chunk_count);
+    try t.expectEqual(@as(usize, 0), world.spare_count);
+}
+
+test "construction reuse preserves live slots values query order and epochs" {
+    const t = std.testing;
+    const Large = struct { payload: [4096]u8 };
+    const W = World(.{ Position, Health, Large });
+    const Fixture = struct {
+        fn populate(world: *W) ![96]Entity {
+            var entities: [96]Entity = undefined;
+            for (&entities, 0..) |*entity, i| {
+                entity.* = try world.create(@intCast(i + 1), .{});
+                try world.put(entity.*, Position{ .x = @floatFromInt(i), .y = 2, .z = 3 });
+                if (i % 3 != 0) try world.put(entity.*, Health{ .value = @intCast(i) });
+                if (i % 4 == 0) try world.put(entity.*, Large{ .payload = @splat(@intCast(i)) });
+            }
+            // Relocate middle rows too, exercising swaps while construction
+            // is active, and destroy/recreate handles through the same sequence.
+            for (entities, 0..) |entity, i| if (i % 5 == 1) {
+                if (world.get(entity, Health)) |_| {
+                    try world.remove(entity, Health);
+                } else |_| try world.put(entity, Health{ .value = 321 });
+            };
+            for (&entities, 0..) |*entity, i| if (i % 13 == 2) {
+                try world.destroy(entity.*);
+                entity.* = try world.create(@intCast(1000 + i), .{Position{ .x = 8, .y = 9, .z = 10 }});
+            };
+            return entities;
+        }
+    };
+    var baseline = W.init(t.allocator, 128);
+    defer baseline.deinit();
+    var candidate = W.init(t.allocator, 128);
+    defer candidate.deinit();
+    try candidate.beginConstruction();
+    const expected = try Fixture.populate(&baseline);
+    const actual = try Fixture.populate(&candidate);
+    try candidate.finishConstruction();
+    try t.expectEqualDeep(expected, actual);
+    try t.expectEqualDeep(baseline.slots, candidate.slots);
+    try t.expectEqual(baseline.epoch, candidate.epoch);
+    try t.expectEqual(baseline.next_id, candidate.next_id);
+    try t.expectEqual(baseline.free_slot_hint, candidate.free_slot_hint);
+    try t.expect(candidate.chunk_count <= baseline.chunk_count);
+    for (expected, actual) |a, b| inline for (.{ Position, Health, Large }) |T| {
+        const av = baseline.get(a, T) catch null;
+        const bv = candidate.get(b, T) catch null;
+        try t.expectEqual(av == null, bv == null);
+        if (av) |value| try t.expectEqualDeep(value.*, bv.?.*);
+    };
+    var aq = baseline.query(0, 0);
+    defer aq.deinit();
+    var bq = candidate.query(0, 0);
+    defer bq.deinit();
+    while (aq.next()) |a| {
+        const b = bq.next().?;
+        try t.expectEqual(a.archetype, b.archetype);
+        try t.expectEqual(a.chunk, b.chunk);
+        try t.expectEqualDeep(a.entities(), b.entities());
+    }
+    try t.expect(bq.next() == null);
+}
+
+test "entity slots retain lowest-free ordering through full pools and retired generations" {
+    const t = std.testing;
+    var world = TestWorld.init(t.allocator, 4);
+    defer world.deinit();
+    var entities: [max_entities]Entity = undefined;
+    for (&entities, 0..) |*entity, i| {
+        entity.* = try world.create(null, .{Health{ .value = 1 }});
+        try t.expectEqual(@as(u32, @intCast(i)), entity.index);
+    }
+    try t.expectError(error.Capacity, world.create(null, .{Health{ .value = 2 }}));
+    try world.destroy(entities[1700]);
+    try world.destroy(entities[3]);
+    const lower = try world.create(null, .{Health{ .value = 3 }});
+    const higher = try world.create(null, .{Health{ .value = 4 }});
+    try t.expectEqual(@as(u32, 3), lower.index);
+    try t.expectEqual(@as(u32, 1700), higher.index);
+    try t.expectError(error.StaleEntity, world.get(entities[3], Health));
+    // Simulate a slot reaching its final generation without billions of cycles.
+    world.slots[0].generation = std.math.maxInt(u32);
+    try world.destroy(.{ .index = 0, .generation = std.math.maxInt(u32) });
+    try t.expectError(error.Capacity, world.create(null, .{Health{ .value = 5 }}));
+    try world.destroy(entities[1]);
+    const available = try world.create(null, .{Health{ .value = 6 }});
+    try t.expectEqual(@as(u32, 1), available.index);
+    try t.expectEqual(@as(usize, max_entities - 1), world.count());
+}
+
+test "failed entity creation does not consume its free slot" {
+    const t = std.testing;
+    var world = TestWorld.init(t.allocator, 0);
+    defer world.deinit();
+    try t.expectError(error.Capacity, world.create(null, .{Health{ .value = 1 }}));
+    world.max_chunks = 1;
+    const first = try world.create(null, .{Health{ .value = 2 }});
+    try t.expectEqual(@as(u32, 0), first.index);
+    try t.expectEqual(@as(u32, 1), try world.persistentId(first));
+}
+
 test "archetype relocation preserves identities and swap-removed rows" {
     var world = TestWorld.init(std.testing.allocator, 16);
     defer world.deinit();
