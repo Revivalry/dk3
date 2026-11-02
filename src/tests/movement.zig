@@ -47,8 +47,8 @@ const WaterLedge = struct {
         return .{ .fraction = 1, .end = request.end, .normal = .{ 0, 0, 1 } };
     }
 };
-test "water ledge clearance ignores nonblocking volumes but rejects solid clip and bodies" {
-    for ([_]u32{ 0, c.CONTENTS_WATER, c.CONTENTS_TRIGGER, c.CONTENTS_AREAPORTAL, c.CONTENTS_SOLID, c.CONTENTS_PLAYERCLIP, c.CONTENTS_BODY }) |upper| {
+test "water exit accepts detail monster clips while solid player clips and bodies block" {
+    for ([_]u32{ 0, c.CONTENTS_DETAIL | c.CONTENTS_MONSTERCLIP, c.CONTENTS_WATER, c.CONTENTS_TRIGGER, c.CONTENTS_AREAPORTAL, c.CONTENTS_SOLID, c.CONTENTS_PLAYERCLIP, c.CONTENTS_BODY }) |upper| {
         var ledge: WaterLedge = .{ .upper_contents = upper };
         var player: move.Player = .{};
         var motion: @import("../core/domain/slide.zig").State = .{ .position = @splat(0), .velocity = @splat(0) };

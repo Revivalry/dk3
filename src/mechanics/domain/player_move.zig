@@ -241,9 +241,8 @@ const Frame = struct {
             spot[2] += 4;
             if (try self.service.contents(spot, self.parameters.slot) & self.parameters.solid_mask != 0) {
                 spot[2] += 16;
-                // Water and trigger/area volumes do not obstruct the ledge.
-                // Requiring entirely empty contents rejects otherwise clear
-                // exits covered by a nonblocking brush volume.
+                // Detail, trigger and monster-only clip contents above a
+                // ledge do not obstruct this mover's collision mask.
                 if (try self.service.contents(spot, self.parameters.slot) & self.parameters.mask == 0) {
                     self.motion.velocity = v.scale(self.forward, 200);
                     self.motion.velocity[2] = 350;

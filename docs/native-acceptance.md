@@ -5,41 +5,43 @@ with the merged source as of 20 October 2026. Results below retain their origina
 runtime, assets and limits. Implementation and focused passes do not establish
 complete episode/campaign or artistic acceptance.
 
-## Sequence 569 — canonical launch path and guardian locomotion
+## Sequence 569 — Greece pool, statue descent and the actual play checkout
 
-The owner clarified that normal play runs `zig build play` from `~/sources/dk3`.
-That checkout did not contain sequence 568's fix. The water correction and its
-regression are now also applied there, preserving the owner's other source
-changes. Both actual pool side exits pass against its rebuilt native modules.
+The owner launches with `zig build play` in `~/sources/dk3`. Earlier sequence
+568's water fix existed only in the separate performance checkout, so that
+launch still used the old movement motor. The water correction and regression
+coverage are now present in this canonical checkout as well. The upper ledge
+probe tests the mover's collision mask; nonblocking detail/monster-only clips
+above the Greece pool rim no longer suppress water jumps. Solids, player clips
+and bodies still block them.
 
-The performance checkout's reported launch failure was missing local converted
-assets, not a native compilation error. Its ignored `zig-out/assets` and artwork
-directories now link to the canonical local caches. Plain `zig build play-install
-test-runtime` passes 136/136 steps and 430/430 tests. A private profile and copies
-of the owner's save slots were prepared; original profile/saves are unchanged.
-Canonical `zig build play-install` prepares its corrected native generation
-without starting a game. Full performance features remain in this performance
-checkout; the gameplay fixes are present in both checkouts.
+The e2m3b guardian also oscillated on its plinth while playing chase animation.
+Two connected locomotion issues were exposed: its 48-unit descent exceeded the
+default 32-unit support probe, and diagonal floor-to-floor clearance sweeps cut
+through the plinth edge. The column class supplies a bounded 64-unit descent to
+the shared mechanism. Direct routes probe from the last supported height and
+test horizontal clearance before gravity handles the descent. Other classes
+keep their default bound; unsupported cliffs and hazardous floors remain rejected.
+No class branches were added to shared mechanisms, and no collision bypass,
+teleport, damage, animation, save-schema or asset edit is part of the fix.
 
-The e2m3b guardian's chase animation hid a locomotion failure at its plinth. The
-default support descent was 32 units, but the surrounding floor is 48 lower.
-Its class now supplies a 64-unit limit to the shared mechanism. Direct clearance
-also used a diagonal floor-to-floor sweep that cut through the departing plinth;
-the repaired query measures support from the previous height and tests horizontal
-clearance before the actual body falls. Default classes retain their bounded
-descent; cliffs and hazardous floors remain rejected.
+| Scenario | Result | Evidence / limits |
+|---|---|---|
+| Integrated native build/contracts | Passed | `pool-statue-569/build-final.log`: 114/114 steps, 411/411 tests plus C contracts; class ownership R1–R11 zero. |
+| Water exit in this checkout | Passed | Both actual e2m3b pool side edges reach a dry bank; `canonical-pool-after-v3/` trajectories/captures. |
+| Guardian leaves its plinth | Passed | From authored x=352,y=2784, it reaches y=2897.258, z=-247.795: about 113 horizontal units and the surrounding floor. It then attacks; player health 100→33 with damage source 501 (the guardian). |
+| Descent safety | Passed | Default limit rejects the synthetic 48-unit descent, the class limit accepts it; 128-unit cliffs and lava/slime/nitro floors remain rejected. Existing locomotion and differential movement checks pass. |
+| Canonical play preparation | Passed | Plain `zig build play-install` prepares a new native development generation without launching a window; the previous generation and owner saves are preserved. |
+| Performance-checkout play setup | Passed | Its missing local converted-asset cache caused the reported launch failure. Local cache/artwork links now reuse the existing converted inputs; plain `zig build play-install test-runtime` passes 136/136 steps and 430/430 tests. Its GPU defaults remain 1. |
 
-The first unit failure and the intermediate statue-still-stuck native replay are
-retained. The final canonical build passes 411/411 runtime tests, including water
-contents, class descent and cliff/hazard rejection. In `canonical-column-after-v3`,
-the guardian moves about 113 units from its authored position, descends onto the
-surrounding floor and attacks the player (health 100→33, damage source 501).
-Actual pool side exits also pass with canonical modules. The performance build
-is replayed separately with all GPU optimization defaults at 1. Engine runs stay
-guarded/headless and use diagnostic placement plus normal movement/combat, not
-desktop input or a claim of complete campaign traversal. Canonical evidence:
-`../dk3/zig-out/reports/pool-statue-569/`; detailed working evidence remains in
-`zig-out/reports/perf-water-defaults-568/`.
+Evidence lives under `zig-out/reports/pool-statue-569/`; the performance checkout
+also retains the first failed descent test, the intermediate statue-still-stuck
+replay, repaired builds and probes under `perf-water-defaults-568/`. The useful
+failed replay was retained and the diagonal sweep was corrected before final
+acceptance. All engine checks use guarded headless software rendering and copied
+saves. These scenarios place the player diagnostically above/near the actual
+pool and let ordinary movement/gravity/combat proceed; they do not qualify a
+full authored traversal. No desktop game is started by the agent.
 
 ## Sequence 568 — water-exit-contents and optimization defaults
 
