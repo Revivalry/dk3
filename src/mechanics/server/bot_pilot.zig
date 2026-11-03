@@ -300,6 +300,8 @@ pub const Pilot = struct {
     unstick_until: i64 = 0,
     /// Last stall of a hop refused for the ground beyond the lip (told once a second).
     hop_told_ms: i64 = 0,
+    /// When the next climb diagnostic may speak (route authoring).
+    climb_told_ms: i64 = 0,
     /// Not before when the next shake loose may be armed. Under water only the
     /// route's own progress can be measured and a dive makes none to count, so
     /// without this the shake is re-armed the moment it ends and never hands
@@ -362,6 +364,12 @@ pub const Pilot = struct {
     near_point: ?v.Vec3 = null,
     near_ms: i64 = 0,
     direct_retry_ms: i64 = 0,
+    /// The place the stride now being measured was asked to reach. A straight
+    /// line's stall belongs to that line: the measure starts with the stride,
+    /// so a body that stood a while at the last goal — firing, waiting for a
+    /// lift, held there by the script — is not handed to the area graph on the
+    /// first frame of the next one.
+    stride_goal: ?v.Vec3 = null,
     committed: ?nav.Waypoint = null,
     committed_until: i64 = 0,
     /// The waypoint chosen before the current one: a route flipping back to
@@ -612,9 +620,41 @@ pub const Pilot = struct {
         var ladder = false;
         // Steering straight at a near goal because navigation has no way there.
         var routeless = false;
+        // Nothing under the feet: the graph's steps are places to stand, so a
+        // body in mid-air has none of them ahead of it. Steering at one bends
+        // the flight — the hop asked for straight across e1m7a's gap curved a
+        // hundred units off its line and came down in the hall below. While the
+        // air holds, the step's own goal is the only thing worth facing.
+        const in_the_air = player.ground_entity == c.ENTITYNUM_NONE and player.water_level < 2;
+        // A stride's stall is measured from the stride, not from the last time
+        // the body was told to walk somewhere: a goal more than a step from the
+        // one just held begins the measure anew, and the graph fallback armed
+        // against the line just left is cleared with it. Standing a while at
+        // the last goal is no evidence that the next line is blocked. (e1m7a's
+        // ledge: a body that killed standing still at its east end had the
+        // stride west off the plank judged stalled before its first frame, and
+        // the graph — which marks none of that plank's ground — led it back
+        // east across the gap it had just jumped, off the end and into the hall
+        // below.) Measured only while a line is being held: the same clocks
+        // also carry the general reading that the body is not moving, which
+        // answers with a hop or an unstick whatever the stride was asked for,
+        // and restarting that at every idle gap hides a stall from those
+        // answers — set loose over the party's walking, it had a companion
+        // reach a pickup seconds early, which pulled the leader east off its
+        // route onto a floor the graph has no way off (n48a, reverted).
+        if (intent.destination) |stride| {
+            const retargeted = if (self.stride_goal) |held| nav.horizontalDistance(stride, held) > 32 else false;
+            if (retargeted) {
+                self.direct_ms = frame.now;
+                self.direct_mark = pose.position;
+                self.direct_fallback_until = 0;
+                self.direct_retry_ms = 0;
+            }
+            self.stride_goal = stride;
+        } else self.stride_goal = null;
         if (destination) |goal| {
             // Holding a spot (riding at a lift's centre) is not a stall.
-            if (intent.direct and frame.now - self.direct_ms > 1500 and frame.now >= self.direct_retry_ms and nav.horizontalDistance(pose.position, goal) > 32) {
+            if (intent.direct and !in_the_air and frame.now - self.direct_ms > 1500 and frame.now >= self.direct_retry_ms and nav.horizontalDistance(pose.position, goal) > 32) {
                 // Straight steering stalled even after a hop: the player was
                 // displaced off the authored line. Route back over navigation.
                 self.direct_fallback_until = frame.now + 2500;
@@ -622,7 +662,7 @@ pub const Pilot = struct {
                 self.direct_mark = pose.position;
                 self.direct_ms = frame.now;
             }
-            if (intent.direct and frame.now >= self.direct_fallback_until) {
+            if (intent.direct and (in_the_air or frame.now >= self.direct_fallback_until)) {
                 movement = v.subtract(goal, pose.position);
             } else if (self.passage) |passage| {
                 movement = v.subtract(passage.route.point, pose.position);
@@ -1216,6 +1256,15 @@ pub const Pilot = struct {
         const travel_yaw = angles[1];
         const axes = v.basis(.{ 0, travel_yaw, 0 });
         var direction = v.normalize(.{ movement[0], movement[1], 0 });
+        // What the stride was built from, before any hazard or exit bends it:
+        // the place the step aims at and the vector it chose. A heading that
+        // does not point at the action's goal is decided above, here — a
+        // stride kept off its own line is otherwise invisible in the log.
+        if (engine.integer("developer") >= 3) {
+            var trace_text: [352]u8 = undefined;
+            const stride_from = destination orelse @as(v.Vec3, @splat(0));
+            engine.print(std.fmt.bufPrintZ(&trace_text, "dk3 {s} stride: t={d} pos={d:.0},{d:.0},{d:.0} dest={d:.0},{d:.0},{d:.0} want={d:.0},{d:.0},{d:.0} raw={d:.0},{d:.0} direct={d} air={d} under={d} ctl={d} wp={d:.0},{d:.0},{d:.0} back={d:.0},{d:.0},{d:.0} px={d:.0},{d:.0},{d:.0} fb={d}\n", .{ frame.label, frame.now, pose.position[0], pose.position[1], pose.position[2], stride_from[0], stride_from[1], stride_from[2], (destination orelse pose.position)[0] - pose.position[0], (destination orelse pose.position)[1] - pose.position[1], (destination orelse pose.position)[2] - pose.position[2], movement[0], movement[1], @intFromBool(intent.direct), @intFromBool(in_the_air), player.ground_entity, if (self.control) |control| control.id else 0, (if (report.waypoint) |waypoint| waypoint.point else @as(v.Vec3, @splat(0)))[0], (if (report.waypoint) |waypoint| waypoint.point else @as(v.Vec3, @splat(0)))[1], (if (report.waypoint) |waypoint| waypoint.point else @as(v.Vec3, @splat(0)))[2], self.routable_point[0], self.routable_point[1], self.routable_point[2], (if (self.passage) |passage| passage.route.point else @as(v.Vec3, @splat(0)))[0], (if (self.passage) |passage| passage.route.point else @as(v.Vec3, @splat(0)))[1], (if (self.passage) |passage| passage.route.point else @as(v.Vec3, @splat(0)))[2], self.direct_fallback_until }) catch "");
+        }
         if (frame.now < self.unstick_until) {
             if (player.water_level >= 2) {
                 // The sidestep a walker shakes loose with asks for floor under
@@ -1533,6 +1582,16 @@ pub const Pilot = struct {
                     command.up = if (toward[2] > -8 or player.water_level >= 2) 127 else 0;
                 } else report.escape_failed = true;
             } else self.escape_target = null;
+        }
+        // A body told to rise well above itself, off the floor: what the climb
+        // sees, in the evidence (route authoring; a ladder's attach is a hull
+        // trace, and nothing else in the log says why a rise comes to nothing).
+        if (engine.integer("developer") >= 2 and movement[2] > 24 and player.water_level < 2 and frame.now >= self.climb_told_ms) {
+            self.climb_told_ms = frame.now + 400;
+            const face = try climbable(frame, pose.position);
+            const normal = face orelse v.Vec3{ 0, 0, 0 };
+            var text: [256]u8 = undefined;
+            engine.print(std.fmt.bufPrintZ(&text, "dk3 {s}: t={d} event=climb pos={d:.0},{d:.0},{d:.0} move={d:.0},{d:.0},{d:.0} ladder={d} face={d:.1},{d:.1},{d:.1} up={d} forward={d} right={d} view={d:.0},{d:.0} ground={d}\n", .{ frame.label, frame.now, pose.position[0], pose.position[1], pose.position[2], movement[0], movement[1], movement[2], @intFromBool(ladder), normal[0], normal[1], normal[2], command.up, command.forward, command.right, command.angles[1], command.angles[0], player.ground_entity }) catch "");
         }
         command.use = report.used;
         return .{ .report = report, .command = command };
@@ -2187,6 +2246,13 @@ fn nearestAir(frame: Frame, position: v.Vec3, view: f32, ahead: ?v.Vec3) !?v.Vec
         }
     }
     return null;
+}
+/// Halfway up a ladder with nothing under the feet. A body that stops on the
+/// rungs to take on a fight slides off them and must start the climb again, so
+/// a climb already begun is finished before anything else is taken on.
+pub fn onRungs(frame: Frame, position: v.Vec3) !bool {
+    if (frame.state.ground_entity != c.ENTITYNUM_NONE) return false;
+    return (try climbable(frame, position)) != null;
 }
 /// Outward normal of a ladder surface touching the player hull, if any (the
 /// same four-way probe the movement code uses to start climbing).

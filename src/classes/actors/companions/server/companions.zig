@@ -165,6 +165,7 @@ fn give(actors: *const @import("../../../../mechanics/server/actors.zig").Actors
         @import("companion_pilot.zig").forget(try ref.id());
         companion.owner = try world.persistentId(player);
         companion.order = chosen;
+        companion.puzzle = null;
         companion.target = if (chosen == .attack) target else if (chosen == .collect) target else 0;
         companion.stopped = false;
         companion.authored = .none;
@@ -346,6 +347,7 @@ pub fn arrive(actors: *@import("../../../../mechanics/server/actors.zig").Actors
         (try world.get(entity, data.Keys)).* = follower.keys;
         (try world.get(entity, data.Ailments)).* = follower.ailments;
         var state = follower.state;
+        state.puzzle = null;
         state.carrying = (try world.get(entity, data.Companion)).carrying;
         state.owner = try world.persistentId(player);
         (try world.get(entity, data.Companion)).* = state;

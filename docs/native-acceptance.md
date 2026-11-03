@@ -5,6 +5,50 @@ with the merged source as of 20 October 2026. Results below retain their origina
 runtime, assets and limits. Implementation and focused passes do not establish
 complete episode/campaign or artistic acceptance.
 
+## Sequence 571 — companion-puzzles — automatic station duties
+
+**Change.** Free companions now take physical puzzle stations advertised by an
+entity class's checked `companionDuty` hook. On encountering a nearby visible
+station the companion announces its intent, walks onto it through normal
+collision/navigation, holds it, and follows again when its class reports the
+authored completion. Explicit orders, carrying, stops, teleports and scenes
+take priority. A station has one living helper. The held duty is optional
+class-owned save state; older saves default to no duty.
+
+The owner's latest save was `save2.sav` in the performance checkout, e2m4b,
+with Hiro at approximately (519.718, -3488.865, 310.895), standing on the edge
+of the `leftbutdown` plate. Its `trigger_toggle` is companion-only (flags 9).
+There was also a real progression bug: the plate admitted Mikiko, but its
+event generator rejected companions unless monsters were enabled. Timeline
+admission now belongs to the event-generator class and accepts companions by
+default, retaining the flag requirement for other monsters. The original save
+was read/copied only; its SHA-256 is unchanged.
+
+The supplied 84-map BSP corpus has one toggle, this companion-only plate,
+plus 11 authored sidekick-stop and 19 teleport volumes (and one HUD trigger).
+The existing stop/teleport choreography remains in place. The new station
+contract applies through the registry wherever a class offers it; it does
+not invent a timeout or a proximity shortcut for an unknown puzzle's release.
+Here, `openformk` removes `leftevent` and the depressed plate while opening the
+return path, which releases the helper safely.
+
+| Scenario | State | Evidence / limits |
+|---|---|---|
+| Latest owner save identified | Passed | `floor-switch-570/come/source.json`, `companion-puzzles-571/monitor-clock/source.json`; original hash unchanged. Earlier canonical e2m3b saves were older. |
+| Automatic approach, press, hold and exit doors | Passed | Exact owner-save copy in `monitor-clock/`: Mikiko reaches the plate without a companion order, it depresses eight units, the bars rise 216 units and both exit-door leaves open. The player takes an ordinary backward step to clear her approach. |
+| Hold through save/reload | Passed in isolated room | `room-ready/holding.sav`; the labelled fixture retains the owner's active-map entity state but omits other resident worlds. `authored-release/` reloads that held state, saves/reloads it again and retains the physical occupant and duty. |
+| Authored completion releases the helper | Passed in isolated room | `authored-release/passed.json`, `released.sav`: diagnostic activation of the actual release wheel runs its ordinary mover/target chain; Mikiko announces her return, clears the duty and resumes `follow`. No companion orders. This does not qualify walking the route or physically using the wheel. |
+| Complete region save and long replay | Failed | Before the feature, the copied region already refused saves with `InvalidRegion` (`floor-switch-570/replay/`). The longer camera replay also drops with `Server command overflow` (`installed/`, `monitor-clock/`). Neither failure is hidden by the room fixture. Whole-region persistence/transport acceptance remains open. |
+| Native tests and ownership | Passed | `zig build test`: all 559 Zig tests pass, including duty ownership, explicit-order/carrying/scene eligibility, default admission for companions, monster exclusion, old-save defaults and held-duty identity/JSON preservation; R1–R11 remain zero. |
+| Full aggregate test command | Failed | Python tooling reports 10 errors: eight missing-Pillow imports, the release-bundle libdeflate-license fixture, and the runtime-media `checked_assets` fixture mismatch. The native, codec, online, process and formatting checks pass. |
+| Canonical play installation | Passed | `zig build play-install --summary all`: 90/90 steps. Generation `efe8db74c828f7265d06ad41081a09a6e010063eeb7efe6b76a21e8bbcfd5594`; prior generations and saves preserved. Performance-checkout code/install was not modified. |
+
+Evidence is under `zig-out/reports/companion-puzzles-571/`; the reproducible
+driver is `dkq3/tools/runtime_companion_puzzle_probe.py`. All engine runs use
+dkguard with headless software rendering. The first rejected target chain,
+full-region failures and unsuccessful wheel-placement diagnostics are retained.
+This is focused station assistance, not complete four-episode traversal acceptance.
+
 ## Sequence 569 — Greece pool, statue descent and the actual play checkout
 
 The owner launches with `zig build play` in `~/sources/dk3`. Earlier sequence

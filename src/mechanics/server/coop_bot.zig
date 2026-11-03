@@ -31,6 +31,9 @@ const hull_mins: v.Vec3 = .{ -15, -15, -24 };
 const hull_maxs: v.Vec3 = .{ 15, 15, 32 };
 /// Movement actions fail when the bot stops approaching its goal for this long.
 const stall_ms = 25_000;
+/// How far ahead of itself one engaged frame pays an action's deadline, so the
+/// action outlives the shot being traded.
+const fight_stand_ms: i64 = 5_000;
 /// Engine spawn runs three settle frames and reconnects kept clients before the
 /// fourth; a bot allocated earlier would be dropped by that reconnection pass.
 const settle_frames = 4;
@@ -74,6 +77,9 @@ const Running = struct {
     stand_ms: i64 = 0,
     /// The aggressor being dealt with: since when, cover, and firing stand.
     engagement: survival.Engagement = .{},
+    /// How much of the action's own allowance a fight has already spent on
+    /// pushing its deadline; see the push in `standGround`.
+    fight_ms: i64 = 0,
     /// Out of an unseen shooter's line of fire while holding.
     cover: ?v.Vec3 = null,
     cover_until_ms: i64 = 0,
@@ -697,10 +703,19 @@ pub const Driver = struct {
                 // A precise straight segment ends standing on the floor with its
                 // momentum spent, so the next one does not inherit a drift.
                 const settled = !action.direct or player.water_level >= 2 or (player.ground_entity != c.ENTITYNUM_NONE and nav.horizontalDistance((try world.get(frame.entity, data.Velocity)).linear, @splat(0)) < 120);
-                if (try self.standGround(frame, running, player, pose, &result)) return result;
+                // Standing where it was asked ends the walk, whoever is shooting
+                // at the body while it stands there: what attacks is the next
+                // sentence's business (a `clear`, a `kill`, or walking on under
+                // fire). Checked after the fight, an engagement holds the end of
+                // the walk off however exactly the body stands on its goal --
+                // e1m7a's ramp held ten units from its mark for two minutes, the
+                // pilot running after a shooter it never once saw.
                 if (route.arrived(pose.position, goal, action.arrival()) and settled) {
                     result.result = .{ .done = running.say("arrived {d:.0},{d:.0},{d:.0}", .{ pose.position[0], pose.position[1], pose.position[2] }) };
-                } else if (stalled(frame, running, self.report, pose.position, goal, now)) return stuck(running, self.report, pose.position);
+                } else {
+                    if (try self.standGround(frame, running, player, pose, &result)) return result;
+                    if (stalled(frame, running, self.report, pose.position, goal, now)) return stuck(running, self.report, pose.position);
+                }
             },
             .touch => {
                 if (try self.standGround(frame, running, player, pose, &result)) return result;
@@ -1189,6 +1204,9 @@ pub const Driver = struct {
         const world = frame.world;
         if (!action.fight or action.direct or action.hold) return false;
         const pilot_frame = try motor_module.pilotFrame(frame);
+        // Halfway up a ladder the rungs are the body's one way down: a stop to
+        // fight there sends it back to the floor, so the climb comes first.
+        if (try @import("bot_pilot.zig").onRungs(pilot_frame, pose.position)) return false;
         const aggressor = try survival.pick(pilot_frame, pose.position, .{ .self_id = try world.persistentId(frame.entity), .seen = self.report.enemy, .cautious = action.cautious, .engaged = running.engagement.id, .ignore = &self.ignoring }) orelse {
             running.engagement.id = 0;
             return false;
@@ -1229,7 +1247,18 @@ pub const Driver = struct {
         result.intent.preferred = aggressor.id;
         result.intent.look_at = at;
         running.progress = .{};
-        running.deadline_ms = @max(running.deadline_ms, now + 5000);
+        // A fight buys its action time, but only as much again as that action
+        // was authored with. `engage` lets one enemy go after 25 s and the next
+        // nearest is taken on at once, so a hall full of hostiles pushes for
+        // ever: e1m7a's gallery kept a sixty-second move open for eighty
+        // minutes of game time on a hunt for a shooter the pilot never saw, and
+        // the run reported nothing at all. Bounded, the action ends on its own
+        // clock and the route decides what to do about it.
+        if (running.fight_ms < action.timeout_ms) if (now + fight_stand_ms > running.deadline_ms) {
+            const push = @min(now + fight_stand_ms - running.deadline_ms, action.timeout_ms - running.fight_ms);
+            running.deadline_ms += push;
+            running.fight_ms += push;
+        };
         return true;
     }
     /// A button within reach that sends this lift (it targets the lift, or
@@ -1308,7 +1337,7 @@ pub const Driver = struct {
         // reach; then hold ground and let the motor aim and fire.
         const loadout = (try world.get(frame.entity, data.Weapons)).*;
         const weapon = combat.select(loadout, &frame.clients.weapon_table, distance);
-        const reach = @min(@as(f32, 900), @max(@as(f32, 96), frame.clients.weapon_table.entries[weapon].range * 0.6));
+        const reach = combat.standOff(&frame.clients.weapon_table, weapon);
         // Seen behind cover a shot cannot clear is not yet a firing position.
         const firing_line = self.report.enemy == prey.id and !self.report.lane_blocked;
         if (firing_line) running.contact_ms = frame.now;

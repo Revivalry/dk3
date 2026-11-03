@@ -88,6 +88,7 @@ pub const State = struct {
     exit_near: bool = false,
     /// The branch that set this frame's intent (developer status line).
     why: []const u8 = "",
+    puzzle_scan_ms: i64 = 0,
     /// Stuck far behind, or in trouble it cannot get out of: when to warp
     /// to the leader unseen.
     catchup: @import("companion_catchup.zig").State = .{},
@@ -111,6 +112,7 @@ pub fn think(actors: *const Actors, navigation: nav.Service, world: *data.World,
         actor.mode = .idle;
         return;
     }
+    if (companion.authored != .none or companion.stopped) companion.puzzle = null;
     if (try @import("companion_triggers.zig").advance(world, entity, actor, pose, now)) {
         // An authored stop walks to its mark; a teleport has already happened.
         if (actor.mode == .chase) flown.intent = .{ .destination = actor.threat_position, .fight = false, .fire = .hold, .brake = true };
@@ -138,6 +140,12 @@ pub fn think(actors: *const Actors, navigation: nav.Service, world: *data.World,
     const leader_grounded = if (leader_state) |state| state.ground_entity != c.ENTITYNUM_NONE else true;
     const leader_wet = if (leader_state) |state| state.water_level > 0 else false;
     remember(brain, leader.position, leader_grounded, now);
+    if (try @import("companion_puzzles.zig").step(frame, entity, companion, pose.position, leader, &brain.puzzle_scan_ms, &flown.intent)) {
+        actor.mode = if (flown.intent.destination != null) .chase else .idle;
+        actor.threat_position = flown.intent.destination orelse pose.position;
+        brain.why = if (companion.puzzle.?.holding) "puzzle-hold" else "puzzle-approach";
+        return;
+    }
     if (try @import("companion_catchup.zig").step(&brain.catchup, frame, entity, actor, pose, owner, leader, leader_state, brain.crumbs[0..brain.crumb_count], flown.report, now)) {
         brain.why = "catch-up";
         return;

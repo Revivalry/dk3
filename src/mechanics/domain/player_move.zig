@@ -86,6 +86,7 @@ pub const Result = struct {
     touch_count: usize = 0,
     mins: v.Vec3 = .{ -15, -15, -24 },
     maxs: v.Vec3 = .{ 15, 15, 32 },
+    slide_abort: ?slide.Abort = null,
     fn event(self: *Result, value: Event) !void {
         if (self.event_count == self.events.len) return error.MovementEventCapacity;
         self.events[self.event_count] = value;
@@ -206,6 +207,7 @@ const Frame = struct {
     fn slideMove(self: *Frame, gravity: bool, step: bool) !void {
         var context: slide.Context = .{ .service = self.service, .mins = self.result.mins, .maxs = self.result.maxs, .slot = self.parameters.slot, .mask = self.parameters.mask, .delta = self.delta, .gravity = if (gravity) self.parameters.gravity else 0, .ground = if (self.ground) |hit| hit.normal else null, .preserve_velocity = self.player.timer_ms > 0 };
         if (step) try context.step(self.motion) else _ = try context.move(self.motion);
+        if (context.abort) |aborted| self.result.slide_abort = aborted;
         self.result.touch_count = context.touch_count;
         @memcpy(self.result.touches[0..context.touch_count], context.touches[0..context.touch_count]);
         if (context.step_height > 2) try self.result.event(.{ .step = context.step_height });

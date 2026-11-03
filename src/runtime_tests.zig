@@ -56,6 +56,7 @@ test {
     _ = @import("mechanics/server/resident_worlds.zig");
     _ = @import("classes/actors/companions/server/companion_pilot.zig");
     _ = @import("classes/actors/companions/server/companion_brain.zig");
+    _ = @import("classes/actors/companions/server/companion_puzzles.zig");
     _ = @import("classes/actors/companions/server/companion_catchup.zig");
     _ = @import("classes/actors/companions/server/companion_talk.zig");
     _ = @import("mechanics/server/resources.zig");

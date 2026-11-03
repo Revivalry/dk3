@@ -1875,6 +1875,16 @@ level("e1m7a", function(visit, resumed)
       end
       advance({ 300, -2300, 338 })
       move({ 300, -2300, 338 }, { timeout = 120, cautious = true })
+      -- East along this same walkway: the ion blasters standing on its ledges.
+      -- The guards of this map answer from four or five hundred units and the
+      -- disruptor's bolt carries eighty, so a body that reaches them with
+      -- nothing else loses a fight it was owed; a weapon taken off this floor
+      -- is carried into every map after it. (Both stand a short way off the
+      -- route's line, on this same floor; the crates past them have no area of
+      -- their own in the graph, so they are left.)
+      for _, item in ipairs({ 89, 648, 90 }) do
+        if dk3.reachable({ index = item }) then try(pickup, { index = item }, { timeout = 40 }) end
+      end
       -- The deathsphere hovering over the floor above sees down the trap's
       -- corridor: met from its east end first.
       try(kill, { index = 109 }, { hold = true, timeout = 15 })
@@ -1942,9 +1952,43 @@ level("e1m7a", function(visit, resumed)
         try(move, { -620, -2080, 216 }, { direct = true, radius = 40, timeout = 10, fight = false })
       end
       expect(z() < 300, "not down off the corridor's north edge")
+      -- The shot cycler and its shells first, run for and not fought for. This
+      -- map issues no ion-pack ammunition at all, so the blaster lifted off
+      -- the walkway is forty bolts and done, while the cycler's shot is
+      -- hitscan, carries to the gallery's far end, and is fed again by a shell
+      -- box on the decks above the west wall later on. Four hundred units of
+      -- open floor, out and back, from the ground the body just dropped to:
+      -- asked for from the keypad's corner it is refused outright, because the
+      -- graph owns no leg out of that sixty-four-unit pocket (the drop over
+      -- the edge is the only way into it) and nothing beyond reads as
+      -- reachable from the keypad itself. The guards on this floor stop
+      -- anything that stops to trade with them, and six seconds of that is the
+      -- whole of the ten the wire doors stand wide — hence `fight = false`,
+      -- the same as the hop over the ledge that starts the errand.
+      for _, item in ipairs({ 11, 10 }) do
+        try(pickup, { index = item }, { radius = 96, timeout = 20, fight = false })
+      end
+      -- North, then through the wire doors while they stand. Should their ten
+      -- seconds be spent after all, the panel itself is leaned on: a mover
+      -- answers a use at its own face, and the only control authored for these
+      -- doors on this side of them stands two hundred and seventy units up on
+      -- the catwalk the body dropped off.
+      try(move, { -605, -1960, 216 }, { direct = true, radius = 40, timeout = 15, fight = false })
+      if not opened(141)() then try(use, { index = 141 }, { timeout = 15 }) end
       path({ { -605, -1960, 216 }, { -605, -1880, 216 } }, { direct = true, radius = 24, timeout = 10 })
-      try(function() clear { radius = 700, timeout = 60 } end)
+      -- The keypad next, while the way to it is the one just walked: the
+      -- guards here keep retiring south, and a body that spends its time
+      -- clearing them out comes back to a corridor closed by the timed door
+      -- it came through, with nothing to do but lean on its own control.
+      -- Set down beside the keypad first: from the corner just walked the
+      -- press is a stride away, and a step that goes looking for its own
+      -- standing place has been seen to wander south into the dark behind a
+      -- shut door.
+      try(move, { -540, -1878, 216 }, { direct = true, radius = 24, timeout = 12 })
       use { index = 610 }
+      try(function() clear { radius = 400, timeout = 40 } end)
+      -- Back to the keypad's corner, where the next stage takes the party up.
+      try(move, { -540, -1880, 216 }, { timeout = 40 })
     end },
     { "pipe", checkpoint = true, function()
       -- The door across the catwalk is dead: down off the catwalk to the
@@ -1963,18 +2007,37 @@ level("e1m7a", function(visit, resumed)
       -- (Ducked: where the plate's west end meets the channel the ceiling
       -- presses down to the crown of a standing head, and a hull that rises
       -- there is pinned; below the lip the lane to fire up lies open.)
-      for _ = 1, 3 do
-        if z() > 60 then break end
-        try(move, { -208, -1436, -44 }, { direct = true, radius = 28, crouch = true, timeout = 30 })
-        try(shoot, { index = 211 }, { timeout = 30 })
-        try(move, { -208, -1436, 104 }, { direct = true, radius = 48, timeout = 25 })
-        try(move, { -177, -1448, 104 }, { direct = true, radius = 40, timeout = 25 })
+      -- Under the plate and out within one breath (a body holds its air for
+      -- about twenty-five seconds here, so the whole errand is asked for in
+      -- short sentences). The plate's underside lies ninety over the head and
+      -- the channel is a sealed tube: a blast round is rightly refused from
+      -- under it (the burst would land on the shooter) and every other lane to
+      -- it crosses the water's ceiling, so it is a solid slug's work - and
+      -- ten health is a slug's dinner.
+      -- (Arrival forgives fifty-six units of height, so the climb out is asked
+      -- for close: the hole is the goal, and the ledge past it, and a body that
+      -- only got its head above the plate is not out.)
+      for _ = 1, 2 do
+        if z() > 90 then break end
+        try(move, { -208, -1436, -44 }, { direct = true, radius = 24, crouch = true, timeout = 12 })
+        try(shoot, { index = 211 }, { timeout = 12, weapon = 1 })
+        try(move, { -188, -1438, 128 }, { direct = true, radius = 12, timeout = 10 })
+        try(move, { -177, -1448, 104 }, { direct = true, radius = 12, timeout = 12 })
       end
-      expect(z() > 60, "not out of the flooded channel")
+      expect(z() > 90, "not out of the flooded channel")
       -- Up the ramp past the save gem: the fan's mechanism, shot from in
       -- front of it, stops the fan, and the way drops past it.
       move({ 300, -880, 216 }, { timeout = 60, cautious = true })
-      try(shoot, { index = 436 }, { timeout = 20 })
+      -- The mechanism is the housing the fan's hub sits in, eight units
+      -- behind the catwalk's west rail, and the disruptor's bolt is a short
+      -- one: its own reach is eighty units, so a bolt loosed from the ramp
+      -- falls short of the housing and the fan never stops. The catwalk runs
+      -- north past the hub's own column; from there the housing stands
+      -- fifty-odd units off and the bolt arrives. The blade swings inside
+      -- that housing, so the wall answers to the sight first and the body
+      -- has nothing to wait for but its own aim.
+      try(move, { 300, -790, 216 }, { radius = 16, timeout = 15 })
+      try(shoot, { index = 436 }, { timeout = 15, weapon = 1 })
       -- Into the duct behind it (its floor a hop up, its roof low: ducked)
       -- and down out of its far end into the hallway.
       -- (A hop up into it, timed: the lip is a jump up, the roof low.)
@@ -1988,7 +2051,7 @@ level("e1m7a", function(visit, resumed)
       expect(x() < 240, "not into the duct behind the fan")
       move({ 170, -800, 88 }, { direct = true, radius = 24, timeout = 8 })   -- down its shaft
     end },
-    { "ladder", checkpoint = true, function()
+    { "ledge", checkpoint = true, function()
       -- Up the ladder in the hall's east wall to the ledge that runs above it
       -- and west along that ledge. The niche ladder at the hall's west end is
       -- no way up: its top is shut by a hatch and a wall panel (76, 77 — the
@@ -2004,20 +2067,739 @@ level("e1m7a", function(visit, resumed)
       -- stands at the place's east corner; pressed there the body's head finds
       -- a beam at 176 instead of rungs, and the climb hangs on the face
       -- gaining nothing for its whole life. The rungs themselves are at x=100.
-      move({ 100, -860, 88 }, { direct = true, radius = 16, timeout = 12 })
-      move({ 100, -806, 216 }, { timeout = 45 })
-      expect(z() > 180, "not up the hall's ladder")
-      -- Along the ledge to the cables that hold the plate which the story
-      -- drops across the room (four of them, a hundred apiece, one firing
-      -- place under them covers all). The ledge gives out past here and the
-      -- plate's fall brings the rider down with it: the way on from the
-      -- ledge's west end is the open work of this hall.
-      move({ -200, -806, 224 }, { radius = 24, timeout = 30 })
-      expect(z() > 180, "not along the ledge above the hall")
-      for _, foe in ipairs({ 203, 205, 206, 204 }) do
-        try(shoot, { index = foe }, { timeout = 30 })
+      -- Up, and nothing else on the way: a body that stops on the rungs to
+      -- answer a guard slides back to the hall's floor and owes the climb
+      -- again, so each round walks the column and takes the ladder with the
+      -- fight left to the ledge above.
+      for _ = 1, 3 do
+        if z() > 180 then break end
+        try(move, { 100, -860, 88 }, { direct = true, radius = 12, timeout = 12 })
+        try(move, { 100, -806, 216 }, { timeout = 45, fight = false })
       end
-      progress("e1m7b")
+      expect(z() > 180, "not up the hall's ladder")
+      -- West along the ledge. It gives out at the plate's own east face and
+      -- comes back only a hundred and seventy units further west, past the
+      -- plate's column: between them nothing but the air above the hall,
+      -- whose floor is 128 units below. The graph's one leg between the two
+      -- is a jump link off the plate's west face - and a hop taken at the
+      -- walk's own pace lands in the hall, so the lane is run for it. The
+      -- cables that hold the plate hang in pairs above y -968..-820 and
+      -- y -716..-568: the line at y -768 goes between them and none has to
+      -- be shot, for firing one lets the plate go from under its rider.
+      move({ 40, -768, 216 }, { direct = true, radius = 24, timeout = 30 })
+      expect(z() > 180, "not along the ledge above the hall")
+      -- The ledge's west end is a guard post - three mishima guards at x
+      -- -460..-524 - and the leap comes down among them, which is where a
+      -- crossing paid for with a body's health ends in the hall below. Met
+      -- from this end first instead: the lane along the hall is open and five
+      -- hundred units long, a distance the guards' pistols reach and the
+      -- disruptor does not, so it is fought with the ion blaster taken off the
+      -- walkway above. (Held: the stand is the ledge's own east end, whose
+      -- plank is all the body has under it, and twelve seconds of firing
+      -- without a kill sends it in.)
+      -- The gun is the one that still carries rounds. The ion blaster is the
+      -- only long reach this map hands out, it gives no energy for it at all,
+      -- and a body that has thrown its forty shots reaches the ledge with an
+      -- empty gun: a kill asked of an empty gun is thirty seconds of standing
+      -- in one place while the guard above takes its own time at the aim.
+      -- Chosen again for every guard: the forty rounds are spent one fight at
+      -- a time, and a body that decides its gun once and then runs dry stands
+      -- in one place for the whole of its timeout with the barrel empty.
+      for _, foe in ipairs({ 591, 590, 103 }) do
+        local gun = (dk3.has_weapon(2) and dk3.ammo(2) >= 3 and 2)
+          or (dk3.has_weapon(5) and dk3.ammo(5) >= 2 and 5) or nil
+        if gun then
+          try(kill, { index = foe }, { hold = true, weapon = gun, timeout = 25,
+            arena = { { -75, -795 }, { 110, -695 } } })
+        end
+      end
+      -- The hop is the graph's own: its jump link runs from -199 to -369 at
+      -- y -768, and the crossing is asked for on that line and no other. The
+      -- stand is set on the line first, so the run-up, the launch and the
+      -- flight are one straight run — a body that leaves the ledge already
+      -- drifing takes the flight with it and comes down in the hall.
+      move({ -60, -768, 216 }, { direct = true, radius = 14, timeout = 20 })
+      leap({ -196, -768, 216 }, { -378, -768, 216 }, { fight = false, timeout = 25 })
+      expect(x() < -365 and z() > 180, "not across the gap onto the ledge's west end")
+      -- Stride west off the landing. Straight at the goal, not by the graph:
+      -- the plank's own ground lies in patches too small for the area file to
+      -- have marked, and a body stood on one of them is told by the graph that
+      -- the only way on is back across the gap it just jumped.
+      move({ -450, -786, 216 }, { direct = true, radius = 20, timeout = 25 })
+      expect(x() < -425 and z() > 180, "not onto the ledge's west end")
+      -- The guard the long fire left standing is met here, where the plank is
+      -- widest and there is nowhere behind the body to fall off.
+      try(kill, { index = 103 }, { timeout = 30 })
+      try(clear, { radius = 300, timeout = 40 })
+      -- The button on its post (611, once only) yaws the slab (76) that caps
+      -- the niche ladder in the hall's west corner a hundred degrees clear of
+      -- its rungs, which takes twenty seconds at its speed of five. Down on
+      -- the hall's floor that button's face stands above a body's reach, so
+      -- there is no way to work it but here, while the party still walks the
+      -- upper floor. The pillar at x -430..-470 fills the line at y -806, so
+      -- the ledge's way runs at y -786 and turns in to the button's stand.
+      path({ { -500, -786, 216 }, { -580, -816, 216 }, { -700, -816, 216 } },
+        { direct = true, radius = 20, timeout = 40 })
+      move({ -712, -821, 216 }, { direct = true, radius = 12, timeout = 20 })
+      for _ = 1, 4 do
+        if dk3.mover { index = 76 } ~= "closed" then break end
+        try(use, { index = 611 }, { timeout = 8 })
+        wait(1)
+      end
+      expect(dk3.mover { index = 76 } ~= "closed", "the slab over the rungs stayed shut")
+      wait_until(function() return dk3.mover { index = 76 } == "open" end,
+        { timeout = 45, reason = "the slab turned aside from the rungs" })
+    end },
+    { "hall", checkpoint = true, function()
+      -- The hall's control is worked from up on the ledge, so all that is
+      -- left here is going down: the slab (76) over the niche's rungs and the
+      -- wall panel (77) beside it already stand open, and the only graph step
+      -- off the ledge's west end is the walk-off at -695,-737, which lands on
+      -- the hall's floor west of the plate's own column - the body never comes
+      -- under the plate, whose lift is the only thing the graph offers from
+      -- down there and which nothing calls here.
+      dk3.sidekick("all", "follow")
+      -- Down at the graph's own walk-off, at -695,-737. The step reports the
+      -- stride come home as soon as the body stands over the place by the
+      -- horizontal measure — which it does in mid-air, with the drop still to
+      -- pay — so the floor itself is waited for, not the stride's word.
+      move({ -695, -737, 88 }, { radius = 40, timeout = 45 })
+      wait_until(function() return z() < 130 end,
+        { timeout = 15, reason = "not down off the ledge's west end" })
+      try(clear, { radius = 260, timeout = 30 })
+      move({ -868, -685, 88 }, { timeout = 150 })
+      -- Up the ladder in the hall's west corner, whose rungs now stand free.
+      -- The way up is flush with the rungs' face, centred on their column, which
+      -- is exactly what the movement code probes for a ladder — a hull trace of
+      -- 3 units that must find the rungs' own face, whose sides carry the mark.
+      for _ = 1, 3 do
+        if z() > 180 then break end
+        try(move, { -864, -866, 88 }, { direct = true, radius = 14, timeout = 20 })
+        try(move, { -864, -872, 206 }, { direct = true, radius = 14, timeout = 35 })
+        try(move, { -864, -943, 216 }, { timeout = 45 })
+        if z() > 150 and y() > -890 then
+          try(move, { -864, -910, 224 }, { direct = true, radius = 16, timeout = 20 })
+        end
+      end
+      expect(z() > 180, "not up the ladder in the hall's west corner")
+    end },
+    { "gallery", checkpoint = true, function()
+      -- West, north and east along the gallery at floor 192 to the pair of
+      -- doors the graph names t2 (ctl 180 and 181): neither is named, and each
+      -- carries the node's own `nodetargetname`, so both are party doors and
+      -- slide aside for a member walked into them. Their panels are four units
+      -- thick and travel thirty-six apiece out of the hundred and six they
+      -- close, so thirty-four are left open — a body goes through as it were
+      -- sideways. Beyond, the gallery runs north again to the platform's foot.
+      -- Three guards hold the gallery's south leg at its ladder's head, and
+      -- three more its north end. A body walked down the middle of it earns
+      -- every bolt they own: the same minute of walking cost thirteen lives
+      -- before the run ever reached the platform. They are fought a man at a
+      -- time, from the ground the party already stands on.
+      for _, foe in ipairs({ 19, 694, 695 }) do
+        try(kill, { index = foe }, { hold = true, timeout = 25,
+          arena = { { -1010, -960 }, { -820, -640 } } })
+      end
+      path({ { -940, -943, 216 }, { -964, -823, 216 }, { -1068, -728, 216 },
+             { -1208, -604, 216 }, { -1339, -488, 216 }, { -1443, -456, 216 } },
+           { timeout = 150 })
+      -- Charged before the last fight of the gallery, not after it: this is the
+      -- level's only health station (ctl 55, in the gallery's west corner) and
+      -- nothing between here and the level's exit heals again. The party came
+      -- into this stage at fifty-eight and died at five, forty strides east of
+      -- the chasm — the checkpoint's own care only tops a body up to sixty,
+      -- which this one had already passed, and the guards here, the decks and
+      -- the corridor's garrison were paid for in health that had no way of
+      -- coming back (n51a). Asked for after the fight it is asked of a body
+      -- already at eight health with a guard's bolts in its back and only five
+      -- rounds of anything to answer with (n52a, which walked south to this
+      -- station dying on the way).
+      local health, maximum = dk3.health()
+      if health < 0.9 * maximum and dk3.reachable({ index = 55 }) then
+        try(recharge, { index = 55 })
+      end
+      -- The north leg's own guards, two on the gallery and one above it,
+      -- before the turn north to the platform's foot.
+      for _, foe in ipairs({ 681, 680, 25 }) do
+        try(kill, { index = foe }, { hold = true, timeout = 20 })
+      end
+      -- The plasteel standing on the ledge east of the platform's column (ctl
+      -- 50, -1072,16,226) is the last armour in the level, and it is asked of
+      -- here because this is the last point the route stands anywhere near it.
+      -- It is never had: every reachability question about it is answered
+      -- `no`, and the reason is a door rather than the graph — its ledge
+      -- stands behind the hatch the button on the deck's west wall (ctl 150,
+      -- -1400,-694) works through its relay (ctl 151), and that button is two
+      -- stages further along the route and leaned on by nobody. The offline
+      -- graph agrees in its own way: no area of the compiled file meets the
+      -- armour from this floor at all, the only two ways into that pocket
+      -- being the wall's hatch and the corner train (ctl 175) whose deck no
+      -- node of this level calls. Named here so a later pass can weigh the
+      -- detour: from the corridor's north run the graph does own a way to it,
+      -- thirty-six reachabilities of it, and the first of them is off the
+      -- corridor's edge at 32,-647 down two hundred and forty to the low
+      -- floor — the whole of it down and back for one plate of armour.
+      if not dk3.reachable({ index = 50 }) then
+        local gate = dk3.plan { index = 50 }
+        dk3.log("gallery: the plasteel is gated — " .. (not gate and "no control named, no route at all"
+          or gate.wait and "a gate already moving"
+          or tostring(gate.action) .. " control #" .. tostring(gate.index) .. " (gate #" .. tostring(gate.gate)
+               .. ") from " .. tostring(gate.x) .. "," .. tostring(gate.y) .. "," .. tostring(gate.z)))
+      end
+      -- Hold the party at the gallery's foot: the platform's deck stands but
+      -- eight units off this floor, and a companion walking over it on the way
+      -- to its leader rides it to the top. The lift is the leader's own step
+      -- from here.
+      dk3.sidekick("all", "stay")
+      -- Lifted onto the deck despite the hold above — the graph has no way down
+      -- from it, so the foot is not asked for again here: standing on a mover
+      -- every question of reachability is answered `no`, and `advance` from here
+      -- would tour the level's controls rather than the three strides wanted.
+      -- The platform's own stage begins from its deck and is where the ride ends
+      -- either way.
+      if z() > 280 then
+        dk3.log("gallery: lifted on the platform's deck; riding it from here")
+      else
+        advance({ -1295, 2, 216 })
+        move({ -1295, 2, 216 }, { timeout = 150 })
+        expect(y() > -100, "not north of the t2 doors")
+      end
+    end },
+    { "plat", checkpoint = true, function()
+      -- The platform (ctl 23) rides the party from the floor at 202 to 278;
+      -- west off it along the deck at 280, which steps up to 344 at
+      -- -1257,-137 — a rise the graph's own link carries.
+      -- The deck is held at the top for as long as a rider touches it (the
+      -- reference's plat touch defers its return every frame), so a companion
+      -- left standing on a deck that rose earlier freezes the lift for
+      -- everybody below: the deck never comes back to the floor and the leader
+      -- waits under it out its clock. Called to its leader, the companion
+      -- walks off the deck's edge and the deck settles.
+      -- The deck's own state says whether anybody is still on it, so that is
+      -- what is asked, repeatedly until it answers: the height of the leader
+      -- cannot say (it steps down onto the deck's floor only during the ride
+      -- that follows, and read here it stood a floor too high — a single guard
+      -- on it let the hold pass unnoticed and the ride waited under the deck
+      -- out its whole clock, n45a). Several calls because a companion parked
+      -- on the deck has to find the deck's edge before it leaves it.
+      -- Already riding, the body having been carried up at the gallery's foot:
+      -- a deck with a rider on it never comes down, because the reference
+      -- defers the return for every frame anybody touches it, so calling the
+      -- party off it here would only spend the waits and change nothing. The
+      -- walk west off the deck's end is what empties it, and the deck settles
+      -- behind the party for the companions to ride in their turn.
+      if z() > 280 then
+        dk3.log("plat: already riding the deck from the gallery's foot")
+      else
+        for _ = 1, 3 do
+          local settled = not opened(23)()
+          if settled then break end
+          dk3.log("plat: the deck is held up; calling the party off it")
+          dk3.sidekick("all", "come")
+          try(wait_until, function() return not opened(23)() end,
+              { timeout = 25, reason = "the deck came down" })
+        end
+        ride { index = 23 }
+      end
+      expect(z() > 280, "the platform did not lift the party")
+      dk3.sidekick("all", "follow")
+      path({ { -1080, 8, 304 }, { -1080, -136, 304 }, { -1257, -137, 368 } }, { timeout = 150 })
+      expect(z() > 340, "not up off the platform's deck")
+    end },
+    { "decks", checkpoint = true, function()
+      -- South and west along the decks at 344, then two steps down to the deck
+      -- at 320 along the west wall. Gold keeps its workers and a cryotech on
+      -- this run (ctl 674 and 675 at -1208,-604; ctl 679 at -1648,-484; ctl
+      -- 676, 677, 678 and 607 about -1656,-800), so it is fought as it is
+      -- reached rather than run through.
+      path({ { -1321, -137, 368 }, { -1320, -251, 368 }, { -1322, -334, 368 },
+             { -1464, -344, 368 }, { -1470, -482, 368 } }, { timeout = 150 })
+      -- Fought one at a time from the deck's middle, and not as one call to
+      -- everything within seven hundred. The sweep took the party from
+      -- seventy-six to twenty-one in three seconds and ten of its twenty-six
+      -- rockets (n53a, 445600-448600), because the four authored here answer
+      -- together from the deck's ends: a cryotech stands on the next path's
+      -- own first point (679, -1648,-480, at the deck's 376), its second two
+      -- hundred and forty further down the west wall (678, -1640,-872), and a
+      -- pair of workers sits behind the party's own line (605 at -1402,-650,
+      -- 675 at -1216,-648). Every one of them is more than a hull's width
+      -- from the next, so the lane takes them singly and the health that the
+      -- gallery's station just filled stays filled long enough to matter.
+      for _, foe in ipairs({ 679, 605, 675 }) do
+        try(kill, { index = foe }, { hold = true, timeout = 25 })
+      end
+      path({ { -1648, -484, 368 }, { -1655, -592, 368 }, { -1656, -696, 344 } }, { timeout = 150 })
+      -- The second cryotech is met from the wall north of it, before the deck
+      -- is walked past its feet: the stage's own last point stands fifty
+      -- units south of the thing.
+      try(kill, { index = 678 }, { hold = true, timeout = 25 })
+      move({ -1656, -824, 344 }, { timeout = 90 })
+      expect(x() < -1600 and y() < -750, "not along the west decks")
+      -- Whichever of them was not authored where the file says. Bounded to
+      -- what can stand on this deck, not to what the corridor can hear.
+      try(clear, { radius = 250, timeout = 30 })
+    end },
+    { "ramp", checkpoint = true, function()
+      -- South to the ramp's foot and up to the high walk at floor 464: the
+      -- graph's links carry the forty- and fifty-six-unit rises, and a
+      -- cryotech (ctl 26) stands on the ramp's shoulder. East along the high
+      -- walk to the ladder's head at -1264,-936.
+      path({ { -1655, -1010, 384 }, { -1616, -1040, 384 }, { -1504, -1036, 440 } }, { timeout = 150 })
+      -- Only the cryotech on the ramp's shoulder (ctl 26, -1376,-1032, at the
+      -- high walk's 496) is met here, and it is met from the ramp's bend, a
+      -- hundred and thirty below it and in the open. What the stage used to
+      -- ask instead was everything within seven hundred, and seven hundred
+      -- from the ramp's top reaches the vermin four hundred units down in the
+      -- corridor (594 at -1213,-1408, 595 at -1045,-1408): the body went down
+      -- the ladder after them twice in n53a — once to its fourth death at the
+      -- ladder's own head (t=577200, source 595), once to one hundred and
+      -- fifty seconds of standing against the stone panel at the shaft deck's
+      -- south end with the stage's whole clock spent (t=861400, the run's own
+      -- last line). The shell box on the ramp's foot is left alone for the
+      -- same reason of the way back: the compiled graph's only leg from its
+      -- floor runs north through the low level toward the gallery, thirty-odd
+      -- reachabilities and no stair up to this ramp from anywhere near it.
+      try(kill, { index = 26 }, { hold = true, timeout = 40 })
+      move({ -1396, -1036, 488 }, { timeout = 90 })
+      -- East to the ladder's head without stopping to trade: what is left of
+      -- the run's ammunition is the corridor garrison's, and the walk is
+      -- theirs rather than a fight's.
+      path({ { -1372, -1008, 488 }, { -1380, -936, 488 }, { -1300, -936, 496 } }, { timeout = 150, fight = false })
+      -- A chase that carries the body off the high walk and down the ladder
+      -- is the one way this stage can end in nothing at all: from the deck at
+      -- 376 the graph's next waypoint runs south, into the fence the stone
+      -- panel stands, and the move stands there until its clock runs out.
+      -- Back along the deck away from that fence, and up the rungs again.
+      if z() < 440 then
+        dk3.log("ramp: carried down off the high walk; back along the deck and up the rungs")
+        try(move, { -1256, -1000, 376 }, { timeout = 45 })
+        try(move, { -1264, -936, 496 }, { timeout = 90 })
+      end
+      expect(z() > 460, "not along the high walk")
+    end },
+    { "shaft", checkpoint = true, function()
+      -- Down the ladder at -1264,-936 to the deck at 376 (the area graph has
+      -- both ways of it), south along that deck to its end, and off that end
+      -- down thirty-two into the long corridor at floor 320. The vermin in that
+      -- corridor (ctl 594, 595 and 225) are met as it is entered.
+      --
+      -- The deck's end is fenced. A stone panel (ctl 149, health ten) stands
+      -- from the deck's floor past a head across the whole of its width, and
+      -- the graph offers its way down on the far side of that panel. Gold
+      -- shoots it — the panel's own target is nothing but the spray of its
+      -- breaking, so all it opens is the drop — and the shot is had from the
+      -- ladder's foot, before the deck is walked rather than at its end. The
+      -- deck is sixty-four wide, a hull and a change of step less than the
+      -- panel's own width, so a party walked at that fence files into a queue
+      -- one body deep in front of it: the head of the queue presses the panel,
+      -- the body behind has nothing to pass it by, and the two of them stand
+      -- out of the stage's whole clock with the companion named as what is in
+      -- the way (n52a, whose leader was still at the deck's middle two minutes
+      -- after coming down the ladder). The panel stands three hundred units
+      -- down a deck with nothing across its floor, so breaking it first costs
+      -- a shot and opens the way before anybody is standing on it.
+      move({ -1264, -936, 376 }, { timeout = 60 })
+      expect(z() < 420, "not down the ladder at -1264,-936")
+      for _ = 1, 3 do
+        if not dk3.entity { index = 149 } then break end
+        try(shoot, { index = 149 }, { timeout = 20 })
+      end
+      path({ { -1256, -976, 376 }, { -1256, -1064, 376 }, { -1256, -1216, 376 } }, { timeout = 120 })
+      move({ -1240, -1395, 344 }, { timeout = 60 })
+      expect(z() < 360, "not down into the corridor")
+      -- Three vermin own this corridor's west end (594 and 595 at its foot,
+      -- 225 a hundred and forty east) and the drop lands within thirty of the
+      -- nearest. Eight hundred of sweep called the corridor's east garrison
+      -- into the same minute, and the chase after the vermin is what the ramp
+      -- stage now refuses to start; so the two nearest by name, a sweep
+      -- bounded to the deck they stand on, then the run east.
+      for _, foe in ipairs({ 594, 595 }) do
+        try(kill, { index = foe }, { hold = true, timeout = 25 })
+      end
+      try(clear, { radius = 250, timeout = 30 })
+      move({ -1045, -1404, 344 }, { timeout = 90 })
+      try(kill, { index = 225 }, { hold = true, timeout = 25 })
+    end },
+    { "bridge", checkpoint = true, function()
+      -- East along the corridor: the graph's door node at -829,-1404 is t3
+      -- (ctl 344, a party door across the corridor) and the chasm begins at
+      -- x -752. Its span (ctl 210) stands above the void with its deck's top at
+      -- 444; its `angle` is -2 — down — and it travels a hundred and eighteen,
+      -- bringing that deck to six above the corridor's floor. What brings it
+      -- down is the charge high on the chasm's south wall at -508,-1520 (ctl
+      -- 97, health ten): its event fires the span itself after two tenths of a
+      -- second. The area graph has no floor across this void at all — movers
+      -- are absent from it — so the crossing is driven straight over the deck.
+      advance({ -790, -1409, 344 })
+      local down = opened(210)()
+      for _, spot in ipairs({ { -790, -1409, 344 }, { -950, -1404, 344 }, { -1120, -1404, 344 } }) do
+        if down then break end
+        try(move, spot, { timeout = 40 })
+        if dk3.visible({ index = 97 }) and try(shoot, { index = 97 }, { timeout = 30 }) then
+          wait(3)
+          down = opened(210)()
+        end
+      end
+      if not down then
+        try(use, { index = 210 }, { timeout = 30 })
+        wait(3)
+      end
+      expect(opened(210)(), "the chasm's span never came down")
+      -- Crossed as two asked steps, the first to the chasm's own lip. The
+      -- charge's blast is no small thing: it threw the body a hundred units
+      -- west and north and forty of its health away while the shot's own wait
+      -- ran, and the crossing asked for straight from that spot began against
+      -- a clock that wait had already spent — its first stall was answered by
+      -- the graph, which marks no ground over this void and led the body back
+      -- the way it came until its minute ran out (n47a). Stepping to the lip
+      -- first costs nothing even when its own stride stalls, because the lip
+      -- is a place the graph has; and the deck's leg that follows is a change
+      -- of step more than a hull beyond the last, which is what begins a
+      -- stride's own measure.
+      -- Ended on the corridor's own ground east of the deck, not on the span:
+      -- the area file was compiled with this span up, so the deck is a place
+      -- the graph has no way off, and standing on it every later question of
+      -- reachability is answered `no` — asked to plan from there the body went
+      -- twelve rounds over the level's controls, from the cage's keypads to the
+      -- starting door of the level itself, and failed with its health spent on
+      -- a walk home (n50a, which crossed the chasm in 1.1 s and then lost two
+      -- and a half minutes to that tour).
+      path({ { -780, -1404, 344 }, { -430, -1409, 344 } },
+           { direct = true, radius = 24, timeout = 90 })
+      -- Its own measure again: this stride asked for twenty-four, and the span's
+      -- brush ends at x -472, so the worst stop the stride can report is x -454
+      -- — five units west of the frame this stage used to expect. The hull is
+      -- twelve wide, so x -460 is the first line whose standing is wholly east
+      -- of the span, and the stride's guarantee is six units past it (n54a came
+      -- through at x -446 and would have failed by four units on a stride that
+      -- stopped level with the brush instead of past it).
+      expect(x() > -460, "not across the chasm and off its span")
+      -- East on: t4 (ctl 260) at the graph's node at -391,-1415, then the
+      -- corridor's long run east to x 14.
+      -- That run's east end is held: a worker at its foot (696) and three
+      -- guards up it (697, 698, 699), and the charge's blast has already taken
+      -- what health the body carried to the chasm — it lands at the door with
+      -- the deck's fall still ringing. The run was walked past them at five
+      -- health with nine rounds, and ended on a guard's bolt forty strides in
+      -- with the whole stage to restore for it (n51a). The door is opened
+      -- first, and the garrison met from the door's west side, where the body
+      -- stands behind a frame rather than in the corridor's mouth.
+      try(use, { index = 260 }, { timeout = 20 })
+      wait(1)
+      -- The garrison is met by name rather than by eight hundred of sweep:
+      -- the sweep from the door's west side reaches the three guards up the
+      -- corridor (697 at 32,-1160, 698 and 699 beyond) as well as the worker
+      -- at its foot (696) and the pair along its length (17 at -160,-1384, 16
+      -- at 32,-1280), and that is the whole corridor's ammunition in one
+      -- minute. The body took the sweep standing in the corridor's mouth at
+      -- twenty-one health and died forty strides east of the door (death
+      -- three, t=505800, source 697). The two this stage walks past first,
+      -- the sweep to the door's own mouth, and the three up the corridor left
+      -- to the stage that walks up it.
+      for _, foe in ipairs({ 17, 696 }) do
+        try(kill, { index = foe }, { hold = true, timeout = 25 })
+      end
+      try(clear, { radius = 250, timeout = 30 })
+      advance({ 14, -1396, 344 })
+      move({ 14, -1396, 344 }, { timeout = 150 })
+      expect(x() > -100, "not east out of the corridor")
+    end },
+    { "north", checkpoint = true, function()
+      -- North up the corridor at x 32: t5 (ctl 354) stands at the graph's door
+      -- node of 32,-986. Then the second void, from y -897 to y -639: its span
+      -- (ctl 416) is the same make as the first — deck at 444, `angle` -2,
+      -- travelling a hundred and eighteen — and its button (ctl 207) is flush
+      -- in the corridor's west wall at y -944, a few strides this side of the
+      -- edge. Past it t6 (ctl 357) at y -548 and the corridor's east turn.
+      -- The run north up x 32 is the garrison's own ground and it is in sight
+      -- of itself: a guard at the run's foot (16, 32,-1280) and three up it
+      -- (697 at 32,-1160, 698 at 24,-1104, 699 at 48,-1040). Seven hundred
+      -- from anywhere on that line is all four at once; the corridor's own
+      -- axis takes them one at a time from the run's south end, before the
+      -- walk begins rather than in the middle of it.
+      for _, foe in ipairs({ 16, 697, 698, 699 }) do
+        try(kill, { index = foe }, { hold = true, timeout = 25 })
+      end
+      try(clear, { radius = 250, timeout = 30 })
+      path({ { 32, -1167, 344 }, { 32, -1015, 344 } }, { timeout = 150, fight = false })
+      advance({ 33, -928, 344 })
+      -- How far a stride counts as its own: a move with no `radius` is content
+      -- at forty units of its mark, and forty is a wider bed than this door's
+      -- frame. The t5 brush stands across y -1000..-976, so asking the stride
+      -- for twenty-four and expecting the frame's north face asks one question
+      -- twice; asking the stride for nothing while expecting y -945 asked two
+      -- questions and lost the run on the second — the body came through the
+      -- open door, stopped at y -967 with thirty-nine units left to its mark,
+      -- and the stage read its own arrival as the door still shut (n54a).
+      move({ 33, -928, 344 }, { timeout = 120, radius = 24 })
+      expect(y() > -960, "not through the t5 door")
+      -- The span is called from the corridor's west wall (ctl 207) and asked of
+      -- it twice over: a held press first, which aims from wherever the walk left
+      -- the body, and only if that misses the walking press that goes to the
+      -- button's own face. On the round taken again after the yard's deaths the
+      -- walking press alone found no stand and spent its whole twenty seconds
+      -- without touching the button, and the stage read its span as never come
+      -- down (n59a). A held press costs eight seconds and no ground at all.
+      for _ = 1, 2 do
+        if opened(416)() then break end
+        try(use, { index = 207 }, { hold = true, timeout = 8 })
+        if not opened(416)() then try(use, { index = 207 }, { timeout = 20 }) end
+        wait(3)
+      end
+      expect(opened(416)(), "the second span never came down")
+      -- The span comes down level with the corridor's floor, so it is walked,
+      -- and walked *off* in one stride: nothing may stop on the deck. The area
+      -- file was compiled with this span up like its sibling over the first
+      -- chasm — the deck is not ground the graph has at all, and the one area it
+      -- carves over the void's north end (the slab over y -801..-639) is
+      -- compiled with no reachability of any kind. Three runs went into that
+      -- void from three different stopping places: `advance` from seven units
+      -- inside the deck's north lip had nowhere to go and left the body at the
+      -- bottom of the hole, -283,-770,96 (n55a); a press of the t6 panel from
+      -- the bank's middle at y -607 went off to a stand the graph believed in,
+      -- waypoint 32,-647,104, and the body to -175,-649,100 (n56a); and a press
+      -- asked eighteen units short of the panel's face — the body stood at
+      -- 31,-588, the panel opened, and two seconds later it was at
+      -- 131,-838,144, two hundred units down the hole, wedged on a ladder there
+      -- for the rest of the stage (n57a).
+      --
+      -- What carried it off the deck in two of those cases was the walk's own
+      -- steering. Asked for one stride from the corridor to the panel's face, the
+      -- body began it from x 3 — a press against the west wall leaves the body
+      -- beside its button — and the first half-second of straight steering put it
+      -- on the deck at x 55, more east than north. It came off the deck's east
+      -- edge at x 90 and went down into the hole at 100,-857,92, where a ladder
+      -- carried it up to 32,-649,133 (n58a). A decked crossing therefore starts on
+      -- the deck's own centre line and takes the two marks every crossed run has
+      -- used: x 37 at y -762, then the bank's middle at y -596, where the graph
+      -- has ground, and only then the panel's face.
+      --
+      -- The party is told to hold on the corridor's own ground before the deck
+      -- is stepped on, and is not called again until the leader stands on the
+      -- bank. Following a leader who is himself two hundred units out over a
+      -- hole is how the party was lost here: in the round that came through,
+      -- one of them was found standing on the deck's middle at 33,-763,436 with
+      -- the way off it gone (`stranded=350`, `routeless=1`) and the other at
+      -- 87,-635,122 at the bottom of the hole, both of them past any help the
+      -- route can give and neither of them able to answer what waits in the
+      -- yard. Two bodies on the deck at once is also how the deck gets leaned
+      -- on and rides away with somebody on it (n57a).
+      dk3.sidekick("all", "stay")
+      move({ 32, -915, 344 }, { direct = true, radius = 12, timeout = 30 })
+      path({ { 37, -762, 346 }, { 29, -596, 344 } },
+           { direct = true, radius = 16, timeout = 150 })
+      expect(y() > -620, "not across the second void and off its span")
+      move({ 32, -578, 344 }, { direct = true, radius = 12, timeout = 30 })
+      expect(y() > -620, "not on the t6 panel's face")
+      -- Called over now, with the leader standing still on ground the graph has
+      -- and the deck flat under them: the crossing is a straight line up x 32
+      -- from the span's south lip to this face, which is the line the leader's
+      -- own stride just walked. The yard's garrison is the level's last brawler
+      -- and the level's own answer to it is the two bodies at five thousand
+      -- health apiece, so whatever can be brought across is worth the wait —
+      -- and `sic` below asks for them only if they came.
+      dk3.sidekick("all", "follow")
+      local together = try(regroup, 200, 30)
+      dk3.log(string.format("t6: the party %s across the span",
+                            together and "came" or "did not come"))
+      -- Where that press's own eye stands and what it meets, asked once from the
+      -- face: the same press at the t5 door landed in fifty milliseconds from
+      -- fifty-nine units, and this one walked away without ever pressing — the
+      -- two panels are the same brush of the same size across the same corridor.
+      local function probe(index)
+        local found = dk3.entity({ index = index })
+        dk3.log(string.format("t6 probe: index %d is %s at %.0f,%.0f,%.0f state=%s",
+                              index, found and (found.classname or "?") or "nothing",
+                              found and found.x or 0, found and found.y or 0,
+                              found and found.z or 0, found and (found.state or "-") or "-"))
+      end
+      for _, index in ipairs({ 354, 357, 416, 418 }) do probe(index) end
+      local line = dk3.trace({ x(), y(), z() + 24 }, { 32, -548, 368 }, "shot")
+      dk3.log(string.format("t6 probe: the eye at %.0f,%.0f,%.0f meets %s (%d) at fraction %.3f",
+                            x(), y(), z() + 24, line.class or "?", line.index or 0,
+                            line.fraction or 0))
+      try(use, { index = 357 }, { hold = true, timeout = 8 })
+      if opened(357)() then
+        -- The ragemaster that owns the corridor's north end (102, authored back
+        -- and west at -112,-208) walked down it and took the body as it came
+        -- through the panel: 39,-461, then 61,-490, then 43,-459, three deaths on
+        -- the same stride (n59a). Asked of by name from this face it was worse
+        -- than left alone, and `hold` does not prevent it: a held fight still
+        -- shifts two hundred units toward its prey every five seconds of blind,
+        -- and the panel's face has nothing but the deck on its east side. The
+        -- body left the bank at 31,-588, was found on the deck at 67,-699, came
+        -- off that deck's east edge and finished the action at 118,-800,216 at
+        -- the bottom of its own hole (n60a). What is asked here is therefore
+        -- bounded to the ground a fight cannot walk off — the frame at the
+        -- panel's back, the corridor's walls on both hands, none of it within
+        -- reach of the void — and the level's own answer to a brawler is asked
+        -- first: the sidekicks, if they came across.
+        if together then try(sic, { index = 102 }, "all", 25) end
+        try(kill, { index = 102 }, { hold = true, timeout = 15,
+          arena = { { -24, -536 }, { 84, -448 } } })
+        if not opened(357)() then try(use, { index = 357 }, { hold = true, timeout = 8 }) end
+        -- Straight through its frame: the corridor north is a run of floor at x
+        -- 32, and a routed walk here is a walk past the void again.
+        move({ 29, -446, 344 }, { direct = true, timeout = 60, radius = 24 })
+      else
+        -- The pilot's own way through, then: a walk *routed* through the panel's
+        -- frame makes the closed gate its business, and the gate machinery stands
+        -- the body in front of the door and works it there — the same way t5 came
+        -- open (the plan named control 354 and the press landed in fifty ms). The
+        -- graph compiled this bank with six walk links running north through the
+        -- t6 line, so a route exists with the panel shut.
+        dk3.log("t6 probe: the held press did not open it; walking the route through it")
+        move({ 29, -446, 344 }, { timeout = 90, radius = 24, fight = false })
+      end
+      expect(y() > -500, "not through the t6 door")
+    end },
+    { "sidekick", checkpoint = true, function()
+      -- East and north to the wall along y -64..-48 whose only opening is the
+      -- doorway at x -24..64 (its lintel at 412..440). Its panel (ctl 647) is
+      -- a func_door named sidekick_door. Nothing on this side of the wall opens
+      -- it, and the reference says so twice: the player cannot use a func_door
+      -- that has a targetname at all (base/dlls/world/client.cpp builds the test
+      -- as `bUseFuncDoor = !stricmp(className, "func_door") && !bHasTarget`), and
+      -- a sidekick walking its node route uses a door it is blocked by only when
+      -- `!(pDoor->targetname) && !(pDoor->keyname)` (ai_func.cpp, the NODETYPE_DOOR
+      -- branch); a named door instead wants a NODETYPE_DOORBUTTON node naming the
+      -- switch, and this level has no node for either 647 or its panel -- 647
+      -- carries no `nodetargetname`, which is also what movers.openForParty needs
+      -- to walk a companion through a named door. src/mechanics/server/
+      -- interactions.zig refuses the press for exactly gold's reason, so the
+      -- presses this stage used to make here were never a gold action.
+      -- The yard's garrison is met before the walk into it rather than in the
+      -- middle of it: the run that reached the yard's south-east corner at
+      -- 232,-436 with the yard unset came back down at 263,-436 under the
+      -- ragemaster standing in the yard's own middle (596 at 200,-216,384), the
+      -- eighth death of the level (n59a). Seven hundred from anywhere along that
+      -- path is 596, the lasergat on the ledge above the yard's north end (13 at
+      -- 76,-400,543) and the worker on the far side of the wall (600 at
+      -- -4,120,352) all at once, and the party reaches this yard with no armour
+      -- since the chasm and its shells counted in single digits. The two on this
+      -- side of the wall are met in the order the path walks them, from the
+      -- corridor's north end; the worker is beyond the panel and waits until the
+      -- panel is up.
+      -- Not marched into the yard for any of them: the graph's only lane north
+      -- runs along x 203 within fifty units of 596's own ground, and the round
+      -- that walked this stage's old opener came down at 263,-436 under it with
+      -- twelve health left (n59a, death eight). The hold is bounded to the
+      -- corridor's mouth — the same box the panel's fight is bounded to — and
+      -- what cannot be shot from there is walked past on the way to the panel,
+      -- which is the only thing here that lets the level out.
+      try(sic, { index = 596 }, "all", 25)
+      try(kill, { index = 596 }, { hold = true, timeout = 20,
+        arena = { { -24, -536 }, { 84, -448 } } })
+      path({ { 232, -436, 344 }, { 192, -268, 344 }, { 188, -132, 344 }, { 52, -132, 344 } },
+           { timeout = 150 })
+      -- Its only control is the panel 646 (tgt doorfire -> relay 665, delay 2 ->
+      -- sidekick_door), and the wall's own brush (x 64..152, y -64..-48, top 432)
+      -- leaves that panel, at y -48..-44, standing on the far face: the aim log of
+      -- the press below is the record of that. The wall is not crossable
+      -- elsewhere: it runs west with floor at 326 on both hands and nothing to
+      -- walk at eye height all the way to the duct mass at x -560, and it ends
+      -- east at x 312 over the void, so the doorway at x -16..64 is the level's
+      -- only line through and it is shut from here.
+      -- What gold puts at the panel's near face instead of a control is a voice
+      -- line: ctl 49, a trigger_once across the doorway's whole width at
+      -- y -72..-64, plays sounds/voices/mikiko/sid_m_42b.mp3, and the subtitle
+      -- shipped beside the voice (pak1.pak: subtitles/sid_m_42b.mp3.txt) reads
+      -- "Do a little exploring! We have to find a way." The authored answer to
+      -- this spot is somewhere else in the level -- the duct floor at
+      -- x -820..-764, y -104..32 at z 436, which ctl 177's trigger hands over to
+      -- ctl 96 (`duct_fall`, a func_explosive) on the far side of the wall is the
+      -- candidate the entity list offers -- and no route to it is authored here
+      -- yet. The level is therefore recorded as blocked at the panel rather than
+      -- forced: what follows needs the panel up and is kept for the day it is.
+      -- Asked from the door's own near face, which is where the walk leaves the
+      -- yard: the line the eye would have to carry to reach the panel. Its centre
+      -- is 88,-46,360 (bounds x 80..96, y -48..-44, z 352..368), twelve units
+      -- north of the wall's north face, so the trace has to cross the wall brush
+      -- at y -64 before anything else and the log says so with the point it meets.
+      local to_panel = dk3.trace({ x(), y(), z() + 24 }, { 88, -46, 360 }, "shot")
+      dk3.log(string.format(
+        "sidekick probe: the eye at %.0f,%.0f,%.0f meets %s (%d) at %.0f,%.0f,%.0f,"
+        .. " fraction %.3f, on the line to the panel's centre at 88,-46,360",
+        x(), y(), z() + 24, to_panel.class or "?", to_panel.index or 0,
+        to_panel.x or 0, to_panel.y or 0, to_panel.z or 0, to_panel.fraction or 0))
+      dk3.log("e1m7a blocked at the sidekick door: ctl 647 (x -16..64, y -60..-52)"
+        .. " has no control on this side; ctl 646 stands at y -48..-44 on the far"
+        .. " face and gold gives a named func_door no use handler")
+      try(use, { index = 646 }, { hold = true, timeout = 8 })
+      expect(not opened(647)(), "a named sidekick door opened with no control on this side")
+      -- The doorway itself is asked next, and it is the level's own answer that
+      -- gets logged: the walk into it is refused by the door brush and the bot's
+      -- status names ctl 647 as the obstacle it cannot pass.
+      try(move, { 13, 4, 344 }, { timeout = 20 })
+      expect(y() < 0, "walked north through a shut sidekick door")
+      -- Recorded as blocked rather than forced: nothing below is reachable until
+      -- a way past the panel is authored, so the run stops here with the reason
+      -- in its failure line instead of timing out against the door two stages on.
+      error(dk3.where() .. ": sidekick door: no authored route past ctl 647 from the"
+        .. " yard; its only panel (ctl 646) stands on the wall's far face, and the"
+        .. " duct route ctl 177 -> ctl 96 (`duct_fall`) is not authored here", 0)
+      -- Past the panel at last, and the wall's opening is the only way through:
+      -- met before walking into it, since the corridor's mouth is where that
+      -- worker has its own ground.
+      try(kill, { index = 600 }, { hold = true, timeout = 20 })
+      path({ { 20, -60, 344 }, { 13, 4, 344 }, { 93, 204, 343 }, { 93, 364, 343 } }, { timeout = 150 })
+      expect(y() > 300, "not north through the doorway")
+      -- The changelevel (ctl 98) stands in the passage east at x 240..336.
+      exit "e1m7b"
+    end },
+  }(visit, resumed)
+end)
+
+-- The vault's second half: the party arrives in a corridor walled on both sides
+-- by guard posts, the hall from there runs down to the brain's chamber, and the
+-- way out is past it. Only the arrival rooms are authored here. Everything past
+-- them is the generic walk to the forward exit, started from a checkpoint behind
+-- the fights, so a death in the hall resumes above them instead of on the spawn
+-- point the guards shoot across.
+level("e1m7b", function(visit, resumed)
+  if visit > 1 then return progress("e2m1a") end
+  return stages {
+    { "guard room", function()
+      -- The arrival corridor (areas 2411/2405, x 401..495) opens south into a
+      -- room (2397) holding a battle boar and two mishimaguards and north into
+      -- another (2391) holding two more. All of them shoot the corridor the
+      -- spawn stands in: the run before this one died thirteen times without
+      -- leaving the room. Nothing is walked past. The south room is taken on
+      -- its own floor, where the health station in its alcove (ctl 79, at
+      -- 576,-240,328) stands behind the fight rather than across the map.
+      -- (The room's third guard, ctl 335, is authored 12288 — the Ronin and
+      -- Samurai bits — and the Samurai skill these runs play at drops it, so
+      -- it is named nowhere below and would only be hunted if it spawned.)
+      dk3.sidekick("all", "stay")
+      move({ 576, -160, 328 }, { timeout = 40 })
+      local south = { { 500, -200 }, { 715, -25 } }
+      for _, foe in ipairs({ 26, 103, 102 }) do
+        try(kill, { index = foe }, { hold = true, timeout = 40, arena = south })
+      end
+      recover(0.8, 900)
+    end },
+    { "north post", checkpoint = true, function()
+      -- Back to the corridor's mouth and into the room north, fought from its
+      -- middle: the two guards stand on its far wall (522,226 and 658,226) with
+      -- near two hundred units of floor between them and the doorway, and the
+      -- doorway is where a party met at range gives ground away.
+      move({ 592, 150, 328 }, { timeout = 40 })
+      local north = { { 500, 5 }, { 683, 235 } }
+      for _, foe in ipairs({ 336, 337 }) do
+        try(kill, { index = foe }, { hold = true, timeout = 40, arena = north })
+      end
+      recover(0.8, 900)
+      dk3.sidekick("all", "follow")
+      try(regroup, 250, 90)
+      expect(y() > 0, "not north into the room above the arrival corridor")
+    end },
+    { "the hall", checkpoint = true, function()
+      -- From here the map is not authored: the hall down to the brain (whose
+      -- `trigger_once` ctl 171 fires `t76`, three more monsters), the crush
+      -- passage, the vault and its warp door, and the exit to episode 2 at x
+      -- 536..552, y 2968..2984, z 496..512. What the area graph does not
+      -- answer on its own, the generic walk attempts at the controls.
+      progress("e2m1a")
     end },
   }(visit, resumed)
 end)
@@ -2028,7 +2810,7 @@ local chain = {
 }
 -- Maps without an authored route yet: head for the forward exit, operating
 -- reachable controls when the area graph has no route (see advance()).
-for index = 14, #chain - 1 do
+for index = 15, #chain - 1 do
   local map, destination = chain[index], chain[index + 1]
   level(map, function() progress(destination) end)
 end

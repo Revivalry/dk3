@@ -596,8 +596,19 @@ fn standingGoal(frame: Frame, found: targets.Resolved) !v.Vec3 {
     if (found.brush) if (try @import("bot_routes.zig").touchPointFrom(found.mins, found.maxs, frame.index, .{ .position = (try frame.world.get(frame.entity, data.Transform)).position, .service = frame.service })) |point| return point;
     var goal = found.point;
     if (found.brush) goal[2] = @min(found.maxs[2], found.mins[2] + 32);
-    const floor = try engine.collisionService().trace(.{ .start = goal, .end = v.add(goal, .{ 0, 0, -512 }), .mins = .{ -15, -15, -24 }, .maxs = .{ 15, 15, 32 }, .slot = frame.index, .mask = c.MASK_PLAYERSOLID });
-    if (!floor.start_solid and !floor.all_solid and floor.fraction < 1) goal = floor.end;
+    // An authored origin often sits in the surface its item rests on, so the
+    // sweep from the target itself can start inside a floor and report nothing.
+    // Raise the hull out of that surface, the way a tossed item is settled, and
+    // sweep the same distance down: that finds the stand point the target is on
+    // instead of leaving the goal buried in the floor, which no area of the
+    // navigation graph can be reached.
+    for ([_]f32{ 0, 8, 24, 64 }) |lift| {
+        const start = v.add(goal, .{ 0, 0, lift });
+        const floor = try engine.collisionService().trace(.{ .start = start, .end = v.add(start, .{ 0, 0, -512 - lift }), .mins = .{ -15, -15, -24 }, .maxs = .{ 15, 15, 32 }, .slot = frame.index, .mask = c.MASK_PLAYERSOLID });
+        if (floor.start_solid or floor.all_solid) continue;
+        if (floor.fraction < 1) goal = floor.end;
+        break;
+    }
     return goal;
 }
 /// The area graph's predicted route to the target, from the player or from an

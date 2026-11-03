@@ -12,9 +12,23 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/Revivalry/dk3/main/install
 
 The bootstrap downloads the latest Linux x86-64 bundle and `SHA256SUMS`, checks
 the archive digest, then starts the interactive wizard. If GitHub CLI is
-installed, it also verifies the signed GitHub build attestation. The command
-keeps the terminal connected to the wizard so it can ask for your asset source
+installed and signed in, it also verifies the signed GitHub build attestation.
+Each download and verification step names the work in progress. Downloads have
+connection and stalled-transfer limits; GitHub CLI authentication has a 20-second
+limit and provenance verification has a two-minute limit. A timeout or failed
+provenance check stops before extraction and reports which service to check.
+The command keeps the terminal connected to the wizard so it can ask for your asset source
 and installation directory. It does not need root privileges.
+
+If GitHub/Sigstore provenance verification is unavailable, you can explicitly
+retry with checksum verification only:
+
+```sh
+DK3_SKIP_ATTESTATION=1 sh -c "$(curl -fsSL https://raw.githubusercontent.com/Revivalry/dk3/main/install.sh)"
+```
+
+This skips GitHub CLI authentication and the signed provenance check. Downloading
+and matching `SHA256SUMS` remains required; a mismatched archive is always rejected.
 
 ## Install a downloaded bundle
 

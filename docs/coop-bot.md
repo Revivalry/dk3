@@ -336,9 +336,18 @@ sources of authored waypoints.
 
 ## Open work
 
-- Episode 1 is authored through e1m7a; `e1m7b` and every map of episodes 2–4
-  (including the timestream and ending maps) is still a placeholder that only
-  heads for the forward exit with `progress`. Each needs authored steps where
+- Episode 1 is authored as far as e1m7a's walled yard, and e1m7a is not
+  completable from its co-op spawn: with the yard's north door shut the compiled
+  area graph refuses every route to the changelevel, on every reach type, and
+  the door's only panel stands on the wall's far face (sequences 434 and 435).
+  The route stops there with the reason in its failure line rather than forcing
+  a door the reference refuses to open. That block also holds up the map behind
+  it: `e1m7b`'s arrival rooms are now authored (sequence 436), but its guard
+  post can only be measured with the arsenal a campaign arrival would carry in,
+  and the campaign cannot deliver one; a standalone start there has no rounds
+  and dies. Nothing past that map's hatch button, and no map of episodes 2–4
+  (including the timestream and ending maps), is authored: those still only
+  head for the forward exit with `progress`. Each needs authored steps where
   navigation alone does not suffice (puzzles, movers the area graph lacks,
   timed doors). e1m2a shows the typical pattern: the offline area-graph path
   per leg, live traces where movers matter, and checkpointed stages.
