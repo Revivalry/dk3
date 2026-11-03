@@ -260,6 +260,23 @@ nobody of the party within its splash where it lands. After a companion loss,
 each reload sets the stage the save it loads resumes at (the checkpoint's own,
 the resumed save's, else the arrival's), whichever save an earlier reload tried.
 
+Added in sequence 350 from runs on e1m6a–e1m6c (all of it the shared pilot
+unless noted): a hop armed for a stalled stride refuses itself when the ground
+ahead falls a long way below the feet or is a gas that kills, and says so
+(`event=hop-refused` at developer 2) — e1m6a's lab killed the bot on every
+attempt by a hop off the ledge beside the button's room; careful footing judges
+a stride by what the body's hull stands on rather than what a slim column
+happens to touch, so a catwalk's lip over the nitrogen is walked instead of
+refused for ever (e1m6c's ring froze on its doors for this); a `ride` whose
+deck is not in the area graph boards it directly — the mover has no floor in
+the graph at all, so the first phase steps onto the deck beside it rather than
+routing to a point under it; a heading is bent away from a lethal-liquid edge
+that runs beside the body, the way a player gives a lip a wide berth — the
+area graph walks an area's centre, and where a diagonal edge closes on the way
+the centre lies within a couple of units of the drop, while a hull that keeps
+only part of its width on the plank is supported until it keeps none (e1m6c's
+west catwalks over the nitrogen).
+
 Two parts of the reference's sidekick logic came from e1m4b, whose exit wants
 Superfly: its AI node graph carries a sidekick teleport node at the vent's exit
 over the keypad room, which sends the party to the far end of the casket
@@ -319,12 +336,21 @@ sources of authored waypoints.
 
 ## Open work
 
-- Routes for e1m2b onward (episode 1 maps after the sewers, episodes 2–4,
-  timestream and ending maps). Each map needs authored steps where navigation
-  alone does not suffice (puzzles, movers the area graph lacks, timed doors);
-  the remaining entries in `episode1.lua` are placeholders that only head for
-  the forward exit. e1m2a shows the typical pattern: the offline area-graph
-  path per leg, live traces where movers matter, and checkpointed stages.
+- Episode 1 is authored as far as e1m7a's walled yard, and e1m7a is not
+  completable from its co-op spawn: with the yard's north door shut the compiled
+  area graph refuses every route to the changelevel, on every reach type, and
+  the door's only panel stands on the wall's far face (sequences 434 and 435).
+  The route stops there with the reason in its failure line rather than forcing
+  a door the reference refuses to open. That block also holds up the map behind
+  it: `e1m7b`'s arrival rooms are now authored (sequence 436), but its guard
+  post can only be measured with the arsenal a campaign arrival would carry in,
+  and the campaign cannot deliver one; a standalone start there has no rounds
+  and dies. Nothing past that map's hatch button, and no map of episodes 2–4
+  (including the timestream and ending maps), is authored: those still only
+  head for the forward exit with `progress`. Each needs authored steps where
+  navigation alone does not suffice (puzzles, movers the area graph lacks,
+  timed doors). e1m2a shows the typical pattern: the offline area-graph path
+  per leg, live traces where movers matter, and checkpointed stages.
 - Companion handling in routes (Superfly, Mikiko): orders and exits that
   require them. The companions themselves now fly the same pilot; see
   [bots-zig](bots-zig.md#companions).

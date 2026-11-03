@@ -7,7 +7,11 @@
 -- The sewers are long and their sludgeminions hit hard, and the icelab's
 -- fights are on narrow walkways over nitrogen: more restorations, each from
 -- the latest healthy stage checkpoint.
-settings { level_deaths = 12, map_deaths = { e1m2a = 16, e1m3b = 25, e1m4b = 30, e1m6a = 20, e1m6b = 30, e1m6c = 30 } }
+settings { level_deaths = 12, map_deaths = { e1m2a = 16, e1m3b = 25, e1m4b = 30, e1m6a = 20, e1m6b = 30, e1m6c = 30,
+  -- The episode's last map before the finale's own: twenty-nine hostiles along
+  -- one long hall, gallery and deck, with no ammunition for the blaster it
+  -- starts with. Every one of them stands between the party and the exit.
+  e1m7a = 30 } }
 
 
 level("intro", function()

@@ -225,6 +225,8 @@ def main(argv=None):
     boxes = []
     for text in args.avoid:
         values = [float(value) for value in text.split(',')]
+        if len(values) != 6:
+            parser.error(f'--avoid needs six numbers (X0,Y0,Z0,X1,Y1,Z1), got {text!r}')
         boxes.append((values[:3], values[3:]))
     best = graph.search(origin, reverse=args.reverse, avoid=graph.blocked(boxes))
     if args.command == 'path':

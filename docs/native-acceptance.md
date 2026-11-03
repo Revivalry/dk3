@@ -5,41 +5,119 @@ with the merged source as of 20 October 2026. Results below retain their origina
 runtime, assets and limits. Implementation and focused passes do not establish
 complete episode/campaign or artistic acceptance.
 
-## Sequence 569 — canonical launch path and guardian locomotion
+## Sequence 572 — perf-main-rebase — integrated PR and regression qualification
 
-The owner clarified that normal play runs `zig build play` from `~/sources/dk3`.
-That checkout did not contain sequence 568's fix. The water correction and its
-regression are now also applied there, preserving the owner's other source
-changes. Both actual pool side exits pass against its rebuilt native modules.
+The owner requested publishing pending code, merging performance PR #14 into
+main, then rebasing this checkout and updating its existing PR. The performance
+worktree was clean and matched its published head `2c5587f`. Canonical pending
+code was committed and pushed as `3f9b785` before #14 merged at `39e7e20`.
+The feature branch was then rebased onto that main commit and PR #13 updated.
+The pre-rebase branch is preserved locally as `backup/bots-pass-before-perf-572`.
+Local saves, `.keep`, screenshots and video files were excluded from publication.
 
-The performance checkout's reported launch failure was missing local converted
-assets, not a native compilation error. Its ignored `zig-out/assets` and artwork
-directories now link to the canonical local caches. Plain `zig build play-install
-test-runtime` passes 136/136 steps and 430/430 tests. A private profile and copies
-of the owner's save slots were prepared; original profile/saves are unchanged.
-Canonical `zig build play-install` prepares its corrected native generation
-without starting a game. Full performance features remain in this performance
-checkout; the gameplay fixes are present in both checkouts.
+Conflict resolution retains main's complete loading, prepared-save, ECS and
+Vulkan implementations. The resulting gameplay PR has no renderer, snapshot
+decoder or ECS changes relative to main. Water-clearance coverage retains both
+checkouts' nonblocking-volume cases. The automatic companion duty and authored
+co-op routing remain on the rebased feature branch.
 
-The e2m3b guardian's chase animation hid a locomotion failure at its plinth. The
-default support descent was 32 units, but the surrounding floor is 48 lower.
-Its class now supplies a 64-unit limit to the shared mechanism. Direct clearance
-also used a diagonal floor-to-floor sweep that cut through the departing plinth;
-the repaired query measures support from the previous height and tests horizontal
-clearance before the actual body falls. Default classes retain their bounded
-descent; cliffs and hazardous floors remain rejected.
+| Scenario | State | Evidence / limits |
+|---|---|---|
+| Perf integration and branch ancestry | Passed | #14 merged through GitHub with its green checks and pinned head. Local main is `39e7e20`; both main and `perf/loading-rendering` are ancestors of the rebased branch. |
+| Integrated build and installation | Passed | `zig build test play-install -j4` with the existing pinned Python test environment builds the engine, all renderers and native modules and prepares generation `25af466ba3efe2d0bcb1bc76ef64a56744375f439c232d55edf73a8d5aafee29`. No desktop game launched. |
+| Python/component checks | Passed | All 397 Python tests pass with Pillow/scipy/yaml from the pinned test environment; codec, online, process and C contracts pass. Earlier sequence 571's Python dependency/fixture failures no longer occur after integration. |
+| Native integration regression | Repaired; passed | First aggregate: 579/580 Zig tests, one crash. Co-op target diagnostics queried verbosity inside perf's engine-free exit-arrival fixture. The fixture now binds/restores a gateway admitting only the cvar query; unexpected calls still fail. `zig build test-runtime -j4 --summary all` passes 33/33 steps and 437/437 tests. Together with the unchanged aggregate checks, all 580 Zig tests pass. No production exit behavior changed by this repair. |
+| Exact owner-save plate and return chain | Passed, scoped | `perf-main-rebase-572/full-save/`: complete original region copy, automatic physical press/hold, all four exit movers open, diagnostic activation of the actual release wheel, then automatic return. No companion orders. The original save hash is unchanged. This is not a walked route or ordinary wheel-use acceptance. |
+| Saving that copied region | Failed | The same replay still reports `Save/load refused: InvalidRegion`; its result explicitly records `persistence.passed=false`. Sequence 571's isolated-room persistence result remains scoped to that fixture. Full-region save acceptance remains open; the completed replay does not prove the earlier transport overflow generally resolved. |
+| Ownership and format | Passed | R1–R11 remain zero; Zig formatting and Git whitespace checks pass. |
 
-The first unit failure and the intermediate statue-still-stuck native replay are
-retained. The final canonical build passes 411/411 runtime tests, including water
-contents, class descent and cliff/hazard rejection. In `canonical-column-after-v3`,
-the guardian moves about 113 units from its authored position, descends onto the
-surrounding floor and attacks the player (health 100→33, damage source 501).
-Actual pool side exits also pass with canonical modules. The performance build
-is replayed separately with all GPU optimization defaults at 1. Engine runs stay
-guarded/headless and use diagnostic placement plus normal movement/combat, not
-desktop input or a claim of complete campaign traversal. Canonical evidence:
-`../dk3/zig-out/reports/pool-statue-569/`; detailed working evidence remains in
-`zig-out/reports/perf-water-defaults-568/`.
+The final fixture repair changes test setup only, after the coherent installed
+runtime replay. No duplicate broad aggregate was run: affected native checks
+were refreshed while still-valid Python, codec, online, process and C results
+were retained. Gameplay evidence stays local under
+`zig-out/reports/perf-main-rebase-572/`.
+
+## Sequence 571 — companion-puzzles — automatic station duties
+
+**Change.** Free companions now take physical puzzle stations advertised by an
+entity class's checked `companionDuty` hook. On encountering a nearby visible
+station the companion announces its intent, walks onto it through normal
+collision/navigation, holds it, and follows again when its class reports the
+authored completion. Explicit orders, carrying, stops, teleports and scenes
+take priority. A station has one living helper. The held duty is optional
+class-owned save state; older saves default to no duty.
+
+The owner's latest save was `save2.sav` in the performance checkout, e2m4b,
+with Hiro at approximately (519.718, -3488.865, 310.895), standing on the edge
+of the `leftbutdown` plate. Its `trigger_toggle` is companion-only (flags 9).
+There was also a real progression bug: the plate admitted Mikiko, but its
+event generator rejected companions unless monsters were enabled. Timeline
+admission now belongs to the event-generator class and accepts companions by
+default, retaining the flag requirement for other monsters. The original save
+was read/copied only; its SHA-256 is unchanged.
+
+The supplied 84-map BSP corpus has one toggle, this companion-only plate,
+plus 11 authored sidekick-stop and 19 teleport volumes (and one HUD trigger).
+The existing stop/teleport choreography remains in place. The new station
+contract applies through the registry wherever a class offers it; it does
+not invent a timeout or a proximity shortcut for an unknown puzzle's release.
+Here, `openformk` removes `leftevent` and the depressed plate while opening the
+return path, which releases the helper safely.
+
+| Scenario | State | Evidence / limits |
+|---|---|---|
+| Latest owner save identified | Passed | `floor-switch-570/come/source.json`, `companion-puzzles-571/monitor-clock/source.json`; original hash unchanged. Earlier canonical e2m3b saves were older. |
+| Automatic approach, press, hold and exit doors | Passed | Exact owner-save copy in `monitor-clock/`: Mikiko reaches the plate without a companion order, it depresses eight units, the bars rise 216 units and both exit-door leaves open. The player takes an ordinary backward step to clear her approach. |
+| Hold through save/reload | Passed in isolated room | `room-ready/holding.sav`; the labelled fixture retains the owner's active-map entity state but omits other resident worlds. `authored-release/` reloads that held state, saves/reloads it again and retains the physical occupant and duty. |
+| Authored completion releases the helper | Passed in isolated room | `authored-release/passed.json`, `released.sav`: diagnostic activation of the actual release wheel runs its ordinary mover/target chain; Mikiko announces her return, clears the duty and resumes `follow`. No companion orders. This does not qualify walking the route or physically using the wheel. |
+| Complete region save and long replay | Failed | Before the feature, the copied region already refused saves with `InvalidRegion` (`floor-switch-570/replay/`). The longer camera replay also drops with `Server command overflow` (`installed/`, `monitor-clock/`). Neither failure is hidden by the room fixture. Whole-region persistence/transport acceptance remains open. |
+| Native tests and ownership | Passed | `zig build test`: all 559 Zig tests pass, including duty ownership, explicit-order/carrying/scene eligibility, default admission for companions, monster exclusion, old-save defaults and held-duty identity/JSON preservation; R1–R11 remain zero. |
+| Full aggregate test command | Failed | Python tooling reports 10 errors: eight missing-Pillow imports, the release-bundle libdeflate-license fixture, and the runtime-media `checked_assets` fixture mismatch. The native, codec, online, process and formatting checks pass. |
+| Canonical play installation | Passed | `zig build play-install --summary all`: 90/90 steps. Generation `efe8db74c828f7265d06ad41081a09a6e010063eeb7efe6b76a21e8bbcfd5594`; prior generations and saves preserved. Performance-checkout code/install was not modified. |
+
+Evidence is under `zig-out/reports/companion-puzzles-571/`; the reproducible
+driver is `dkq3/tools/runtime_companion_puzzle_probe.py`. All engine runs use
+dkguard with headless software rendering. The first rejected target chain,
+full-region failures and unsuccessful wheel-placement diagnostics are retained.
+This is focused station assistance, not complete four-episode traversal acceptance.
+
+## Sequence 569 — Greece pool, statue descent and the actual play checkout
+
+The owner launches with `zig build play` in `~/sources/dk3`. Earlier sequence
+568's water fix existed only in the separate performance checkout, so that
+launch still used the old movement motor. The water correction and regression
+coverage are now present in this canonical checkout as well. The upper ledge
+probe tests the mover's collision mask; nonblocking detail/monster-only clips
+above the Greece pool rim no longer suppress water jumps. Solids, player clips
+and bodies still block them.
+
+The e2m3b guardian also oscillated on its plinth while playing chase animation.
+Two connected locomotion issues were exposed: its 48-unit descent exceeded the
+default 32-unit support probe, and diagonal floor-to-floor clearance sweeps cut
+through the plinth edge. The column class supplies a bounded 64-unit descent to
+the shared mechanism. Direct routes probe from the last supported height and
+test horizontal clearance before gravity handles the descent. Other classes
+keep their default bound; unsupported cliffs and hazardous floors remain rejected.
+No class branches were added to shared mechanisms, and no collision bypass,
+teleport, damage, animation, save-schema or asset edit is part of the fix.
+
+| Scenario | Result | Evidence / limits |
+|---|---|---|
+| Integrated native build/contracts | Passed | `pool-statue-569/build-final.log`: 114/114 steps, 411/411 tests plus C contracts; class ownership R1–R11 zero. |
+| Water exit in this checkout | Passed | Both actual e2m3b pool side edges reach a dry bank; `canonical-pool-after-v3/` trajectories/captures. |
+| Guardian leaves its plinth | Passed | From authored x=352,y=2784, it reaches y=2897.258, z=-247.795: about 113 horizontal units and the surrounding floor. It then attacks; player health 100→33 with damage source 501 (the guardian). |
+| Descent safety | Passed | Default limit rejects the synthetic 48-unit descent, the class limit accepts it; 128-unit cliffs and lava/slime/nitro floors remain rejected. Existing locomotion and differential movement checks pass. |
+| Canonical play preparation | Passed | Plain `zig build play-install` prepares a new native development generation without launching a window; the previous generation and owner saves are preserved. |
+| Performance-checkout play setup | Passed | Its missing local converted-asset cache caused the reported launch failure. Local cache/artwork links now reuse the existing converted inputs; plain `zig build play-install test-runtime` passes 136/136 steps and 430/430 tests. Its GPU defaults remain 1. |
+
+Evidence lives under `zig-out/reports/pool-statue-569/`; the performance checkout
+also retains the first failed descent test, the intermediate statue-still-stuck
+replay, repaired builds and probes under `perf-water-defaults-568/`. The useful
+failed replay was retained and the diagonal sweep was corrected before final
+acceptance. All engine checks use guarded headless software rendering and copied
+saves. These scenarios place the player diagnostically above/near the actual
+pool and let ordinary movement/gravity/combat proceed; they do not qualify a
+full authored traversal. No desktop game is started by the agent.
 
 ## Sequence 568 — water-exit-contents and optimization defaults
 

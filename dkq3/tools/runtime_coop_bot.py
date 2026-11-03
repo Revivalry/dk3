@@ -142,6 +142,7 @@ def run(args):
         process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
         try:
             offset = 0
+            mirrored = 0.0
             deadline = started + args.timeout
             while time.monotonic() < deadline:
                 text = log.read_text(errors='replace')
@@ -161,6 +162,14 @@ def run(args):
                     break
                 if process.poll() is not None:
                     break
+                # Checkpoints are the evidence a later run continues from, and a
+                # long fight is watched while it is still happening: mirror the
+                # save directory into the report as the run goes on.
+                if time.monotonic() - mirrored > 10:
+                    mirrored = time.monotonic()
+                    saves = home / 'state/dk3/saves'
+                    if saves.is_dir():
+                        shutil.copytree(saves, args.report / 'saves', dirs_exist_ok=True)
                 time.sleep(0.2)
             else:
                 events.append(dict(event='fail', reason=f'wall-clock timeout after {args.timeout} s'))

@@ -10143,3 +10143,376 @@ unchanged. Existing local assets supply the artwork; no conversion is needed.
 | Independent HUD scale and size/hide controls | Passed | Each resolution checks HUD scales 0.75 and 1.5, hidden crosshair and requested 32-pixel size. TGA captures verify the reticle mask independently of animated rain. Initial full-image subtraction failed as a test method because background rain continues moving; its captures are retained |
 | FSR software-rendering check | Failed on baseline and candidate | Both the current published runtime and candidate crash in the lavapipe Vulkan path with remaster/FSR enabled before capture. Logs and crash details remain in the `*-1920x1080-002-fsr/` reports; no FSR or hardware-renderer acceptance is claimed by this change |
 | Published delivery | Pending merge | Component CI, publication and an installed-release high-resolution replay follow the verified local rendering change |
+
+## Sequence 433 — installer-verification — expose and bound bootstrap network waits
+
+24 October 2026. The public bootstrap left `Checking the download …` on screen
+while fetching checksums, checking GitHub CLI authentication and initializing
+GitHub/Sigstore provenance verification. Those network operations had no deadline.
+The owner's temporary 144,258,928-byte release archive matched its downloaded
+checksum. Direct provenance verification produced no output before bounded
+30-second and network-enabled 45-second probes stopped it. This establishes a
+silent verification stall, not a corrupt archive; the underlying service/client
+failure remains unresolved.
+
+The bootstrap now names checksum download, SHA-256 verification, GitHub
+authentication and signed provenance verification separately. Downloads have
+connection, transfer and low-speed deadlines. Authentication stops after 20
+seconds; provenance stops after two minutes, with a five-second forced-termination
+grace. Noninteractive GitHub checks preserve the wizard's terminal input. A
+timeout or rejected provenance stops before extraction; signed-out users retain
+the existing checksum-only path. `DK3_SKIP_ATTESTATION=1` explicitly requests that
+same checksum-only path when GitHub/Sigstore is unavailable, without invoking
+GitHub CLI. The bootstrap prints that choice, and still rejects mismatched
+archives. No signature failure is silently accepted.
+
+| Scenario | State | Evidence / limits |
+| --- | --- | --- |
+| Owner's downloaded archive | Passed, digest only | SHA-256 `4d130ba1be9a0e4a16e727908cf05524e11d531a72122e9a03158da4c0ab431f` matches its `SHA256SUMS`; no installation or gameplay acceptance |
+| Silent provenance wait | Reproduced | Direct `gh attestation verify` with explicit timeouts, including a network-enabled 45-second probe; no output before timeout |
+| Bootstrap regression scenarios | Passed locally | `python3 -B -m unittest -v tests.test_install_bootstrap` from `dkq3/tools`: eight tests, ten scenarios, real shell/unzip/hash/timeout; checksum rejection, checksum network error, authentication/provenance stalls, rejected signatures, signed-out and explicit checksum-only behavior, argument/input preservation and temporary cleanup |
+| Shell validation | Passed | `sh -n install.sh` and `shellcheck install.sh` |
+| Live release through checksum-only bootstrap | Passed, wizard entry only | `timeout --foreground --kill-after=5s 180s env DK3_SKIP_ATTESTATION=1 sh /home/dmitriy/sources/dk3/install.sh --help`: actual release downloaded, SHA-256 matched, explicit skip printed, archive extracted and bundled wizard help exited zero. No installed files, game assets or saves changed |
+| Successful live provenance and published bootstrap | Unverified | Network verification remains a separate unresolved input; local changes only, no Git operation or publication |
+
+## Sequence 434 — coop-e1m7a — the party over the second span, and a sidekick door with no control on this side
+
+**Change.** Twelve rounds of the co-op bot (`n53a`…`n64a`, `n54a` stopping before it
+wrote a report) over e1m7a, from its co-op spawn at 1376,-3080,24 through fourteen
+stages to the walled yard east of the level's last door. That yard is now reached from
+the level's own route in every round, and the door at the end of it is the level's
+problem rather than the bot's; this round says so with the reference in hand. The
+e1m7a script (authoring only — no shared mechanic was touched) gained party
+preservation across the second void span, two safety levers on the fights that stand
+beside a drop, the correct target form for its sidekick orders, and a probe and an
+honest stop where it used to press a door it has no right to press.
+
+- The party comes across the span. The sidekicks are told `stay` before the deck and
+  `follow`, then `regroup 200`, once the bot stands on the far bank, and the round
+  logs `t6: the party came across the span`. Before this the level ended in the one-way
+  void basin south of the span — `-175,-649,100` (`n56a`), `131,-838,144` (`n57a`),
+  `32,-649,133` (`n58a`), `28,-648,102` (`n60a`), each `move: no progress for 25 s`
+  with the bot alive and the span already down under it, and `n59a` at
+  `expectation failed: the second span never came down`. The deck also carries a body:
+  the panel's fight left the bank at 31,-588, the bot was found on the deck at 67,-699,
+  came off that deck's east edge and finished the action at 118,-800,216 (`n60a`).
+- Two levers on a fight beside a drop, both used at the two panels: `hold`, which
+  anchors the pilot's strafe tether instead of letting it chase (`bot_pilot.zig:168`),
+  and `arena`, a box that every evasion candidate must land inside — sixteen headings
+  at reaches of 80, 160, 288 and 416 (`bot_evasion.zig:125`, `:133`). Both were bought
+  with bodies: `n59a` died three times on one stride at 39,-461, 61,-490 and 43,-459,
+  and `n60a` died twice more at 64,-480,372 and 197,-434 while its own fight walked it
+  toward the void. With both set, the yard's and the corridor's ragemasters died in
+  4.80 s and 3.75 s (`n61a`, `done op=kill ms=4800` and `ms=3750`).
+- `sic` was never reaching the party. `coop_prelude.lua:47` accepts a name, a point or
+  a selector, and this level's two orders passed a bare entity index, so both failed at
+  that `assert` — the run logs `optional step failed: coop_prelude:50: target must be a
+  name, a point or a selector` twice per round while the script's comment claimed the
+  sidekicks were asked for the brawler. Both callsites now pass `{ index = … }`. With
+  the order real, the party killed 596 by itself: the stage's own `kill index=596`
+  returned `killed 0` five and three-quarter seconds after the order, the ragemaster
+  already dead (`n64a`, 777850 → 783650). Attribution has a limit here — rounds from
+  the same checkpoint agree closely at the front (`n55a`…`n64a` all die at 276750,
+  405000 and 446400 and all enter `shaft` at 511800) and then diverge: that stage is
+  24 s of game time in `n63a` and 203 s in `n64a`, whose extra two deaths at
+  106,-369 and 245,-358 came from the yard, not from any change made this round.
+- An expectation must sit inside the stride that precedes it. A move is done at
+  `radius > 0 ? radius : 40` of its goal (`domain/coop_route.zig:75`), so an `expect`
+  written at the far side of a 40-unit tolerance fails on an arrived bot. This is why
+  the route's position checks state a band rather than a point.
+- The level's arithmetic is not negotiable and every round reports it: the bot reaches
+  the yard at hp 14 with armour 0, weapon 4 and 12 rounds (`last_status` of `n63a`,
+  `n64a`), having taken nothing all level — `arm: 0 taken of 0/1/2 seen`, the two seen
+  carried by the party. Against that, a ragemaster's melee measured 6, 8, 20 and 23 in
+  one round (`n60a`: 20 hp off 26, then 23 hp off 24, then the body at 783800), while
+  the bot's own party line reads `mikiko:4813 … superfly:4996` — two bodies in the four
+  thousands. A brawler is the party's fight; the script asks the party for it.
+
+**The sidekick door is not a lock the player picked.** The wall along y -64..-48 ends
+the level's route. Along the yard's own line y -56 the worldspawn is solid from z 320 to
+500 without a break from x -245 east to x 312, interrupted only at x -16..64 where the
+door's own mover sits — a mover has no worldspawn brush, which is why that stretch reads
+open and why the area graph walks through it — and east of x 312 the line has nothing
+under it at all. West of x -245 the line leaves the wall and enters the capped structure
+the ducts are cut in: a slab overhead at z 500, nothing to stand on at the yard's floor
+height of 344, and its own walking level at z 436, the floor of `duct_fall` below. The
+doorway at x -16..64 is therefore the only line through that the level walks. Its panel
+is ctl 647, a `func_door` named `sidekick_door` (wait -1, spawnflags 384 =
+`DOOR_LOOP_SOUNDS`|`DOOR_STRUGGLE`;
+`DOOR_AUTO_OPEN` 16 is not set, and STRUGGLE only grunts), driven by ctl 646 — a
+`func_button` at x 80..96, y -48..-44, z 352..368, angle 270 — through relay 42 and
+relay 665 (delay 2). Three things were found about it, all in the reference and the
+level's own data:
+
+- Gold refuses the press. `dlls/world/client.cpp:2063-2073` builds the player-use test
+  as `bUseFuncDoor = (!stricmp(className, "func_door") && !bHasTarget)` and its generic
+  fallback requires `bHasTarget == 0`: a `func_door` with a `targetname` has no use
+  handler for the player at all. `src/mechanics/server/interactions.zig:24` refuses it
+  for exactly that reason, so the presses this route used to make at 647 were never a
+  gold action, and the expectation that they would work was wrong.
+- Gold would not send a sidekick either. `dlls/world/ai_func.cpp:23941-23999`, the
+  `NODETYPE_DOOR` branch, uses a door the walker is blocked by only
+  `if (pDoor && !(pDoor->targetname) && !(pDoor->keyname))` and only within 48 units; a
+  named door wants a `NODETYPE_DOORBUTTON` node naming its switch instead. This map's
+  compiled graph has no node for 647 or 646 at all — its node targets are t1–t6,
+  t501/502, the cage and the voice lines, and the `nodetargetname` doors are 6, 127,
+  148, 180, 260, 296, 344, 354 and 357. 647 carries no `nodetargetname`, which is also
+  what `movers.openForParty` needs to lead a companion through a named door.
+- The panel stands on the wrong side of the wall. Its brush is at y -48..-44, north of
+  the wall brush at y -64..-48, and its `angle 270` pushes it south into the wall, so
+  it is pressed from the far side. This is now asked of the engine rather than argued
+  from geometry: the route traces its own eye to the panel's centre and logs what
+  answers. From the yard `sidekick probe: the eye at 79,-122,368 meets world (0) at
+  86,-64,362, fraction 0.760, on the line to the panel's centre at 88,-46,360` (`n63a`),
+  reproduced from another standing spot in the next round (`86,-64,362`, fraction 0.811,
+  `n64a`) — the wall's own south face. Reach was never the problem: the press is a
+  96-unit line from the eye (`interactions.zig:20`) and the panel centre is 77 units
+  from where the bot stood, so the line died on the wall, not on distance. The held
+  press of 646 then used its whole 8 s without one centred aim line, and the walk into
+  the doorway is refused by the door itself — the bot's status names
+  `obstacle=168:func_door#647` at `13,-75,344`.
+
+Gold put something else at that doorway: `trigger_once` 49, across the doorway's whole
+width on its south face (x -16..64, y -72..-64), plays
+`sounds/voices/mikiko/sid_m_42b.mp3`, and the subtitle shipped beside the voice —
+`pak1.pak:subtitles/sid_m_42b.mp3.txt`, `#Do a little exploring!  We have to find a
+way.` The level's authored answer to this spot is elsewhere, and it is not authored
+here yet. The stage therefore logs the block, asks the panel and the doorway once each,
+checks that the named door stayed shut, and stops with the reason in its failure line:
+`sidekick door: no authored route past ctl 647 from the yard …`. Rounds before this one
+ended instead with `move: no progress for 25 s` two stages later, which named a symptom
+and not the cause.
+
+Two candidates for the way the voice line asks for, both read off the entity list and
+neither walked: the duct floor ctl 96 `func_explosive tn=duct_fall` (x -820..-764,
+y -104..32, top 436, its spray at -792,-40,388, standing at the west end of that capped
+structure rather than behind the wall) with `trigger_once` 177
+(x -820..-764, y -64..-60, z 436..476) handing over to `trigger_relay` 154 → 96; and the
+yard's own duct, whose `trigger_once` 157 (x 128..144, y -512..-64, z 320..400) blows
+`func_explosive` 12 and 158 (`tn=duct_gat`, x 40..104, y -432..-368, z 492..552) — the
+bot has already set that one off by walking across it (`n64a`:
+`target: t=602650 event=enter class=func_explosive name=duct_gat`, `explosive:
+target=duct_gat material=metal chunks=10`), with the lasergat over its mouth at
+76,-400,543. The area graph is not where to look for either: it reports no route from
+the co-op spawn's area 4653 to the north bank's area 192, and none from `duct_fall`'s
+area 936 to 192, while the route it will offer from 20,-60,344 to 288,384,344 crosses
+the wall's plane between its first two reachabilities (24,-37 after 20,-60) because the
+shut door is not compiled into the areas at all.
+
+| Scenario | State | Evidence / limits |
+| --- | --- | --- |
+| e1m7a stages 1–14 to the yard | Implemented, unverified | The last stage is now reached from the route itself: `n53a` stopped at `ramp`, `n55a`…`n60a` at `north`, and `n61a`…`n64a` walked `sidekick`. The first three deaths repeat to the millisecond across `n55a`…`n64a` (276750 at -950,-692,216 under mishimaguard 19; 405000 at -1413,-417,216; 446400 at -1423,-366,368 under cryotech 679) and each is survived inside the allowance; `n53a`'s third came at 505800 |
+| Party over the second span | Passed in play, no acceptance | `t6: the party came across the span`, both sidekicks alive and following in the yard (`mikiko:4813 … superfly:4996` in `n63a`); four earlier rounds ended in the basin instead |
+| The yard's two ragemasters | Passed in play, no acceptance | 102 and 596 killed with `hold` and a bounded `arena`; 3.75 s and 4.8 s in `n61a`, and 596 dead to the party's own order in 5.75 s in `n64a` |
+| `sic` orders reaching the party | Passed | The `coop_prelude:50` assertion no longer appears; the two callsites pass selectors and the order is followed within seconds |
+| The sidekick door from the yard | Blocked, cause established | Probe trace `world (0) at 86,-64,362, fraction 0.760/0.811` on the line to the panel; 8 s held press of 646 with no centred aim line; the walk into the doorway refused with `obstacle=168:func_door#647`; gold's own use gate and node rule quoted above |
+| e1m7a as a level | Blocked, unverified | The route stops at stage 14 with the reason in its failure line; no changelevel was reached, so no `e1m7a` exit, save or cinematic after the door is exercised |
+| The way the voice line asks for | Unauthored | `duct_fall` (96/154/177) and `duct_gat` (12/157/158) are the entity list's candidates; neither is walked and the area graph cannot answer for either |
+| e1m7b | Not started | Its spawn targets (`e1m7b_start`) exist; no route authored |
+| Shared mechanics | Unchanged | `interactions.use`, `authored_nodes.partyDoor` and `movers.openForParty` are gold-matching and owned by the class-porting stream; the class-ownership baseline was not raised |
+
+## Sequence 435 — coop-e1m7a — the navigation says the wall has one gate, and it is the shut door
+
+**Change.** Sequence 434 stopped the co-op bot at e1m7a's sidekick door with the level's
+own voice line asking for another way, and left the question of whether one exists open.
+This round answers it from the compiled area graph — the navigation the running game
+walks — instead of from more rounds of the bot, and touches e1m7b for the first time as a
+measurement only. The route script still stops exactly where 434 left it. One co-op dev
+tool learned to refuse a malformed box. No game code changed, nothing was published, and
+the campaign was **not** advanced: e1m7a is blocked and unverified, and e1m7b was run
+standalone with `--map e1m7b`, not reached from e1m7a.
+
+- What the graph can and cannot answer. `dkq3/tools/coop_route_aas.py` reads the shipped
+  AAS (e1m7a compiles 6982 areas) and answers `area`, `path`, `flood` and `islands` the
+  way the game would. Movers are not modelled, so a shut `func_door` is *open* in that
+  graph: a route it offers can be a lie, which is what 434 found when its yard-to-bank
+  "route" crossed the wall plane. A route it *refuses* is the other direction of the same
+  error and is sound: the graph over-connects, never under-connects, so what it cannot
+  reach, a walker cannot reach either. `--avoid=x0,y0,z0,x1,y1,z1` closes the areas
+  overlapping a box, which is how a shut door gets put back. A five-number box used to
+  crash inside `blocked()` with an `IndexError`; the tool now names the argument it was
+  given before searching.
+- The wall has exactly one gate. With ctl 647's own volume (x -16..64, y -60..-52, z
+  320..416) closed, `flood` from the yard at 79,-122,344 (area 530) still reaches 1523
+  areas of the map but its extent stops at y 204, and `path` to the changelevel's area 192
+  (288,384,372) answers `no route from area 530 to area 192`. Open that box again and the
+  route is the doorway and nothing else: 14 reachabilities, straight up x 24 —
+  20,-60 → 24,-58 → 24,-37 → 24,129 → the bank. Read from the other end, only 136 areas
+  can reach the exit at all, and every one of them lies at y ≥ -35: the north bank and the
+  western upper walk. The party's half of the map and the exit's half share no floor
+  except the door's own threshold.
+- It is not an ability gap, an item, or a route the compiler hid. The same search re-run
+  allowing every reach type the file can express — walk, crouch, barrier jump, jump,
+  ladder, walk-off-ledge, swim, water jump, teleport, elevator, jumppad — and then a
+  second time with the six a co-op player is denied (rocket, BFG and grapple jumps, double
+  jump, ramp jump, strafe jump) answers `False` all four times: with ctl 647 closed the
+  yard never reaches area 192. The `item_acro_boost` (ctl 75 at -418,-48,380) that the
+  west half holds is itself unreachable from the yard in every one of those runs, so
+  double-jumping is not the missing key either.
+- The west half is real and it is a sink. The yard does leave the yard: 23 reachabilities
+  walk west along z 344 to x -129, up to z 385 by x -182 (past the wall's west end at x
+  -245), two barrier jumps 385 → 416 → 448 at y -195, a walk at z 448..460 west to x -784,
+  then `walkoffledge` at -786,-69 down to -104, a swim in the fluid at z -78, a ladder at
+  -688,-91 back up to z 448, and down to z 344 at -649,-37 — the savegem's room (ctl 58),
+  which 434's flood had already called reachable and the exit's reverse flood calls
+  unreachable. What seals that walk from the maze north of it is worldspawn: a brush
+  spanning x -760..-216 at y -128..-112 from z 440 to z 496, whose lower edge sits eight
+  units under the walk's own floor and whose top forty above the maze's, so neither over
+  nor under is offered. The five `func_train` pistons in that maze (c1a/c2a/c3a at y 256,
+  c1b/c2b at y -48, `dmg 10`, path corners at z -80 and z 416) are shafts, not lifts: the
+  maze's floor is above their travel, so nothing there carries anyone up.
+- The two `duct_*` candidates are one-way or unreachable, as the entity list said and the
+  areas confirm. ctl 96's `duct_fall` slab (x -820..-764, y -104..32, z 432..436, top at
+  z 436 with ctl 160's health lying at z 464) *is* a strip of the maze's own floor, and
+  ctl 177 stands on it; the area it fills, 936, reports `reach 0`, so what it does is open
+  a hole down into the fluid. ctl 12/158's `duct_gat` (x 40..104, y -432..-368, z 492..552)
+  is a channel standing in the corridor's air — floor brush topping out at z 496, lid at
+  z 560, 152 units over a yard floor at 344 — and all five areas filling it (629, 631,
+  632, 671, 673) report `reach 0`. The lasergat at 76,-400,543 guards a mouth nobody on
+  this side can reach from below.
+- Gold's own navigation never crosses that wall either. `nodetargetname` is how a mover is
+  linked into the AI's area graph, and nine movers in this map carry one — including the
+  yard's south door ctl 357 with `nodetargetname t6`, the same node this level's route
+  names when it logs `t6: the party came across the span`. The north door ctl 647 has no
+  such key: the shipped authoring never lets the AI path over that wall in either
+  direction, and the route's own success on the span is the mirror case.
+- Which face the panel is on, and why it reads as a copy. ctl 646's brush is x 80..96, y
+  -48..-44, z 352..368, and the trace that 434 logged from an eye at 86,-64,362 stops on
+  world at y -49.4…-50.3, so the panel's south face sits one to two units *behind* the
+  wall face a press would have to clear; `standing()` finds no nav area at its centre at
+  all (`no area` in the exit's reverse flood). The same pair with the same footprint ships
+  in e1m7b — ctl 385 `func_button` x 80..96, y -48..-44, z 352..368 and ctl 386
+  `func_door` `sidekick_door` x -16..64, y -60..-52 — except there the door's slab spans z
+  396..492, standing above that room's floor so nothing gates on it, and no entity in
+  e1m7b carries the name `doorfire`, so that button fires into nothing. Here the copy is
+  wired (relays 42 and 665, delays 1 and 2) and the door is the wall's only gate with the
+  panel on the far face; there it is dead furniture. That the pair is one brush set
+  dropped into two maps is the reading the geometry forces; which map is the mistake is
+  the level author's, not ours to guess.
+- e1m7b, first contact (`m7b1a`, `--map e1m7b --script campaign.lua`, 8.8 s of wall clock,
+  98 s of game time): `outcome=failed actions=65/78 deaths=13`, and the reason is the
+  generic chain's, not the level's — `the player died beyond the route's death allowance`.
+  The map's own `advance()` sees the forward exit early (ctl 80 `dk_end`, x 536..552, y
+  2968..2984, z 496..512, at t=3350) but its first touch is `trigger_once` ctl 171 (x
+  1088..1104, y 808..1176, z 112..208), whose target `t76` is three `target_monster_spawn`
+  at 576,1224,200 / 592,992,304 / 576,752,208; the log records `advance: round=1
+  trigger_once index=171 kind=touch target=t76` at t=27550, 35750, 66550 and 74750. The
+  party's spawn set is `e1m7b_start` — ctl 99 at 384,64,368 with co-op points at
+  416,64,344, 480,32,328 and 480,104,328 — and the room it stands in holds battleboar ctl
+  26 at 512,-96,328 and mishimaguards 102 at 682,-118,344, 103 at 522,-166,344 and 337 at
+  658,226,344, all `spawnflags 4096`. Deaths land at 543,-112,328 (t=4950) and 551,94,328
+  (t=12450, 19950, …), and the last three are the same six-hit line repeated off a fresh
+  spawn — 100 → 73 → 62 → 49 → 24 → 7/8 inside seven seconds, at t=80050, 87550 and 95050.
+- What an authored e1m7b opening needs, from the entity list: the spawn room emptied
+  before anything walks out of it, since the four named monsters engage across the room;
+  its controls are `crush_1`…`crush_4` on four `trigger_once` (148/151/236/237),
+  `fan_duct_break` (143), the `floor_zap_*` chain (118/127/128/129/130 on ctl 129's
+  relay), `dk_vault_door` on button ctl 113, and the `force_door` relay 8 that opens
+  `dkroom_warpdoor`; the two savegems sit at 512,1520,232 and -704,3232,328, and the way
+  back to e1m7a (ctl 65) is the wall at x 160..192, y 16..112 on the spawn room's west
+  face. The map is walkable once the fights are handled: 78 reachabilities join the spawn
+  to the level's far end at 560,3088,344. None of that was authored this round.
+
+| Scenario | State | Evidence / limits |
+| --- | --- | --- |
+| e1m7a stages 1–14 to the yard | Implemented, unverified | Unchanged from 434: `n61a`…`n64a` walk `sidekick` from the route itself; `n63a` 194/205 actions and `n64a` 294/305, three and five deaths, all survived inside the allowance |
+| A way round the wall | Rejected, cause established | ctl 647's volume closed: `no route from area 530 to area 192`, and the same answer with every reach type allowed; open again, the only route is the doorway at x 24 |
+| The west complex beyond the wall's end | Surveyed, unusable for progression | Yard reaches it in 23 reachabilities (z 344 → 385 → two barrier jumps → z 448..460 → fluid → ladder → z 344 at -649,-37); none of it can reach area 192; brush x -760..-216, y -128..-112, z 440..496 seals the walk from the maze |
+| `duct_fall` and `duct_gat` | Surveyed, unusable | area 936 (the slab, x -820..-764, y -104..32) and areas 629/631/632/671/673 (the channel, floor z 496, lid z 560) all `reach 0`; the channel's floor is 152 units over the yard floor |
+| Gold's authored nav over that wall | Not authored | Nine movers carry `nodetargetname` — the yard's south door ctl 357 has `t6` — and ctl 647 has none |
+| The panel ctl 646 | Established, unreachable | Brush south face y -48 against a traced wall face at y -49.4…-50.3; no nav area at its centre; e1m7b's twin (385/386, same footprint, door slab at z 396..492) has no `doorfire` relay and gates nothing |
+| e1m7a as a level | Blocked, unverified | The route still stops at stage 14 with the reason in its failure line; no changelevel, save or cinematic after the door is exercised |
+| e1m7b | Measured, not routed | `m7b1a` standalone: 65/78 actions, 13 deaths in 98 s, the spawn room's four `spawnflags 4096` monsters and `trigger_once` 171 → `t76`; nav route from the spawn to the far end exists (78 reachabilities) |
+| Episode advance | Not advanced | Episode 1 is not complete: e1m7a blocked, e1m7b unrouted; `episode1.lua`'s generic chain still starts at index 14 and e2m1a was never entered |
+| Shared mechanics and tools | One dev-tool guard | `interactions.use`, `authored_nodes.partyDoor` and `movers.openForParty` untouched and the class-ownership baseline not raised; `coop_route_aas.py` now rejects a `--avoid` box that is not six numbers |
+
+## Sequence 436 — coop-e1m7b — the arrival room is a guard post, and the party comes to it with no rounds
+
+**Change.** Episode 1 is not complete and the campaign was **not** advanced: e1m7a stays
+blocked at ctl 647 exactly as 435 established, so nothing downstream of it is reachable from
+the route. What this round adds is the first authored piece of e1m7b — its arrival rooms, at
+`dkq3/coop/episode1.lua:2753-2805` — and two measurements of that piece, one at the skill
+these runs normally use and one below the room's monsters. Two things came out of it that the
+entity list alone could not say: whether a monster in that room exists at all is the
+difficulty filter's decision, and a standalone `--map e1m7b` start hands the party an arsenal
+with no rounds in it, which is not what the campaign would deliver there. No game code
+changed, nothing was published, no authored control, class-ownership baseline or shared
+mechanic was touched.
+
+- Why the room needed authoring at all. `m7b1a` (435) was this map on the generic chain body:
+  65 of 78 actions, 13 deaths in 98 s, and a failure line naming the run's death allowance
+  rather than the level. The reason is the arrival geometry. `info_player_start` ctl 99
+  (384,64,368) and its three co-op points (416,64,344 / 480,32,328 / 480,104,328) stand in a
+  corridor strip — areas 2411 and 2405, x 401..495 — and that strip is open at both ends into
+  guard rooms: area 2397 (x 495..721, y -207..-15, floor z 328) holds battleboar ctl 26 at
+  512,-96 and mishimaguards ctl 103 at 522,-166 and ctl 102 at 682,-118, and area 2391 (x
+  495..689, y -15..241) holds mishimaguards ctl 336 at 522,226 and ctl 337 at 658,226. There
+  is no corner of the arrival strip out of someone's line: ctl 337 hits the spawn pocket
+  itself, and the first wound in both runs is dealt at 401,76 from a shooter 300 units away.
+- Whether a monster is in that room is a skill decision, not an entity-list one.
+  `src/mechanics/domain/spawn_filter.zig` drops entities carrying bit 0x1000 at skill ≤ 2,
+  0x2000 at skill 3 and 0x4000 above, and these runs play at Samurai (`g_spSkill 3`). So ctl
+  335 (610,-150,344, `spawnflags 12288` = Ronin and Samurai) never spawns here and is named
+  nowhere in the route; the four 4096 monsters (26, 102, 336, 337) spawn at Samurai and are
+  gone at Ronin, which leaves ctl 103 — no flags — alone in the south room. That is also why
+  asking for the missing four costs nothing: at Ronin each `kill` answers `killed 0` in the
+  same frame instead of hunting a monster that was never placed.
+- The route is three stages. The first walks to the south room's own floor (576,-160,328) and
+  holds the fight inside that room — `arena` 500,-200 .. 715,-25 — over 26, 103 and 102 in
+  that order, finishing on `recover`, whose health station is ctl 79 in the alcove behind the
+  fight (576,-240,328, area 2413) rather than across the map. The second is a checkpoint:
+  back to the corridor's mouth and into the north room at 592,150,328, the same held fight
+  drawn between 500,5 and 683,235, sidekicks recalled, `expect(y() > 0, …)`. The third is a
+  checkpoint whose body is the single line `progress("e2m1a")`: nothing past the arrival rooms
+  is authored, and the reason for the second checkpoint is that a death in the hall beyond now
+  returns the party above the guard rooms instead of onto the spawn point. The chain loop's
+  start moved from 14 to 15 so the generic body no longer overwrites the authored one, and a
+  Lua load of `campaign.lua` registers 66 levels with no duplicate.
+- Samurai, standalone (`m7b2a`, `--map e1m7b --script campaign.lua`): `outcome=failed
+  actions=1/14 deaths=13`, 85 s of game time in 6.4 s of wall (13.2x). Only the arrival
+  cinematic finished; the next action was the level wrapper's own `recover` walking to ctl 79
+  and the party died inside it at t=4950 at 543,-112,328, so no `coop-e1m7b` arrival save was
+  ever taken — the report's `saves/` holds only the engine's own arrival and restart slots.
+  Twelve of the thirteen deaths are one monster, ctl 337, at the same three tiles (584-590,
+  162-168), each time about two seconds after the restore: 100 → 73 → 59 → 48 → 35 → 12 →
+  dead, from hits of 11 to 14. Nothing about that is a route defect — the 1 Hz status lines
+  read `weapon=1 ammo=0 inventory=2` in all 29 samples, with `hostiles=37` and `armor=0`.
+- And that arsenal is a property of the standalone start, not of the campaign. The same
+  reports that walk several maps show the inventory travelling with the party across a
+  changelevel: `final7-newgame` leaves e1m1a with `weapon=2 ammo=16 inventory=6` and enters
+  e1m1b with exactly that, and carries `weapon=4 ammo=12 inventory=1e` into e1m3b. e1m7a in
+  play reaches `weapon=4`/`weapon=5` with `armor=200` (`n64a`). A fresh spawn does not get
+  any of that. So e1m7b's guard rooms were authored for the armed arrival the campaign would
+  deliver, and `m7b2a` measures a floor — what a party with no rounds at all can do — not the
+  case the route is written for. That case cannot be produced today: the campaign reaches
+  e1m7b only through e1m7a's blocked door, which is now blocking two levels' verification
+  rather than one.
+- Ronin, standalone (`m7b2b`, same script with `--skill 1`): `outcome=failed
+  actions=34/35 deaths=0`, 105 s of game in 7.0 s of wall (15x). With the room's four
+  skill-flagged monsters absent this says nothing about the fights and everything about the
+  shape: the two walks arrived (552,-142,328 then 578,120,328), `recover` pressed the station
+  at ctl 79, both checkpoint saves exist in the report (`coop-e1m7b-2.sav`,
+  `coop-e1m7b-3.sav`), the stage-2 assertion held, and `progress` took the party out of the
+  arrival rooms and on — `touch` of `trigger_once` ctl 171 at t=78050 ("trigger fired", the
+  `t76` triple spawn of 435), then a health detour to pickup 181 at 216 units, then ctl 139's
+  button for `comp_hatch2` "activated" at t=100950. It stopped at 641,1317,208 with 45 health
+  on advance()'s own limit: `advance: no reachable control left after 2 rounds`. The one
+  tolerated failure is worth its own line: ctl 103, one mishimaguard with 50 health, survived
+  the full 40 s of a held `kill` against a fist-only party.
+- What is still not authored here, from the entity list: past the hatch button there is the
+  crush passage (`crush_1`…`crush_4` on ctl 148/151/236/237), the `floor_zap_*` chain (118
+  through 130 on ctl 129's relay), the vault button ctl 113 and its `dk_vault_door` (207/208,
+  which also holds the area portal to 497), the `force_door` relay ctl 8 opening
+  `dkroom_warpdoor` ctl 11 at y 3456, the two savegems at 512,1520,232 and -704,3232,328, and
+  the forward exit ctl 80 with its `e1m7_cineend` cinematic. The area graph joins the spawn to
+  the level's far end in 77 reachabilities, so the walk is not the problem; the fights are.
+
+| Scenario | State | Evidence / limits |
+| --- | --- | --- |
+| e1m7b arrival rooms | Authored, shape verified only | Three stages at `episode1.lua:2753-2805`; `m7b2b` walked both, pressed ctl 79, wrote both checkpoint saves and handed to `progress` with zero deaths |
+| The same rooms at Samurai | Rejected by the arsenal, not the route | `m7b2a` 1/14 actions, 13 deaths, `weapon=1 ammo=0 inventory=2` throughout, twelve deaths to ctl 337 at 584-590, 162-168 |
+| The monsters that exist | Established | `spawn_filter.zig` drops 0x2000 at skill 3, so ctl 335 (`12288`) never spawns; the 4096 set (26, 102, 336, 337) is Ronin-excluded, leaving ctl 103 alone at `m7b2b` |
+| The fights themselves | Unverified | At Samurai the party has no rounds; at Ronin four of five targets do not spawn and the fifth (`ctl 103`) outlasted 40 s of held fire |
+| Past the arrival rooms | Not authored, walked further than before | `m7b2b` reached ctl 171's trigger and the `comp_hatch2` button at 656,1312 before `advance: no reachable control left after 2 rounds` at 641,1317,208 |
+| Episode advance | Not advanced | Episode 1 incomplete: e1m7a blocked at ctl 647 (435), e1m7b authored only to its hatch; `episode2/3/4.lua` remain `progress` chains and e2m1a was never entered |
+| Shared mechanics and tools | Untouched | `interactions.use`, `authored_nodes.partyDoor`, `movers.openForParty` and the class-ownership baseline unchanged; no engine or tool change this round |

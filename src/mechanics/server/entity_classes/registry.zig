@@ -20,6 +20,8 @@
 //! | `soundtrack(Action) ?Soundtrack` | it sets no music |
 //! | `current(Action) ?Current` | it pushes nothing |
 //! | `touchesWithBody(Action) bool` | it touches only through a trigger volume |
+//! | `companionDuty(*World, Entity) !?CompanionDuty` | no automatic party station |
+//! | `allowsSequence(*World, Entity, u32) bool` | no admitted timeline activator |
 //! | `brush_model: bool` | false: the control is not an authored brush |
 //! | `prepareStep` / `finishStep(*World, i64)` | once per step, before / after the controls |
 //! | `validateSaved(*const Saved, Action) !void` | no class invariants |
@@ -53,6 +55,24 @@ pub const Saved = context.Saved;
 pub const Traits = context.Traits;
 pub const Soundtrack = context.Soundtrack;
 pub const Current = context.Current;
+pub const CompanionDuty = context.CompanionDuty;
+
+/// An optional physical companion duty, offered only by the owning class.
+pub fn companionDuty(world: *data.World, entity: ecs.Entity) !?CompanionDuty {
+    const object = world.get(entity, data.MapObject) catch return null;
+    switch (adapterNamed(object.classname) orelse return null) {
+        inline 0...adapters.len - 1 => |i| return if (@hasDecl(adapters[i], "companionDuty")) adapters[i].companionDuty(world, entity) else null,
+        else => unreachable,
+    }
+}
+/// The timeline's owning class admits its activators, including remote owners.
+pub fn allowsSequence(world: *data.World, entity: ecs.Entity, activator: u32) bool {
+    const object = world.get(entity, data.MapObject) catch return false;
+    switch (adapterNamed(object.classname) orelse return false) {
+        inline 0...adapters.len - 1 => |i| return if (@hasDecl(adapters[i], "allowsSequence")) adapters[i].allowsSequence(world, entity, activator) else false,
+        else => unreachable,
+    }
+}
 const Tag = std.meta.Tag(Action);
 
 const adapters = @import("../../../game/server/entity_classes/classes.zig").adapters;

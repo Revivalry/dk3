@@ -86,6 +86,7 @@ pub const Result = struct {
     touch_count: usize = 0,
     mins: v.Vec3 = .{ -15, -15, -24 },
     maxs: v.Vec3 = .{ 15, 15, 32 },
+    slide_abort: ?slide.Abort = null,
     fn event(self: *Result, value: Event) !void {
         if (self.event_count == self.events.len) return error.MovementEventCapacity;
         self.events[self.event_count] = value;
@@ -206,6 +207,7 @@ const Frame = struct {
     fn slideMove(self: *Frame, gravity: bool, step: bool) !void {
         var context: slide.Context = .{ .service = self.service, .mins = self.result.mins, .maxs = self.result.maxs, .slot = self.parameters.slot, .mask = self.parameters.mask, .delta = self.delta, .gravity = if (gravity) self.parameters.gravity else 0, .ground = if (self.ground) |hit| hit.normal else null, .preserve_velocity = self.player.timer_ms > 0 };
         if (step) try context.step(self.motion) else _ = try context.move(self.motion);
+        if (context.abort) |aborted| self.result.slide_abort = aborted;
         self.result.touch_count = context.touch_count;
         @memcpy(self.result.touches[0..context.touch_count], context.touches[0..context.touch_count]);
         if (context.step_height > 2) try self.result.event(.{ .step = context.step_height });
@@ -241,9 +243,8 @@ const Frame = struct {
             spot[2] += 4;
             if (try self.service.contents(spot, self.parameters.slot) & self.parameters.solid_mask != 0) {
                 spot[2] += 16;
-                // Water and trigger/area volumes do not obstruct the ledge.
-                // Requiring entirely empty contents rejects otherwise clear
-                // exits covered by a nonblocking brush volume.
+                // Detail, trigger and monster-only clip contents above a
+                // ledge do not obstruct this mover's collision mask.
                 if (try self.service.contents(spot, self.parameters.slot) & self.parameters.mask == 0) {
                     self.motion.velocity = v.scale(self.forward, 200);
                     self.motion.velocity[2] = 350;

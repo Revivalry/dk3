@@ -94,6 +94,13 @@ pub const Prepare = struct {
 pub const Soundtrack = struct { path: []const u8, volume: f32, changed_ms: ?i64 };
 /// An authored current (`current`).
 pub const Current = struct { enabled: bool, velocity: [3]f32 };
+/// A class advertises a physical station that a free companion can operate.
+/// The class owns admission, occupancy and the authored completion condition.
+pub const CompanionDuty = struct {
+    mins: [3]f32,
+    maxs: [3]f32,
+    occupant: u32 = 0,
+};
 pub const Use = struct {
     router: *Router,
     world: *data.World,

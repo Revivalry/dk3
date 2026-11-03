@@ -6,6 +6,8 @@
 const v = @import("vector.zig");
 const collision = @import("collision.zig");
 pub const State = struct { position: v.Vec3, velocity: v.Vec3 };
+/// Diagnostic: why a slide abandoned the frame's movement.
+pub const Abort = struct { where: u8 = 0, fraction: f32 = 1, normal: v.Vec3 = @splat(0), entity: u16 = 2047, contents: u32 = 0, from: v.Vec3 = @splat(0), to: v.Vec3 = @splat(0) };
 pub const Context = struct {
     service: collision.Collision,
     mins: v.Vec3,
@@ -20,6 +22,7 @@ pub const Context = struct {
     touch_count: usize = 0,
     impact_speed: f32 = 0,
     step_height: f32 = 0,
+    abort: ?Abort = null,
     pub fn trace(self: *const Context, from: v.Vec3, to: v.Vec3) !collision.Trace {
         return self.service.trace(.{ .start = from, .end = to, .mins = self.mins, .maxs = self.maxs, .slot = self.slot, .mask = self.mask });
     }
@@ -53,6 +56,7 @@ pub const Context = struct {
         for (0..4) |_| {
             const hit = try self.trace(state.position, v.add(state.position, v.scale(state.velocity, time_left)));
             if (hit.all_solid) {
+                self.abort = .{ .where = 1, .fraction = hit.fraction, .normal = hit.normal, .entity = hit.entity, .contents = hit.contents, .from = state.position, .to = v.add(state.position, v.scale(state.velocity, time_left)) };
                 state.velocity[2] = 0;
                 return true;
             }
@@ -62,6 +66,7 @@ pub const Context = struct {
             self.touch(hit.entity);
             time_left -= time_left * hit.fraction;
             if (plane_count == planes.len) {
+                self.abort = .{ .where = 4, .fraction = hit.fraction, .normal = hit.normal, .entity = hit.entity, .contents = hit.contents, .from = state.position, .to = v.add(state.position, v.scale(state.velocity, time_left)) };
                 state.velocity = @splat(0);
                 return true;
             }
@@ -92,6 +97,7 @@ pub const Context = struct {
                     clipped_end = v.scale(crease, v.dot(crease, end_velocity));
                     for (planes[0..plane_count], 0..) |third, k| {
                         if (k == i or k == j or v.dot(clipped, third) >= 0.1) continue;
+                        self.abort = .{ .where = 5, .fraction = hit.fraction, .normal = hit.normal, .entity = hit.entity, .contents = hit.contents, .from = state.position, .to = v.add(state.position, v.scale(state.velocity, time_left)) };
                         state.velocity = @splat(0);
                         return true;
                     }
@@ -115,7 +121,10 @@ pub const Context = struct {
         var up = start.position;
         up[2] += 18;
         hit = try self.trace(start.position, up);
-        if (hit.all_solid) return;
+        if (hit.all_solid) {
+            self.abort = .{ .where = 2, .fraction = hit.fraction, .normal = hit.normal, .entity = hit.entity, .contents = hit.contents, .from = state.position, .to = up };
+            return;
+        }
         const height = hit.end[2] - start.position[2];
         state.position = hit.end;
         state.velocity = start.velocity;
@@ -123,6 +132,7 @@ pub const Context = struct {
         down = state.position;
         down[2] -= height;
         hit = try self.trace(state.position, down);
+        if (hit.all_solid) self.abort = .{ .where = 3, .fraction = hit.fraction, .normal = hit.normal, .entity = hit.entity, .contents = hit.contents, .from = state.position, .to = down };
         if (!hit.all_solid) state.position = hit.end;
         if (hit.fraction < 1) state.velocity = v.clip(state.velocity, hit.normal);
         self.step_height = @max(0, state.position[2] - start.position[2]);

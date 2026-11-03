@@ -149,7 +149,14 @@ pub fn publishAssembly(world: *data.World, projections: []abi.EntityProjection, 
         }
     }
 }
-pub fn push(world: *data.World, slots: *const Slots, projections: []abi.EntityProjection, moves: []const Move, now: i64, elapsed: u32) anyerror!?ecs.Entity {
+/// What a refused commit does to the assembly's own travel clock, chosen by the class
+/// whose parts are moving. Held travel resumes from where the brush stopped once the way
+/// clears, which is what a door owes an actor standing in its sweep. Running travel keeps
+/// the authored timing anyway, so a mover whose travel cannot complete still arrives when
+/// its motion says it does and delivers its arrival - a press does not have to reach the
+/// bottom of its travel to have been pressed.
+pub const Travel = enum { held, running };
+pub fn push(world: *data.World, slots: *const Slots, projections: []abi.EntityProjection, moves: []const Move, now: i64, elapsed: u32, travel: Travel) anyerror!?ecs.Entity {
     var assembly = try @import("attachments.zig").prepare(world, moves, now, true);
     var projected: [ecs.max_entities]Move = undefined;
     var count: usize = 0;
@@ -159,7 +166,7 @@ pub fn push(world: *data.World, slots: *const Slots, projections: []abi.EntityPr
         count += 1;
     }
     if (try pushProjected(world, slots, projections, projected[0..count])) |blocker| {
-        try assembly.delay(world, elapsed);
+        if (travel == .held) try assembly.delay(world, elapsed);
         try publishAssembly(world, projections, &assembly);
         return blocker;
     }
@@ -195,7 +202,7 @@ pub fn staticRoots(world: *data.World, slots: *const Slots, projections: []abi.E
     for (roots, 0..) |enabled, slot| if (enabled) {
         const entity = slots.occupants[slot].?;
         const destination = (try world.get(entity, data.Transform)).*;
-        _ = try push(world, slots, projections, &.{.{ .entity = entity, .destination = destination }}, now, elapsed);
+        _ = try push(world, slots, projections, &.{.{ .entity = entity, .destination = destination }}, now, elapsed, .held);
     };
 }
 /// Publishes a part through the brush mover class owning it; false when none does.

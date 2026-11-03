@@ -180,6 +180,8 @@ checkable.
   breakable, door, liquid, capture zone, level exit, decoration, monitor, exploding wall, train,
   team flag) that bots, navigation, interactions and saves read instead of classnames, and
   `passage` (where touching it sends an actor) for route planning.
+  `companionDuty` advertises class-owned physical stations, their occupants and
+  authored release; `allowsSequence` owns a timeline's activator admission.
 - **Render classes.** A class folder's `client/` render module (a shared mechanism's in
   `mechanics/client/render_classes/`) draws by render tag: a general entity's
   body tag (`generic1`) and overlay tag (`time2`) select `drawEffect`, `decorate` and `overlay`.

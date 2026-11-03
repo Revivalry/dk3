@@ -29,9 +29,12 @@ pub const State = struct {
     yield_position: [3]f32 = @splat(0),
     /// It says no authored line before this time.
     talk_ready_ms: i64 = 0,
+    /// A physical puzzle station, retained across saves until its class releases it.
+    puzzle: ?struct { control: u32, point: [3]f32, holding: bool = false } = null,
     /// Maps saved entity ids to restored ones (snapshot_ids.zig).
     pub fn remapIds(self: *State, map: anytype) !void {
         try map.fields(self, .{ "owner", "target", "collecting", "avoided_item" });
+        if (self.puzzle) |*puzzle| try map.one(&puzzle.control);
     }
     /// Moves saved timestamps onto the restoring clock (`clock`: shift, active, deadline).
     pub fn rebase(self: *State, clock: anytype) !void {
@@ -63,6 +66,10 @@ pub const State = struct {
             if (entry.spec.companion == null or self.carrying or (try check.get("Weapons")).dk3Inventory & (@as(i32, 1) << self.selected_weapon) == 0) return error.InvalidSavedCompanionWeapon;
         }
         for (self.destination ++ self.yield_position) |axis| if (!@import("std").math.isFinite(axis)) return error.InvalidSavedCompanionAction;
+        if (self.puzzle) |puzzle| {
+            if (puzzle.control == 0) return error.InvalidSavedCompanionAction;
+            for (puzzle.point) |axis| if (!@import("std").math.isFinite(axis)) return error.InvalidSavedCompanionAction;
+        }
         if (self.collect_forced and self.collecting == 0) return error.InvalidSavedCompanionAction;
         if (self.animation_until != null and (self.authored == .none or (try check.get("Actor")).scripted_pose == null)) return error.InvalidSavedCompanionAction;
     }
