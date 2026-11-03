@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Integer RGBA box filtering before color mapping, identical to image.zig.
+#version 460
+#include "post_common.glsl"
+layout(local_size_x=8, local_size_y=8) in;
+void main() {
+    uvec2 p = gl_GlobalInvocationID.xy;
+    if (any(greaterThanEqual(p, pc.size.xy))) return;
+    Words source = Words(pc.buffer0);
+    Words target = Words(pc.buffer1);
+    uint pixel;
+    if (pc.slots.x == 0u) {
+        uvec2 a = p * 2u;
+        uvec2 b = min(a + 1u, pc.size.zw - 1u);
+        uint offsets[4] = uint[4](a.y * pc.size.z + a.x, a.y * pc.size.z + b.x,
+                                b.y * pc.size.z + a.x, b.y * pc.size.z + b.x);
+        uvec4 sum = uvec4(0);
+        for (uint j=0u; j<4u; ++j) {
+            uint v = source.v[offsets[j]];
+            sum += uvec4(v, v >> 8u, v >> 16u, v >> 24u) & 255u;
+        }
+        sum >>= 2u;
+        pixel = sum.x | (sum.y << 8u) | (sum.z << 16u) | (sum.w << 24u);
+    } else {
+        uint v = source.v[p.y * pc.size.x + p.x];
+        Words table = Words(uvec2(pc.slots.z, pc.slots.w));
+        pixel = table.v[v & 255u] | (table.v[(v >> 8u) & 255u] << 8u) |
+                (table.v[(v >> 16u) & 255u] << 16u) | (v & 0xff000000u);
+    }
+    target.v[p.y * pc.size.x + p.x] = pixel;
+}

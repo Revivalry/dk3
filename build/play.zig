@@ -33,6 +33,9 @@ pub fn declare(b: *std.Build, packages: assets.Assets, guard: *std.Build.Step.Co
         prepare.addArgs(&.{ "--hd-weapons-preview", path });
     }
     prepare.has_side_effects = true;
+    if (b.option([]const u8, "prepared-gpu", "Completed GPU preparation package generation")) |path| {
+        prepare.addArgs(&.{ "--prepared-gpu", path });
+    }
     // Supplying source data explicitly requests conversion. Routine play uses
     // the last completed asset generation and only rebuilds changed code.
     if (packages.convert) prepare.step.dependOn(packages.step);

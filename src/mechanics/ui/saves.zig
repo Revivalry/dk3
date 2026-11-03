@@ -103,14 +103,41 @@ pub const Browser = struct {
         self.first = @as(usize, @intCast(@mod(@as(i64, @intCast(self.first / 8)) + direction, @as(i64, @intCast(pages))))) * 8;
     }
     pub fn validate(self: *const Browser) !void {
+        @import("../../engine/prepared_save.zig").clear(&engine.gateway);
+        const started = engine.gateway.call(c.UI_MILLISECONDS, .{});
+        defer if (engine.number("developer") >= 1) {
+            var timing: [128]u8 = undefined;
+            engine.print(std.fmt.bufPrintZ(&timing, "dk3 loading timing: stage=menu-validate total_ms={d}\n", .{engine.gateway.call(c.UI_MILLISECONDS, .{}) - started}) catch unreachable);
+        };
         const slot = self.selected() orelse return error.SelectSaveFirst;
         var path: [80]u8 = undefined;
         const bytes = try @import("../../engine/files.zig").read(.ui, &engine.gateway, std.heap.c_allocator, try std.fmt.bufPrintZ(&path, "saves/{s}.sav", .{slot}), snapshot.maximum);
         defer std.heap.c_allocator.free(bytes);
+        const read_at = engine.gateway.call(c.UI_MILLISECONDS, .{});
         var loaded = try snapshot.decode(std.heap.c_allocator, bytes);
         defer loaded.deinit(std.heap.c_allocator);
+        const decoded_at = engine.gateway.call(c.UI_MILLISECONDS, .{});
+        // Optional acceleration failure must never reject a valid durable save.
+        const prepared = blk: {
+            prepareHandoff(bytes, &loaded) catch break :blk false;
+            break :blk true;
+        };
+        if (engine.number("developer") >= 1) {
+            var timing: [160]u8 = undefined;
+            engine.print(std.fmt.bufPrintZ(&timing, "dk3 loading timing: stage=menu-decode bytes={d} read_ms={d} decode_ms={d}\n", .{ bytes.len, read_at - started, decoded_at - read_at }) catch unreachable);
+            engine.print(std.fmt.bufPrintZ(&timing, "dk3 loading timing: stage=menu-prepare cache_ms={d} stored={d}\n", .{ engine.gateway.call(c.UI_MILLISECONDS, .{}) - decoded_at, @intFromBool(prepared) }) catch unreachable);
+        }
     }
 };
+fn prepareHandoff(source: []const u8, loaded: *snapshot.Loaded) !void {
+    const plan = try snapshot.planPrepared(loaded);
+    if (plan.bytes > snapshot.maximum - 32) return error.PreparedSaveCapacity;
+    const storage = try std.heap.c_allocator.alloc(u8, plan.bytes + 32);
+    defer std.heap.c_allocator.free(storage);
+    const prepared = try snapshot.capturePreparedPlanned(std.heap.c_allocator, storage[32..], loaded, plan);
+    @import("../../core/domain/sha256_runtime.zig").hash(source, storage[0..32]);
+    try @import("../../engine/prepared_save.zig").store(&engine.gateway, storage[0 .. prepared.len + 32]);
+}
 fn less(_: void, a: [48]u8, b: [48]u8) bool {
     return std.mem.order(u8, std.mem.sliceTo(&a, 0), std.mem.sliceTo(&b, 0)) == .lt;
 }

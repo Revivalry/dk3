@@ -3,11 +3,13 @@
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import struct
 import zipfile
 from contextlib import contextmanager
 from threading import RLock
+from concurrent.futures import ThreadPoolExecutor
 
 MANIFEST = 'dk3/neural-models.cfg'
 # This mesh is a torture apparatus with several disconnected parts, not a
@@ -15,6 +17,17 @@ MANIFEST = 'dk3/neural-models.cfg'
 # the replacement body and drops the apparatus around it.
 NON_CHARACTER_MODELS = frozenset({'models/e1/d1_supertorture.dkm'})
 _zip_writer_lock = RLock()
+_VALIDATION_WORKERS = 4
+_VALIDATION_PARALLEL_MIN_BYTES = 32 << 20
+
+
+def entry_compression(name):
+    """PNG already contains deflate; retain its exact bytes without a ZIP layer.
+
+    Models, scripts and manifests still use normal ZIP compression. Entry CRCs,
+    the package's content hashes and all admission checks remain mandatory.
+    """
+    return zipfile.ZIP_STORED if name.lower().endswith('.png') else zipfile.ZIP_DEFLATED
 
 
 @contextmanager
@@ -99,21 +112,62 @@ def validate_package(path, base, *, allow_props=False):
     with zipfile.ZipFile(path) as archive:
         require_classic_directory(path,archive)
         names = archive.namelist()
-        if len(names) != len(set(names)) or archive.testzip(): raise ValueError('corrupt neural archive')
-        report = json.loads(archive.read('dk3/neural-assets.json'))
-        if report.get('format') != 1 or report['source_models_sha256'] != hashlib.sha256(base.read_bytes()).hexdigest():
+        if len(names) != len(set(names)): raise ValueError('corrupt neural archive')
+        def read(name):
+            # A complete ZipFile.read verifies the entry CRC already. Every
+            # admitted entry is read below, so a separate full-archive CRC pass
+            # only decompresses the same multi-gigabyte payload a second time.
+            try:
+                return archive.read(name)
+            except zipfile.BadZipFile as error:
+                raise ValueError('corrupt neural archive') from error
+        report = json.loads(read('dk3/neural-assets.json'))
+        if report.get('format') != 1:
+            raise ValueError('neural package targets another model generation; rebuild it')
+        with base.open('rb') as stream:
+            base_sha = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if report['source_models_sha256'] != base_sha:
             raise ValueError('neural package targets another model generation; rebuild it')
         expected = set(report['files']) | {'dk3/neural-assets.json'}
         if set(names) != expected or MANIFEST not in expected:
             raise ValueError('neural package entry manifest mismatch')
-        for name, sha in report['files'].items():
+        entries = list(report['files'].items())
+        for name, sha in entries:
             valid = name in (MANIFEST, 'dk3/neural-animations.cfg', 'dk3/neural-physics.cfg') or (name.startswith('models/neural/') and name.endswith(('.iqm', '.skin', '.png'))) or name == 'scripts/dk3-neural.shader'
-            if not valid or '..' in name.split('/') or hashlib.sha256(archive.read(name)).hexdigest() != sha:
+            if not valid or '..' in name.split('/'):
                 raise ValueError('invalid neural package entry: ' + name)
-            if name.endswith('.png') and archive.read(name)[:8]!=b'\x89PNG\r\n\x1a\n':
+        def check_entry(entry):
+            name, sha = entry
+            digest = hashlib.sha256()
+            signature = b''
+            try:
+                with archive.open(name) as stream:
+                    while block := stream.read(1 << 20):
+                        if not signature:
+                            signature = block[:8]
+                        digest.update(block)
+            except zipfile.BadZipFile as error:
+                raise ValueError('corrupt neural archive') from error
+            if digest.hexdigest() != sha:
+                raise ValueError('invalid neural package entry: ' + name)
+            if name.endswith('.png') and signature!=b'\x89PNG\r\n\x1a\n':
                 raise ValueError('invalid PNG texture encoding: '+name)
+        # ZipExtFile streams have independent decompression state; ZipFile
+        # serializes their underlying seeks/reads. Limit parallel CPU admission
+        # and keep only a one-MiB block per worker, rather than whole images.
+        workers = min(_VALIDATION_WORKERS, os.cpu_count() or 1)
+        if workers > 1 and sum(archive.getinfo(name).file_size for name, _ in entries) >= _VALIDATION_PARALLEL_MIN_BYTES:
+            executor = ThreadPoolExecutor(max_workers=workers)
+            try:
+                for _ in executor.map(check_entry, entries):
+                    pass
+            finally:
+                executor.shutdown(wait=True, cancel_futures=True)
+        else:
+            for entry in entries:
+                check_entry(entry)
         sources,targets=set(),set()
-        for line in archive.read(MANIFEST).decode().splitlines():
+        for line in read(MANIFEST).decode().splitlines():
             if not line.strip(): continue
             fields=line.split()
             if len(fields)!=2 or fields[0] in sources or fields[1] not in expected or not fields[1].endswith('.iqm'):
@@ -125,12 +179,12 @@ def validate_package(path, base, *, allow_props=False):
                 raise ValueError('non-character prop has neural body override: '+original)
         if 'dk3/neural-physics.cfg' in expected:
             admitted=set()
-            for line in archive.read('dk3/neural-physics.cfg').decode().splitlines():
+            for line in read('dk3/neural-physics.cfg').decode().splitlines():
                 fields=line.split()
                 if len(fields)!=2 or fields[0] in admitted or fields[0] not in targets or fields[1] not in ('anchored','articulated','humanoid'):
                     raise ValueError('invalid neural physics mapping')
                 admitted.add(fields[0])
-                physics_rig(archive.read(fields[0]), fields[1])
+                physics_rig(read(fields[0]), fields[1])
                 if any(fields[0]+f'.{variant}.skin' not in expected for variant in range(4)):
                     raise ValueError('missing neural creature skin variants')
         return report
@@ -159,7 +213,7 @@ def prune_props(source, output, base):
     with classic_archive(temporary) as archive:
         for name, data in sorted(files.items()):
             info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_DEFLATED
+            info.compress_type = entry_compression(name)
             archive.writestr(info, data)
     validate_package(temporary, base)
     temporary.replace(output)

@@ -32,6 +32,7 @@
 //! | `brush: Brush` | bound, solid, visible, authored angles |
 //! | `pass: Pass`, `prepare(*Prepare) !void` | nothing prepared |
 //! | `useAuthored(*Use) !void` | the router's generic handling |
+//! | `touchAuthored(*Use) !void` | ordinary shared contact handling |
 //! | `openForParty(*World, *Slots, []EntityProjection, Entity, u32, i64) !bool` | a party member pushing into it does not open it |
 //! | `traits: Traits` (or `fn([]const u8) Traits`) | no traits |
 const std = @import("std");
@@ -155,6 +156,17 @@ pub fn useAuthored(using: *Use) !bool {
         inline 0...adapters.len - 1 => |i| {
             if (!@hasDecl(adapters[i], "useAuthored")) return false;
             try adapters[i].useAuthored(using);
+            return true;
+        },
+        else => unreachable,
+    }
+}
+/// Lets an authored class own sustained contact and retry policy.
+pub fn touchAuthored(using: *Use) !bool {
+    switch (adapterNamed(using.object.classname) orelse return false) {
+        inline 0...adapters.len - 1 => |i| {
+            if (!@hasDecl(adapters[i], "touchAuthored")) return false;
+            try adapters[i].touchAuthored(using);
             return true;
         },
         else => unreachable,

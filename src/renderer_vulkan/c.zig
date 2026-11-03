@@ -18,12 +18,16 @@ pub extern fn R_LoadBMP(name: [*:0]const u8, pic: *?[*]u8, width: *c_int, height
 pub extern fn R_LoadJPG(name: [*:0]const u8, pic: *?[*]u8, width: *c_int, height: *c_int) void;
 pub extern fn R_LoadPCX(name: [*:0]const u8, pic: *?[*]u8, width: *c_int, height: *c_int) void;
 pub extern fn R_LoadPNG(name: [*:0]const u8, pic: *?[*]u8, width: *c_int, height: *c_int) void;
+pub extern fn R_ClearPNGCache() void;
 pub extern fn R_LoadPVR(name: [*:0]const u8, pic: *?[*]u8, width: *c_int, height: *c_int) void;
 pub extern fn R_LoadTGA(name: [*:0]const u8, pic: *?[*]u8, width: *c_int, height: *c_int) void;
 pub extern fn R_CreateImageBatch(capacity: c_int) ?*ImageBatch;
+pub extern fn R_CreateCachedImageBatch(capacity: c_int) ?*ImageBatch;
+pub extern fn R_ExcludePreparedImages(batch: *ImageBatch, earlier: *const ImageBatch) c_int;
 pub extern fn R_QueuePNG(batch: ?*ImageBatch, name: [*:0]const u8) c_int;
 pub extern fn R_PollImageBatch(batch: ?*ImageBatch) c_int;
 pub extern fn R_SelectImageBatch(batch: ?*ImageBatch) void;
+pub extern fn R_BorrowPreparedPNG(name: [*:0]const u8, pic: *?[*]const u8, width: *c_int, height: *c_int) c_int;
 pub extern fn R_FreeImageBatch(batch: ?*ImageBatch) void;
 pub extern fn RE_SaveJPG(filename: [*:0]const u8, quality: c_int, width: c_int, height: c_int, buffer: [*]u8, padding: c_int) void;
 pub extern fn RE_SaveJPGToBuffer(buffer: [*]u8, size: usize, quality: c_int, width: c_int, height: c_int, image: [*]u8, padding: c_int) usize;

@@ -6,7 +6,7 @@ from pathlib import Path
 import skeletal_iqm as sk
 from neural_assets import cinematic,combined,read_md3,gameplay
 from neural_monsters import save
-from neural_package import validate_package,classic_archive
+from neural_package import validate_package,classic_archive,entry_compression
 import dkm2md3
 
 def sha(data):return hashlib.sha256(data).hexdigest()
@@ -83,7 +83,7 @@ def rebuild(root,package,workers=2,human_motion=False):
     temporary=package.with_suffix('.motion-partial')
     with classic_archive(temporary) as archive:
         for name,data in sorted(files.items()):
-            entry=zipfile.ZipInfo(name,(1980,1,1,0,0,0));entry.compress_type=zipfile.ZIP_DEFLATED
+            entry=zipfile.ZipInfo(name,(1980,1,1,0,0,0));entry.compress_type=entry_compression(name)
             archive.writestr(entry,data)
     validate_package(temporary,base)
     temporary.replace(package);save(package.with_suffix('.json'),document)

@@ -36,7 +36,21 @@ const Params = extern struct {
     grid0: [4]f32 = .{ 0, 0, 0, 0 }, // light grid origin, w = colour volume slot + 1
     grid1: [4]f32 = .{ 0, 0, 0, 0 }, // light grid scale, w = direction volume slot + 1
     sky: [4]f32 = .{ 0, 0, 0, 1 }, // sky radiance (linear), w = intensity
+    divisions: [4]u32 = .{ 0, 0, 0, 0 }, // exact reciprocal multipliers: particles per tile, row
 };
+comptime {
+    if (@sizeOf(Params) != 160) @compileError("weather params layout drifted from common.glsl");
+}
+
+fn divisionMagic(divisor: u32) u32 {
+    std.debug.assert(divisor >= 1 and divisor <= 65536);
+    if (divisor == 1) return 0;
+    return @intCast(((@as(u64, 1) << 32) + divisor - 1) / divisor);
+}
+
+fn divisionParams(row: u32, per_tile: u32) [4]u32 {
+    return .{ divisionMagic(per_tile), divisionMagic(row), 0, 0 };
+}
 
 /// Camera exposure that sets streak length (speed x exposure, about 5-10 in for rain).
 pub const exposure_seconds: f32 = 1.0 / 30.0;
@@ -61,6 +75,26 @@ var first_volume: usize = 0;
 var drop_shader: shader_mod.Shader = .{ .sort = shader_mod.Sort.blend0 };
 var splash_shader: shader_mod.Shader = .{ .sort = shader_mod.Sort.blend0 };
 var shaders_ready = false;
+pub const max_particles: u32 = 262144;
+var quad_indices: vk.Buffer = .{};
+
+/// Shared topology only: per-particle positions, lighting and random IDs are unchanged.
+pub fn indexBuffer() c.VkBuffer {
+    if (quad_indices.buffer == null) {
+        const started = common.nanoseconds();
+        const indices = common.gpa.alloc(u32, max_particles * 6) catch @panic("OOM");
+        defer common.gpa.free(indices);
+        for (0..max_particles) |particle| {
+            const base: u32 = @intCast(particle * 4);
+            indices[particle * 6 ..][0..6].* = .{ base, base + 1, base + 2, base + 2, base + 1, base + 3 };
+        }
+        const filled = common.nanoseconds();
+        quad_indices = vk.staticBuffer(std.mem.sliceAsBytes(indices), c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+        const prepared = common.nanoseconds();
+        common.developer("dk3 weather topology: bytes={d} fill_us={d} allocation_upload_record_us={d}\n", .{ indices.len * @sizeOf(u32), @divTrunc(filled - started, 1000), @divTrunc(prepared - filled, 1000) });
+    }
+    return quad_indices.buffer;
+}
 
 pub fn beginFrame() void {
     volumes.clearRetainingCapacity();
@@ -72,6 +106,7 @@ pub fn clearScene() void {
 }
 
 pub fn shutdown() void {
+    vk.destroyBuffer(&quad_indices);
     volumes.clearAndFree(common.gpa);
     first_volume = 0;
     shaders_ready = false;
@@ -138,7 +173,9 @@ fn ensureShaders() void {
     shaders_ready = true;
 }
 
-pub const Draw = struct { shader: *shader_mod.Shader, params: u64, count: u32 };
+/// Pipeline specialization values shared with weather_style.glsl.
+pub const Style = enum(u8) { rain = 0, snow = 1, splash = 2 };
+pub const Draw = struct { shader: *shader_mod.Shader, params: u64, count: u32, style: Style = .rain };
 
 /// Particle draws for one volume (drops or flakes, and rain splashes).
 pub fn draws(volume: Volume, lighting: Lighting, out: *[3]?Draw) void {
@@ -161,7 +198,7 @@ pub fn draws(volume: Volume, lighting: Lighting, out: *[3]?Draw) void {
     const per_tile_f: f32 = (if (volume.kind == .rain) tile_size * tile_size * 0.035 else tile_size * tile_size / 4096.0 * 3) * density;
     const per_tile: u32 = @intFromFloat(@min(per_tile_f, 16384));
     if (per_tile == 0) return;
-    const cap: u32 = if (volume.kind == .rain) 262144 else 32768;
+    const cap: u32 = if (volume.kind == .rain) max_particles else 32768;
     var first_tile: [2]f32 = undefined;
     var tiles: [2]u32 = undefined;
     while (true) {
@@ -185,6 +222,7 @@ pub fn draws(volume: Volume, lighting: Lighting, out: *[3]?Draw) void {
     }
     const sky: [4]f32 = .{ lighting.sky[0], lighting.sky[1], lighting.sky[2], density };
     const rain_shape: [4]f32 = .{ exposure_seconds, lighting.pixel_per_unit, 0.6, @floatFromInt(count) };
+    const divisions = divisionParams(tiles[0], per_tile);
     const params = [_]Params{
         .{
             .mins = .{ volume.mins[0], volume.mins[1], volume.mins[2], @floatFromInt(@intFromEnum(volume.kind)) },
@@ -196,6 +234,7 @@ pub fn draws(volume: Volume, lighting: Lighting, out: *[3]?Draw) void {
             .grid0 = grid0,
             .grid1 = grid1,
             .sky = sky,
+            .divisions = divisions,
         },
         .{
             .mins = .{ volume.mins[0], volume.mins[1], volume.mins[2], @floatFromInt(@intFromEnum(volume.kind)) },
@@ -207,13 +246,14 @@ pub fn draws(volume: Volume, lighting: Lighting, out: *[3]?Draw) void {
             .grid0 = grid0,
             .grid1 = grid1,
             .sky = sky,
+            .divisions = divisions,
         },
     };
     const parts: usize = if (volume.kind == .rain and cvars.vkWeatherSplashes.integer != 0) 2 else 1;
     for (0..parts) |part| {
         const space = vk.frame().stream.alloc(@sizeOf(Params), 16) orelse return;
         @memcpy(space.bytes[0..@sizeOf(Params)], std.mem.asBytes(&params[part]));
-        out[part] = .{ .shader = if (part == 0) &drop_shader else &splash_shader, .params = space.address, .count = count * 6 };
+        out[part] = .{ .shader = if (part == 0) &drop_shader else &splash_shader, .params = space.address, .count = count * 6, .style = if (part == 1) .splash else if (volume.kind == .snow) .snow else .rain };
     }
     if (volume.kind == .rain) out[2] = nearRain(volume, params[0], eye, density);
 }
@@ -253,6 +293,7 @@ fn nearRain(volume: Volume, base: Params, eye: [3]f32, density: f32) ?Draw {
     params.velocity[3] = base.velocity[3] + 7919;
     params.eye[3] = 0;
     params.tiles = .{ first_tile[0], first_tile[1], @floatFromInt(tiles[0]), @floatFromInt(per_tile) };
+    params.divisions = divisionParams(tiles[0], per_tile);
     params.shape[3] = @floatFromInt(count);
     const space = vk.frame().stream.alloc(@sizeOf(Params), 16) orelse return null;
     @memcpy(space.bytes[0..@sizeOf(Params)], std.mem.asBytes(&params));

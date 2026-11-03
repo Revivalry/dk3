@@ -107,6 +107,9 @@ const Device = struct {
     CmdBindDescriptorSets: c.PFN_vkCmdBindDescriptorSets = null,
     CmdPushConstants: c.PFN_vkCmdPushConstants = null,
     CmdDraw: c.PFN_vkCmdDraw = null,
+    CmdDrawIndirect: c.PFN_vkCmdDrawIndirect = null,
+    CmdBindIndexBuffer: c.PFN_vkCmdBindIndexBuffer = null,
+    CmdDrawIndexed: c.PFN_vkCmdDrawIndexed = null,
     CmdDispatch: c.PFN_vkCmdDispatch = null,
     CreateComputePipelines: c.PFN_vkCreateComputePipelines = null,
     GetPipelineExecutablePropertiesKHR: c.PFN_vkGetPipelineExecutablePropertiesKHR = null,
@@ -280,7 +283,7 @@ const Features = struct {
             self.v12.descriptorBindingStorageImageUpdateAfterBind != 0 and self.v13.shaderDemoteToHelperInvocation != 0 and
             self.v12.descriptorBindingVariableDescriptorCount != 0 and self.v12.shaderSampledImageArrayNonUniformIndexing != 0 and
             self.base.features.shaderClipDistance != 0 and self.base.features.shaderStorageImageReadWithoutFormat != 0 and
-            self.base.features.shaderStorageImageWriteWithoutFormat != 0;
+            self.base.features.shaderStorageImageWriteWithoutFormat != 0 and self.base.features.independentBlend != 0;
     }
 };
 
@@ -415,9 +418,13 @@ pub fn createDevice(candidate: Candidate, want_ray_tracing: bool) !void {
     });
     var base = std.mem.zeroInit(c.VkPhysicalDeviceFeatures2, .{ .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, .pNext = &v12 });
     base.features.samplerAnisotropy = features.base.features.samplerAnisotropy;
+    // Scene color blends while the motion attachment uses independent writes.
+    base.features.independentBlend = c.VK_TRUE;
     base.features.shaderInt64 = features.base.features.shaderInt64;
     // Debug probes write storage buffers from fragment shaders (r_vkDebugView 19).
     base.features.fragmentStoresAndAtomics = features.base.features.fragmentStoresAndAtomics;
+    base.features.vertexPipelineStoresAndAtomics = features.base.features.vertexPipelineStoresAndAtomics;
+    vertex_stores = base.features.vertexPipelineStoresAndAtomics != 0;
     base.features.fillModeNonSolid = features.base.features.fillModeNonSolid;
     base.features.shaderClipDistance = features.base.features.shaderClipDistance;
     base.features.shaderStorageImageReadWithoutFormat = features.base.features.shaderStorageImageReadWithoutFormat;
@@ -544,17 +551,29 @@ fn memoryType(bits: u32, flags: c.VkMemoryPropertyFlags) ?u32 {
     return null;
 }
 
-fn allocate(requirements: c.VkMemoryRequirements, flags: c.VkMemoryPropertyFlags, linear: bool) Allocation {
-    const type_index = memoryType(requirements.memoryTypeBits, flags) orelse
-        memoryType(requirements.memoryTypeBits, flags & ~@as(u32, c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) orelse
-        common.fail(c.ERR_FATAL, "Vulkan: no memory type for flags {x}", .{flags});
-    for (blocks.items) |*block| {
+const ExistingAllocation = struct { allocation: Allocation, block_index: usize, previous_used: u64 };
+
+fn allocationType(requirements: c.VkMemoryRequirements, flags: c.VkMemoryPropertyFlags) ?u32 {
+    return memoryType(requirements.memoryTypeBits, flags) orelse
+        memoryType(requirements.memoryTypeBits, flags & ~@as(u32, c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
+}
+
+fn allocateExisting(requirements: c.VkMemoryRequirements, type_index: u32, linear: bool) ?ExistingAllocation {
+    for (blocks.items, 0..) |*block, index| {
         if (block.type_index != type_index or block.linear != linear or block.content != content_arena) continue;
         const offset = std.mem.alignForward(u64, block.used, requirements.alignment);
         if (offset + requirements.size > block.size) continue;
+        const previous_used = block.used;
         block.used = offset + requirements.size;
-        return .{ .memory = block.memory, .offset = offset, .mapped = if (block.mapped) |m| m + offset else null };
+        return .{ .allocation = .{ .memory = block.memory, .offset = offset, .mapped = if (block.mapped) |m| m + offset else null }, .block_index = index, .previous_used = previous_used };
     }
+    return null;
+}
+
+fn allocate(requirements: c.VkMemoryRequirements, flags: c.VkMemoryPropertyFlags, linear: bool) Allocation {
+    const type_index = allocationType(requirements, flags) orelse
+        common.fail(c.ERR_FATAL, "Vulkan: no memory type for flags {x}", .{flags});
+    if (allocateExisting(requirements, type_index, linear)) |existing| return existing.allocation;
     const size = @max(block_size, std.mem.alignForward(u64, requirements.size, 1 << 20));
     const flags_info = std.mem.zeroInit(c.VkMemoryAllocateFlagsInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO,
@@ -593,6 +612,16 @@ pub fn freeContentMemory() void {
             _ = blocks.swapRemove(index);
         } else index += 1;
     }
+}
+
+pub fn contentMemoryUsage() struct { blocks: usize, bytes: u64, used: u64 } {
+    var result: struct { blocks: usize = 0, bytes: u64 = 0, used: u64 = 0 } = .{};
+    for (blocks.items) |block| if (block.content) {
+        result.blocks += 1;
+        result.bytes += block.size;
+        result.used += block.used;
+    };
+    return .{ .blocks = result.blocks, .bytes = result.bytes, .used = result.used };
 }
 
 pub const Buffer = struct {
@@ -656,8 +685,8 @@ pub const Texture = struct {
     slot: u32 = 0,
 };
 
-pub fn createImage(width: u32, height: u32, levels: u32, format: c.VkFormat, usage: c.VkImageUsageFlags, aspect: c.VkImageAspectFlags) Texture {
-    const info = std.mem.zeroInit(c.VkImageCreateInfo, .{
+fn imageCreateInfo(width: u32, height: u32, levels: u32, format: c.VkFormat, usage: c.VkImageUsageFlags) c.VkImageCreateInfo {
+    return std.mem.zeroInit(c.VkImageCreateInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = c.VK_IMAGE_TYPE_2D,
         .format = format,
@@ -670,22 +699,61 @@ pub fn createImage(width: u32, height: u32, levels: u32, format: c.VkFormat, usa
         .sharingMode = c.VK_SHARING_MODE_EXCLUSIVE,
         .initialLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
     });
-    var image: c.VkImage = null;
-    must(d.CreateImage.?(s.device, &info, null, &image), "vkCreateImage");
-    var requirements: c.VkMemoryRequirements = undefined;
-    d.GetImageMemoryRequirements.?(s.device, image, &requirements);
-    const allocation = allocate(requirements, device_flags, false);
-    must(d.BindImageMemory.?(s.device, image, allocation.memory, allocation.offset), "vkBindImageMemory");
-    const view_info = std.mem.zeroInit(c.VkImageViewCreateInfo, .{
+}
+
+fn imageViewInfo(image: c.VkImage, levels: u32, format: c.VkFormat, aspect: c.VkImageAspectFlags) c.VkImageViewCreateInfo {
+    return std.mem.zeroInit(c.VkImageViewCreateInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = image,
         .viewType = c.VK_IMAGE_VIEW_TYPE_2D,
         .format = format,
         .subresourceRange = .{ .aspectMask = aspect, .baseMipLevel = 0, .levelCount = levels, .baseArrayLayer = 0, .layerCount = 1 },
     });
+}
+
+pub fn createImage(width: u32, height: u32, levels: u32, format: c.VkFormat, usage: c.VkImageUsageFlags, aspect: c.VkImageAspectFlags) Texture {
+    const info = imageCreateInfo(width, height, levels, format, usage);
+    var image: c.VkImage = null;
+    must(d.CreateImage.?(s.device, &info, null, &image), "vkCreateImage");
+    var requirements: c.VkMemoryRequirements = undefined;
+    d.GetImageMemoryRequirements.?(s.device, image, &requirements);
+    const allocation = allocate(requirements, device_flags, false);
+    must(d.BindImageMemory.?(s.device, image, allocation.memory, allocation.offset), "vkBindImageMemory");
+    const view_info = imageViewInfo(image, levels, format, aspect);
     var view: c.VkImageView = null;
     must(d.CreateImageView.?(s.device, &view_info, null, &view), "vkCreateImageView");
     return .{ .image = image, .view = view, .width = width, .height = height, .levels = levels };
+}
+
+pub const ImageReservation = struct { texture: Texture, charge: u64 };
+
+/// Best effort, owner-thread only: no new memory block and no submitted references.
+/// Failure releases objects before rolling the exclusive bump reservation back.
+pub fn tryReserveImage(width: u32, height: u32, levels: u32, format: c.VkFormat, usage: c.VkImageUsageFlags, aspect: c.VkImageAspectFlags, maximum_charge: u64) ?ImageReservation {
+    if (!content_arena or maximum_charge == 0) return null;
+    const info = imageCreateInfo(width, height, levels, format, usage);
+    var texture: Texture = .{ .width = width, .height = height, .levels = levels };
+    if (d.CreateImage.?(s.device, &info, null, &texture.image) != c.VK_SUCCESS) return null;
+    var reservation: ?ExistingAllocation = null;
+    var committed = false;
+    defer if (!committed) {
+        destroyImage(&texture);
+        if (reservation) |existing| blocks.items[existing.block_index].used = existing.previous_used;
+    };
+    var requirements: c.VkMemoryRequirements = undefined;
+    d.GetImageMemoryRequirements.?(s.device, texture.image, &requirements);
+    if (requirements.size > maximum_charge or requirements.alignment - 1 > maximum_charge - requirements.size) return null;
+    const charge = requirements.size + requirements.alignment - 1;
+    const type_index = allocationType(requirements, device_flags) orelse return null;
+    const existing = allocateExisting(requirements, type_index, false) orelse return null;
+    reservation = existing;
+    if (d.BindImageMemory.?(s.device, texture.image, existing.allocation.memory, existing.allocation.offset) != c.VK_SUCCESS) return null;
+    const view_info = imageViewInfo(texture.image, levels, format, aspect);
+    var view: c.VkImageView = null;
+    if (d.CreateImageView.?(s.device, &view_info, null, &view) != c.VK_SUCCESS) return null;
+    texture.view = view;
+    committed = true;
+    return .{ .texture = texture, .charge = charge };
 }
 
 pub fn destroyImage(texture: *Texture) void {
@@ -779,14 +847,23 @@ pub const Ring = struct {
     }
 
     pub fn alloc(self: *Ring, size: u64, alignment: u64) ?Space {
+        return self.allocInternal(size, alignment, self.growable);
+    }
+
+    /// Optional preparation scratch may consume spare capacity but never grow it.
+    pub fn allocRemaining(self: *Ring, size: u64, alignment: u64) ?Space {
+        return self.allocInternal(size, alignment, false);
+    }
+
+    fn allocInternal(self: *Ring, size: u64, alignment: u64, growable: bool) ?Space {
         while (true) {
             const chunk = &self.chunks.items[self.current];
             const offset = std.mem.alignForward(u64, self.used, alignment);
             if (offset + size <= chunk.size) {
                 self.used = offset + size;
-                return .{ .buffer = chunk.buffer, .offset = offset, .address = chunk.address + offset, .bytes = chunk.mapped.?[offset .. offset + size] };
+                return .{ .buffer = chunk.buffer, .offset = offset, .address = chunk.address + offset, .bytes = if (chunk.mapped) |mapped| mapped[offset .. offset + size] else &.{} };
             }
-            if (!self.growable) return null;
+            if (!growable) return null;
             if (self.current + 1 >= self.chunks.items.len) {
                 self.chunks.append(common.gpa, persistentBuffer(@max(self.chunk_size, size), self.usage)) catch return null;
                 self.grown += 1;
@@ -822,7 +899,9 @@ pub const Frame = struct {
     value: u64 = 0,
     staging: Ring = .{},
     stream: Ring = .{},
+    weather_scratch_used: u64 = 0,
     records: Ring = .{},
+    image_scratch: Ring = .{},
     upload_used: bool = false,
     retired: std.ArrayList(Buffer) = .empty,
 };
@@ -870,7 +949,7 @@ pub fn createFrames() void {
         slot.present = buffers[2];
         must(d.CreateSemaphore.?(s.device, &binary, null, &slot.acquired), "vkCreateSemaphore");
         slot.staging.init(staging_size, c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT, false);
-        slot.stream.init(stream_size, c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
+        slot.stream.init(stream_size, c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | c.VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, true);
         slot.records.init(records_size, c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true);
         slot.value = 0;
     }
@@ -886,6 +965,7 @@ pub fn destroyFrames() void {
         slot.staging.deinit();
         slot.stream.deinit();
         slot.records.deinit();
+        slot.image_scratch.deinit();
         for (slot.retired.items) |*retired| destroyBuffer(retired);
         slot.retired.clearAndFree(common.gpa);
         slot.* = .{};
@@ -925,7 +1005,9 @@ fn beginUploads(slot: *Frame) void {
     must(d.ResetCommandPool.?(s.device, slot.pool, 0), "vkResetCommandPool");
     slot.staging.reset();
     slot.stream.reset();
+    slot.weather_scratch_used = 0;
     slot.records.reset();
+    slot.image_scratch.reset();
     slot.upload_used = false;
     beginBuffer(slot.upload);
 }
@@ -1062,6 +1144,22 @@ pub fn stage(size: u64) struct { buffer: c.VkBuffer, offset: u64, bytes: []u8 } 
 
 pub fn uploadCommands() c.VkCommandBuffer {
     return frame().upload;
+}
+
+/// Fixed device scratch, reused only after this frame's timeline completion.
+/// Oversized/busy frames fall back to CPU preparation instead of growing VRAM.
+pub fn imageScratch(size: u64) ?Space {
+    const ring = &frame().image_scratch;
+    if (size > 96 * 1024 * 1024) return null;
+    if (ring.chunks.items.len == 0) {
+        const saved = content_arena;
+        content_arena = false;
+        defer content_arena = saved;
+        const buffer = createBuffer(96 * 1024 * 1024, c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT | c.VK_BUFFER_USAGE_TRANSFER_DST_BIT, device_flags);
+        ring.* = .{ .growable = false };
+        ring.chunks.append(common.gpa, buffer) catch @panic("OOM");
+    }
+    return ring.allocRemaining(size, 16);
 }
 
 pub fn uploadBuffer(target: c.VkBuffer, offset: u64, bytes: []const u8) void {
@@ -1444,7 +1542,10 @@ pub fn computePipeline(comptime name: []const u8) c.VkPipeline {
     var created: c.VkPipeline = null;
     var stats_info = info;
     if (pipeline_stats) stats_info.flags |= c.VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
+    const compile_start = common.nanoseconds();
     must(d.CreateComputePipelines.?(s.device, null, 1, &stats_info, null, &created), "vkCreateComputePipelines");
+    const compile_ms = @as(f64, @floatFromInt(common.nanoseconds() - compile_start)) / 1e6;
+    common.developer("dk3 pipeline: compute={s} compile_ms={d:.3}\n", .{ name, compile_ms });
     reportPipeline(created, name, 0);
     compute_pipelines.put(common.gpa, name, created) catch @panic("OOM");
     return created;
@@ -1533,7 +1634,7 @@ pub const PipelineKey = struct {
     overlay: bool = false,
     /// HDR alpha is multiplied by (1 - source alpha): taa.comp trusts the new frame there.
     mark_motion: bool = false,
-    /// stage.frag STAGE_VARIANT specialisation (stage programs only).
+    /// Material STAGE_VARIANT or weather.Style specialization, according to program.
     variant: u8 = 0,
     /// Draws into the remaster HDR target, whose second attachment holds motion vectors
     /// (motion.zig); `motion_write` lets this stage write them.
@@ -1544,7 +1645,8 @@ pub const PipelineKey = struct {
 pub const motion_format = c.VK_FORMAT_R16G16_SFLOAT;
 
 var pipelines: std.AutoHashMapUnmanaged(PipelineKey, c.VkPipeline) = .empty;
-var modules: [10]c.VkShaderModule = .{null} ** 10;
+var modules: [16]c.VkShaderModule = .{null} ** 16;
+pub var vertex_stores = false;
 
 fn spirv(comptime name: []const u8) []const u32 {
     const bytes align(4) = @embedFile(name).*;
@@ -1576,6 +1678,11 @@ pub fn createModules() void {
     modules[7] = createModule(spirv("depth.frag.spv"));
     modules[8] = createModule(spirv("stage.vert.spv"));
     modules[9] = if (ray_tracing) createModule(spirv("stage_rt_early.frag.spv")) else createModule(spirv("stage_early.frag.spv"));
+    modules[10] = createModule(spirv("weather.vert.spv"));
+    modules[11] = createModule(spirv("weather.frag.spv"));
+    modules[12] = createModule(spirv("stage.vert.spv"));
+    modules[13] = createModule(spirv("display.frag.spv"));
+    if (vertex_stores) modules[14] = createModule(spirv("weather_prepare.vert.spv"));
 }
 
 pub fn destroyPipelines() void {
@@ -1599,6 +1706,12 @@ pub const program_bake: u8 = 2;
 pub const program_depth: u8 = 3;
 /// The stage shader with early fragment tests, for surfaces the depth pre-pass covered.
 pub const program_stage_early: u8 = 4;
+/// Dedicated weather stages: fixed vertex color/alpha and no material/deform paths.
+pub const program_weather: u8 = 5;
+/// Single-texture display stages; material vertex generation stays shared.
+pub const program_display: u8 = 6;
+/// Vertex-only, rasterizer-discard preparation into optional frame scratch.
+pub const program_weather_prepare: u8 = 7;
 
 /// GL blend factor codes used by material state (`blend.zig` mapping).
 pub fn blendFactor(code: u8) c.VkBlendFactor {
@@ -1621,7 +1734,8 @@ pub fn blendFactor(code: u8) c.VkBlendFactor {
 pub fn pipeline(key: PipelineKey) c.VkPipeline {
     if (pipelines.get(key)) |existing| return existing;
     // Composite and bake passes have no depth attachment.
-    const composite = key.program == program_composite or key.program == program_bake;
+    const prepare = key.program == program_weather_prepare;
+    const composite = key.program == program_composite or key.program == program_bake or prepare;
     const variant: u32 = key.variant;
     const entry = c.VkSpecializationMapEntry{ .constantID = 0, .offset = 0, .size = @sizeOf(u32) };
     const specialization = c.VkSpecializationInfo{ .mapEntryCount = 1, .pMapEntries = &entry, .dataSize = @sizeOf(u32), .pData = &variant };
@@ -1631,6 +1745,7 @@ pub fn pipeline(key: PipelineKey) c.VkPipeline {
             .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
             .module = modules[@as(usize, key.program) * 2],
             .pName = "main",
+            .pSpecializationInfo = if (key.program == program_weather or prepare) &specialization else null,
         }),
         std.mem.zeroInit(c.VkPipelineShaderStageCreateInfo, .{
             .sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -1643,7 +1758,7 @@ pub fn pipeline(key: PipelineKey) c.VkPipeline {
     const vertex_input = std.mem.zeroInit(c.VkPipelineVertexInputStateCreateInfo, .{ .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO });
     const assembly = std.mem.zeroInit(c.VkPipelineInputAssemblyStateCreateInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-        .topology = c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .topology = @as(c.VkPrimitiveTopology, if (prepare) c.VK_PRIMITIVE_TOPOLOGY_POINT_LIST else c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST),
     });
     const viewport = std.mem.zeroInit(c.VkPipelineViewportStateCreateInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
@@ -1652,6 +1767,7 @@ pub fn pipeline(key: PipelineKey) c.VkPipeline {
     });
     const raster = std.mem.zeroInit(c.VkPipelineRasterizationStateCreateInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .rasterizerDiscardEnable = @as(c.VkBool32, if (prepare) c.VK_TRUE else c.VK_FALSE),
         .polygonMode = c.VK_POLYGON_MODE_FILL,
         .cullMode = c.VK_CULL_MODE_NONE,
         .frontFace = c.VK_FRONT_FACE_COUNTER_CLOCKWISE,
@@ -1709,7 +1825,7 @@ pub fn pipeline(key: PipelineKey) c.VkPipeline {
     const info = std.mem.zeroInit(c.VkGraphicsPipelineCreateInfo, .{
         .sType = c.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .pNext = &rendering,
-        .stageCount = 2,
+        .stageCount = @as(u32, if (prepare) 1 else 2),
         .pStages = &stages,
         .pVertexInputState = &vertex_input,
         .pInputAssemblyState = &assembly,
@@ -1727,6 +1843,7 @@ pub fn pipeline(key: PipelineKey) c.VkPipeline {
     const compile_start = common.nanoseconds();
     must(d.CreateGraphicsPipelines.?(s.device, null, 1, &stats_info, null, &created), "vkCreateGraphicsPipelines");
     const compile_ms = @as(f64, @floatFromInt(common.nanoseconds() - compile_start)) / 1e6;
+    common.developer("dk3 pipeline: program={d} variant={d} compile_ms={d:.3}\n", .{ key.program, key.variant, compile_ms });
     if (compile_ms > 50) common.info("vk pipeline compile: program {d} variant {d} took {d:.0} ms\n", .{ key.program, key.variant, compile_ms });
     reportPipeline(created, "graphics program/variant", @as(u16, key.program) * 10 + key.variant);
     pipelines.put(common.gpa, key, created) catch @panic("OOM");

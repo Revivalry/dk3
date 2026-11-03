@@ -16,6 +16,7 @@ import tempfile
 import zipfile
 
 import assets
+import play
 
 
 PRODUCTS = {
@@ -75,8 +76,11 @@ def fill(bundle: Path, repository: Path, prefix: Path, platform: str,
     copy_file(ffmpeg, bundle / 'runtime/ffmpeg' / ('ffmpeg.exe' if platform == 'windows-x64' else 'ffmpeg'))
     copy_file(ffmpeg_license, bundle / 'licenses/ffmpeg.txt')
     for name in ('LICENSE', 'COPYRIGHT.md', 'engine/ioquake3/COPYING.txt', 'engine/bspc/LICENSE',
-                 'engine/fidelityfx/LICENSE.txt', 'engine/ioquake3/code/thirdparty/SDL2-2.32.8/include/SDL_copying.h'):
+                 'engine/fidelityfx/LICENSE.txt', 'engine/ioquake3/code/thirdparty/SDL2-2.32.8/include/SDL_copying.h',
+                 'engine/ioquake3/code/thirdparty/libdeflate-1.26/COPYING', 'docs/licenses/zig-stdlib.txt'):
         copy_file(repository / name, bundle / 'licenses' / name)
+    for name in play.RUNTIME_NOTICES:
+        copy_file(prefix / name, bundle / name)
     tools = repository / 'dkq3/tools'
     for script in tools.glob('*.py'):
         copy_file(script, bundle / 'dkq3/tools' / script.name)

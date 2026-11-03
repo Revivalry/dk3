@@ -2,6 +2,7 @@
 //! Shared mechanism: Native snapshot ingestion, shared movement prediction and world rendering.
 //! Never names a concrete class: classes plug in through checked contracts (docs/runtime-zig.md "Class contract").
 const std = @import("std");
+pub const snapshot_runtime_identity = @import("runtime_build").identity;
 const abi = @import("engine/abi.zig");
 const engine = @import("engine/client.zig");
 const bridge = @import("mechanics/player_state.zig");
@@ -95,6 +96,9 @@ fn init(server_message: i32, sequence: i32, client: i32, boundary: i32) !void {
     _ = engine.gateway.call(c.CG_CM_LOADMAP, .{map.ptr});
     loading.mark("collision", loadingNow());
     @import("mechanics/client/fog.zig").reset();
+    try @import("mechanics/client/models.zig").prefetch(&game);
+    errdefer @import("mechanics/client/models.zig").cancelPrefetch();
+    loading.mark("model-prefetch", loadingNow());
     _ = engine.gateway.call(c.CG_R_LOADWORLDMAP, .{map.ptr});
     loading.mark("render-world", loadingNow());
     try @import("mechanics/client/sky.zig").init(name, &game);

@@ -15,6 +15,8 @@ const scene = @import("scene.zig");
 const Shader = shader_mod.Shader;
 const Vec3 = scene.Vec3;
 const Vertex = scene.Vertex;
+const jobs = @import("load_jobs");
+const prepared_world = @import("prepared_world.zig");
 
 pub const max_worlds = 128;
 pub const max_inline_models = 512;
@@ -97,7 +99,21 @@ pub const World = struct {
     status: Status = .free,
     name: [c.MAX_QPATH]u8 = undefined,
     read: ?*c.struct_fsReadJob_s = null,
+    prepared_read: ?*c.struct_fsReadJob_s = null,
+    prepared: ?prepared_world.World = null,
+    settings_captured: bool = false,
+    package_requested: bool = false,
+    package_started: bool = false,
+    package_done: std.atomic.Value(bool) = .init(false),
+    package_source: []const u8 = &.{},
+    package_bytes: []const u8 = &.{},
+    package_failure: ?anyerror = null,
     admission: u32 = 0,
+    geometry_started: bool = false,
+    geometry_done: std.atomic.Value(bool) = .init(false),
+    geometry_failure: ?anyerror = null,
+    color_shift: u5 = 0,
+    patch_level: u32 = 2,
     peak: [6]i32 = .{ 0, 0, 0, 0, 0, 0 },
     // Raw lumps copied out of the file during admission.
     shaders_lump: []c.dshader_t = &.{},
@@ -106,6 +122,9 @@ pub const World = struct {
     draw_indexes: []i32 = &.{},
     lightmap_bytes: []u8 = &.{},
     lightmap_next: u32 = 0,
+    lightmap_pending: [8]?image.RawReservation = @splat(null),
+    lightmap_pending_count: usize = 0,
+    lightmap_pending_next: usize = 0,
     surface_next: u32 = 0,
     image_batch: ?*cext.ImageBatch = null,
     materials_ready: []bool = &.{},
@@ -120,6 +139,7 @@ pub const World = struct {
     vertices: std.ArrayList(Vertex) = .empty,
     indices: std.ArrayList(u32) = .empty,
     vertex_buffer: vk.Buffer = .{},
+    index_buffer: vk.Buffer = .{},
     vis: []u8 = &.{},
     novis: []u8 = &.{},
     num_clusters: i32 = 0,
@@ -235,8 +255,17 @@ pub fn request(name_ptr: [*c]const u8) u32 {
     const w = reserve(name) orelse return 0;
     var path: [c.MAX_QPATH]u8 = undefined;
     w.read = common.ri.BeginBackgroundRead.?(common.qpath(&path, name).ptr, 128 * 1024 * 1024);
+    beginPrepared(w, name);
     if (w.read == null) w.status = .failed;
     return w.handle();
+}
+fn beginPrepared(w: *World, name: []const u8) void {
+    if (cvars.vkPreparedAssets.integer != 0) {
+        var cache_path: [64]u8 = undefined;
+        if (prepared_world.path(name, &cache_path)) |cache_name| {
+            if (common.fileExists(cache_name.ptr)) w.prepared_read = common.ri.BeginBackgroundRead.?(cache_name.ptr, prepared_world.maximum);
+        } else |_| {}
+    }
 }
 
 fn validHeader(bytes: []const u8) bool {
@@ -272,6 +301,10 @@ pub fn poll(handle_value: u32) c_int {
     if (w.status == .failed) {
         cext.R_FreeImageBatch(w.image_batch);
         w.image_batch = null;
+        discardLightmapReservations(w);
+        if (w.prepared_read) |pending| common.ri.EndBackgroundRead.?(pending);
+        w.prepared_read = null;
+        w.prepared = null;
     }
     common.ri.EndBackgroundRead.?(job);
     w.read = null;
@@ -287,10 +320,15 @@ pub fn load(name_ptr: [*c]const u8) void {
     const bytes = common.readFile(common.qpath(&path, name).ptr) orelse common.fail(c.ERR_DROP, "Invalid render world {s}", .{name});
     defer common.freeFile(bytes);
     if (!validHeader(bytes)) common.fail(c.ERR_DROP, "Invalid render world {s}", .{name});
-    while (!admit(w, bytes)) {
+    beginPrepared(w, name);
+    while (true) {
+        @import("model_prefetch.zig").pump();
+        if (admit(w, bytes)) break;
+        if ((w.geometry_started and !w.geometry_done.load(.acquire)) or (w.package_started and !w.package_done.load(.acquire))) std.Thread.yield() catch {};
         if (w.status == .failed) {
             cext.R_FreeImageBatch(w.image_batch);
             w.image_batch = null;
+            discardLightmapReservations(w);
             common.fail(c.ERR_DROP, "Cannot prepare render world {s}", .{name});
         }
     }
@@ -298,9 +336,16 @@ pub fn load(name_ptr: [*c]const u8) void {
 }
 
 pub fn shutdown() void {
+    if (geometry_pool) |pool| {
+        pool.finish() catch unreachable;
+        pool.destroy();
+        geometry_pool = null;
+    }
     for (&worlds) |*w| {
         cext.R_FreeImageBatch(w.image_batch);
         if (w.read) |job| common.ri.EndBackgroundRead.?(job);
+        if (w.prepared_read) |job| common.ri.EndBackgroundRead.?(job);
+        w.prepared_read = null;
         freeWorld(w);
         const generation = w.generation;
         w.* = .{ .index = w.index, .generation = if (generation < generation_max) generation + 1 else generation };
@@ -310,12 +355,30 @@ pub fn shutdown() void {
     applyShaderContext(null);
 }
 
+fn discardLightmapReservations(w: *World) void {
+    var discarded: usize = 0;
+    for (&w.lightmap_pending) |*pending| if (pending.*) |reservation| {
+        reservation.discard();
+        pending.* = null;
+        discarded += 1;
+    };
+    if (discarded != 0) common.developer("dk3 lightmap reservations: map={s} discarded={d}\n", .{ w.nameSlice(), discarded });
+    w.lightmap_pending_count = 0;
+    w.lightmap_pending_next = 0;
+}
+
 fn freeWorld(w: *World) void {
     const a = common.gpa;
     if (w.status == .free) return;
+    if ((w.geometry_started and !w.geometry_done.load(.acquire)) or (w.package_started and !w.package_done.load(.acquire))) if (geometry_pool) |pool| pool.finish() catch unreachable;
+    if (w.prepared_read) |job| common.ri.EndBackgroundRead.?(job);
+    w.prepared_read = null;
+    w.prepared = null;
+    discardLightmapReservations(w);
     @import("bake.zig").destroyWorld(&w.bake);
     @import("rt.zig").destroyWorld(&w.rt);
     vk.destroyBuffer(&w.vertex_buffer);
+    vk.destroyBuffer(&w.index_buffer);
     vk.destroyBuffer(&w.style_samples);
     vk.destroyBuffer(&w.style_texels);
     a.free(w.shaders_lump);
@@ -367,17 +430,22 @@ fn copyLump(comptime T: type, w: *World, bytes: []const u8, index: usize) []T {
 
 /// Runs one admission phase within a small time budget; true when the world is ready.
 fn admit(w: *World, bytes: []const u8) bool {
+    if (geometry_pool) |pool| _ = pool.poll() catch unreachable;
     const previous = selected;
     loading = w;
     applyShaderContext(w);
     const phase = w.admission;
+    const previous_storage_scope = image.content_storage_scope;
+    image.content_storage_scope = phase == 4 and selected != null and cvars.regionLoading.integer == 0 and image.pendingCount() == 0;
+    defer image.content_storage_scope = previous_storage_scope;
     const started = common.milliseconds();
     const done = decode(w, bytes);
     if (done and w.status != .failed) w.status = .ready;
     loading = null;
     applyShaderContext(previous);
     const elapsed = common.milliseconds() - started;
-    if (phase < w.peak.len and elapsed > w.peak[phase]) w.peak[phase] = elapsed;
+    const timing_phase = @min(phase, w.peak.len - 1);
+    if (elapsed > w.peak[timing_phase]) w.peak[timing_phase] = elapsed;
     if (done) common.developer("dk3 render admission: map={s} peak_ms init={d} definitions={d} lightmaps={d} fog={d} surfaces={d} finalize={d} uploads={d} pages={d}\n", .{ w.nameSlice(), w.peak[0], w.peak[1], w.peak[2], w.peak[3], w.peak[4], w.peak[5], w.lightmap_next, w.lightmaps.len });
     return done;
 }
@@ -385,6 +453,33 @@ fn admit(w: *World, bytes: []const u8) bool {
 fn decode(w: *World, bytes: []const u8) bool {
     switch (w.admission) {
         0 => {
+            if (!w.settings_captured) {
+                w.color_shift = @intCast(std.math.clamp(cvars.mapOverBrightBits.integer, 0, 8));
+                w.patch_level = @intCast(std.math.clamp(64 / @max(cvars.subdivisions.integer, 1), 2, 16));
+                w.settings_captured = true;
+            }
+            if (w.prepared_read) |job| {
+                var stored: ?*const anyopaque = null;
+                var stored_length: c_int = 0;
+                const ready = common.ri.PollBackgroundRead.?(job, &stored, &stored_length);
+                if (ready == 0) return false;
+                if (ready == 1 and stored != null) {
+                    if (!w.package_requested) {
+                        w.package_bytes = @as([*]const u8, @ptrCast(stored.?))[0..@intCast(stored_length)];
+                        w.package_source = bytes;
+                        w.package_requested = true;
+                    }
+                    startWorldWork();
+                    if (!w.package_done.load(.acquire)) return false;
+                }
+                if (w.prepared == null) {
+                    common.developer("dk3 prepared world fallback: map={s}\n", .{w.nameSlice()});
+                    common.ri.EndBackgroundRead.?(job);
+                    w.prepared_read = null;
+                    w.package_bytes = &.{};
+                    w.package_source = &.{};
+                } else common.developer("dk3 prepared world: map={s} bytes={d}\n", .{ w.nameSlice(), stored_length });
+            }
             loadLightstyles(w, bytes);
             w.shaders_lump = copyLump(c.dshader_t, w, bytes, c.LUMP_SHADERS);
             w.surfaces_lump = copyLump(c.dsurface_t, w, bytes, c.LUMP_SURFACES);
@@ -419,7 +514,8 @@ fn decode(w: *World, bytes: []const u8) bool {
             w.admission = 5;
             return false;
         },
-        else => {
+        5 => {
+            startGeometry(w);
             loadMarks(w, bytes);
             w.brushes = copyLump(c.dbrush_t, w, bytes, c.LUMP_BRUSHES);
             w.brush_sides = copyLump(c.dbrushside_t, w, bytes, c.LUMP_BRUSHSIDES);
@@ -429,7 +525,14 @@ fn decode(w: *World, bytes: []const u8) bool {
             loadVisibility(w, bytes);
             loadEntities(w, bytes);
             loadLightGrid(w, bytes);
-            finishGeometry(w);
+            w.admission = 6;
+            return false;
+        },
+        else => {
+            startGeometry(w);
+            if (!w.geometry_done.load(.acquire)) return false;
+            if (w.geometry_failure) |err| common.fail(c.ERR_DROP, "Geometry preparation failed for {s}: {s}", .{ w.nameSlice(), @errorName(err) });
+            commitGeometry(w);
             classifyLiquids(w);
             return true;
         },
@@ -446,8 +549,11 @@ pub fn half(value: f32) u16 {
 /// were lit for that display. The remaster keeps a quarter stop of headroom above white for
 /// exposure and bloom instead of the full shifted range, which washed every lit surface out.
 fn linearLight(rgb: [3]f32) [3]f32 {
+    return linearLightScale(rgb, overbrightScale());
+}
+fn linearLightScale(rgb: [3]f32, scale: f32) [3]f32 {
     var out = rgb;
-    for (&out) |*value| value.* *= overbrightScale();
+    for (&out) |*value| value.* *= scale;
     const peak = @max(out[0], @max(out[1], out[2]));
     if (peak > 1) {
         const limit = 1 + 0.25 * (1 - @exp(-(peak - 1)));
@@ -457,6 +563,17 @@ fn linearLight(rgb: [3]f32) [3]f32 {
     for (&out) |*value| value.* = if (value.* > 0) @exp2(2.2 * @log2(value.*)) else 0;
     return out;
 }
+fn lightmapTexels(source: []const u8, scale: f32, texels: []u16) void {
+    for (0..lightmap_size * lightmap_size) |j| {
+        const linear = if (source.len == 0) [3]f32{ 0, 0, 0 } else linearLightScale(.{
+            @as(f32, @floatFromInt(source[j * 3])) / 255.0,
+            @as(f32, @floatFromInt(source[j * 3 + 1])) / 255.0,
+            @as(f32, @floatFromInt(source[j * 3 + 2])) / 255.0,
+        }, scale);
+        for (0..3) |k| texels[j * 4 + k] = half(linear[k]);
+        texels[j * 4 + 3] = half(1);
+    }
+}
 
 /// lightstyle.comp mirrors linearLight on the GPU and takes this scale as a parameter.
 fn overbrightScale() f32 {
@@ -465,6 +582,9 @@ fn overbrightScale() f32 {
 
 fn colorShift(input: [3]u8) [3]u8 {
     const shift: u5 = @intCast(std.math.clamp(cvars.mapOverBrightBits.integer, 0, 8));
+    return colorShiftBits(input, shift);
+}
+fn colorShiftBits(input: [3]u8, shift: u5) [3]u8 {
     var r: u32 = @as(u32, input[0]) << shift;
     var g: u32 = @as(u32, input[1]) << shift;
     var b: u32 = @as(u32, input[2]) << shift;
@@ -479,9 +599,27 @@ fn colorShift(input: [3]u8) [3]u8 {
 
 fn loadLightmaps(w: *World) bool {
     const started = common.milliseconds();
+    // A first image view can wait for earlier rendering. In normal background
+    // admission, allow one more fixed-size page before yielding to another
+    // foreground frame. Primary, held and unfinished deferred-image admission
+    // keep checking every page before normal background batching is eligible.
+    const minimum_pages: usize = if (selected == null or cvars.regionLoading.integer != 0 or image.pendingCount() != 0) 1 else 2;
+    var pages: usize = 0;
     const on_disk = w.lightmap_bytes.len / (lightmap_size * lightmap_size * 3);
     var pixels: [lightmap_size * lightmap_size * 4]u8 = undefined;
     while (w.lightmap_next < w.lightmaps.len) {
+        if (@import("window.zig").remaster and minimum_pages == 2 and w.lightmap_pending_count == 0) {
+            const count = @min(w.lightmap_pending.len, w.lightmaps.len - w.lightmap_next);
+            for (0..count) |offset| {
+                var reserved_name: [c.MAX_QPATH]u8 = undefined;
+                const reserved_label = std.fmt.bufPrint(&reserved_name, "*w{d}/lightmap{d}", .{ w.handle(), w.lightmap_next + offset }) catch "*lightmap";
+                w.lightmap_pending[offset] = image.reserveRaw(reserved_label, lightmap_size, lightmap_size, c.VK_FORMAT_R16G16B16A16_SFLOAT, .{ .no_light_scale = true, .clamp = true });
+            }
+            w.lightmap_pending_count = count;
+            w.lightmap_pending_next = 0;
+            // Keep reservation and texel work in separate cooperative calls.
+            return false;
+        }
         const i = w.lightmap_next;
         const source = if (on_disk == 0) &[_]u8{} else w.lightmap_bytes[(i % on_disk) * lightmap_size * lightmap_size * 3 ..][0 .. lightmap_size * lightmap_size * 3];
         var name: [c.MAX_QPATH]u8 = undefined;
@@ -489,16 +627,20 @@ fn loadLightmaps(w: *World) bool {
         if (@import("window.zig").remaster) {
             // Linear radiance with the full overbright range instead of the normalized bytes.
             var texels: [lightmap_size * lightmap_size * 4]u16 = undefined;
-            for (0..lightmap_size * lightmap_size) |j| {
-                const linear = if (source.len == 0) [3]f32{ 0, 0, 0 } else linearLight(.{
-                    @as(f32, @floatFromInt(source[j * 3])) / 255.0,
-                    @as(f32, @floatFromInt(source[j * 3 + 1])) / 255.0,
-                    @as(f32, @floatFromInt(source[j * 3 + 2])) / 255.0,
-                });
-                for (0..3) |k| texels[j * 4 + k] = half(linear[k]);
-                texels[j * 4 + 3] = half(1);
-            }
-            w.lightmaps[i] = image.createRaw(label, std.mem.sliceAsBytes(&texels), lightmap_size, lightmap_size, c.VK_FORMAT_R16G16B16A16_SFLOAT, .{ .no_light_scale = true, .clamp = true });
+            if (w.prepared) |cached| {
+                @memcpy(std.mem.sliceAsBytes(&texels), cached.lightmaps[i * prepared_world.page_size ..][0..prepared_world.page_size]);
+            } else lightmapTexels(source, overbrightScale(), &texels);
+            if (w.lightmap_pending_count != 0) {
+                const pending = &w.lightmap_pending[w.lightmap_pending_next];
+                const reservation = pending.*.?;
+                pending.* = null;
+                w.lightmaps[i] = reservation.finish(std.mem.sliceAsBytes(&texels));
+                w.lightmap_pending_next += 1;
+                if (w.lightmap_pending_next == w.lightmap_pending_count) {
+                    w.lightmap_pending_count = 0;
+                    w.lightmap_pending_next = 0;
+                }
+            } else w.lightmaps[i] = image.createRaw(label, std.mem.sliceAsBytes(&texels), lightmap_size, lightmap_size, c.VK_FORMAT_R16G16B16A16_SFLOAT, .{ .no_light_scale = true, .clamp = true });
         } else {
             for (0..lightmap_size * lightmap_size) |j| {
                 const shifted = if (source.len == 0) [3]u8{ 0, 0, 0 } else colorShift(.{ source[j * 3], source[j * 3 + 1], source[j * 3 + 2] });
@@ -507,7 +649,8 @@ fn loadLightmaps(w: *World) bool {
             w.lightmaps[i] = image.create(label, &pixels, lightmap_size, lightmap_size, .{ .no_light_scale = true, .clamp = true });
         }
         w.lightmap_next = i + 1;
-        if (w.lightmap_next < w.lightmaps.len and common.milliseconds() - started >= 4) return false;
+        pages += 1;
+        if (w.lightmap_next < w.lightmaps.len and pages >= minimum_pages and common.milliseconds() - started >= 4) return false;
     }
     return true;
 }
@@ -524,6 +667,9 @@ fn shaderFor(w: *World, shader_num: i32, lightmap_num: i32) *Shader {
 /// (R_LoadSurfaces with R_QueueShaderImages).
 fn loadSurfaces(w: *World) bool {
     const started = common.milliseconds();
+    // Primary/held loading keeps the existing short chunks and worker-pump
+    // cadence. Normal background polls use their time slice.
+    const short_chunks = selected == null or cvars.regionLoading.integer != 0;
     while (w.surface_next < w.surfaces_lump.len) {
         const i = w.surface_next;
         const in = w.surfaces_lump[i];
@@ -556,13 +702,13 @@ fn loadSurfaces(w: *World) bool {
         w.image_batch = null;
         w.materials_ready[index] = true;
         w.surface_next = i + 1;
-        if (w.surface_next < w.surfaces_lump.len and (common.milliseconds() - started >= 4 or (i & 63) == 63)) return false;
+        if (w.surface_next < w.surfaces_lump.len and (common.milliseconds() - started >= 4 or (short_chunks and (i & 63) == 63))) return false;
     }
     return true;
 }
 
-fn vertexOf(in: c.drawVert_t) Vertex {
-    const shifted = colorShift(.{ in.color[0], in.color[1], in.color[2] });
+fn vertexOf(w: *const World, in: c.drawVert_t) Vertex {
+    const shifted = colorShiftBits(.{ in.color[0], in.color[1], in.color[2] }, w.color_shift);
     return .{ .pos = in.xyz, .st = in.st, .lm = in.lightmap, .normal = in.normal, .color = .{ shifted[0], shifted[1], shifted[2], in.color[3] } };
 }
 
@@ -597,7 +743,7 @@ fn tessellatePatch(w: *World, surface: *Surface, in: c.dsurface_t) void {
     const height: u32 = @intCast(in.patchHeight);
     if (width < 3 or height < 3 or width % 2 == 0 or height % 2 == 0) return;
     const control = w.draw_verts[@intCast(in.firstVert)..][0 .. width * height];
-    const level: u32 = @intCast(std.math.clamp(64 / @max(cvars.subdivisions.integer, 1), 2, 16));
+    const level = w.patch_level;
     const columns = (width - 1) / 2 * level + 1;
     const rows = (height - 1) / 2 * level + 1;
     const first: u32 = @intCast(w.vertices.items.len);
@@ -610,7 +756,7 @@ fn tessellatePatch(w: *World, surface: *Surface, in: c.dsurface_t) void {
             var curve: [3]Vertex = undefined;
             for (0..3) |k| {
                 const base = (block_y * 2 + k) * width + block_x * 2;
-                curve[k] = quadratic(vertexOf(control[base]), vertexOf(control[base + 1]), vertexOf(control[base + 2]), tx);
+                curve[k] = quadratic(vertexOf(w, control[base]), vertexOf(w, control[base + 1]), vertexOf(w, control[base + 2]), tx);
             }
             var v = quadratic(curve[0], curve[1], curve[2], ty);
             v.normal = scene.normalize(v.normal);
@@ -632,23 +778,80 @@ fn tessellatePatch(w: *World, surface: *Surface, in: c.dsurface_t) void {
     surface.maxs = box[1];
 }
 
-fn finishGeometry(w: *World) void {
+var geometry_pool: ?*jobs.Pool = null;
+var geometry_job: [2]jobs.Job = undefined;
+fn startGeometry(w: *World) void {
+    if (w.geometry_started) return;
+    startWorldWork();
+}
+fn startWorldWork() void {
+    if (geometry_pool == null) geometry_pool = jobs.Pool.create(common.gpa, @min(2, jobs.Pool.defaultWorkers())) catch
+        jobs.Pool.create(common.gpa, 0) catch @panic("OOM");
+    const pool = geometry_pool.?;
+    if (pool.active) return;
+    var count: usize = 0;
+    for (&worlds) |*candidate| {
+        if (candidate.status != .reading) continue;
+        if (candidate.package_requested and !candidate.package_started) {
+            candidate.package_started = true;
+            geometry_job[count] = .{ .run = packageWork, .context = candidate };
+        } else if (candidate.admission >= 5 and !candidate.geometry_started) {
+            candidate.geometry_started = true;
+            geometry_job[count] = .{ .run = geometryWork, .context = candidate };
+        } else continue;
+        count += 1;
+        if (count == geometry_job.len) break;
+    }
+    if (count != 0) pool.begin(geometry_job[0..count]) catch unreachable;
+}
+fn packageWork(raw: *anyopaque) !void {
+    const w: *World = @ptrCast(@alignCast(raw));
+    const surfaces = lump(w.package_source, c.LUMP_SURFACES).len / @sizeOf(c.dsurface_t);
+    var pages = lump(w.package_source, c.LUMP_LIGHTMAPS).len / (lightmap_size * lightmap_size * 3);
+    if (pages == 1) pages = 2;
+    w.prepared = prepared_world.decode(w.package_bytes, w.package_source, w.color_shift, w.patch_level, surfaces, pages) catch |err| blk: {
+        w.package_failure = err;
+        break :blk null;
+    };
+    w.package_done.store(true, .release);
+}
+fn geometryWork(raw: *anyopaque) !void {
+    const w: *World = @ptrCast(@alignCast(raw));
+    prepareGeometry(w) catch |err| {
+        w.geometry_failure = err;
+    };
+    w.geometry_done.store(true, .release);
+}
+fn prepareGeometry(w: *World) !void {
     const a = common.gpa;
+    if (w.prepared) |cached| {
+        try w.vertices.resize(a, cached.vertices.len / @sizeOf(Vertex));
+        try w.indices.resize(a, cached.indices.len / 4);
+        @memcpy(std.mem.sliceAsBytes(w.vertices.items), cached.vertices);
+        @memcpy(std.mem.sliceAsBytes(w.indices.items), cached.indices);
+        for (w.surfaces, 0..) |*surface, i| {
+            const stored = prepared_world.readSurface(cached.surfaces[i * @sizeOf(prepared_world.Surface) ..]);
+            inline for (std.meta.fields(prepared_world.Surface)) |field| {
+                if (comptime std.mem.eql(u8, field.name, "kind")) surface.kind = @enumFromInt(stored.kind) else @field(surface, field.name) = @field(stored, field.name);
+            }
+        }
+        return;
+    }
     w.vertices.ensureTotalCapacity(a, w.draw_verts.len) catch @panic("OOM");
-    for (w.draw_verts) |v| w.vertices.appendAssumeCapacity(vertexOf(v));
+    for (w.draw_verts) |v| w.vertices.appendAssumeCapacity(vertexOf(w, v));
     for (w.surfaces_lump, 0..) |in, i| {
         const surface = &w.surfaces[i];
         switch (surface.kind) {
             .face, .triangles => {
-                const first_vert: u32 = @intCast(in.firstVert);
-                const count: u32 = @intCast(in.numVerts);
-                if (in.numIndexes < 0 or in.firstIndex < 0 or in.firstIndex + in.numIndexes > w.draw_indexes.len or in.firstVert + in.numVerts > w.draw_verts.len) {
+                if (in.numIndexes < 0 or in.firstIndex < 0 or in.firstVert < 0 or in.numVerts < 0 or @as(i64, in.firstIndex) + in.numIndexes > w.draw_indexes.len or @as(i64, in.firstVert) + in.numVerts > w.draw_verts.len) {
                     surface.kind = .flare;
                     continue;
                 }
+                const first_vert: u32 = @intCast(in.firstVert);
+                const count: u32 = @intCast(in.numVerts);
                 surface.first_index = @intCast(w.indices.items.len);
                 for (w.draw_indexes[@intCast(in.firstIndex)..][0..@intCast(in.numIndexes)]) |index| {
-                    if (index < 0 or index >= in.numVerts) common.fail(c.ERR_DROP, "Bad index in face surface", .{});
+                    if (index < 0 or index >= in.numVerts) return error.BadSurfaceIndex;
                     w.indices.append(a, first_vert + @as(u32, @intCast(index))) catch @panic("OOM");
                 }
                 surface.num_indexes = @intCast(in.numIndexes);
@@ -660,11 +863,84 @@ fn finishGeometry(w: *World) void {
                     surface.plane_dist = if (count > 0) scene.dot(w.vertices.items[first_vert].pos, surface.plane_normal) else 0;
                 }
             },
-            .patch => tessellatePatch(w, surface, in),
+            .patch => {
+                if (in.patchWidth < 0 or in.patchHeight < 0 or in.firstVert < 0 or @as(i64, in.patchWidth) * in.patchHeight + in.firstVert > w.draw_verts.len) return error.BadPatchControl;
+                tessellatePatch(w, surface, in);
+            },
             .flare => {},
         }
     }
+}
+
+/// Offline conversion uses the same CPU tessellation/color/radiance operations
+/// as live admission, with explicit immutable settings and no engine callbacks.
+pub fn bakePrepared(bytes: []const u8, shift: u5, subdivisions: u32, storage: []u8) ![]const u8 {
+    if (@import("builtin").target.cpu.arch.endian() != .little) return error.UnsupportedPreparedEndian;
+    if (!validHeader(bytes) or shift > 8 or subdivisions == 0) return error.InvalidWorldSource;
+    var w: World = .{ .index = 0, .generation = 1, .color_shift = shift, .patch_level = std.math.clamp(64 / subdivisions, 2, 16) };
+    inline for (.{ .{ c.drawVert_t, c.LUMP_DRAWVERTS }, .{ i32, c.LUMP_DRAWINDEXES }, .{ c.dsurface_t, c.LUMP_SURFACES } }) |entry| {
+        if (lump(bytes, entry[1]).len % @sizeOf(entry[0]) != 0) return error.InvalidWorldSource;
+    }
+    w.draw_verts = copyLump(c.drawVert_t, &w, bytes, c.LUMP_DRAWVERTS);
+    defer common.gpa.free(w.draw_verts);
+    w.draw_indexes = copyLump(i32, &w, bytes, c.LUMP_DRAWINDEXES);
+    defer common.gpa.free(w.draw_indexes);
+    w.surfaces_lump = copyLump(c.dsurface_t, &w, bytes, c.LUMP_SURFACES);
+    defer common.gpa.free(w.surfaces_lump);
+    w.surfaces = try common.gpa.alloc(Surface, w.surfaces_lump.len);
+    defer common.gpa.free(w.surfaces);
+    defer w.vertices.deinit(common.gpa);
+    defer w.indices.deinit(common.gpa);
+    for (w.surfaces_lump, w.surfaces) |in, *surface| surface.* = .{ .shader = undefined, .kind = switch (in.surfaceType) {
+        c.MST_PLANAR => .face,
+        c.MST_TRIANGLE_SOUP => .triangles,
+        c.MST_PATCH => .patch,
+        c.MST_FLARE => .flare,
+        else => return error.BadSurfaceType,
+    } };
+    try prepareGeometry(&w);
+    const lightmaps = lump(bytes, c.LUMP_LIGHTMAPS);
+    if (lightmaps.len % (lightmap_size * lightmap_size * 3) != 0) return error.InvalidWorldSource;
+    const on_disk = lightmaps.len / (lightmap_size * lightmap_size * 3);
+    const pages = if (on_disk == 1) 2 else on_disk;
+    const vertex_bytes = std.mem.sliceAsBytes(w.vertices.items);
+    const index_bytes = std.mem.sliceAsBytes(w.indices.items);
+    const size = prepared_world.header_size + vertex_bytes.len + index_bytes.len + w.surfaces.len * @sizeOf(prepared_world.Surface) + pages * prepared_world.page_size;
+    if (size > storage.len or size > prepared_world.maximum) return error.PreparedWorldCapacity;
+    const output = storage[0..size];
+    @memset(output[0..prepared_world.header_size], 0);
+    output[0..8].* = "DK3WLD1\x00".*;
+    @import("runtime_digest").hash(bytes, output[8..40]);
+    const words = [_]u32{ shift, w.patch_level, @intCast(w.vertices.items.len), @intCast(w.indices.items.len), @intCast(w.surfaces.len), @intCast(pages) };
+    for (words, 0..) |word, i| std.mem.writeInt(u32, output[40 + i * 4 ..][0..4], word, .little);
+    var cursor: usize = prepared_world.header_size;
+    @memcpy(output[cursor..][0..vertex_bytes.len], vertex_bytes);
+    cursor += vertex_bytes.len;
+    @memcpy(output[cursor..][0..index_bytes.len], index_bytes);
+    cursor += index_bytes.len;
+    for (w.surfaces) |surface| {
+        var record: prepared_world.Surface = undefined;
+        inline for (std.meta.fields(prepared_world.Surface)) |field| {
+            @field(record, field.name) = if (comptime std.mem.eql(u8, field.name, "kind")) @intFromEnum(surface.kind) else @field(surface, field.name);
+        }
+        @memcpy(output[cursor..][0..@sizeOf(prepared_world.Surface)], std.mem.asBytes(&record));
+        cursor += @sizeOf(prepared_world.Surface);
+    }
+    for (0..pages) |i| {
+        var texels: [lightmap_size * lightmap_size * 4]u16 = undefined;
+        lightmapTexels(lightmaps[(i % on_disk) * lightmap_size * lightmap_size * 3 ..][0 .. lightmap_size * lightmap_size * 3], @floatFromInt(@as(u32, 1) << shift), &texels);
+        @memcpy(output[cursor..][0..prepared_world.page_size], std.mem.sliceAsBytes(&texels));
+        cursor += prepared_world.page_size;
+    }
+    std.mem.writeInt(u32, output[64..68], std.hash.Crc32.hash(output[prepared_world.header_size..]), .little);
+    _ = try prepared_world.decode(output, bytes, shift, w.patch_level, w.surfaces.len, pages);
+    return output;
+}
+fn commitGeometry(w: *World) void {
+    const a = common.gpa;
     w.vertex_buffer = vk.staticBuffer(std.mem.sliceAsBytes(w.vertices.items), @as(c.VkBufferUsageFlags, c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) | vk.rtInputUsage());
+    if (cvars.vkGpuWorldDraws.integer != 0)
+        w.index_buffer = vk.staticBuffer(std.mem.sliceAsBytes(w.indices.items), c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     // The raw lumps are only needed during admission.
     a.free(w.draw_verts);
     w.draw_verts = &.{};
@@ -673,6 +949,11 @@ fn finishGeometry(w: *World) void {
     calibrateSky(w);
     a.free(w.lightmap_bytes);
     w.lightmap_bytes = &.{};
+    if (w.prepared_read) |job| common.ri.EndBackgroundRead.?(job);
+    w.prepared_read = null;
+    w.prepared = null;
+    w.package_bytes = &.{};
+    w.package_source = &.{};
     var faces: u32 = 0;
     var meshes: u32 = 0;
     var tris: u32 = 0;
@@ -684,6 +965,66 @@ fn finishGeometry(w: *World) void {
         .flare => flares += 1,
     };
     common.info("...loaded {d} faces, {d} meshes, {d} trisurfs, {d} flares\n", .{ faces, meshes, tris, flares });
+}
+
+test "offline world packages preserve geometry and HDR bytes with source/settings checks" {
+    const t = std.testing;
+    const vertex_count = 3;
+    const vertex_bytes = vertex_count * @sizeOf(c.drawVert_t);
+    const index_bytes = 3 * @sizeOf(i32);
+    const surface_bytes = @sizeOf(c.dsurface_t);
+    const rgb_bytes = lightmap_size * lightmap_size * 3;
+    const source = try t.allocator.alloc(u8, @sizeOf(c.dheader_t) + vertex_bytes + index_bytes + surface_bytes + rgb_bytes);
+    defer t.allocator.free(source);
+    @memset(source, 0);
+    var header = std.mem.zeroes(c.dheader_t);
+    header.ident = c.BSP_IDENT;
+    header.version = c.BSP_VERSION;
+    var cursor: usize = @sizeOf(c.dheader_t);
+    inline for (.{ .{ c.LUMP_DRAWVERTS, vertex_bytes }, .{ c.LUMP_DRAWINDEXES, index_bytes }, .{ c.LUMP_SURFACES, surface_bytes }, .{ c.LUMP_LIGHTMAPS, rgb_bytes } }) |part| {
+        header.lumps[part[0]].fileofs = @intCast(cursor);
+        header.lumps[part[0]].filelen = part[1];
+        cursor += part[1];
+    }
+    @memcpy(source[0..@sizeOf(c.dheader_t)], std.mem.asBytes(&header));
+    var vertices: [vertex_count]c.drawVert_t = @splat(std.mem.zeroes(c.drawVert_t));
+    for (&vertices, 0..) |*vertex, i| {
+        vertex.xyz = .{ @floatFromInt(i), @floatFromInt(i % 2), 0 };
+        vertex.color = .{ 32, 64, 128, 255 };
+        vertex.normal = .{ 0, 0, 1 };
+    }
+    const start: usize = @intCast(header.lumps[c.LUMP_DRAWVERTS].fileofs);
+    @memcpy(source[start..][0..vertex_bytes], std.mem.asBytes(&vertices));
+    const index_start: usize = @intCast(header.lumps[c.LUMP_DRAWINDEXES].fileofs);
+    const indices = [_]i32{ 0, 1, 2 };
+    @memcpy(source[index_start..][0..index_bytes], std.mem.asBytes(&indices));
+    var surface = std.mem.zeroes(c.dsurface_t);
+    surface.surfaceType = c.MST_PLANAR;
+    surface.numVerts = 3;
+    surface.numIndexes = 3;
+    surface.lightmapVecs[2] = .{ 0, 0, 1 };
+    const surface_start: usize = @intCast(header.lumps[c.LUMP_SURFACES].fileofs);
+    @memcpy(source[surface_start..][0..surface_bytes], std.mem.asBytes(&surface));
+    const lightmap_start: usize = @intCast(header.lumps[c.LUMP_LIGHTMAPS].fileofs);
+    for (source[lightmap_start..], 0..) |*byte, i| byte.* = @truncate(i * 17);
+    const storage = try t.allocator.alloc(u8, 512 * 1024);
+    defer t.allocator.free(storage);
+    const bytes = try bakePrepared(source, 2, 4, storage);
+    const cached = try prepared_world.decode(bytes, source, 2, 16, 1, 2);
+    try t.expectEqualSlices(u8, std.mem.asBytes(&indices), cached.indices);
+    var expected_vertices: [3]Vertex = undefined;
+    const world_settings: World = .{ .index = 0, .generation = 1, .color_shift = 2 };
+    for (vertices, &expected_vertices) |vertex, *out| out.* = vertexOf(&world_settings, vertex);
+    try t.expectEqualSlices(u8, std.mem.asBytes(&expected_vertices), cached.vertices);
+    var texels: [lightmap_size * lightmap_size * 4]u16 = undefined;
+    lightmapTexels(source[lightmap_start..], 4, &texels);
+    try t.expectEqualSlices(u8, std.mem.asBytes(&texels), cached.lightmaps[0..prepared_world.page_size]);
+    try t.expectEqualSlices(u8, cached.lightmaps[0..prepared_world.page_size], cached.lightmaps[prepared_world.page_size..]);
+    try t.expectError(error.StalePreparedWorld, prepared_world.decode(bytes, source, 1, 16, 1, 2));
+    try t.expectError(error.StalePreparedWorld, prepared_world.decode(bytes, source, 2, 8, 1, 2));
+    std.mem.writeInt(u32, storage[prepared_world.header_size + 3 * @sizeOf(Vertex) ..][0..4], 3, .little);
+    std.mem.writeInt(u32, storage[64..68], std.hash.Crc32.hash(bytes[prepared_world.header_size..]), .little);
+    try t.expectError(error.InvalidPreparedWorld, prepared_world.decode(bytes, source, 2, 16, 1, 2));
 }
 
 fn loadMarks(w: *World, bytes: []const u8) void {
@@ -1355,7 +1696,7 @@ fn addSurface(view: *scene.View, w: *World, index: u32, entity: u32, view_origin
     if (surface.view_count == w.view_count) return;
     surface.view_count = w.view_count;
     if (surface.kind == .flare or surface.num_indexes == 0 and !surface.shader.is_sky) return;
-    if (cullSurface(view, surface, view_origin)) return;
+    if ((surface.shader.is_sky or !gpuWorldDraws(view, entity)) and cullSurface(view, surface, view_origin)) return;
     if (surface.shader.is_sky) {
         // One sky draw per view: the backend renders the whole box around the viewer.
         if (w.sky_view != scene.view_sequence) {
@@ -1451,19 +1792,66 @@ pub fn addBrushModel(view: *scene.View, entity: *scene.Entity, number: u32, ref:
 }
 
 /// Appends the indices of consecutive world surfaces into the stream ring.
-pub fn mergeIndices(self: *World, surfaces: []const scene.DrawSurf) ?scene.Mesh {
+fn gpuWorldDraws(view: *const scene.View, entity: u32) bool {
+    return cvars.vkGpuWorldDraws.integer != 0 and entity == scene.world_entity and !view.shadow and !view.is_portal;
+}
+pub fn mergeIndices(self: *World, surfaces: []const scene.DrawSurf, view: *const scene.View) ?scene.Mesh {
+    if (surfaces.len != 0 and gpuWorldDraws(view, surfaces[0].entity) and surfaces.len <= 256)
+        return mergeGpu(self, surfaces, view);
     var total: u64 = 0;
-    for (surfaces) |surface| total += self.surfaces[surface.geometry.world.surface].num_indexes;
+    const recull = surfaces.len != 0 and gpuWorldDraws(view, surfaces[0].entity);
+    for (surfaces) |surface| {
+        const s = &self.surfaces[surface.geometry.world.surface];
+        if (recull and cullSurface(view, s, view.origin)) continue;
+        total += s.num_indexes;
+    }
     if (total == 0) return null;
     const space = vk.frame().stream.alloc(total * 4, 4) orelse return null;
     const out = std.mem.bytesAsSlice(u32, space.bytes);
     var offset: usize = 0;
     for (surfaces) |surface| {
         const s = &self.surfaces[surface.geometry.world.surface];
+        if (recull and cullSurface(view, s, view.origin)) continue;
         @memcpy(out[offset .. offset + s.num_indexes], self.indices.items[s.first_index .. s.first_index + s.num_indexes]);
         offset += s.num_indexes;
     }
     return .{ .kind = 0, .vertices = self.vertex_buffer.address, .indices = space.address, .count = @intCast(total) };
+}
+
+fn mergeGpu(self: *World, surfaces: []const scene.DrawSurf, view: *const scene.View) ?scene.Mesh {
+    if (self.index_buffer.buffer == null)
+        self.index_buffer = vk.staticBuffer(std.mem.sliceAsBytes(self.indices.items), c.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    const Descriptor = extern struct {
+        first: u32,
+        count: u32,
+        face: u32,
+        cull: u32,
+        mins: [4]f32,
+        maxs: [4]f32,
+        plane: [4]f32,
+    };
+    const Context = extern struct { planes: [4][4]f32, origin: [4]f32 };
+    const input = vk.frame().records.alloc(@sizeOf(Context) + surfaces.len * @sizeOf(Descriptor), 16) orelse return null;
+    const context: *Context = @ptrCast(@alignCast(input.bytes.ptr));
+    for (view.frustum, &context.planes) |plane, *out| out.* = .{ plane.normal[0], plane.normal[1], plane.normal[2], plane.dist };
+    context.origin = .{ view.origin[0], view.origin[1], view.origin[2], 0 };
+    const descriptors = std.mem.bytesAsSlice(Descriptor, input.bytes[@sizeOf(Context)..]);
+    var total: u32 = 0;
+    for (surfaces, descriptors) |surface, *out| {
+        const s = &self.surfaces[surface.geometry.world.surface];
+        out.* = .{ .first = s.first_index, .count = s.num_indexes, .face = @intFromBool(s.kind == .face), .cull = if (s.shader.cull == .two_sided) 0 else if (s.shader.cull == .front) 1 else 2, .mins = .{ s.mins[0], s.mins[1], s.mins[2], 0 }, .maxs = .{ s.maxs[0], s.maxs[1], s.maxs[2], 0 }, .plane = .{ s.plane_normal[0], s.plane_normal[1], s.plane_normal[2], s.plane_dist } };
+        total += s.num_indexes;
+    }
+    if (total == 0) return null;
+    const output = vk.frame().stream.alloc(16 + @as(u64, total) * 4, 16) orelse return null;
+    const cmd = vk.uploadCommands();
+    vk.dispatch(cmd, "world_draws.comp", @import("post.zig").Push{
+        .slots = .{ @intCast(surfaces.len), @intFromBool(cvars.nocull.integer != 0), @truncate(self.index_buffer.address), @truncate(self.index_buffer.address >> 32) },
+        .buffer0 = input.address,
+        .buffer1 = output.address,
+    }, 64, 1, 1, .{ 64, 1, 1 });
+    vk.memoryBarrier(cmd, c.VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, c.VK_ACCESS_2_SHADER_WRITE_BIT, c.VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | vk.stage_vertex, c.VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | c.VK_ACCESS_2_SHADER_READ_BIT);
+    return .{ .kind = 0, .vertices = self.vertex_buffer.address, .indices = output.address + 16, .count = total, .indirect_buffer = output.buffer, .indirect_offset = output.offset };
 }
 
 pub fn lightGrid(self: *const World, origin: Vec3) ?GridSample {

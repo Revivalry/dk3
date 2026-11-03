@@ -3,6 +3,8 @@
 //! Never names a concrete class: classes plug in through checked contracts (docs/runtime-zig.md "Class contract").
 //! after the complete snapshot has been admitted. No opaque engine state is saved.
 const std = @import("std");
+pub var restore_pool: ?*@import("../../core/ecs/jobs.zig").Pool = null;
+pub var restore_manifest: ?*const @import("../domain/campaign_regions.zig").Manifest = null;
 const entity_classes = @import("entity_classes/registry.zig");
 const data = @import("../../game/domain/components.zig");
 const format = @import("../domain/snapshot.zig");
@@ -87,9 +89,38 @@ fn localDate(unix: i64, buffer: []u8) []const u8 {
 }
 pub fn prepare(slot: []const u8, previous: bool) !format.Loaded {
     const allocator = std.heap.c_allocator;
+    const started = engine.gateway.call(c.G_MILLISECONDS, .{});
     const bytes = try storage.read(allocator, slot, previous);
+    errdefer allocator.free(bytes);
+    const source_length = bytes.len;
+    const read_at = engine.gateway.call(c.G_MILLISECONDS, .{});
+    var loaded = preparedRestore(allocator, bytes) orelse try format.decodeWithPool(allocator, bytes, restore_pool);
+    if (loaded.input_storage == null) loaded.input_storage = bytes else allocator.free(bytes);
+    if (engine.integer("developer") >= 1) {
+        var timing: [192]u8 = undefined;
+        engine.print(std.fmt.bufPrintZ(&timing, "dk3 loading timing: stage=save-decode slot={s} bytes={d} read_ms={d} decode_ms={d}\n", .{ slot, source_length, read_at - started, engine.gateway.call(c.G_MILLISECONDS, .{}) - read_at }) catch unreachable);
+    }
+    return loaded;
+}
+fn preparedRestore(allocator: std.mem.Allocator, source: []const u8) ?format.Loaded {
+    const bytes = (@import("../../engine/prepared_save.zig").read(&engine.gateway, allocator) catch return null) orelse return null;
     defer allocator.free(bytes);
-    return format.decode(allocator, bytes);
+    var digest: [32]u8 = undefined;
+    @import("../../core/domain/sha256_runtime.zig").hash(source, &digest);
+    if (!std.mem.eql(u8, &digest, bytes[0..32])) return null;
+    var loaded = if (restore_manifest) |manifest|
+        format.decodeCertifiedSelection(allocator, bytes[32..], manifest, restore_pool) catch return null
+    else
+        format.decodeWithPool(allocator, bytes[32..], restore_pool) catch return null;
+    loaded.bindOriginal(source) catch {
+        loaded.deinit(allocator);
+        return null;
+    };
+    if (engine.integer("developer") >= 1) {
+        var timing: [192]u8 = undefined;
+        engine.print(std.fmt.bufPrintZ(&timing, "dk3 prepared restore: decoded_worlds={d} cold_worlds={d} bytes={d}\n", .{ loaded.residents.len + 1, loaded.cold.len, bytes.len }) catch unreachable);
+    }
+    return loaded;
 }
 /// Admission may load immutable class metadata, but cannot mutate engine entities.
 /// Projection rebuilding below is infallible

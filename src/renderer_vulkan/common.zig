@@ -29,9 +29,15 @@ pub fn developer(comptime format: []const u8, args: anytype) void {
     print(c.PRINT_DEVELOPER, format, args);
 }
 
+/// Owner-owned asynchronous resources must be joined before the engine unwinds on error.
+pub var error_cleanup: ?*const fn () void = null;
+
 pub fn fail(level: c_int, comptime format: []const u8, args: anytype) noreturn {
     var buffer: [2048]u8 = undefined;
     const text = std.fmt.bufPrintZ(&buffer, format, args) catch "renderer_vulkan: error text overflow";
+    const cleanup = error_cleanup;
+    error_cleanup = null;
+    if (cleanup) |release| release();
     ri.Error.?(level, "%s", text.ptr);
     unreachable;
 }

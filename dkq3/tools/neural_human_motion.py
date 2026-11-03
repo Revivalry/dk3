@@ -7,7 +7,7 @@ import numpy as np
 import skeletal_iqm as sk
 from neural_assets import clip_name
 from neural_rig import pose
-from neural_package import classic_archive, validate_package
+from neural_package import classic_archive, validate_package, entry_compression
 
 HUMANS = {'mishimaguard':'pistol', 'cryotech':'rifle', 'surgeon':'relaxed',
           'fatworker':'relaxed', 'skinnyworker':'relaxed'}
@@ -88,7 +88,7 @@ def compose(root, before, characters, output):
     temporary = output.with_suffix('.partial')
     with classic_archive(temporary) as archive:
         for name,data in sorted(files.items()):
-            entry=zipfile.ZipInfo(name,(1980,1,1,0,0,0));entry.compress_type=zipfile.ZIP_DEFLATED
+            entry=zipfile.ZipInfo(name,(1980,1,1,0,0,0));entry.compress_type=entry_compression(name)
             archive.writestr(entry,data)
     validate_package(temporary,base)
     temporary.replace(output)

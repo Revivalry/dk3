@@ -4,6 +4,7 @@ import hashlib
 import struct
 from pathlib import Path
 import tempfile
+from threading import Event
 import unittest
 import zipfile
 from unittest.mock import patch
@@ -12,6 +13,144 @@ import play
 
 
 class PlayInstallTest(unittest.TestCase):
+    def test_prepared_gpu_generation_is_additive_and_corruption_keeps_current_installation(self):
+        import io
+        from PIL import Image
+        import prepare_gpu_assets
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prefix, assets = self.fixture(root)
+            play.install(prefix, assets)
+            original = (prefix/'play/current').resolve()
+            before = json.loads((original/'share/dk3/compatibility.json').read_text())
+            encoded = io.BytesIO()
+            Image.new('RGBA', (7, 3), (17, 32, 64, 255)).save(encoded, format='PNG')
+            source = root/'textures.pk3'
+            with zipfile.ZipFile(source, 'w') as archive:
+                archive.writestr('textures/fixture.png', encoded.getvalue())
+            prepare_gpu_assets.build_generation([source], root/'prepared')
+            play.install(prefix, assets, prepared_gpu=root/'prepared')
+            installed = (prefix/'play/current').resolve()
+            after = json.loads((installed/'share/dk3/compatibility.json').read_text())
+            self.assertEqual(before['gameplay'], after['gameplay'])
+            self.assertIn('+gpu-prepared-v1', after['cosmetic'])
+            self.assertTrue((installed/'share/dk3/zz-dk3-gpu-000.pk3').is_file())
+            package = root/'prepared/zz-dk3-gpu-000.pk3'
+            package.write_bytes(package.read_bytes() + b'corrupt')
+            with self.assertRaises(ValueError):
+                play.install(prefix, assets, prepared_gpu=root/'prepared')
+            self.assertEqual(installed, (prefix/'play/current').resolve())
+    def test_admission_stream_retains_canonical_gameplay_identity(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            _, assets = self.fixture(Path(temporary))
+            source = assets / 'current'
+            path = source / 'packages/dk3-data.pk3'
+            manifest = json.loads((source / 'manifest.json').read_text())
+            expected = None
+            for compression in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+                with zipfile.ZipFile(path, 'w', compression=compression) as archive:
+                    archive.writestr('Mixed/Last', bytes(range(256)) * 8201)
+                    archive.writestr('Mixed/', b'')
+                    archive.writestr('aaa/empty', b'')
+                    archive.writestr('Z-first', b'canonical ordering')
+                manifest['packages'][path.name]['sha256'] = play.digest(path)
+                (source / 'manifest.json').write_text(json.dumps(manifest))
+                reference = hashlib.sha256()
+                for name in ('base', 'maps', 'data', 'navigation'):
+                    with zipfile.ZipFile(source / 'packages' / f'dk3-{name}.pk3') as archive:
+                        for entry in sorted(archive.namelist()):
+                            if entry.endswith('/'):
+                                continue
+                            reference.update(entry.lower().encode() + b'\0')
+                            reference.update(hashlib.sha256(archive.read(entry)).digest())
+                for threshold in (0, 1 << 60):
+                    with patch('play._ADMISSION_PARALLEL_MIN_BYTES', threshold), \
+                            patch('play.os.cpu_count', return_value=4):
+                        admitted, actual = play.checked_assets(source)
+                    self.assertEqual(admitted, manifest)
+                    self.assertEqual(actual, reference.hexdigest())
+                if expected is not None:
+                    self.assertEqual(actual, expected)
+                expected = actual
+
+    def test_admission_crc_checks_gameplay_and_cosmetic_payloads(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            _, assets = self.fixture(Path(temporary))
+            source = assets / 'current'
+            manifest = json.loads((source / 'manifest.json').read_text())
+            for name in ('data', 'textures'):
+                path = source / 'packages' / f'dk3-{name}.pk3'
+                original = path.read_bytes()
+                with zipfile.ZipFile(path) as archive:
+                    entry = archive.infolist()[0]
+                payload = bytearray(original)
+                offset = entry.header_offset + 30 + len(entry.filename.encode()) + len(entry.extra)
+                payload[offset] ^= 1
+                path.write_bytes(payload)
+                # A matching package SHA must not bypass the entry CRC check.
+                manifest['packages'][path.name]['sha256'] = play.digest(path)
+                (source / 'manifest.json').write_text(json.dumps(manifest))
+                for threshold in (0, 1 << 60):
+                    with patch('play._ADMISSION_PARALLEL_MIN_BYTES', threshold), \
+                            patch('play.os.cpu_count', return_value=4):
+                        with self.assertRaisesRegex(ValueError, 'corrupt entry'):
+                            play.checked_assets(source)
+                path.write_bytes(original)
+                manifest['packages'][path.name]['sha256'] = play.digest(path)
+                (source / 'manifest.json').write_text(json.dumps(manifest))
+
+    def test_failed_admission_joins_other_active_package_readers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            _, assets = self.fixture(Path(temporary))
+            started, release, completed = Event(), Event(), Event()
+            original = play.digest
+            def failed(path):
+                if path.name == 'dk3-base.pk3':
+                    try:
+                        if not started.wait(5):
+                            raise AssertionError('second package reader did not start')
+                        raise OSError('controlled admission reader failure')
+                    finally:
+                        release.set()
+                if path.name == 'dk3-textures.pk3':
+                    started.set()
+                    if not release.wait(5):
+                        raise AssertionError('failed reader did not release peer')
+                    result = original(path)
+                    completed.set()
+                    return result
+                return original(path)
+            with patch('play._ADMISSION_PARALLEL_MIN_BYTES', 0), \
+                    patch('play.os.cpu_count', return_value=2), \
+                    patch('play.digest', side_effect=failed):
+                with self.assertRaisesRegex(OSError, 'controlled admission reader failure'):
+                    play.checked_assets(assets / 'current')
+            self.assertTrue(completed.is_set(), 'failure returned with a reader still active')
+            play.checked_assets(assets / 'current')
+
+    def test_parallel_product_hashes_retain_identity_and_join_after_failure(self):
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch('play._HASH_PARALLEL_MIN_BYTES', 0), \
+                patch('play.os.cpu_count', return_value=2):
+            root = Path(temporary)
+            files = {name: root / name for name in ('small', 'large', 'middle')}
+            for index, path in enumerate(files.values()):
+                path.write_bytes(bytes([index]) * (19 + index * 37))
+            expected = {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in files.items()}
+            self.assertEqual(play._installation_hashes(files), expected)
+            self.assertEqual(list(play._installation_hashes(files)), list(files))
+            original = play.digest
+            def failed(path):
+                if path.name == 'large':
+                    raise OSError('controlled hash reader failure')
+                return original(path)
+            with patch('play.digest', side_effect=failed):
+                with self.assertRaisesRegex(OSError, 'controlled hash reader failure'):
+                    play._installation_hashes(files)
+            files['large'].write_bytes(b'changed bytes after failed read')
+            expected['large'] = hashlib.sha256(files['large'].read_bytes()).hexdigest()
+            self.assertEqual(play._installation_hashes(files), expected)
+
     def fixture(self, root):
         prefix, assets = root / 'native', root / 'assets'
         source = assets / 'generation'
@@ -34,7 +173,7 @@ class PlayInstallTest(unittest.TestCase):
             format=1, profile='retail', key='fixture', packages=records)))
         for name in (*[f'bin/{name}' for name in play.BINARIES],
                      *[f'lib/dk3/{name}' for name in play.MODULES],
-                     *[f'share/dk3/{name}' for name in play.RUNTIME_MEDIA]):
+                     *[f'share/dk3/{name}' for name in play.RUNTIME_MEDIA], *play.RUNTIME_NOTICES):
             path = prefix / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b'{}' if name.endswith('.json') else b'first build')
@@ -45,6 +184,8 @@ class PlayInstallTest(unittest.TestCase):
             prefix, assets = self.fixture(Path(temporary))
             play.install(prefix, assets)
             original = (prefix / 'play/current').resolve()
+            for notice in play.RUNTIME_NOTICES:
+                self.assertEqual((original / notice).read_bytes(), (prefix / notice).read_bytes())
             save = prefix / 'play/state/dk3/saves/user.sav'
             save.parent.mkdir(parents=True)
             save.write_bytes(b'user save')

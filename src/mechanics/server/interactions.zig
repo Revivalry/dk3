@@ -37,25 +37,8 @@ pub fn touch(world: *data.World, slots: *Slots, projections: []abi.EntityProject
         const object = (world.get(entity, data.MapObject) catch continue).*;
         const binding = (world.get(entity, data.Binding) catch continue).*;
         const projection = &projections[binding.slot];
-        if (world.get(entity, data.Exit) catch null) |exit| {
-            var touching: ?ecs.Entity = null;
-            for (occupants[0..c.MAX_CLIENTS]) |client| {
-                const actor = client orelse continue;
-                const player = world.get(actor, data.Player) catch continue;
-                if (player.mode != .normal or (try world.get(actor, data.Health)).current <= 0) continue;
-                if (overlap(&projections[(try world.get(actor, data.Binding)).slot], projection, 0)) {
-                    touching = actor;
-                    break;
-                }
-            }
-            if (touching) |player| {
-                if (!exit.latched) {
-                    exit.latched = true;
-                    try router.activate(world, slots, projections, entity, try world.persistentId(player), now);
-                }
-            } else exit.latched = false;
-            continue;
-        }
+        var authored: @import("entity_classes/registry.zig").Use = .{ .router = router, .world = world, .slots = slots, .projections = projections, .entity = entity, .object = object, .source = null, .activator = 0, .now = now };
+        if (try @import("entity_classes/registry.zig").touchAuthored(&authored)) continue;
         if (world.get(entity, data.WorldControl) catch null) |control| {
             const body_touch = @import("entity_classes/registry.zig").touchesWithBody(control.action);
             if (!body_touch and projection.shared.contents & c.CONTENTS_TRIGGER == 0) continue;

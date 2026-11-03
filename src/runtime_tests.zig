@@ -2,6 +2,7 @@
 //! Shared mechanism: the test root gathering every runtime module's tests.
 /// Class validators for saved state (domain/snapshot.zig).
 pub const saved_classes = @import("mechanics/server/saved_classes.zig");
+pub const snapshot_runtime_identity = @import("runtime_build").identity;
 pub const ecs = @import("core/ecs/world.zig");
 pub const jobs = @import("core/ecs/jobs.zig");
 pub const scheduler = @import("core/ecs/scheduler.zig");
@@ -11,6 +12,7 @@ pub const components = @import("game/domain/components.zig");
 pub const motion = @import("mechanics/server/motion.zig");
 pub const map = @import("mechanics/server/map.zig");
 test {
+    _ = @import("core/domain/sha256_runtime.zig");
     _ = @import("mechanics/client/attachments.zig");
     _ = @import("mechanics/client/skeletal_aim.zig");
     _ = @import("core/domain/ragdoll.zig");

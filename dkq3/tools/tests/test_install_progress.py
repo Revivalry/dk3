@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from install_ui import InstallerUI
 
@@ -78,6 +79,7 @@ class ProgressTests(unittest.TestCase):
                 ui.poll()
                 self.assertEqual(ui.done, {'models'})
 
+    @patch.dict(os.environ, {'TERM': 'xterm-256color'})
     def test_rich_terminal_renders_real_counts_and_literal_names(self):
         output = io.StringIO()
         ui = InstallerUI(stream=output)

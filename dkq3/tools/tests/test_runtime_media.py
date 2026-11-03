@@ -2,11 +2,9 @@
 import contextlib
 import io
 import json
-import struct
 from pathlib import Path
 import tempfile
 import unittest
-import zipfile
 from unittest.mock import patch
 
 import play
@@ -16,33 +14,15 @@ class RuntimeMediaTest(unittest.TestCase):
     def test_shader_update_is_installed_verified_and_keeps_asset_identity(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            prefix, assets = root / 'build', root / 'assets'
-            generation = assets / 'fixture'
-            (generation / 'packages').mkdir(parents=True)
-            (assets / 'current').symlink_to('fixture', target_is_directory=True)
-            for name in play.PACKAGES:
-                with zipfile.ZipFile(generation / 'packages' / f'dk3-{name}.pk3', 'w') as archive:
-                    archive.writestr(f'{name}/fixture.cfg', 'synthetic package')
-                    if name == 'maps':
-                        bsp = bytearray(144)
-                        struct.pack_into('<4si', bsp, 0, b'IBSP', 46)
-                        archive.writestr('maps/e1m1a.bsp', bsp)
-            for name in play.BINARIES:
-                target = prefix / 'bin' / name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(b'synthetic binary')
-            for name in play.MODULES:
-                target = prefix / 'lib' / 'dk3' / name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(b'synthetic module')
-            for name in play.RUNTIME_MEDIA:
-                target = prefix / 'share' / 'dk3' / name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text('{}' if name == 'rules.json' else '// synthetic presentation v1\n')
+            from tests.test_play_install import PlayInstallTest
+            prefix, assets = PlayInstallTest().fixture(root)
+            generation = (assets / 'current').resolve()
             target = prefix / 'share/dk3' / play.LEGACY_RUNTIME_MEDIA[0]
-            manifest = dict(format=1, key='unchanged-gameplay', profile='retail')
+            target.write_text('// synthetic presentation v1\n')
+            manifest = json.loads((generation / 'manifest.json').read_text())
+            manifest['key'] = 'unchanged-gameplay'
             (generation / 'manifest.json').write_text(json.dumps(manifest))
-            with patch('play.checked_assets', return_value=manifest), contextlib.redirect_stdout(io.StringIO()):
+            with contextlib.redirect_stdout(io.StringIO()):
                 play.install(prefix, assets)
                 first = (prefix / 'play/current').resolve()
                 target.write_text('// synthetic presentation v2\n')

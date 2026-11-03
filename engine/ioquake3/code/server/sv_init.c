@@ -398,6 +398,7 @@ void SV_SpawnServer( char *server, qboolean killBots ) {
 	qboolean	isBot;
 	char		systemInfo[16384];
 	const char	*p;
+	int loadingStarted = Sys_Milliseconds(), loadingStage;
 
 	// shut down the existing game if it is running
 	SV_ShutdownGameProgs();
@@ -414,6 +415,7 @@ void SV_SpawnServer( char *server, qboolean killBots ) {
 
 	// make sure all the client stuff is unloaded
 	CL_ShutdownAll(qfalse);
+	Com_DPrintf("dk3 loading timing: stage=engine-client-reset total_ms=%d\n", Sys_Milliseconds() - loadingStarted);
 
 	// clear the whole hunk because we're (re)loading the server
 	Hunk_Clear();
@@ -464,9 +466,13 @@ void SV_SpawnServer( char *server, qboolean killBots ) {
 
 	// get a new checksum feed and restart the file system
 	sv.checksumFeed = ( ((unsigned int)rand() << 16) ^ (unsigned int)rand() ) ^ Com_Milliseconds();
+	loadingStage = Sys_Milliseconds();
 	FS_Restart( sv.checksumFeed );
+	Com_DPrintf("dk3 loading timing: stage=filesystem-restart total_ms=%d\n", Sys_Milliseconds() - loadingStage);
 
+	loadingStage = Sys_Milliseconds();
 	CM_LoadMap( va("maps/%s.bsp", server), qfalse, &checksum );
+	Com_DPrintf("dk3 loading timing: stage=server-collision total_ms=%d\n", Sys_Milliseconds() - loadingStage);
 
 	// set serverinfo visible name
 	Cvar_Set( "mapname", server );
@@ -489,6 +495,7 @@ void SV_SpawnServer( char *server, qboolean killBots ) {
 
 	// load and spawn all other entities
 	SV_InitGameProgs();
+	Com_DPrintf("dk3 loading timing: stage=engine-server-init total_ms=%d\n", Sys_Milliseconds() - loadingStarted);
 
 	// don't allow a map_restart if game is modified
 	sv_gametype->modified = qfalse;

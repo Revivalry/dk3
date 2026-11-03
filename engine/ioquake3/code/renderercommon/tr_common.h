@@ -146,16 +146,28 @@ void R_LoadBMP( const char *name, byte **pic, int *width, int *height );
 void R_LoadJPG( const char *name, byte **pic, int *width, int *height );
 void R_LoadPCX( const char *name, byte **pic, int *width, int *height );
 void R_LoadPNG( const char *name, byte **pic, int *width, int *height );
+void R_ClearPNGCache(void);
 /* Resident material preparation. Decode workers use only immutable bytes and
  * malloc; owner-thread polls retain all filesystem and GPU ownership. */
 typedef struct dkImageBatch_s dkImageBatch_t;
 void R_DecodePNG(const byte *bytes, int length, byte **pic, int *width, int *height, size_t maximum);
 dkImageBatch_t *R_CreateImageBatch(int capacity);
+dkImageBatch_t *R_CreateCachedImageBatch(int capacity);
+/* Snapshot earlier queued names as optional preparation exclusions. Missing
+ * prepared images still load normally during actual material registration. */
+qboolean R_ExcludePreparedImages(dkImageBatch_t *batch, const dkImageBatch_t *earlier);
+/* These cache operations are owner-thread only; returned pixels are independent
+ * malloc allocations, never borrowed from the retained canonical image. */
+qboolean R_CopyCachedPNG(const byte *bytes, int length, byte **pic, int *width, int *height, size_t maximum);
+void R_RetainPreparedPNG(const byte *bytes, int length, const byte *pixels, int width, int height);
 qboolean R_QueuePNG(dkImageBatch_t *batch, const char *name);
 qboolean R_PrepareImage(dkImageBatch_t *batch, const char *name);
 qboolean R_QueueShaderImages(dkImageBatch_t *batch, const char *name);
 int R_PollImageBatch(dkImageBatch_t *batch);
 void R_SelectImageBatch(dkImageBatch_t *batch);
+/* Owner-only immutable view, valid until this batch is freed. Do not free or
+ * mutate it; asynchronous consumers must use R_TakePreparedPNG's owned copy. */
+qboolean R_BorrowPreparedPNG(const char *name, const byte **pic, int *width, int *height);
 qboolean R_TakePreparedPNG(const char *name, byte **pic, int *width, int *height);
 void R_FreeImageBatch(dkImageBatch_t *batch);
 void R_LoadPVR( const char *name, byte **pic, int *width, int *height );

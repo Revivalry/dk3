@@ -126,6 +126,7 @@ is not provided. Path tracing increases the rendering workload substantially.
 | --- | --- | --- |
 | `r_vkValidation` | `0` | Enable the Khronos validation layer when installed; requires restart |
 | `r_vkStats` | `0` | Print frame counters every N frames; `0` disables output |
+| `r_vkStatsTrace` | `0` | With stats enabled, print one completed frame's raw timestamp intervals. Software drivers can defer work between scopes; cross-check whole-frame time and workload counts |
 | `r_vkMaterialScan` | `0` | Compile shader scripts and report unsupported keywords |
 | `r_vkDebugView` | `0` | Diagnostic output view |
 | `r_vkRtCost` | `0` | Profiling bitmask that skips selected lighting work |

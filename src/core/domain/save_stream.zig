@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Shared mechanism: Portable v1 named-record codec. Independent of ECS and native ABI layouts.
 const std = @import("std");
+const crc32 = @import("crc32_ieee.zig");
 pub const limit = 256 * 1024 * 1024;
 pub const max_records = 16384;
 pub const max_fields = 320;
@@ -45,7 +46,7 @@ pub const Reader = struct {
         if (read32(data[8..]) != 1) return error.UnsupportedVersion;
         if (read32(data[12..]) != data.len) return error.Truncated;
         if (read32(data[16..]) > max_records) return error.Limit;
-        if (read32(data[20..]) != std.hash.crc.Crc32IsoHdlc.hash(data[24..])) return error.Checksum;
+        if (read32(data[20..]) != crc32.hash(data[24..])) return error.Checksum;
         return .{ .data = data, .records_left = read32(data[16..]) };
     }
     pub fn nextRecord(self: *Reader) Error!?Record {
@@ -172,7 +173,7 @@ pub const Writer = struct {
         self.close();
         write32(self.data[12..], self.cursor);
         write32(self.data[16..], self.records);
-        write32(self.data[20..], std.hash.crc.Crc32IsoHdlc.hash(self.data[24..self.cursor]));
+        write32(self.data[20..], crc32.hash(self.data[24..self.cursor]));
         const result = self.data[0..self.cursor];
         try Reader.validate(result);
         return result;

@@ -137,7 +137,10 @@ fn stageVariant(flags: u32) u8 {
 }
 
 pub const Mesh = struct {
+    indirect_buffer: c.VkBuffer = null,
+    indirect_offset: u64 = 0,
     kind: u32 = 0,
+    weather_style: weather.Style = .rain,
     vertices: u64 = 0,
     indices: u64 = 0,
     count: u32 = 0,
@@ -376,6 +379,13 @@ pub const Stats = struct {
     polys: u32 = 0,
     surfaces: u32 = 0,
     draws: u32 = 0,
+    ui_quads: u32 = 0,
+    ui_draws: u32 = 0,
+    weather_vertices: u32 = 0,
+    weather_indices: u32 = 0,
+    weather_particles: u32 = 0,
+    weather_prepared_particles: u32 = 0,
+    weather_prepare_draws: u32 = 0,
 };
 pub var stats: Stats = .{};
 
@@ -466,6 +476,7 @@ fn setFarClip(view: *View) void {
 
 /// `RE_RenderScene`.
 pub fn renderScene(fd: *const c.refdef_t) void {
+    end2DProfile();
     const cpu_start = profile.cpuBegin();
     defer profile.cpuEnd("render scene (build, record)", cpu_start);
     if (window.beginFrame()) resetBindings();
@@ -514,15 +525,22 @@ pub fn renderScene(fd: *const c.refdef_t) void {
 }
 
 fn uploadDlights(view: *View) void {
-    if (view.dlights.len == 0) return;
+    // A zero light count must still carry a valid physical-buffer reference:
+    // SIMD fragment execution may evaluate a masked light lane. A neutral
+    // record keeps that load valid without adding a light to the view.
+    const records = @max(view.dlights.len, 1);
     // Without the upload every consumer (froxels, clusters, probes, records) would loop over
     // the lights at address 0: on the GPU a device fault. Drop the frame's lights instead.
-    const space = vk.frame().stream.alloc(view.dlights.len * 32, 16) orelse {
+    const space = vk.frame().stream.alloc(records * 32, 16) orelse {
         common.developer("renderer_vulkan: no stream space for {d} dynamic lights; dropped this frame\n", .{view.dlights.len});
         view.dlights = view.dlights[0..0];
         return;
     };
     const out = std.mem.bytesAsSlice([4]f32, space.bytes);
+    if (view.dlights.len == 0) {
+        out[0] = .{ 0, 0, 0, 1 };
+        out[1] = .{ 0, 0, 0, 0 };
+    }
     for (view.dlights, 0..) |light, index| {
         out[index * 2] = .{ light.origin[0], light.origin[1], light.origin[2], light.radius };
         out[index * 2 + 1] = .{ light.color[0], light.color[1], light.color[2], if (light.additive) 1 else 0 };
@@ -566,6 +584,7 @@ pub fn renderView(view: *View) void {
         }
     }
     stats.surfaces += @intCast(draw_surfs.items.len - first);
+    prepareWeather(view, draw_surfs.items[first..]);
     const draw_scope = profile.begin(window.cmd, if (view.is_portal) "draw portal view" else if (view.world == null) "draw view (no world)" else "draw view");
     drawView(view, draw_surfs.items[first..]);
     profile.end(window.cmd, draw_scope);
@@ -744,7 +763,7 @@ fn renderRainMap(view: *View, owner: *world.World, boxes: []const [4]f32, count:
             }
         }
         if (surface.shader.sort <= shader_mod.Sort.see_through or w.owner.surfaces[w.surface].liquid != .none) {
-            if (world.mergeIndices(w.owner, surfaces[index..end])) |mesh| drawBatch(&map_view, surface.shader, null, mesh, false, false);
+            if (world.mergeIndices(w.owner, surfaces[index..end], &map_view)) |mesh| drawBatch(&map_view, surface.shader, null, mesh, false, false);
         }
         index = end;
     }
@@ -979,8 +998,71 @@ fn addWeatherSurfaces(view: *View) void {
         weather.draws(volume_entry, lighting, &parts);
         for (parts) |maybe| {
             const part = maybe orelse continue;
-            addDrawSurf(part.shader, world_entity, .{ .mesh = .{ .kind = 3, .vertices = part.params, .count = part.count } }, 0);
+            addDrawSurf(part.shader, world_entity, .{ .mesh = .{ .kind = 3, .weather_style = part.style, .vertices = part.params, .count = part.count } }, 0);
         }
+    }
+}
+
+/// Prepare splash bases once in the vertex stage, using only spare frame capacity.
+fn prepareWeather(view: *View, surfaces: []DrawSurf) void {
+    if (!vk.vertex_stores or view.is_portal or view.portal_plane != null or view.view_data == 0) return;
+    const frame = vk.frame();
+    var started = false;
+    var scope: ?u32 = null;
+    for (surfaces) |*surface| {
+        if (surface.geometry != .mesh) continue;
+        const mesh = &surface.geometry.mesh;
+        if (mesh.kind != 3 or mesh.weather_style != .splash) continue;
+        const count = mesh.count / 6;
+        const bytes = @as(u64, count) * 80;
+        if (count == 0 or bytes > (16 << 20) - frame.weather_scratch_used) continue;
+        const scratch = frame.stream.allocRemaining(bytes, 16) orelse continue;
+        frame.weather_scratch_used += bytes;
+        const space = frame.records.alloc(@sizeOf(Record), 16) orelse continue;
+        const record: *Record = @ptrCast(@alignCast(space.bytes.ptr));
+        record.* = std.mem.zeroes(Record);
+        record.clip = modelViewProjection(view, &orientation(view, null), false).clip;
+        record.vertices = mesh.vertices;
+        record.view = view.view_data;
+        record.lights = view.dlight_address;
+        record.counts = .{ 0, 0, @intCast(view.dlights.len), count };
+        record.extra = scratch.address;
+        if (!started) {
+            window.suspendRendering();
+            scope = profile.begin(window.cmd, "weather preparation");
+            const rendering = std.mem.zeroInit(c.VkRenderingInfo, .{
+                .sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
+                .renderArea = .{ .extent = .{ .width = 1, .height = 1 } },
+                .layerCount = 1,
+            });
+            vk.d.CmdBeginRendering.?(window.cmd, &rendering);
+            const pipeline = vk.pipeline(.{ .src = 1, .dst = 0, .format = c.VK_FORMAT_UNDEFINED, .program = vk.program_weather_prepare, .variant = @intFromEnum(weather.Style.splash) });
+            vk.d.CmdBindPipeline.?(window.cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            const sets = [_]c.VkDescriptorSet{ vk.descriptor_set, vk.storage_set };
+            vk.d.CmdBindDescriptorSets.?(window.cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, vk.pipeline_layout, 0, 2, &sets, 0, null);
+            const viewport = c.VkViewport{ .x = 0, .y = 0, .width = 1, .height = 1, .minDepth = 0, .maxDepth = 1 };
+            const scissor = c.VkRect2D{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 1, .height = 1 } };
+            vk.d.CmdSetViewport.?(window.cmd, 0, 1, &viewport);
+            vk.d.CmdSetScissor.?(window.cmd, 0, 1, &scissor);
+            vk.d.CmdSetCullMode.?(window.cmd, c.VK_CULL_MODE_NONE);
+            vk.d.CmdSetFrontFace.?(window.cmd, c.VK_FRONT_FACE_COUNTER_CLOCKWISE);
+            vk.d.CmdSetDepthBiasEnable.?(window.cmd, c.VK_FALSE);
+            vk.d.CmdSetDepthBias.?(window.cmd, 0, 0, 0);
+            started = true;
+        }
+        const push = [2]u32{ @truncate(space.address), @truncate(space.address >> 32) };
+        vk.d.CmdPushConstants.?(window.cmd, vk.pipeline_layout, vk.all_stages, 0, 8, &push);
+        vk.d.CmdDraw.?(window.cmd, count, 1, 0, 0);
+        mesh.extra = scratch.address;
+        stats.draws += 1;
+        stats.weather_prepare_draws += 1;
+        stats.weather_prepared_particles += count;
+    }
+    if (started) {
+        vk.d.CmdEndRendering.?(window.cmd);
+        profile.end(window.cmd, scope);
+        vk.memoryBarrier(window.cmd, vk.stage_vertex, c.VK_ACCESS_2_SHADER_WRITE_BIT, vk.stage_vertex, vk.access_shader_read);
+        resetBindings();
     }
 }
 
@@ -1332,11 +1414,13 @@ fn flushVolume(view: *View) void {
 }
 
 fn drawView(view: *View, surfaces: []DrawSurf) void {
+    const target_scope = profile.begin(window.cmd, "view target and clear");
     // Remaster world views render into the HDR target; menu and HUD model views stay in the
     // UI overlay with the classic look.
     window.useTarget(if (window.remaster and view.rdflags & c.RDF_NOWORLDMODEL == 0) .hdr else .classic);
     clearDepth(view);
     setScissor(view.x, view.y, view.width, view.height);
+    profile.end(window.cmd, target_scope);
     view.prepassed = false;
     if (cvars.vkDepthPrepass.integer != 0 and !view.is_portal and !view.shadow and window.currentTarget() == .hdr and view.rdflags & c.RDF_NOWORLDMODEL == 0) {
         const prepass_scope = profile.begin(window.cmd, "depth prepass");
@@ -1349,6 +1433,8 @@ fn drawView(view: *View, surfaces: []DrawSurf) void {
     flushVolume(view);
     var traced = false;
     var index: usize = 0;
+    var surface_profile_name: []const u8 = "";
+    var surface_profile_scope: ?u32 = null;
     while (index < surfaces.len) {
         const surface = surfaces[index];
         // Path tracing mode relights the opaque world before translucent surfaces draw.
@@ -1357,6 +1443,16 @@ fn drawView(view: *View, surfaces: []DrawSurf) void {
             traced = true;
         }
         const entity: ?*Entity = if (surface.entity == world_entity) null else &view.entities[surface.entity];
+        const surface_profile_next: []const u8 = switch (surface.geometry) {
+            .world => "world surface groups",
+            .mesh => |mesh| if (mesh.kind == 3) "weather particles" else "model and polygon groups",
+            .sky => "sky groups",
+        };
+        if (!std.mem.eql(u8, surface_profile_name, surface_profile_next)) {
+            profile.end(window.cmd, surface_profile_scope);
+            surface_profile_name = surface_profile_next;
+            surface_profile_scope = profile.begin(window.cmd, surface_profile_name);
+        }
         switch (surface.geometry) {
             .world => |w| {
                 // Merge consecutive surfaces of the same shader, entity and world into one batch.
@@ -1371,7 +1467,7 @@ fn drawView(view: *View, surfaces: []DrawSurf) void {
                     }
                     dlight_bits |= next.dlights;
                 }
-                const mesh = world.mergeIndices(w.owner, surfaces[index..end]) orelse {
+                const mesh = world.mergeIndices(w.owner, surfaces[index..end], view) orelse {
                     index = end;
                     continue;
                 };
@@ -1384,6 +1480,10 @@ fn drawView(view: *View, surfaces: []DrawSurf) void {
             },
             .mesh => |mesh| {
                 drawBatch(view, surface.shader, entity, mesh, surface.dlights != 0 or (entity != null and view.dlights.len > 0), false);
+                if (mesh.kind == 3) {
+                    stats.weather_particles += mesh.count / 6;
+                    stats.weather_indices += mesh.count;
+                }
                 index += 1;
             },
             .sky => {
@@ -1392,8 +1492,11 @@ fn drawView(view: *View, surfaces: []DrawSurf) void {
             },
         }
     }
+    profile.end(window.cmd, surface_profile_scope);
     if (!traced) pathTrace(view);
+    const finish_scope = profile.begin(window.cmd, "view finish liquids");
     window.endLiquids();
+    profile.end(window.cmd, finish_scope);
 }
 
 /// Depth of every pre-pass batch (drawBatch in prepass_mode), batched as drawView batches.
@@ -1415,7 +1518,7 @@ fn depthPrepass(view: *View, surfaces: []DrawSurf) void {
                     }
                 }
                 if (w.owner.surfaces[w.surface].liquid == .none and prepassable(view, surface.shader, entity, .none)) {
-                    if (world.mergeIndices(w.owner, surfaces[index..end])) |mesh| drawBatch(view, surface.shader, entity, mesh, false, false);
+                    if (world.mergeIndices(w.owner, surfaces[index..end], view)) |mesh| drawBatch(view, surface.shader, entity, mesh, false, false);
                 }
                 index = end;
             },
@@ -1707,6 +1810,7 @@ fn ortho2d() [4][4]f32 {
 var current_pipeline: c.VkPipeline = null;
 
 fn drawStage(view: *const View, batch: *const Batch, stage: *const Stage) void {
+    const weather_indexed = batch.mesh.kind == 3;
     const frame = vk.frame();
     const space = frame.records.alloc(@sizeOf(Record), 16) orelse {
         common.developer("renderer_vulkan: draw record ring full\n", .{});
@@ -1873,12 +1977,13 @@ fn drawStage(view: *const View, batch: *const Batch, stage: *const Stage) void {
     const cmd = window.cmd;
     // Weather particles also lower the HDR alpha so the temporal resolve treats them as moving.
     const mark_motion = batch.mesh.kind == 3 and window.currentTarget() == .hdr;
-    const program: u8 = if (prepass_mode) vk.program_depth else if (batch.prepassed) vk.program_stage_early else vk.program_stage;
+    const plain_display = window.currentTarget() == .classic and !prepass_mode and !batch.prepassed and cvars.vkDebugView.integer == 0 and record.mode2[1] == 0 and (record.mode2[2] & ~flag_overlay_opaque) == 0;
+    const program: u8 = if (plain_display) vk.program_display else if (weather_indexed) vk.program_weather else if (prepass_mode) vk.program_depth else if (batch.prepassed) vk.program_stage_early else vk.program_stage;
     const motion_target = window.currentTarget() == .hdr;
     const pipeline = if (prepass_mode)
         vk.pipeline(.{ .src = 1, .dst = 0, .format = window.targetFormat(), .program = program, .color_write = false, .motion_target = motion_target })
     else
-        vk.pipeline(.{ .src = stage.src, .dst = stage.dst, .format = window.targetFormat(), .program = program, .overlay = overlay, .mark_motion = mark_motion, .variant = stageVariant(flags), .motion_target = motion_target, .motion_write = record.mode2[2] & flag_motion != 0 });
+        vk.pipeline(.{ .src = stage.src, .dst = stage.dst, .format = window.targetFormat(), .program = program, .overlay = overlay, .mark_motion = mark_motion, .variant = if (weather_indexed) (if (batch.mesh.extra != 0) 3 else @intFromEnum(batch.mesh.weather_style)) else stageVariant(flags), .motion_target = motion_target, .motion_write = record.mode2[2] & flag_motion != 0 });
     if (pipeline != current_pipeline) {
         vk.d.CmdBindPipeline.?(cmd, c.VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         current_pipeline = pipeline;
@@ -1899,7 +2004,13 @@ fn drawStage(view: *const View, batch: *const Batch, stage: *const Stage) void {
     vk.d.CmdSetDepthBias.?(cmd, if (batch.shader.polygon_offset) -2 else 0, 0, if (batch.shader.polygon_offset) -1 else 0);
     const push = [2]u32{ @truncate(space.address), @truncate(space.address >> 32) };
     vk.d.CmdPushConstants.?(cmd, vk.pipeline_layout, vk.all_stages, 0, 8, &push);
-    vk.d.CmdDraw.?(cmd, batch.mesh.count, 1, 0, 0);
+    if (weather_indexed) {
+        std.debug.assert(batch.mesh.count % 6 == 0 and batch.mesh.count / 6 <= weather.max_particles);
+        vk.d.CmdBindIndexBuffer.?(cmd, weather.indexBuffer(), 0, c.VK_INDEX_TYPE_UINT32);
+        vk.d.CmdDrawIndexed.?(cmd, batch.mesh.count, 1, 0, 0, 0);
+    } else if (batch.mesh.indirect_buffer != null) {
+        vk.d.CmdDrawIndirect.?(cmd, batch.mesh.indirect_buffer, batch.mesh.indirect_offset, 1, @sizeOf(c.VkDrawIndirectCommand));
+    } else vk.d.CmdDraw.?(cmd, batch.mesh.count, 1, 0, 0);
     stats.draws += 1;
 }
 
@@ -1994,6 +2105,24 @@ fn drawSky(view: *const View, shader: *Shader) void {
 // 2D (RE_SetColor, RE_StretchPic, RE_StretchRaw)
 
 var entity2d_color: [4]u8 = .{ 255, 255, 255, 255 };
+var ui_profile_active = false;
+var ui_cpu_start: i128 = 0;
+var ui_gpu_scope: ?u32 = null;
+
+/// One scope per consecutive overlay segment, avoiding a clock read per glyph.
+/// CPU time includes caller work between draws; GPU queries measure recorded work.
+pub fn end2DProfile() void {
+    if (!ui_profile_active) return;
+    profile.end(window.cmd, ui_gpu_scope);
+    profile.cpuEnd("2D segment (draws + caller)", ui_cpu_start);
+    discard2DProfile();
+}
+
+pub fn discard2DProfile() void {
+    ui_profile_active = false;
+    ui_cpu_start = 0;
+    ui_gpu_scope = null;
+}
 
 pub fn setColor(rgba: ?*const [4]f32) void {
     const value = if (rgba) |color| color.* else [4]f32{ 1, 1, 1, 1 };
@@ -2053,6 +2182,14 @@ fn drawQuad2d(shader_in: *Shader, x: f32, y: f32, w: f32, h: f32, s1: f32, t1: f
     std.mem.bytesAsSlice(u32, indices.bytes)[0..6].* = .{ 3, 0, 2, 2, 0, 1 };
     var view = view2d();
     window.useTarget(.classic);
+    stats.ui_quads += 1;
+    if (!ui_profile_active) {
+        ui_cpu_start = profile.cpuBegin();
+        if (ui_cpu_start != 0) {
+            ui_gpu_scope = profile.begin(window.cmd, "2D overlay");
+            ui_profile_active = true;
+        }
+    }
     setScissor(0, 0, view.width, view.height);
     const batch: Batch = .{
         .shader = shader,
@@ -2064,7 +2201,10 @@ fn drawQuad2d(shader_in: *Shader, x: f32, y: f32, w: f32, h: f32, s1: f32, t1: f
         .dlights = false,
         .two_d = true,
     };
-    for (shader.stagesSlice()) |*stage| drawStage(&view, &batch, stage);
+    for (shader.stagesSlice()) |*stage| {
+        drawStage(&view, &batch, stage);
+        stats.ui_draws += 1;
+    }
 }
 
 /// `RE_StretchRaw`: uploads into a scratch image and draws it like a 2D picture.

@@ -182,6 +182,11 @@ fn find(name: []const u8) !?*Entry {
     for (entries[0..count]) |*entry| if (std.mem.eql(u8, std.mem.sliceTo(&entry.source, 0), name)) return entry;
     return null;
 }
+pub fn resolved(name: []const u8) !?[]const u8 {
+    const entry = try find(name) orelse return null;
+    return std.mem.sliceTo(&entry.target, 0);
+}
+
 pub fn model(name: []const u8) !?c.qhandle_t {
     const entry = try find(name) orelse return null;
     if (entry.handle == 0) {

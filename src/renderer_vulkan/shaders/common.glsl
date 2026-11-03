@@ -4,6 +4,9 @@
 #extension GL_EXT_buffer_reference_uvec2 : require
 #extension GL_EXT_nonuniform_qualifier : require
 
+// Vertex shader working value, not a buffer wire layout.
+struct Vtx { vec3 pos; vec3 normal; vec2 st; vec2 lm; vec4 color; };
+
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Record {
     mat4 clip;
     vec4 modelView[3];
@@ -25,7 +28,7 @@ layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Re
     uvec2 indices;
     uvec2 frameB;
     uvec2 extra;
-    vec4 misc;         // backlerp, depth hack, unused, unused
+    vec4 misc;         // backlerp, unused, unused, unused
     vec4 clipPlane;    // world-space portal plane: keep dot(p, xyz) - w >= 0
     vec4 material;     // roughness, metalness, bump strength, emissive
     vec4 material2;    // specular strength, liquid kind, exposure hint, unused
@@ -99,6 +102,7 @@ layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer We
     vec4 grid0;        // light grid origin, w = colour volume slot + 1
     vec4 grid1;        // light grid scale, w = direction volume slot + 1
     vec4 sky;          // sky radiance (linear), w = intensity (r_vkWeatherDensity)
+    uvec4 divisions;   // exact reciprocal multipliers: particles per tile, row
 };
 const float WEATHER_TILE = 512.0;
 
@@ -161,7 +165,8 @@ float rainSurface(ViewData view, uint slot, vec2 xy) {
     vec2 uv = view.rain.xy + vec2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5) * view.rain.z;
     float texel = view.rainParams.z;
     uv = clamp(uv, view.rain.xy + texel, view.rain.xy + view.rain.z - texel);
-    float stored = textureLod(textures[nonuniformEXT(slot)], uv, 0.0).r;
+    // The roof-map slot is constant across the weather draw; only coordinates vary.
+    float stored = textureLod(textures[slot], uv, 0.0).r;
     return view.rainParams.y - stored / view.rainParams.x;
 }
 
@@ -188,3 +193,10 @@ float rainExposure(ViewData view, uint slot, vec3 pos) {
 layout(set = 1, binding = 1) uniform sampler3D volumes[];
 
 vec3 toLinear(vec3 c) { return pow(max(c, vec3(0.0)), vec3(2.2)); }
+
+bool alphaRejected(float alpha, uint func) {
+    if (func == 1u && alpha <= 0.0) return true;
+    if (func == 2u && alpha >= 0.5) return true;
+    if (func == 3u && alpha < 0.5) return true;
+    return false;
+}

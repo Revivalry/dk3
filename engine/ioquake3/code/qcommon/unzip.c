@@ -59,7 +59,9 @@ woven in by Terry Thorsen 1/2003.
 
 
 #ifndef UNZ_BUFSIZE
-#define UNZ_BUFSIZE (16384)
+/* dk3 alteration: amortize seek/read overhead on complete asset reads. Each
+   stream is still bounded, and small entries allocate only their own size. */
+#define UNZ_BUFSIZE (128 * 1024)
 #endif
 
 #ifndef UNZ_MAXFILENAMEINZIP
@@ -1065,6 +1067,7 @@ extern int ZEXPORT unzOpenCurrentFile3 (file, method, level, raw, password)
 {
     int err=UNZ_OK;
     uInt iSizeVar;
+    uInt bufferSize;
     unz_s* s;
     file_in_zip_read_info_s* pfile_in_zip_read_info;
     uLong offset_local_extrafield;  /* offset of the local extra field */
@@ -1094,7 +1097,10 @@ extern int ZEXPORT unzOpenCurrentFile3 (file, method, level, raw, password)
     if (pfile_in_zip_read_info==NULL)
         return UNZ_INTERNALERROR;
 
-    pfile_in_zip_read_info->read_buffer=(char*)ALLOC(UNZ_BUFSIZE);
+    bufferSize = s->cur_file_info.compressed_size < UNZ_BUFSIZE ?
+        (uInt)s->cur_file_info.compressed_size : UNZ_BUFSIZE;
+    if (!bufferSize) bufferSize = 1;
+    pfile_in_zip_read_info->read_buffer=(char*)ALLOC(bufferSize);
     pfile_in_zip_read_info->offset_local_extrafield = offset_local_extrafield;
     pfile_in_zip_read_info->size_local_extrafield = size_local_extrafield;
     pfile_in_zip_read_info->pos_local_extrafield=0;
@@ -1317,7 +1323,7 @@ extern int ZEXPORT unzReadCurrentFile  (file, buf, len)
 
         if ((pfile_in_zip_read_info->compression_method==0) || (pfile_in_zip_read_info->raw))
         {
-            uInt uDoCopy,i ;
+            uInt uDoCopy;
 
             if ((pfile_in_zip_read_info->stream.avail_in == 0) &&
                 (pfile_in_zip_read_info->rest_read_compressed == 0))
@@ -1329,9 +1335,11 @@ extern int ZEXPORT unzReadCurrentFile  (file, buf, len)
             else
                 uDoCopy = pfile_in_zip_read_info->stream.avail_in ;
 
-            for (i=0;i<uDoCopy;i++)
-                *(pfile_in_zip_read_info->stream.next_out+i) =
-                        *(pfile_in_zip_read_info->stream.next_in+i);
+            /* dk3 alteration: the private ZIP input buffer is disjoint from
+               the caller's output. Copy exactly their validated common bound,
+               retaining the same CRC update and stream accounting below. */
+            memcpy(pfile_in_zip_read_info->stream.next_out,
+                   pfile_in_zip_read_info->stream.next_in, uDoCopy);
 
             pfile_in_zip_read_info->crc32 = crc32(pfile_in_zip_read_info->crc32,
                                 pfile_in_zip_read_info->stream.next_out,

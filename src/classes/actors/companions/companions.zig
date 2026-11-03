@@ -4,6 +4,13 @@ const class_traits = @import("../../../mechanics/policy/actors/traits.zig");
 pub const classes = [_]class_traits.Class{.{ .kind = .companion, .traits = .{ .party = true, .remains = .{ .never = true } } }};
 pub const render_tag = 10029;
 pub const Identity = enum { mikiko, superfly };
+/// Authored departure requirements for this class's two identities.
+pub fn requiredForExit(identity: Identity, flags: u32) bool {
+    return flags & @as(u32, switch (identity) {
+        .mikiko => 4,
+        .superfly => 2,
+    }) != 0;
+}
 /// `come` walks to a spot in front of the owner, then follows; `backoff` follows without fighting
 /// until another order.
 pub const Order = enum { follow, stay, attack, collect, move, come, backoff };

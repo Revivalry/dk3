@@ -9,7 +9,7 @@ import zipfile
 import iqm
 import skeletal_iqm as sk
 from neural_rig import localize_weights
-from neural_package import validate_package
+from neural_package import validate_package, entry_compression, classic_archive
 
 
 def patch_weights(data):
@@ -53,10 +53,10 @@ def replace(package, base, output):
         updates['dk3/neural-assets.json'] = json.dumps(document, sort_keys=True, indent=2).encode()
         output.parent.mkdir(parents=True, exist_ok=True)
         temporary = output.with_suffix('.partial')
-        with zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as target:
+        with classic_archive(temporary) as target:
             for name in sorted(source.namelist()):
                 info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
-                info.compress_type = zipfile.ZIP_DEFLATED
+                info.compress_type = entry_compression(name)
                 target.writestr(info, updates[name] if name in updates else source.read(name))
     validate_package(temporary, base)
     temporary.replace(output)

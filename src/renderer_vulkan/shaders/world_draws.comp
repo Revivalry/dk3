@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Deterministic visibility and index compaction for one sorted material batch.
+#version 460
+#include "post_common.glsl"
+layout(local_size_x=64) in;
+struct Surface { uvec4 indices; vec4 mins; vec4 maxs; vec4 plane; };
+layout(buffer_reference, std430, buffer_reference_align=16) readonly buffer Input {
+    vec4 planes[4]; vec4 origin; Surface surfaces[];
+};
+shared uint counts[256];
+shared uint offsets[256];
+void main() {
+    uint lane = gl_LocalInvocationID.x;
+    Input inputData = Input(pc.buffer0);
+    Words source = Words(uvec2(pc.slots.z, pc.slots.w));
+    Words outputData = Words(pc.buffer1);
+    for (uint i=lane; i<pc.slots.x; i+=64u) {
+        Surface s = inputData.surfaces[i];
+        bool visible = true;
+        if (pc.slots.y == 0u) {
+            if (s.indices.z != 0u) {
+                float d = dot(inputData.origin.xyz, s.plane.xyz);
+                if (s.indices.w == 1u && d < s.plane.w - 8.0) visible = false;
+                if (s.indices.w == 2u && d > s.plane.w + 8.0) visible = false;
+            } else {
+                for (uint j=0u; j<4u; ++j) {
+                    vec4 p = inputData.planes[j];
+                    vec3 corner = mix(s.mins.xyz, s.maxs.xyz, greaterThanEqual(p.xyz, vec3(0)));
+                    if (dot(corner, p.xyz) < p.w) visible = false;
+                }
+            }
+        }
+        counts[i] = visible ? s.indices.y : 0u;
+    }
+    barrier();
+    if (lane == 0u) {
+        uint total = 0u;
+        for (uint i=0u; i<pc.slots.x; ++i) { offsets[i] = total; total += counts[i]; }
+        outputData.v[0] = total; outputData.v[1] = 1u;
+        outputData.v[2] = 0u; outputData.v[3] = 0u;
+    }
+    barrier();
+    for (uint i=0u; i<pc.slots.x; ++i) {
+        uint first = inputData.surfaces[i].indices.x;
+        for (uint j=lane; j<counts[i]; j+=64u)
+            outputData.v[4u + offsets[i] + j] = source.v[first + j];
+    }
+}

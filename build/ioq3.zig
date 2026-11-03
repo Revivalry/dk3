@@ -11,6 +11,8 @@ pub fn declare(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     const all = b.step("engine", "Build the bundled client, server, renderers (gameplay modules are built by the Zig runtime)");
     const server_step = b.step("engine-server", "Build the bundled dedicated server");
     b.getInstallStep().dependOn(all);
+    all.dependOn(&b.addInstallFileWithDir(b.path("engine/ioquake3/code/thirdparty/libdeflate-1.26/COPYING"), .prefix, "share/licenses/dk3/libdeflate-COPYING").step);
+    all.dependOn(&b.addInstallFileWithDir(b.path("docs/licenses/zig-stdlib.txt"), .prefix, "share/licenses/dk3/zig-stdlib-MIT").step);
     const settings = options(b);
     if (!config.inTargetMatrix(target.result.cpu.arch, target.result.os.tag, target.result.abi)) {
         const failure = &b.addFail("dk3 supports x86_64-linux-gnu and x86_64-windows-gnu").step;
@@ -89,6 +91,8 @@ pub fn addProduct(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
         .link_libc = true,
     });
     @import("header_inputs.zig").track(b, module, &.{source_root});
+    if (product == .renderer_opengl1 or product == .renderer_opengl2)
+        @import("libdeflate.zig").add(b, module);
     const generated = b.addWriteFiles();
     var seen: std.StringHashMapUnmanaged(void) = .empty;
     const root = b.build_root.join(b.allocator, &.{source_root}) catch @panic("OOM");
@@ -115,7 +119,7 @@ pub fn addProduct(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std
         } else b.path(b.pathJoin(&.{ source_root, path }));
         module.addCSourceFile(.{ .file = file, .flags = config.sourceFlags(product, path) });
     }
-    if (product == .client) {
+    if (product == .client or product == .server) {
         module.addIncludePath(b.path("engine/ioquake3/code/qcommon"));
         module.addCSourceFile(.{ .file = b.path("engine/ioquake3/code/qcommon/dk_save_format.c"), .flags = config.sourceFlags(product, "engine/ioquake3/code/qcommon/dk_save_format.c") });
     }

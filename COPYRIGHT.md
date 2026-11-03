@@ -18,7 +18,9 @@ captures does not relicense that artwork under the project's GPL grant.
 
 The PAK/WAL tools implement file-format rules and use synthetic test fixtures. References to
 original filenames in comments document format research; those source files are not distributed.
-The process runner uses Zig's standard library and Linux interfaces. The development tree
+The process runner uses Zig's standard library and Linux interfaces. The separately
+qualified SHA-256 backend also uses that unmodified standard library, under the
+[Zig contributors' MIT notice](docs/licenses/zig-stdlib.txt). The development tree
 also bundles ioquake3 and its third-party sources with their original notices. This project's
 GPL grant does not replace those licenses; see [component dispositions](docs/provenance.md).
 
@@ -34,6 +36,11 @@ Lua 5.4.7 is bundled unmodified under `engine/lua` under the MIT license; its no
 (Copyright © 1994–2024 Lua.org, PUC-Rio) is retained in [lua.h](engine/lua/src/lua.h) and
 [readme.html](engine/lua/doc/readme.html). It is linked into the native server module for the
 scripted co-op bot.
+The unmodified libdeflate 1.26 decoder subset under
+`engine/ioquake3/code/thirdparty/libdeflate-1.26` uses the MIT license; its
+[COPYING](engine/ioquake3/code/thirdparty/libdeflate-1.26/COPYING) and individual
+source notices remain intact. `engine/LIBDEFLATE-UPSTREAM.json` pins the source
+archive and file hashes. It supplies full-buffer PNG decompression in the engine.
 A subset of AMD's FidelityFX SDK v1.1.4 (the FSR 3.1 upscaler shaders) is bundled unmodified
 under `engine/fidelityfx` under the MIT license; its notice (Copyright © 2024 Advanced Micro
 Devices, Inc.) is retained in [LICENSE.txt](engine/fidelityfx/LICENSE.txt) and in every file.

@@ -20,7 +20,7 @@ pub fn reset() void {
     loaded = false;
 }
 
-pub fn model(name: []const u8) !?c.qhandle_t {
+fn find(name: []const u8) !?*Entry {
     if (!loaded) {
         loaded = true;
         if (try @import("../../engine/files.zig").readOptional(.client, &engine.gateway, std.heap.c_allocator, "dk3/hd-weapon-models.cfg", 8192)) |bytes| {
@@ -46,15 +46,25 @@ pub fn model(name: []const u8) !?c.qhandle_t {
     }
     for (entries[0..count]) |*entry| {
         if (!std.mem.eql(u8, std.mem.sliceTo(&entry.source, 0), name)) continue;
-        if (entry.handle == 0) {
-            entry.handle = @intCast(engine.gateway.call(c.CG_R_REGISTERMODEL, .{&entry.target}));
-            if (entry.handle == 0) return error.HdWeaponModelUnavailable;
-            var message: [180]u8 = undefined;
-            engine.print(try std.fmt.bufPrintZ(&message, "dk3 HD weapon: {s} -> {s}\n", .{
-                std.mem.sliceTo(&entry.source, 0), std.mem.sliceTo(&entry.target, 0),
-            }));
-        }
-        return entry.handle;
+        return entry;
     }
     return null;
+}
+
+pub fn resolved(name: []const u8) !?[]const u8 {
+    const entry = try find(name) orelse return null;
+    return std.mem.sliceTo(&entry.target, 0);
+}
+
+pub fn model(name: []const u8) !?c.qhandle_t {
+    const entry = try find(name) orelse return null;
+    if (entry.handle == 0) {
+        entry.handle = @intCast(engine.gateway.call(c.CG_R_REGISTERMODEL, .{&entry.target}));
+        if (entry.handle == 0) return error.HdWeaponModelUnavailable;
+        var message: [180]u8 = undefined;
+        engine.print(try std.fmt.bufPrintZ(&message, "dk3 HD weapon: {s} -> {s}\n", .{
+            std.mem.sliceTo(&entry.source, 0), std.mem.sliceTo(&entry.target, 0),
+        }));
+    }
+    return entry.handle;
 }

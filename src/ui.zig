@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Shared mechanism: Native UI ABI boundary. Typed menu state and rendering live in ui/.
 const std = @import("std");
+/// Prepared handoffs certify the same pure class checks as the server decoder.
+pub const saved_classes = @import("mechanics/server/saved_classes.zig");
+pub const snapshot_runtime_identity = @import("runtime_build").identity;
 const abi = @import("engine/abi.zig");
 const engine = @import("engine/ui.zig");
 const c = abi.c;
@@ -42,6 +45,19 @@ export fn vmMain(command: c_int, arg0: isize, arg1: isize, arg2: isize, arg3: is
             var name: [32]u8 = @splat(0);
             var page: [8]u8 = @splat(0);
             _ = engine.gateway.call(c.UI_ARGV, .{ @as(isize, 0), &name, @as(isize, name.len) });
+            if (std.mem.eql(u8, std.mem.sliceTo(&name, 0), "dk3_menu_loading") and engine.number("developer") >= 1) {
+                var action: [16]u8 = @splat(0);
+                var slot: [48]u8 = @splat(0);
+                _ = engine.gateway.call(c.UI_ARGV, .{ @as(isize, 1), &action, @as(isize, action.len) });
+                _ = engine.gateway.call(c.UI_ARGV, .{ @as(isize, 2), &slot, @as(isize, slot.len) });
+                const selected = std.mem.sliceTo(&action, 0);
+                if (!std.mem.eql(u8, selected, "new-game") and !std.mem.eql(u8, selected, "load")) return 1;
+                menu.probeLoading(if (std.mem.eql(u8, selected, "load")) std.mem.sliceTo(&slot, 0) else null) catch |err| {
+                    var message: [128]u8 = undefined;
+                    engine.print(std.fmt.bufPrintZ(&message, "dk3 loading probe refused: {s}\n", .{@errorName(err)}) catch unreachable);
+                };
+                return 1;
+            }
             if (!std.mem.eql(u8, std.mem.sliceTo(&name, 0), "dk3_menu_page")) return 0;
             _ = engine.gateway.call(c.UI_ARGV, .{ @as(isize, 1), &page, @as(isize, page.len) });
             menu.openPage(std.fmt.parseInt(usize, std.mem.sliceTo(&page, 0), 10) catch return 1);

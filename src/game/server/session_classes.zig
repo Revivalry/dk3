@@ -12,7 +12,7 @@
 //! | `takesView(*World) bool` | it never takes the view over (as a cinematic does) |
 pub const classes = .{ @import("../../classes/actors/companions/server/companion_pilot.zig"), @import("../../classes/entities/monitor/server/monitors.zig"), @import("../../classes/weapons/ballista/server/ballista.zig"), @import("../../classes/actors/companions/server/companions.zig") };
 /// The class whose members travel with the player, take orders and gate autosaves and exits:
-/// `find`, `member`, `isMember`, `healthyParty`, `required`, `capture`, `start`, `arrive`, `order`,
+/// `find`, `member`, `isMember`, `healthyParty`, `required`, `summonForExit`, `capture`, `start`, `arrive`, `order`,
 /// `handles`, `command`,
 /// `allowsPickup`, `collects`, `viewHeight`, `afterTransfer`, `farthestRequired`, `summary`,
 /// `Identity`.

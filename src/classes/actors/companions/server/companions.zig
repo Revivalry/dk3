@@ -293,14 +293,43 @@ pub fn camera(world: *data.World, player: ecs.Entity, state: *c.playerState_t) !
 }
 pub fn required(world: *data.World, player: ecs.Entity, flags: u32) !bool {
     const origin = (try world.get(player, data.Transform)).position;
-    for ([_]policy.Identity{ .mikiko, .superfly }, [_]u32{ 4, 2 }) |identity, bit| {
-        if (flags & bit == 0) continue;
+    for ([_]policy.Identity{ .mikiko, .superfly }) |identity| {
+        if (!policy.requiredForExit(identity, flags)) continue;
         const entity = member(world, identity, try world.persistentId(player)) orelse return false;
         if ((try entity.get(data.Health)).current <= 0) return false;
         const pose = (try entity.get(data.Transform)).position;
         if (v.length(v.subtract(pose, origin)) >= 150) return false;
     }
     return true;
+}
+
+/// An attempted departure calls distant required members to the owner, ahead of
+/// combat and optional collection. Reuse the saved Come order and normal motor.
+pub fn summonForExit(world: *data.World, player: ecs.Entity, flags: u32) !void {
+    const owner = try world.persistentId(player);
+    const origin = (try world.get(player, data.Transform)).position;
+    for ([_]policy.Identity{ .mikiko, .superfly }) |identity| {
+        if (!policy.requiredForExit(identity, flags)) continue;
+        const ref = member(world, identity, owner) orelse continue;
+        const companion = try ref.get(data.Companion);
+        if (!companion.enabled or (try ref.get(data.Health)).current <= 0) continue;
+        if (v.length(v.subtract((try ref.get(data.Transform)).position, origin)) < 150) continue;
+        if (companion.order == .come and !companion.stopped and v.length(v.subtract(companion.destination, origin)) < 32) continue;
+        companion.order = .come;
+        companion.destination = origin;
+        companion.target = 0;
+        companion.stopped = false;
+        companion.authored = .none;
+        companion.animation_until = null;
+        companion.collecting = 0;
+        companion.collect_forced = false;
+        companion.collect_until_ms = 0;
+        companion.yielding_until_ms = 0;
+        const actor = try ref.get(data.Actor);
+        actor.route = .{};
+        actor.scripted_pose = null;
+        @import("companion_pilot.zig").forget(try ref.id());
+    }
 }
 
 pub fn arrive(actors: *@import("../../../../mechanics/server/actors.zig").Actors, world: *data.World, slots: *Slots, projections: []abi.EntityProjection, player: ecs.Entity, traveler: @import("../../../../mechanics/domain/travel.zig").Traveler, journey: @import("../../../../mechanics/domain/travel.zig").Journey, now: i64) !void {
@@ -376,8 +405,7 @@ pub fn farthestRequired(world: *data.World, here: v.Vec3, flags: u32) ?v.Vec3 {
     var members = world.queryAccess(data.World.mask(.{ data.Companion, data.Health, data.Transform }), 0, 0);
     defer members.deinit();
     while (members.next()) |view| for (view.read(data.Companion), view.read(data.Health), view.read(data.Transform)) |party_member, vitality, place| {
-        const bit: u32 = if (party_member.identity == .mikiko) 4 else 2;
-        if (flags & bit == 0 or vitality.current <= 0) continue;
+        if (!policy.requiredForExit(party_member.identity, flags) or vitality.current <= 0) continue;
         const span = v.length(v.subtract(place.position, here));
         if (span <= distance) continue;
         distance = span;
@@ -399,4 +427,24 @@ pub fn summary(world: *data.World, here: v.Vec3, buffer: []u8) []const u8 {
 /// The player a member follows, or null for non-members.
 pub fn leader(world: *data.World, entity: ecs.Entity) ?u32 {
     return if (world.get(entity, data.Companion) catch null) |party_member| party_member.owner else null;
+}
+
+test "departure summons only required members without waiving the distance check" {
+    const t = std.testing;
+    var world = data.World.init(t.allocator, 4);
+    defer world.deinit();
+    const player = try world.create(7, .{data.Transform{}});
+    const follower = try world.create(8, .{ data.Transform{ .position = .{ 500, 0, 0 } }, data.Health{ .current = 100, .maximum = 100 }, data.Actor{ .definition = 0 }, data.Companion{ .identity = .mikiko, .owner = 7, .order = .stay, .stopped = true, .collecting = 12, .collect_forced = true } });
+    const other = try world.create(9, .{ data.Transform{ .position = .{ 700, 0, 0 } }, data.Health{ .current = 100, .maximum = 100 }, data.Actor{ .definition = 0 }, data.Companion{ .identity = .superfly, .owner = 7, .order = .stay } });
+    try t.expect(!try required(&world, player, 4));
+    try summonForExit(&world, player, 4);
+    const state = (try world.get(follower, data.Companion)).*;
+    try t.expectEqual(policy.Order.come, state.order);
+    try t.expectEqual(data.Vec3{ 0, 0, 0 }, state.destination);
+    try t.expect(!state.stopped and state.collecting == 0 and !state.collect_forced);
+    try t.expectEqual(policy.Order.stay, (try world.get(other, data.Companion)).order);
+    try t.expect(!try required(&world, player, 4));
+    (try world.get(follower, data.Transform)).position = .{ 100, 0, 0 };
+    try t.expect(try required(&world, player, 4));
+    try t.expect(!try required(&world, player, 6));
 }

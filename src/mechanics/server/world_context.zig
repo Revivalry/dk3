@@ -123,6 +123,7 @@ pub const Context = struct {
             arena.deinit();
             std.heap.c_allocator.destroy(arena);
         }
+        saved.releaseInput(std.heap.c_allocator);
         self.world = saved.world;
         self.restored_arena = saved.arena;
         saved.ownership_transferred = true;

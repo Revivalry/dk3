@@ -198,6 +198,10 @@ with patch.object(install_wizard, 'python_environment', return_value=private), \
                 path = prefix / 'share/dk3' / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('{}')
+            for name in release_bundle.play.RUNTIME_NOTICES:
+                path = prefix / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'required synthetic runtime notice')
             runtime = root / 'python'
             (runtime / 'bin').mkdir(parents=True)
             (runtime / 'bin/python3').write_bytes(b'python')
@@ -218,6 +222,9 @@ with patch.object(install_wizard, 'python_environment', return_value=private), \
             manifest = json.loads((bundle / 'bundle.json').read_text())
             self.assertIn('bin/dk3', manifest['files'])
             self.assertIn('dkq3/tools/install_wizard.py', manifest['files'])
+            for name in release_bundle.play.RUNTIME_NOTICES:
+                self.assertIn(name, manifest['files'])
+                self.assertEqual((bundle / name).read_bytes(), (prefix / name).read_bytes())
             install_wizard.verify_bundle(bundle)
             # Load the real consumers in a separate process outside the checkout.
             # A manifest alone cannot catch an omitted runtime data dependency.
@@ -237,6 +244,8 @@ with patch.object(install_wizard, 'python_environment', return_value=private), \
             install_wizard.copy_products(bundle, installed)
             install_wizard.write_launcher(installed)
             self.assertTrue((installed / 'tools/play.py').is_file())
+            for name in release_bundle.play.RUNTIME_NOTICES:
+                self.assertEqual((installed / name).read_bytes(), (prefix / name).read_bytes())
             self.assertIn('play.py', (installed / 'play.sh').read_text())
             (bundle / 'bin/dk3').write_bytes(b'changed')
             with self.assertRaisesRegex(ValueError, 'changed release file'):

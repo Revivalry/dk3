@@ -7,7 +7,7 @@ from pathlib import Path
 import zipfile
 
 from neural_assets import CHARACTERS, texture_files
-from neural_package import validate_package
+from neural_package import validate_package, entry_compression, classic_archive
 
 
 def replace(package, base, character, texture, output):
@@ -25,11 +25,11 @@ def replace(package, base, character, texture, output):
     updates['dk3/neural-assets.json'] = json.dumps(document, sort_keys=True, indent=2).encode()
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_suffix('.partial')
-    with zipfile.ZipFile(package) as source, zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as target:
+    with zipfile.ZipFile(package) as source, classic_archive(temporary) as target:
         for name in sorted(source.namelist()):
             data = updates[name] if name in updates else source.read(name)
             info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_DEFLATED
+            info.compress_type = entry_compression(name)
             target.writestr(info, data)
     validate_package(temporary, base)
     temporary.replace(output)

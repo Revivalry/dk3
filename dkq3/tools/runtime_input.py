@@ -32,11 +32,12 @@ def cinematic_shots(text, inputs, map_name, program, count):
 
 
 class NativeInput:
-    def __init__(self, process, pipe, log, home, inputs, *, diagnostic=False):
+    def __init__(self, process, pipe, log, home, inputs, *, diagnostic=False, response_timeout=5):
         if not __debug__:
             raise RuntimeError("Native acceptance requires Python assertions enabled")
         self.process, self.pipe, self.log, self.home = process, pipe, log, home
         self.inputs, self.diagnostic, self.serial = inputs, diagnostic, 0
+        self.response_timeout = response_timeout
         self.forward_ms = 0
         self._activity_sample = None
 
@@ -56,7 +57,7 @@ class NativeInput:
         send(self.pipe, command)
 
     def observe(self):
-        deadline = time.monotonic() + 30
+        deadline = time.monotonic() + max(30, self.response_timeout)
         while time.monotonic() < deadline:
             result, offset = self._observe_once()
             if not result.get("connecting"):
@@ -82,7 +83,7 @@ class NativeInput:
         marker = f"dk3 observe {self.serial}: "
         before = len(self.text())
         self.issue(f"dk3_runtime_observe {self.serial}")
-        text = wait(self.process, self.log, lambda value: marker in value[before:] or engine_failure(value[before:]), 5)[before:]
+        text = wait(self.process, self.log, lambda value: marker in value[before:] or engine_failure(value[before:]), self.response_timeout)[before:]
         if failure := engine_failure(text):
             raise RuntimeError(failure)
         line = next(line.split(marker, 1)[1] for line in text.splitlines() if marker in line)

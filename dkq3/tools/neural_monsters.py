@@ -23,7 +23,7 @@ import entities
 import dkm2md3
 import skeletal_iqm as sk
 from neural_assets import read_md3, STORY_CHARACTERS
-from neural_package import validate_package, classic_archive
+from neural_package import validate_package, classic_archive, entry_compression
 
 TOOLS = Path(__file__).resolve().parent
 ROOT = TOOLS.parent.parent
@@ -626,7 +626,7 @@ def package(args):
     with classic_archive(temporary) as archive:
         for name, data in sorted(files.items()):
             entry = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
-            entry.compress_type = zipfile.ZIP_DEFLATED
+            entry.compress_type = entry_compression(name)
             archive.writestr(entry, data)
     validate_package(temporary, base)
     temporary.replace(destination)

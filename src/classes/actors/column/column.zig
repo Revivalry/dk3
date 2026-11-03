@@ -6,6 +6,8 @@ pub const classes = [_]class_traits.Class{.{ .kind = .column, .traits = .{ .side
 pub const state_field = "column";
 pub const attacks = [_][]const u8{ "ataka", "atakb" };
 pub const awakening_distance: f32 = 256;
+/// Leave the authored 48-unit plinth for its surrounding floor, retaining a bounded descent.
+pub const maximum_drop: f32 = 64;
 pub const attack_distance: f32 = 200;
 const saved = @import("../../../mechanics/policy/actors/saved_time.zig");
 pub const State = struct {

@@ -21,3 +21,17 @@ The native code is `src/classes/actors/column/` (`column.zig`: awakening, weapon
 ## Verification (sequence 410)
 
 - Implemented, not yet verified in game.
+
+## Plinth locomotion (sequence 569)
+
+Verified in the actual e2m3b statue-pool geometry. The 48-unit drop from its
+plinth exceeded the ground motor's default support bound. This class supplies a
+64-unit descent; shared clearance crosses the departing edge horizontally rather
+than diagonally through the plinth. Physics still performs every movement sweep
+and fall. Cliff/hazard rejection and other classes' default bound remain intact.
+
+The guardian leaves its authored position by about 113 units, reaches the lower
+floor and attacks the nearby player (health 100→33, source is this guardian).
+The guarded headless scenario uses diagnostic player placement and ordinary
+combat, not a full-route traversal. Evidence: `pool-statue-569/` in the canonical
+checkout and `perf-water-defaults-568/` in the performance checkout.

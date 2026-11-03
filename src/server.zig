@@ -3,6 +3,7 @@
 const std = @import("std");
 /// Class validators for saved state (domain/snapshot.zig).
 pub const saved_classes = @import("mechanics/server/saved_classes.zig");
+pub const snapshot_runtime_identity = @import("runtime_build").identity;
 const abi = @import("engine/abi.zig");
 const engine = @import("engine/server.zig");
 const c = abi.c;
@@ -61,6 +62,8 @@ fn shutdown(restart: bool) void {
     active.systems.deinit(restart);
     if (pool) |workers| workers.destroy();
     pool = null;
+    persistence.restore_pool = null;
+    persistence.restore_manifest = null;
     if (active.world) |*value| value.deinit();
     active.world = null;
     if (active.restored_arena) |strings| {
@@ -72,7 +75,14 @@ fn shutdown(restart: bool) void {
     active.arena = null;
     active.handle = null;
 }
+fn loadingMark(stage: []const u8, started: isize) void {
+    if (engine.integer("developer") < 1) return;
+    var text: [128]u8 = undefined;
+    engine.print(std.fmt.bufPrintZ(&text, "dk3 loading timing: stage={s} total_ms={d}\n", .{ stage, engine.gateway.call(c.G_MILLISECONDS, .{}) - started }) catch unreachable);
+}
 fn init(now: i64, restart: bool) !void {
+    const started = engine.gateway.call(c.G_MILLISECONDS, .{});
+    defer loadingMark("game-init", started);
     shutdown(restart);
     engine.register("dk3_runtime_probe", "0", 0);
     engine.register("g_residentWorlds", "0", c.CVAR_ARCHIVE);
@@ -94,6 +104,7 @@ fn init(now: i64, restart: bool) !void {
     active.stepped_at = now;
     _ = engine.mapName(&active.map_name);
     pool = try Pool.create(std.heap.c_allocator, @intCast(jobs));
+    persistence.restore_pool = pool;
     @memset(std.mem.asBytes(&active.projection), 0);
     @memset(std.mem.asBytes(&active.players), 0);
     for (&active.projection, 0..) |*entity, i| {
@@ -140,8 +151,14 @@ fn init(now: i64, restart: bool) !void {
         }
         _ = try active.world.?.create(null, .{ object.binding, object.transform });
     }
+    if (engine.integer("dk3_runtime_probe") == 2 and resident_enabled) {
+        try progression.init();
+        persistence.restore_manifest = &progression.manifest;
+    }
     if (engine.integer("dk3_runtime_probe") == 2) {
+        const spawn_started = engine.gateway.call(c.G_MILLISECONDS, .{});
         try active.systems.spawn(active.arena.?.allocator(), &active.world.?, &active.slots, &active.projection, now, active.clients.episode, &active.clients.weapon_table, restart, false);
+        loadingMark("game-spawn", spawn_started);
         active.targets.scripts = &active.systems.scripts;
         active.targets.cinematics = &active.systems.cinematics;
         active.targets.actors = &active.systems.actors;
@@ -172,7 +189,6 @@ fn init(now: i64, restart: bool) !void {
         }
     }
     try rooms.init();
-    if (engine.integer("dk3_runtime_probe") == 2 and resident_enabled) try progression.init();
     // A save restores its map's own seamless region before play; the other
     // maps it carries stay dormant until travel or prefetch wants them.
     if (active.restore_pending) |*saved| if (resident_enabled and progression.manifest.count != 0) try resident_worlds.retainRegion(saved, &progression.manifest);
@@ -195,6 +211,9 @@ fn init(now: i64, restart: bool) !void {
 }
 /// Ownership transfers only after all admission/rebasing checks have succeeded.
 fn restore(loaded: *@import("mechanics/domain/snapshot.zig").Loaded, visit: bool) !void {
+    if (loaded.cold.len != 0) return error.IncompletePreparedSource;
+    const started = engine.gateway.call(c.G_MILLISECONDS, .{});
+    defer loadingMark("game-restore", started);
     // Session planning is transient: a restored party plans afresh.
     inline for (session.classes) |Class| if (@hasDecl(Class, "sessionReset")) Class.sessionReset();
     // Earlier native schema-1 snapshots predate exit latches. Reconstruct their
@@ -218,6 +237,7 @@ fn restore(loaded: *@import("mechanics/domain/snapshot.zig").Loaded, visit: bool
         strings.deinit();
         std.heap.c_allocator.destroy(strings);
     }
+    loaded.releaseInput(std.heap.c_allocator);
     active.world = loaded.world;
     active.stepped_at = clock.now_ms;
     active.restored_arena = loaded.arena;
@@ -297,7 +317,7 @@ fn loadSlot(slot: []const u8, previous: bool) !void {
     var owned = true;
     defer if (owned) loaded.deinit(std.heap.c_allocator);
     var name: [64]u8 = undefined;
-    if (loaded.residents.len == 0 and !resident_worlds.hasGameplay() and std.mem.eql(u8, loaded.map, persistence.mapName(&name)) and @import("mechanics/server/resources.zig").canRestoreInPlace(loaded.header.resources)) {
+    if (loaded.residents.len == 0 and loaded.cold.len == 0 and !resident_worlds.hasGameplay() and std.mem.eql(u8, loaded.map, persistence.mapName(&name)) and @import("mechanics/server/resources.zig").canRestoreInPlace(loaded.header.resources)) {
         try restore(&loaded, false);
         owned = false;
     } else {

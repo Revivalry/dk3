@@ -20,7 +20,7 @@ The native code is `src/classes/actors/companions/` (brain, navigation, items, d
 | Documented deviations | Combat by the shared pilot (strafing, dodging, scored weapons) instead of planting and shooting; side-by-side following instead of the chain; it also engages hostiles it sees (the reference reacts only to attackers); a wider item scan | Recorded in bots-zig |
 | Hazards and water (sequence 426, deviation) | The reference has no avoidance: `AI_CheckWaterDamage` only hurts in lava, slime and nitrogen, and a drowning sidekick walks to its nearest ground node | Careful footing in the shared pilot: lethal liquid is checked as far ahead as the body would slide (further on ice), on straight steering too; hops that would land in it are not taken; a slide toward it is counter-steered; in lava or slime it climbs straight out to the nearest dry floor. It treads water instead of sinking, rises to the surface unless a route dives, and a forward stroke no longer follows the aim pitch down. It is never settled under water, in water the leader is not in, or below its follow spot |
 | Catch-up (sequence 426, deviation) | None: only authored teleport nodes move a sidekick (`SIDEKICK_DoTeleportAndComeNear`) | `companion_catchup.zig`: further than 1536 from the leader for 3 s; 8 s without getting 64 closer, either beyond 512 or in water the leader is not in; 2.5 s in lava or slime (or with no way out); or under water with 2.5 s of air left. It is put on safe footing beside the leader (behind first, then the leader's trail), where the leader sees neither the departure nor the arrival (a rescue from liquid may leave in view). Never under an order, a stop, an authored action, a cinematic or while carrying. Nitrogen contact stays fatal |
-| Open questions | Stop nodes are implemented (sequence 375: they precede teleport nodes, hold without changing the order, and the first sidekick says the line); still open: teleport-node media, the second sidekick's 1 s stagger; a said line is not saved (a reload can repeat it); the remaining sidekick voice lines (yes/no permission questions); exit refusal feedback (centre print, Hiro's line, the missing sidekick running over); defending the other sidekick; ladder and look/kick idles; the Episode 3 freeze death | Open |
+| Open questions | Stop nodes are implemented (sequence 375: they precede teleport nodes, hold without changing the order, and the first sidekick says the line); still open: teleport-node media, the second sidekick's 1 s stagger; a said line is not saved (a reload can repeat it); the remaining sidekick voice lines (yes/no permission questions); Hiro's exit-refusal voice line (sequence 507 implements centre feedback and the required sidekick running over); defending the other sidekick; ladder and look/kick idles; the Episode 3 freeze death | Open |
 
 ## Animation inventory (converted `.anim`)
 
@@ -43,3 +43,22 @@ The native code is `src/classes/actors/companions/` (brain, navigation, items, d
 - Unit tests: stopping reach on ordinary and slick floor; lethal liquid seen ahead within the reach only; hops that would land in it; the nearest dry floor out of a lava pool; never settled under water, in water the leader is not in, or below the spot; catch-up timing (far, stuck, stuck in water, headway, eligibility, lava and air rescue).
 - Passed: `sidekick-lava` (e3m3c), `sidekick-slime` (e2m5c), `sidekick-nitro` (e1m6c), `sidekick-water` and `sidekick-surface` (e1m1c), `sidekick-catchup` and `sidekick-stop` (e1m4b). Evidence is in `zig-out/reports/runtime-zig-426/`; details are in the run log.
 - Not verified: slick-floor braking in game, an escape from lava by the sidekick itself (the scenarios kept him out of it), and gameplay acceptance over a campaign.
+
+## Sequence 507 — required companions at a blocked exit
+
+Reference provenance: Gold `dlls/world/Triggers.cpp`, `trigger_sidekick_detect`
+and `AI_SIDEKICK_ALEXWANTSYOURASSTHERE`. A departure that lacks a required
+nearby member explicitly calls that member to the player. The companion class
+owns the request and its flag mapping; exits use the checked party hook.
+
+Use the existing saved Come order and ordinary motor, clearing discretionary
+collection, stopped/scripted pose and transient route state for a requested
+living enabled member. Keep an already-current request instead of resetting
+its route on every retry. Unrequested members keep their orders. Required
+distance remains strictly below 150 units; no actor is teleported or spawned.
+
+The connected headless e2m3b/e2m3c regression passes with the request active.
+The unchanged user save also passes natural B-to-A movement and a save/load
+while waiting in the exit. Player identity, health, inventory and ammunition
+are preserved. Latest aggregate verification is recorded in sequence 507's
+acceptance entry; full campaign traversal and refusal voice media remain open.

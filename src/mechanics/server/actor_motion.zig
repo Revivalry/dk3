@@ -16,7 +16,11 @@ fn worldMask(body: data.Body) u32 {
     return body.collision_mask & ~@as(u32, c.CONTENTS_BODY);
 }
 fn floorWith(collision: Collision, position: v.Vec3, body: data.Body, slot: u16) !?v.Vec3 {
-    const hit = try collision.trace(.{ .start = v.add(position, .{ 0, 0, 18 }), .end = v.add(position, .{ 0, 0, -32 }), .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = worldMask(body) });
+    return floorWithin(collision, .{}, position, body, slot);
+}
+pub const Limits = struct { maximum_drop: f32 = 32 };
+fn floorWithin(collision: Collision, limits: Limits, position: v.Vec3, body: data.Body, slot: u16) !?v.Vec3 {
+    const hit = try collision.trace(.{ .start = v.add(position, .{ 0, 0, 18 }), .end = v.add(position, .{ 0, 0, -limits.maximum_drop - 0.25 }), .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = worldMask(body) });
     if (hit.start_solid or hit.fraction == 1 or hit.normal[2] < 0.7 or hit.contents & (c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_NITRO) != 0) return null;
     return hit.end;
 }
@@ -29,15 +33,28 @@ pub fn direct(position: v.Vec3, destination: v.Vec3, body: data.Body, slot: u16)
     return directWith(@import("actor_collision.zig").service(), position, destination, body, slot);
 }
 fn directWith(collision: Collision, position: v.Vec3, destination: v.Vec3, body: data.Body, slot: u16) !bool {
+    return directWithin(collision, .{}, position, destination, body, slot);
+}
+fn directWithin(collision: Collision, limits: Limits, position: v.Vec3, destination: v.Vec3, body: data.Body, slot: u16) !bool {
     const distance = v.length(v.subtract(destination, position));
     if (distance > 512) return false;
     const count: usize = @intFromFloat(@ceil(distance / 24));
     var previous = position;
     for (0..@max(count, 1)) |i| {
         const fraction = @as(f32, @floatFromInt(i + 1)) / @as(f32, @floatFromInt(@max(count, 1)));
-        const point = v.add(position, v.scale(v.subtract(destination, position), fraction));
-        const supported = try floorWith(collision, point, body, slot) orelse return false;
-        const hit = try collision.trace(.{ .start = v.add(previous, .{ 0, 0, 18 }), .end = v.add(supported, .{ 0, 0, 18 }), .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = worldMask(body) });
+        var point = v.add(position, v.scale(v.subtract(destination, position), fraction));
+        // Probe from the last supported height. Interpolating toward a lower
+        // target can hide a cliff from the descent bound and alternate between
+        // a direct goal and a detour while actual locomotion refuses the drop.
+        point[2] = previous[2];
+        const supported = try floorWithin(collision, limits, point, body, slot) orelse return false;
+        // Cross a descending edge horizontally before falling. A diagonal
+        // sweep between floor heights can cut through the supporting ledge.
+        var start = previous;
+        var end = supported;
+        start[2] = @max(previous[2], supported[2]) + 18;
+        end[2] = start[2];
+        const hit = try collision.trace(.{ .start = start, .end = end, .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = worldMask(body) });
         if (hit.start_solid or hit.fraction < 1) return false;
         previous = supported;
     }
@@ -96,6 +113,12 @@ pub fn stepFleeing(flee: Flee, actor: *data.Actor, pose: *data.Transform, body: 
     return stepWithCollision(@import("actor_collision.zig").service(), flee, actor, pose, body, velocity, service, threat, speed, slot, now, elapsed);
 }
 fn stepWithCollision(collision: Collision, flee: Flee, actor: *data.Actor, pose: *data.Transform, body: *data.Body, velocity: *data.Velocity, service: nav.Service, threat: v.Vec3, speed: f32, slot: u16, now: i64, elapsed: u32) !bool {
+    return stepLimitedWithCollision(collision, .{}, flee, actor, pose, body, velocity, service, threat, speed, slot, now, elapsed);
+}
+pub fn stepLimited(limits: Limits, actor: *data.Actor, pose: *data.Transform, body: *data.Body, velocity: *data.Velocity, service: nav.Service, threat: v.Vec3, speed: f32, slot: u16, now: i64, elapsed: u32) !void {
+    _ = try stepLimitedWithCollision(@import("actor_collision.zig").service(), limits, .{}, actor, pose, body, velocity, service, threat, speed, slot, now, elapsed);
+}
+fn stepLimitedWithCollision(collision: Collision, limits: Limits, flee: Flee, actor: *data.Actor, pose: *data.Transform, body: *data.Body, velocity: *data.Velocity, service: nav.Service, threat: v.Vec3, speed: f32, slot: u16, now: i64, elapsed: u32) !bool {
     const driven = body.motion_owner != null;
     var moving = !driven and (actor.mode == .flee or actor.mode == .chase);
     const worker = flee.settles;
@@ -124,7 +147,7 @@ fn stepWithCollision(collision: Collision, flee: Flee, actor: *data.Actor, pose:
         const destination = if (actor.mode == .flee) actor.route.destination else actor.threat_position;
         goal = try actor.route.update(service, .{ .position = navigationOrigin(pose.position, body.*), .destination = destination, .slot = slot }, now);
         // A nearby visible goal needs no detour, but must have a continuous safe floor.
-        if (try directWith(collision, pose.position, destination, body.*, slot)) goal = .{ .point = destination };
+        if (try directWithin(collision, limits, pose.position, destination, body.*, slot)) goal = .{ .point = destination };
     }
     var motion: slide.State = .{ .position = pose.position, .velocity = velocity.linear };
     var remaining = elapsed;
@@ -147,7 +170,7 @@ fn stepWithCollision(collision: Collision, flee: Flee, actor: *data.Actor, pose:
             if (goal) |point| {
                 const horizontal = nav.velocity(motion.position, point.point, speed, delta);
                 const ahead = v.add(motion.position, v.scale(horizontal, @max(delta, 0.1)));
-                if (point.jump or try floorWith(collision, ahead, body.*, slot) != null) {
+                if (point.jump or try floorWithin(collision, limits, ahead, body.*, slot) != null) {
                     motion.velocity[0] = horizontal[0];
                     motion.velocity[1] = horizontal[1];
                     if (v.length(horizontal) > 0.1) pose.angles[1] = std.math.atan2(horizontal[1], horizontal[0]) * (180.0 / std.math.pi);
@@ -222,4 +245,36 @@ test "settled ground actors start pursuit despite overclip lift and still jump" 
     velocity.linear = .{ 0, 0, 270 };
     _ = try stepWithCollision(collision, .{}, &actor, &pose, &body, &velocity, navigation, actor.threat_position, 100, 64, 1550, 50);
     try std.testing.expect(!body.grounded and pose.position[2] > 30 and velocity.linear[2] > 200);
+}
+
+test "class descent bounds admit a supported plinth route and still reject cliffs and hazards" {
+    const Fixture = struct {
+        depth: f32 = 48,
+        hazard: u32 = 0,
+        fn trace(raw: *anyopaque, request: @import("../../core/domain/collision.zig").Request) !@import("../../core/domain/collision.zig").Trace {
+            const self: *@This() = @ptrCast(@alignCast(raw));
+            const floor: f32 = if (request.end[0] < 32) 0 else -self.depth;
+            const from = request.start[2] + request.mins[2];
+            const to = request.end[2] + request.mins[2];
+            if (from >= floor and to < floor) {
+                const fraction = (from - floor) / (from - to);
+                return .{ .fraction = fraction, .end = v.add(request.start, v.scale(v.subtract(request.end, request.start), fraction)), .normal = .{ 0, 0, 1 }, .entity = c.ENTITYNUM_WORLD, .contents = self.hazard };
+            }
+            return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+        }
+    };
+    var fixture: Fixture = .{};
+    const collision: Collision = .{ .context = &fixture, .trace_fn = Fixture.trace };
+    const body: data.Body = .{ .mins = .{ -24, -24, -24 }, .maxs = .{ 24, 24, 55 }, .collision_mask = c.MASK_PLAYERSOLID };
+    const from: v.Vec3 = .{ 0, 0, 24 };
+    const to: v.Vec3 = .{ 120, 0, -24 };
+    try std.testing.expect(!try directWithin(collision, .{}, from, to, body, 1));
+    try std.testing.expect(try directWithin(collision, .{ .maximum_drop = 64 }, from, to, body, 1));
+    fixture.depth = 128;
+    try std.testing.expect(!try directWithin(collision, .{ .maximum_drop = 64 }, from, to, body, 1));
+    fixture.depth = 48;
+    for ([_]u32{ c.CONTENTS_LAVA, c.CONTENTS_SLIME, c.CONTENTS_DK3_NITRO }) |hazard| {
+        fixture.hazard = hazard;
+        try std.testing.expect(!try directWithin(collision, .{ .maximum_drop = 64 }, from, to, body, 1));
+    }
 }

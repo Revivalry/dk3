@@ -22,6 +22,15 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "tr_common.h"
 
 #include "../thirdparty/zlib-1.3.1/zlib.h"
+#include "../thirdparty/libdeflate-1.26/libdeflate.h"
+#if defined(__SSE2__)
+#include <emmintrin.h>
+#if defined(__GNUC__) && defined(__x86_64__)
+#define PNG_RUNTIME_SSE41 1
+#include <cpuid.h>
+#include <smmintrin.h>
+#endif
+#endif
 
 // we could limit the png size to a lower value here
 #ifndef INT_MAX
@@ -451,14 +460,15 @@ static uint32_t PNG_FilteredSize(const struct PNG_Chunk_IHDR *header) {
     return total && total <= INT_MAX ? (uint32_t)total : 0;
 }
 
-/* Collect consecutive IDAT chunks, then inflate once into the exact bound.
- * The engine's bundled zlib also validates the zlib header/checksum. No GL,
+/* Validate consecutive IDAT chunks, then inflate once into the exact bound.
+ * dk3 alteration: the pinned full-buffer decoder validates the header/checksum. No GL,
  * filesystem or renderer state is accessed by the inflater. */
 static uint32_t DecompressIDATs(struct BufferedFile *BF, uint8_t **Buffer, uint32_t expected) {
     uint8_t *compressed, *output, *start;
-    unsigned left, length, total = 0;
+    unsigned left, length, total = 0, chunks = 0;
     struct PNG_ChunkHeader *chunk;
-    z_stream stream;
+    struct libdeflate_decompressor *decoder;
+    size_t consumed = 0, written = 0;
     int result;
     *Buffer = NULL;
     if (!expected || !FindChunk(BF, PNG_ChunkType_IDAT)) return 0;
@@ -475,41 +485,42 @@ static uint32_t DecompressIDATs(struct BufferedFile *BF, uint8_t **Buffer, uint3
         if (length > BF->BytesLeft || BF->BytesLeft - length < PNG_ChunkCRC_Size ||
             length > INT_MAX - total) return 0;
         total += length;
+        ++chunks;
         /* Even an empty IDAT has a CRC. */
         if (!BufferedFileSkip(BF, length + PNG_ChunkCRC_Size)) return 0;
     }
     if (!total) return 0;
-    compressed = malloc(total);
-    if (!compressed) return 0;
-    BF->Ptr = start;
-    BF->BytesLeft = left;
-    total = 0;
-    for (;;) {
-        chunk = BufferedFileRead(BF, PNG_ChunkHeader_Size);
-        if ((uint32_t)BigLong(chunk->Type) != PNG_ChunkType_IDAT) {
-            BufferedFileRewind(BF, PNG_ChunkHeader_Size);
-            break;
+    if (chunks == 1) {
+        /* The validated IDAT already is contiguous immutable input. Keep its
+         * owner alive through inflate instead of copying large RGB textures. */
+        compressed = start + PNG_ChunkHeader_Size;
+    } else {
+        compressed = malloc(total);
+        if (!compressed) return 0;
+        BF->Ptr = start;
+        BF->BytesLeft = left;
+        total = 0;
+        for (;;) {
+            chunk = BufferedFileRead(BF, PNG_ChunkHeader_Size);
+            if ((uint32_t)BigLong(chunk->Type) != PNG_ChunkType_IDAT) {
+                BufferedFileRewind(BF, PNG_ChunkHeader_Size);
+                break;
+            }
+            length = (uint32_t)BigLong(chunk->Length);
+            if (length) memcpy(compressed + total, BufferedFileRead(BF, length), length);
+            total += length;
+            BufferedFileSkip(BF, PNG_ChunkCRC_Size);
         }
-        length = (uint32_t)BigLong(chunk->Length);
-        if (length) memcpy(compressed + total, BufferedFileRead(BF, length), length);
-        total += length;
-        BufferedFileSkip(BF, PNG_ChunkCRC_Size);
     }
     output = malloc(expected);
-    if (!output) { free(compressed); return 0; }
-    memset(&stream, 0, sizeof(stream));
-    stream.next_in = compressed;
-    stream.avail_in = total;
-    stream.next_out = output;
-    stream.avail_out = expected;
-    result = inflateInit(&stream);
-    if (result == Z_OK) {
-        result = inflate(&stream, Z_FINISH);
-        if (result != Z_STREAM_END || stream.total_out != expected || stream.avail_in) result = Z_DATA_ERROR;
-        inflateEnd(&stream);
-    }
-    free(compressed);
-    if (result != Z_STREAM_END) { free(output); return 0; }
+    if (!output) { if (chunks != 1) free(compressed); return 0; }
+    decoder = libdeflate_alloc_decompressor();
+    if (!decoder) { if (chunks != 1) free(compressed); free(output); return 0; }
+    result = libdeflate_zlib_decompress_ex(decoder, compressed, total, output,
+                                         expected, &consumed, &written);
+    libdeflate_free_decompressor(decoder);
+    if (chunks != 1) free(compressed);
+    if (result != LIBDEFLATE_SUCCESS || consumed != total || written != expected) { free(output); return 0; }
     *Buffer = output;
     return expected;
 }
@@ -556,177 +567,129 @@ static uint8_t PredictPaeth(uint8_t a, uint8_t b, uint8_t c)
  *  Reverse the filters.
  */
 
-static qboolean UnfilterImage(uint8_t  *DecompressedData, 
-		uint32_t  ImageHeight,
-		uint32_t  BytesPerScanline, 
-		uint32_t  BytesPerPixel)
+/* Dispatch once per scanline: its filter is constant across all bytes.
+ * The first bpp bytes have no left neighbour. First-row Paeth reduces to Sub. */
+#if defined(__SSE2__)
+static __m128i PNG_Channels4(const uint8_t *bytes) {
+    uint32_t packed;
+    memcpy(&packed, bytes, 4);
+    return _mm_unpacklo_epi8(_mm_cvtsi32_si128(packed), _mm_setzero_si128());
+}
+static __m128i PNG_Abs16(__m128i value) {
+    __m128i sign = _mm_srai_epi16(value, 15);
+    return _mm_sub_epi16(_mm_xor_si128(value, sign), sign);
+}
+/* Pixels depend on the pixel to their left, but the four byte channels are
+ * independent. Signed 16-bit lanes cover every Paeth distance (-510..510).
+ * Comparisons retain the specification's left, above, upper-left tie order. */
+static void PNG_Paeth4(uint8_t *row, const uint8_t *above, uint32_t size) {
+    __m128i a = PNG_Channels4(row), c = PNG_Channels4(above);
+    const __m128i mask = _mm_set1_epi16(255);
+    uint32_t x;
+    for (x = 4; x < size; x += 4) {
+        __m128i b = PNG_Channels4(above + x);
+        __m128i pa = PNG_Abs16(_mm_sub_epi16(b, c));
+        __m128i pb = PNG_Abs16(_mm_sub_epi16(a, c));
+        __m128i pc = PNG_Abs16(_mm_sub_epi16(_mm_add_epi16(a, b), _mm_add_epi16(c, c)));
+        __m128i reject_a = _mm_or_si128(_mm_cmpgt_epi16(pa, pb), _mm_cmpgt_epi16(pa, pc));
+        __m128i reject_b = _mm_cmpgt_epi16(pb, pc);
+        __m128i bc = _mm_or_si128(_mm_andnot_si128(reject_b, b), _mm_and_si128(reject_b, c));
+        __m128i predictor = _mm_or_si128(_mm_andnot_si128(reject_a, a), _mm_and_si128(reject_a, bc));
+        uint32_t packed;
+        a = _mm_and_si128(_mm_add_epi16(PNG_Channels4(row + x), predictor), mask);
+        packed = _mm_cvtsi128_si32(_mm_packus_epi16(a, _mm_setzero_si128()));
+        memcpy(row + x, &packed, 4);
+        c = b;
+    }
+}
+#if defined(PNG_RUNTIME_SSE41)
+/* dk3 alteration: keep the portable path, selecting newer instructions only
+ * after CPUID. No mutable dispatch state is shared between decoder workers. */
+static qboolean PNG_CanPaeth41(void) {
+    unsigned a, b, c, d;
+    const unsigned required = bit_SSE3 | bit_SSSE3 | bit_SSE4_1;
+    return __get_cpuid(1, &a, &b, &c, &d) && (c & required) == required;
+}
+__attribute__((target("sse4.1"), noinline))
+static void PNG_Paeth4SSE41(uint8_t *row, const uint8_t *above, uint32_t size) {
+    __m128i a = PNG_Channels4(row), c = PNG_Channels4(above);
+    const __m128i mask = _mm_set1_epi16(255);
+    uint32_t x;
+    for (x = 4; x < size; x += 4) {
+        __m128i b = PNG_Channels4(above + x);
+        __m128i pa = _mm_abs_epi16(_mm_sub_epi16(b, c));
+        __m128i pb = _mm_abs_epi16(_mm_sub_epi16(a, c));
+        __m128i pc = _mm_abs_epi16(_mm_sub_epi16(_mm_add_epi16(a, b), _mm_add_epi16(c, c)));
+        __m128i reject_a = _mm_or_si128(_mm_cmpgt_epi16(pa, pb), _mm_cmpgt_epi16(pa, pc));
+        __m128i reject_b = _mm_cmpgt_epi16(pb, pc);
+        __m128i predictor = _mm_blendv_epi8(a, _mm_blendv_epi8(b, c, reject_b), reject_a);
+        uint32_t packed;
+        a = _mm_and_si128(_mm_add_epi16(PNG_Channels4(row + x), predictor), mask);
+        packed = _mm_cvtsi128_si32(_mm_packus_epi16(a, _mm_setzero_si128()));
+        memcpy(row + x, &packed, 4);
+        c = b;
+    }
+}
+#endif
+#endif
+
+static qboolean UnfilterImage(uint8_t *data, uint32_t height,
+                              uint32_t rowBytes, uint32_t bpp)
 {
-	uint8_t   *DecompPtr;
-	uint8_t   FilterType;
-	uint8_t  *PixelLeft, *PixelUp, *PixelUpLeft;
-	uint32_t  w, h, p;
-
-	/*
-	 *  some zeros for the filters
-	 */
-
-	uint8_t Zeros[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-
-	/*
-	 *  input verification
-	 */
-
-	if(!(DecompressedData && BytesPerPixel))
-	{
-		return(qfalse);
-	}
-
-	/*
-	 *  ImageHeight and BytesPerScanline can be zero in small interlaced images.
-	 */
-
-	if((!ImageHeight) || (!BytesPerScanline))
-	{
-		return(qtrue);
-	}
-
-	/*
-	 *  Set the pointer to the start of the decompressed Data.
-	 */
-
-	DecompPtr = DecompressedData;
-
-	/*
-	 *  Un-filtering is done in place.
-	 */
-
-	/*
-	 *  Go trough all scanlines.
-	 */
-
-	for(h = 0; h < ImageHeight; h++)
-	{
-		/*
-		 *  Every scanline starts with a FilterType byte.
-		 */
-
-		FilterType = *DecompPtr;
-		DecompPtr++;
-
-		/*
-		 *  Left pixel of the first byte in a scanline is zero.
-		 */
-
-		PixelLeft = Zeros;
-
-		/*
-		 *  Set PixelUp to previous line only if we are on the second line or above.
-		 *
-		 *  Plus one byte for the FilterType
-		 */
-
-		if(h > 0)
-		{
-			PixelUp = DecompPtr - (BytesPerScanline + 1);
-		}
-		else
-		{
-			PixelUp = Zeros;
-		}
-
-		/*
-		 * The pixel left to the first pixel of the previous scanline is zero too.
-		 */
-
-		PixelUpLeft = Zeros;
-
-		/*
-		 *  Cycle trough all pixels of the scanline.
-		 */
-
-		for(w = 0; w < (BytesPerScanline / BytesPerPixel); w++)
-		{
-			/*
-			 *  Cycle trough the bytes of the pixel.
-			 */
-
-			for(p = 0; p < BytesPerPixel; p++)
-			{
-				switch(FilterType)
-				{ 
-					case PNG_FilterType_None :
-					{
-						/*
-						 *  The byte is unfiltered.
-						 */
-
-						break;
-					}
-
-					case PNG_FilterType_Sub :
-					{
-						DecompPtr[p] += PixelLeft[p];
-
-						break;
-					}
-
-					case PNG_FilterType_Up :
-					{
-						DecompPtr[p] += PixelUp[p];
-
-						break;
-					}
-
-					case PNG_FilterType_Average :
-					{
-						DecompPtr[p] += ((uint8_t) ((((uint16_t) PixelLeft[p]) + ((uint16_t) PixelUp[p])) / 2));
-
-						break;
-					}
-
-					case PNG_FilterType_Paeth :
-					{
-						DecompPtr[p] += PredictPaeth(PixelLeft[p], PixelUp[p], PixelUpLeft[p]);
-
-						break;
-					}
-
-					default :
-					{
-						return(qfalse);
-					}
-				}
-			}
-
-			PixelLeft = DecompPtr;
-
-			/*
-			 *  We only have an upleft pixel if we are on the second line or above.
-			 */
-
-			if(h > 0)
-			{
-				PixelUpLeft = DecompPtr - (BytesPerScanline + 1);
-			}
-
-			/*
-			 *  Skip to the next pixel.
-			 */
-
-			DecompPtr += BytesPerPixel;
-
-			/*
-			 *  We only have a previous line if we are on the second line and above.
-			 */
-
-			if(h > 0)
-			{
-				PixelUp = DecompPtr - (BytesPerScanline + 1);
-			}
-		}
-	}
-
-	return(qtrue);
+    uint32_t y, x, leading;
+    uint8_t *row = data;
+    if (!data || !bpp) return qfalse;
+    if (!height || !rowBytes) return qtrue;
+#if defined(PNG_RUNTIME_SSE41)
+    const qboolean paeth41 = bpp == 4 && rowBytes >= 4 && !(rowBytes & 3) && PNG_CanPaeth41();
+#endif
+    leading = bpp < rowBytes ? bpp : rowBytes;
+    for (y = 0; y < height; ++y) {
+        uint8_t filter = *row++;
+        const uint8_t *above = y ? row - rowBytes - 1 : NULL;
+        switch (filter) {
+        case PNG_FilterType_None:
+            break;
+        case PNG_FilterType_Sub:
+            for (x = bpp; x < rowBytes; ++x) row[x] += row[x - bpp];
+            break;
+        case PNG_FilterType_Up:
+            if (above) for (x = 0; x < rowBytes; ++x) row[x] += above[x];
+            break;
+        case PNG_FilterType_Average:
+            if (above) {
+                for (x = 0; x < leading; ++x) row[x] += above[x] >> 1;
+                for (x = bpp; x < rowBytes; ++x)
+                    row[x] += ((unsigned)row[x - bpp] + above[x]) >> 1;
+            } else {
+                for (x = bpp; x < rowBytes; ++x) row[x] += row[x - bpp] >> 1;
+            }
+            break;
+        case PNG_FilterType_Paeth:
+            if (above) {
+                for (x = 0; x < leading; ++x) row[x] += above[x];
+#if defined(__SSE2__)
+                if (bpp == 4 && rowBytes >= 4 && !(rowBytes & 3)) {
+#if defined(PNG_RUNTIME_SSE41)
+                    if (paeth41) PNG_Paeth4SSE41(row, above, rowBytes);
+                    else
+#endif
+                    PNG_Paeth4(row, above, rowBytes);
+                    break;
+                }
+#endif
+                for (x = bpp; x < rowBytes; ++x)
+                    row[x] += PredictPaeth(row[x - bpp], above[x], above[x - bpp]);
+            } else {
+                for (x = bpp; x < rowBytes; ++x) row[x] += row[x - bpp];
+            }
+            break;
+        default:
+            return qfalse;
+        }
+        row += rowBytes;
+    }
+    return qtrue;
 }
 
 /*
@@ -1195,6 +1158,28 @@ static qboolean DecodeImageNonInterlaced(struct PNG_Chunk_IHDR *IHDR,
 	OutPtr = OutBuffer;
 	DecompPtr = DecompressedData;
 
+    /* Common 8-bit true-colour rows have a constant conversion contract. */
+    if (IHDR->BitDepth == PNG_BitDepth_8 && IHDR->ColourType == PNG_ColourType_TrueAlpha) {
+        for (h = 0; h < IHDR_Height; ++h) {
+            memcpy(OutPtr, DecompPtr + 1, BytesPerScanline);
+            OutPtr += BytesPerScanline;
+            DecompPtr += BytesPerScanline + 1;
+        }
+        return qtrue;
+    }
+    if (IHDR->BitDepth == PNG_BitDepth_8 && IHDR->ColourType == PNG_ColourType_True && !HasTransparentColour) {
+        for (h = 0; h < IHDR_Height; ++h) {
+            const uint8_t *source = DecompPtr + 1;
+            for (w = 0; w < IHDR_Width; ++w) {
+                OutPtr[0] = source[0]; OutPtr[1] = source[1]; OutPtr[2] = source[2]; OutPtr[3] = 255;
+                OutPtr += 4;
+                source += 3;
+            }
+            DecompPtr += BytesPerScanline + 1;
+        }
+        return qtrue;
+    }
+
 	/*
 	 *  Create the output image.
 	 */
@@ -1640,7 +1625,13 @@ static qboolean DecodeImageInterlaced(struct PNG_Chunk_IHDR *IHDR,
  *  The PNG loader
  */
 
-void R_DecodePNG(const byte *bytes, int length, byte **pic, int *width, int *height, size_t maximum)
+static void *PNG_HeapOutput(int size, void *context) { return malloc(size); }
+static void PNG_FreeHeapOutput(void *pixels, void *context) { free(pixels); }
+
+/* Output ownership is supplied by the caller. Temporary decode storage remains
+ * private malloc memory; workers never enter renderer allocation callbacks. */
+static void PNG_Decode(const byte *bytes, int length, byte **pic, int *width, int *height, size_t maximum,
+                       void *(*allocate)(int, void *), void (*release)(void *, void *), void *context)
 {
 	struct BufferedFile file = { (byte *)bytes, length, (byte *)bytes, length };
 	struct BufferedFile *ThePNG = &file;
@@ -2102,7 +2093,7 @@ void R_DecodePNG(const byte *bytes, int length, byte **pic, int *width, int *hei
 	 *  Allocate output buffer.
 	 */
 
-	OutBuffer = malloc(IHDR_Width * IHDR_Height * Q3IMAGE_BYTESPERPIXEL);
+	OutBuffer = allocate(IHDR_Width * IHDR_Height * Q3IMAGE_BYTESPERPIXEL, context);
 	if(!OutBuffer)
 	{
 		free(DecompressedData);
@@ -2120,7 +2111,7 @@ void R_DecodePNG(const byte *bytes, int length, byte **pic, int *width, int *hei
 		{
 			if(!DecodeImageNonInterlaced(IHDR, OutBuffer, DecompressedData, DecompressedDataLength, HasTransparentColour, TransparentColour, OutPal))
 			{
-				free(OutBuffer);
+				release(OutBuffer, context);
 				free(DecompressedData);
 
 				return;
@@ -2133,7 +2124,7 @@ void R_DecodePNG(const byte *bytes, int length, byte **pic, int *width, int *hei
 		{
 			if(!DecodeImageInterlaced(IHDR, OutBuffer, DecompressedData, DecompressedDataLength, HasTransparentColour, TransparentColour, OutPal))
 			{
-				free(OutBuffer);
+				release(OutBuffer, context);
 				free(DecompressedData);
 
 				return;
@@ -2144,7 +2135,7 @@ void R_DecodePNG(const byte *bytes, int length, byte **pic, int *width, int *hei
 
 		default :
 		{
-			free(OutBuffer);
+			release(OutBuffer, context);
 			free(DecompressedData);
 
 			return;
@@ -2183,6 +2174,117 @@ void R_DecodePNG(const byte *bytes, int length, byte **pic, int *width, int *hei
 
 }
 
+void R_DecodePNG(const byte *bytes, int length, byte **pic, int *width, int *height, size_t maximum) {
+    PNG_Decode(bytes, length, pic, width, height, maximum, PNG_HeapOutput, PNG_FreeHeapOutput, NULL);
+}
+
+/* Owner-thread cache of expensive canonical pixels. Renderer restarts release
+ * GPU/media allocations but can retain these immutable inputs/results. Compare
+ * every input byte (not a path, timestamp or short hash), so changed/corrupt
+ * assets cannot reuse a stale decoded image. A full cache retains its initial
+ * working set instead of thrashing on a one-pass stream of large new images. */
+#ifndef DK3_PNG_CACHE_MIN_BYTES
+#define DK3_PNG_CACHE_MIN_BYTES (32u << 20)
+#endif
+typedef struct {
+    byte *input, *pixels;
+    int length, width, height;
+} pngDecodeCache_t;
+static pngDecodeCache_t pngDecodeCache[16];
+static unsigned pngDecodeCacheCount;
+static size_t pngDecodeCacheBytes;
+static cvar_t *pngDecodeCacheSetting;
+
+void R_ClearPNGCache(void) {
+    unsigned i;
+    for (i = 0; i < pngDecodeCacheCount; ++i) {
+        free(pngDecodeCache[i].input);
+        free(pngDecodeCache[i].pixels);
+    }
+    memset(pngDecodeCache, 0, sizeof(pngDecodeCache));
+    pngDecodeCacheCount = 0;
+    pngDecodeCacheBytes = 0;
+    pngDecodeCacheSetting = NULL;
+}
+static size_t PNG_CacheBudget(void) {
+    int megs;
+    if (!pngDecodeCacheSetting && ri.Cvar_Get)
+        pngDecodeCacheSetting = ri.Cvar_Get("r_imageDecodeCacheMegs", "256", CVAR_ARCHIVE);
+    megs = pngDecodeCacheSetting ? pngDecodeCacheSetting->integer : 0;
+    size_t budget = (size_t)(megs < 0 ? 0 : megs > 1024 ? 1024 : megs) << 20;
+    if (pngDecodeCacheBytes > budget) R_ClearPNGCache();
+    return budget;
+}
+static pngDecodeCache_t *PNG_Cached(const byte *bytes, int length) {
+    unsigned i;
+    for (i = 0; i < pngDecodeCacheCount; ++i) {
+        pngDecodeCache_t *entry = &pngDecodeCache[i];
+        if (entry->length == length && !memcmp(entry->input, bytes, length)) return entry;
+    }
+    return NULL;
+}
+static qboolean PNG_CanRetain(size_t size, int length, size_t budget) {
+    size_t required = size + length;
+    return size >= DK3_PNG_CACHE_MIN_BYTES && pngDecodeCacheCount < ARRAY_LEN(pngDecodeCache) &&
+           required <= budget && pngDecodeCacheBytes <= budget - required;
+}
+static qboolean PNG_Retain(const byte *bytes, int length, byte *pixels, int width, int height, size_t budget) {
+    size_t size = (size_t)width * height * 4, required = size + length;
+    byte *input;
+    pngDecodeCache_t *entry;
+    if (!PNG_CanRetain(size, length, budget)) return qfalse;
+    input = malloc(length);
+    if (!input) return qfalse;
+    memcpy(input, bytes, length);
+    entry = &pngDecodeCache[pngDecodeCacheCount++];
+    entry->input = input; entry->length = length; entry->pixels = pixels;
+    entry->width = width; entry->height = height;
+    pngDecodeCacheBytes += required;
+    return qtrue;
+}
+
+qboolean R_CopyCachedPNG(const byte *bytes, int length, byte **pic, int *width, int *height, size_t maximum) {
+    pngDecodeCache_t *entry;
+    size_t size;
+    byte *copy;
+    if (!bytes || length <= 0 || !pic || !width || !height || !PNG_CacheBudget()) return qfalse;
+    entry = PNG_Cached(bytes, length);
+    if (!entry) return qfalse;
+    size = (size_t)entry->width * entry->height * 4;
+    if (size > maximum || !(copy = malloc(size))) return qfalse;
+    memcpy(copy, entry->pixels, size);
+    *pic = copy; *width = entry->width; *height = entry->height;
+    return qtrue;
+}
+void R_RetainPreparedPNG(const byte *bytes, int length, const byte *pixels, int width, int height) {
+    size_t size, budget;
+    byte *copy;
+    if (!bytes || length <= 0 || !pixels || width <= 0 || height <= 0 || width > INT_MAX / 4 / height) return;
+    size = (size_t)width * height * 4;
+    budget = PNG_CacheBudget();
+    if (!PNG_CanRetain(size, length, budget) || PNG_Cached(bytes, length)) return;
+    copy = malloc(size);
+    if (!copy) return;
+    memcpy(copy, pixels, size);
+    if (!PNG_Retain(bytes, length, copy, width, height, budget)) free(copy);
+}
+
+typedef struct {
+    size_t budget;
+    int length;
+    qboolean rendererOwned;
+} pngOwnerOutput_t;
+static void *PNG_OwnerOutput(int size, void *context) {
+    pngOwnerOutput_t *output = context;
+    if (PNG_CanRetain(size, output->length, output->budget)) return malloc(size);
+    output->rendererOwned = qtrue;
+    return ri.Malloc(size);
+}
+static void PNG_FreeOwnerOutput(void *pixels, void *context) {
+    if (((pngOwnerOutput_t *)context)->rendererOwned) ri.Free(pixels);
+    else free(pixels);
+}
+
 /* Synchronous callers and background admission share precisely one decoder.
  * Worker output is malloc-owned; only the owner thread touches renderer/FS
  * allocators. Returning pixels preserves the existing ri.Free contract. */
@@ -2190,20 +2292,38 @@ void R_LoadPNG(const char *name, byte **pic, int *width, int *height) {
     void *bytes = NULL;
     byte *decoded = NULL;
     int length, decodedWidth = 0, decodedHeight = 0;
+    size_t budget = PNG_CacheBudget();
+    qboolean retained = qfalse;
+    pngDecodeCache_t *cached;
+    pngOwnerOutput_t output = {0};
     *pic = NULL;
     if (width) *width = 0;
     if (height) *height = 0;
     if (R_TakePreparedPNG(name, pic, width, height)) return;
     length = ri.FS_ReadFile(name, &bytes);
     if (!bytes || length <= 0) { if (bytes) ri.FS_FreeFile(bytes); return; }
-    R_DecodePNG(bytes, length, &decoded, &decodedWidth, &decodedHeight, INT_MAX);
+    cached = PNG_Cached(bytes, length);
+    if (cached) {
+        decoded = cached->pixels; decodedWidth = cached->width; decodedHeight = cached->height;
+        retained = qtrue;
+        ri.Printf(PRINT_DEVELOPER, "dk3 PNG cache: hit=%s retained_bytes=%lu\n", name, (unsigned long)pngDecodeCacheBytes);
+    } else {
+        output.budget = budget;
+        output.length = length;
+        PNG_Decode(bytes, length, &decoded, &decodedWidth, &decodedHeight, INT_MAX,
+                   PNG_OwnerOutput, PNG_FreeOwnerOutput, &output);
+        if (decoded && !output.rendererOwned) retained = PNG_Retain(bytes, length, decoded, decodedWidth, decodedHeight, budget);
+    }
     ri.FS_FreeFile(bytes);
     if (decoded) {
         size_t size = (size_t)decodedWidth * decodedHeight * 4;
         if (width) *width = decodedWidth;
         if (height) *height = decodedHeight;
-        *pic = ri.Malloc(size);
-        memcpy(*pic, decoded, size);
-        free(decoded);
+        if (output.rendererOwned) *pic = decoded;
+        else {
+            *pic = ri.Malloc(size);
+            memcpy(*pic, decoded, size);
+            if (!retained) free(decoded);
+        }
     }
 }

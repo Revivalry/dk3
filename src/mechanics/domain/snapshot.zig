@@ -5,13 +5,26 @@ const std = @import("std");
 const data = @import("../../game/domain/components.zig");
 const ecs = @import("../../core/ecs/world.zig");
 const stream = @import("../../core/domain/save_stream.zig");
+const jobs = @import("../../core/ecs/jobs.zig");
+// Zig's default unit-test runner is the executable root. Its deliberately
+// distinct identity can never admit a production prepared handoff.
+const prepared_identity = if (@hasDecl(@import("root"), "snapshot_runtime_identity")) @import("root").snapshot_runtime_identity else if (@import("builtin").is_test) "prepared-snapshot-contracts" else "";
 pub const schema = 2;
+const prepared_schema = 4;
 pub const maximum = @import("../../core/domain/save_stream.zig").maximum;
 pub const model_limit = 512;
 pub const sound_limit = 1024;
 pub const archive_limit = 128;
 pub const world_limit = 8 * 1024 * 1024;
 pub const Archive = struct { map: []const u8, bytes: []const u8 };
+pub const Cold = struct { map: []const u8, namespace: u7, bytes: []const u8 };
+pub const Selection = struct {
+    manifest: *const @import("campaign_regions.zig").Manifest,
+    wanted: [128]bool,
+    fn contains(self: Selection, name: []const u8) bool {
+        return self.wanted[self.manifest.find(name) orelse return false];
+    }
+};
 pub const Resources = struct { models: []const []const u8 = &.{}, sounds: []const []const u8 = &.{} };
 pub const Header = struct {
     at_ms: i64,
@@ -33,17 +46,68 @@ pub const Loaded = struct {
     skill: u8,
     visited: []const Archive = &.{},
     residents: []Loaded = &.{},
+    cold: []Cold = &.{},
     region_member: bool = false,
     ownership_transferred: bool = false,
+    /// Borrowed original encoding; only used while the root owns input_storage.
+    encoded: []const u8 = &.{},
+    encoded_schema: i32 = 0,
+    input_storage: ?[]u8 = null,
+    pub fn releaseInput(self: *Loaded, allocator: std.mem.Allocator) void {
+        self.encoded = &.{};
+        for (self.residents) |*member| member.encoded = &.{};
+        if (self.input_storage) |bytes| allocator.free(bytes);
+        self.input_storage = null;
+    }
+    /// Rebind a prepared transaction to its exact original source. This keeps
+    /// dormant saves in the durable JSON schema, never the build-bound cache
+    /// encoding, and lets the temporary prepared byte buffer be freed at once.
+    pub fn bindOriginal(self: *Loaded, bytes: []const u8) !void {
+        self.encoded = bytes;
+        self.encoded_schema = try encodingSchema(bytes);
+        for (self.residents) |*member| member.encoded = &.{};
+        for (self.cold) |*member| member.bytes = &.{};
+        var reader = try stream.Reader.init(bytes);
+        var found: usize = 0;
+        while (try reader.nextRecord()) |record| {
+            if (std.mem.eql(u8, record.name, "resident_level")) {
+                const name = (try reader.nextField()) orelse return error.InvalidResident;
+                const content = (try reader.nextField()) orelse return error.InvalidResident;
+                if (!std.mem.eql(u8, name.name, "map") or !std.mem.eql(u8, content.name, "snapshot")) return error.InvalidResident;
+                var matched = false;
+                for (self.residents) |*member| if (std.mem.eql(u8, member.map, name.data)) {
+                    if (member.encoded.len != 0) return error.DuplicateResident;
+                    member.encoded = content.data;
+                    member.encoded_schema = try encodingSchema(content.data);
+                    found += 1;
+                    matched = true;
+                    break;
+                };
+                if (!matched) for (self.cold) |*member| if (std.mem.eql(u8, member.map, name.data)) {
+                    if (member.bytes.len != 0) return error.DuplicateResident;
+                    if (try encodingSchema(content.data) > 2) return error.UnsupportedSnapshotSchema;
+                    member.bytes = content.data;
+                    found += 1;
+                    matched = true;
+                    break;
+                };
+                if (!matched) return error.InvalidResident;
+            }
+            while (try reader.nextField() != null) {}
+        }
+        if (found != self.residents.len + self.cold.len) return error.InvalidResident;
+    }
     pub fn deinit(self: *Loaded, allocator: std.mem.Allocator) void {
         if (self.ownership_transferred) return;
         for (self.residents) |*member| member.deinit(allocator);
+        if (self.input_storage) |bytes| allocator.free(bytes);
         self.world.deinit();
         self.arena.deinit();
         allocator.destroy(self.arena);
         self.* = undefined;
     }
     pub fn rebase(self: *Loaded, now: i64) !void {
+        self.encoded = &.{};
         const delta = try std.math.sub(i64, now, self.header.at_ms);
         var query = self.world.queryAccess(0, 0, 0);
         defer query.deinit();
@@ -60,6 +124,12 @@ pub const Loaded = struct {
         try bounded(self.header);
     }
 };
+fn encodingSchema(bytes: []const u8) !i32 {
+    var reader = try stream.Reader.init(bytes);
+    _ = (try reader.nextRecord()) orelse return error.MissingCampaign;
+    while (try reader.nextField()) |field| if (std.mem.eql(u8, field.name, "native_schema")) return field.integer(0);
+    return error.UnsupportedSnapshotSchema;
+}
 pub const validName = @import("../../core/domain/save_stream.zig").validName;
 fn json(writer: *stream.Writer, allocator: std.mem.Allocator, name: []const u8, value: anytype) !void {
     try bounded(value);
@@ -74,13 +144,21 @@ pub fn captureCampaign(allocator: std.mem.Allocator, storage: []u8, world: *data
     return captureRegion(allocator, storage, world, map, skill, header, visited, &.{});
 }
 pub fn captureRegion(allocator: std.mem.Allocator, storage: []u8, world: *data.World, map: []const u8, skill: u8, header: Header, visited: []const Archive, residents: []const Archive) ![]const u8 {
+    return captureRegionEncoding(allocator, storage, world, map, skill, header, visited, residents, false);
+}
+fn captureRegionEncoding(allocator: std.mem.Allocator, storage: []u8, world: *data.World, map: []const u8, skill: u8, header: Header, visited: []const Archive, residents: []const Archive, prepared: bool) ![]const u8 {
     if (!validName(map) or skill < 1 or skill > 5 or world.query_depth != 0) return error.InvalidSnapshotContext;
     var writer = try stream.Writer.init(storage);
     try writer.record("campaign", 0);
     try writer.raw(.{ .name = "map", .kind = .text, .count = map.len, .data = map });
     try writer.integers("skill", &.{skill});
-    try writer.integers("native_schema", &.{schema});
-    try json(&writer, allocator, "state", header);
+    try writer.integers("native_schema", &.{if (prepared) prepared_schema else schema});
+    if (prepared) {
+        const identity = prepared_identity;
+        if (identity.len == 0) return error.PreparedSnapshotUnavailable;
+        try writer.raw(.{ .name = "runtime", .kind = .text, .count = identity.len, .data = identity });
+    }
+    try writeValue(&writer, allocator, "state", header, prepared);
     // Stable persistent-ID ordering, independent of archetype relocation.
     var ids: [ecs.max_entities]u32 = undefined;
     var count: usize = 0;
@@ -97,7 +175,7 @@ pub fn captureRegion(allocator: std.mem.Allocator, storage: []u8, world: *data.W
         const entity = world.find(id).?;
         try writer.record("native_entity", id);
         inline for (std.meta.fields(data.Component)) |field| if (world.get(entity, field.type) catch null) |value| {
-            try json(&writer, allocator, field.name, value.*);
+            try writeValue(&writer, allocator, field.name, value.*, prepared);
         };
     }
     if (residents.len >= archive_limit or visited.len > archive_limit) return error.ArchiveCapacity;
@@ -115,20 +193,128 @@ pub fn captureRegion(allocator: std.mem.Allocator, storage: []u8, world: *data.W
     }
     return writer.finish();
 }
+fn writeValue(writer: *stream.Writer, allocator: std.mem.Allocator, name: []const u8, value: anytype, prepared: bool) !void {
+    if (!prepared) return json(writer, allocator, name, value);
+    try bounded(value);
+    const bytes = try @import("../../core/domain/value_stream.zig").encode(allocator, value);
+    defer allocator.free(bytes);
+    try writer.raw(.{ .name = name, .kind = .bytes, .count = bytes.len, .data = bytes });
+}
+/// A portable process cache, never the durable save format. The source digest
+/// and runtime identity bind it to one exact validated input and component ABI.
+pub const PreparedPlan = struct { bytes: usize, maximum_member: usize, members: usize };
+fn addSize(size: *usize, amount: usize) !void {
+    if (amount > maximum - size.*) return error.SnapshotCapacity;
+    size.* += amount;
+}
+fn fieldSize(size: *usize, name: []const u8, bytes: usize) !void {
+    try addSize(size, 8 + name.len);
+    try addSize(size, bytes);
+}
+fn flatPreparedSize(loaded: *Loaded) !usize {
+    if (loaded.world.query_depth != 0) return error.InvalidSnapshotContext;
+    var size: usize = 24 + 12 + "campaign".len;
+    try fieldSize(&size, "map", loaded.map.len);
+    try fieldSize(&size, "skill", 4);
+    try fieldSize(&size, "native_schema", 4);
+    try fieldSize(&size, "runtime", prepared_identity.len);
+    try fieldSize(&size, "state", try @import("../../core/domain/value_stream.zig").encodedLength(loaded.header));
+    var query = loaded.world.queryAccess(0, data.World.mask(.{ data.SoundEvent, data.ImpactEvent }), 0);
+    defer query.deinit();
+    while (query.next()) |view| for (view.entities()) |entity| {
+        try addSize(&size, 12 + "native_entity".len);
+        inline for (std.meta.fields(data.Component)) |field| if (loaded.world.get(entity, field.type) catch null) |value| {
+            try fieldSize(&size, field.name, try @import("../../core/domain/value_stream.zig").encodedLength(value.*));
+        };
+    };
+    for (loaded.visited) |archive| {
+        try addSize(&size, 12 + "visited_level".len);
+        try fieldSize(&size, "map", archive.map.len);
+        try fieldSize(&size, "snapshot", archive.bytes.len);
+    }
+    return size;
+}
+/// Plan exact capacity instead of poisoning/touching a 64 MiB scratch region
+/// for a much smaller handoff. No uninitialized allocation bypass is needed.
+pub fn planPrepared(loaded: *Loaded) !PreparedPlan {
+    if (loaded.cold.len != 0) return error.IncompletePreparedSource;
+    if (prepared_identity.len == 0) return error.PreparedSnapshotUnavailable;
+    var plan: PreparedPlan = .{ .bytes = try flatPreparedSize(loaded), .maximum_member = 0, .members = loaded.residents.len };
+    for (loaded.residents) |*member| {
+        if (member.residents.len != 0 or member.cold.len != 0) return error.InvalidResident;
+        const size = try flatPreparedSize(member);
+        if (size > world_limit) return error.SnapshotCapacity;
+        plan.maximum_member = @max(plan.maximum_member, size);
+        try addSize(&plan.bytes, 12 + "resident_level".len);
+        try fieldSize(&plan.bytes, "map", member.map.len);
+        try fieldSize(&plan.bytes, "snapshot", size);
+    }
+    return plan;
+}
+pub fn capturePrepared(allocator: std.mem.Allocator, storage: []u8, loaded: *Loaded) ![]const u8 {
+    const plan = try planPrepared(loaded);
+    return capturePreparedPlanned(allocator, storage, loaded, plan);
+}
+pub fn capturePreparedPlanned(allocator: std.mem.Allocator, storage: []u8, loaded: *Loaded, plan: PreparedPlan) ![]const u8 {
+    if (loaded.cold.len != 0 or plan.members != loaded.residents.len or storage.len < plan.bytes) return error.InvalidPreparedPlan;
+    var scratch = std.heap.ArenaAllocator.init(allocator);
+    defer scratch.deinit();
+    var residents: std.ArrayList(Archive) = .empty;
+    const buffer = try allocator.alloc(u8, plan.maximum_member);
+    defer allocator.free(buffer);
+    for (loaded.residents) |*member| {
+        const bytes = try captureRegionEncoding(allocator, buffer, &member.world, member.map, member.skill, member.header, &.{}, &.{}, true);
+        try residents.append(scratch.allocator(), .{ .map = member.map, .bytes = try scratch.allocator().dupe(u8, bytes) });
+    }
+    const result = try captureRegionEncoding(allocator, storage, &loaded.world, loaded.map, loaded.skill, loaded.header, loaded.visited, residents.items, true);
+    if (result.len != plan.bytes) return error.PreparedSizeMismatch;
+    return result;
+}
 fn parse(comptime T: type, allocator: std.mem.Allocator, field: stream.Field) !T {
+    var parser = @import("../../core/domain/json_struct.zig").Parser.init(allocator);
+    defer parser.deinit();
+    return parseUsing(T, allocator, field, &parser);
+}
+fn parseUsing(comptime T: type, allocator: std.mem.Allocator, field: stream.Field, parser: *@import("../../core/domain/json_struct.zig").Parser) !T {
     if (field.kind != .bytes or field.data.len > 1024 * 1024) return error.InvalidSnapshotField;
-    const result = try std.json.parseFromSliceLeaky(T, allocator, field.data, .{ .allocate = .alloc_always, .max_value_len = 65536 });
+    const result = try parser.parseOwned(T, allocator, field.data, 65536);
+    try bounded(result);
+    return result;
+}
+fn parseValue(comptime T: type, allocator: std.mem.Allocator, field: stream.Field, parser: *@import("../../core/domain/json_struct.zig").Parser, prepared: bool) !T {
+    if (!prepared) return parseUsing(T, allocator, field, parser);
+    if (field.kind != .bytes) return error.InvalidSnapshotField;
+    const result = try @import("../../core/domain/value_stream.zig").decode(T, allocator, field.data);
     try bounded(result);
     return result;
 }
 pub fn decode(allocator: std.mem.Allocator, bytes: []const u8) !Loaded {
-    return decodeWorld(allocator, bytes, true, false);
+    return decodeWorld(allocator, bytes, true, false, null, null);
+}
+pub fn decodeWithPool(allocator: std.mem.Allocator, bytes: []const u8, pool: ?*jobs.Pool) !Loaded {
+    return decodeWorld(allocator, bytes, true, false, pool, null);
+}
+/// Only the engine's source-digest-matched UI handoff may call this path. UI and
+/// server use identical class validators and runtime rules. Full graph checks
+/// have already completed there; disk/console decoding always uses decode.
+pub fn decodeCertifiedSelection(allocator: std.mem.Allocator, bytes: []const u8, manifest: *const @import("campaign_regions.zig").Manifest, pool: ?*jobs.Pool) !Loaded {
+    var reader = try stream.Reader.init(bytes);
+    _ = (try reader.nextRecord()) orelse return error.MissingCampaign;
+    var map: ?[]const u8 = null;
+    var version: ?i32 = null;
+    while (try reader.nextField()) |field| {
+        if (std.mem.eql(u8, field.name, "map")) map = field.data;
+        if (std.mem.eql(u8, field.name, "native_schema")) version = try field.integer(0);
+    }
+    if (version != prepared_schema) return error.UnsupportedSnapshotSchema;
+    const seed = manifest.find(map orelse return error.InvalidSaveMap) orelse return decodeWithPool(allocator, bytes, pool);
+    return decodeWorld(allocator, bytes, true, false, pool, .{ .manifest = manifest, .wanted = manifest.region(seed) });
 }
 /// One resident member's own record (as a region save nests it): its world in
 /// its own namespace, no player, no nested members. A dormant resident is kept
 /// in this form until its map is wanted again.
 pub fn decodeResident(allocator: std.mem.Allocator, bytes: []const u8) !Loaded {
-    return decodeWorld(allocator, bytes, false, true);
+    return decodeWorld(allocator, bytes, false, true, null, null);
 }
 /// Admit one old flat visited archive into a distinct resident namespace. Keep
 /// the original archive cold until requested; no engine or asset work occurs here.
@@ -164,11 +350,81 @@ pub fn migrateVisited(allocator: std.mem.Allocator, bytes: []const u8, namespace
     saved.header.player_id = 0;
     saved.header.activated = true;
     saved.region_member = true;
+    saved.encoded = &.{};
     saved.world.deinit();
     saved.world = mapped;
     return saved;
 }
-fn decodeWorld(allocator: std.mem.Allocator, bytes: []const u8, allow_visited: bool, region_member: bool) anyerror!Loaded {
+const ResidentTask = struct {
+    allocator: std.mem.Allocator,
+    bytes: []const u8,
+    name: []const u8,
+    namespace: ?u7,
+    result: ?Loaded = null,
+    failure: ?anyerror = null,
+    fn run(raw: *anyopaque) !void {
+        const self: *ResidentTask = @ptrCast(@alignCast(raw));
+        self.result = self.decode() catch |err| {
+            self.failure = err;
+            return;
+        };
+    }
+    fn decode(self: *ResidentTask) !Loaded {
+        var nested = try decodeWorld(self.allocator, self.bytes, false, true, null, null);
+        errdefer nested.deinit(self.allocator);
+        if (nested.header.journey != null or nested.header.player_id != 0 or !std.mem.eql(u8, nested.map, self.name) or nested.header.namespace == self.namespace) return error.InvalidResident;
+        return nested;
+    }
+};
+const EntityFields = struct {
+    reader: *stream.Reader,
+    allocator: std.mem.Allocator,
+    parser: *@import("../../core/domain/json_struct.zig").Parser,
+    prepared: bool,
+    fields: [64]struct { id: u6, field: stream.Field } = undefined,
+    count: usize = 0,
+    cursor: usize = 0,
+    planning: bool = true,
+    pub fn next(self: *EntityFields) !?u6 {
+        if (self.planning) {
+            const field = (try self.reader.nextField()) orelse return null;
+            const id = std.meta.stringToEnum(data.ComponentId, field.name) orelse return error.UnsupportedSnapshotComponent;
+            if (self.count == self.fields.len) return error.UnsupportedSnapshotComponent;
+            self.fields[self.count] = .{ .id = @intFromEnum(id), .field = field };
+            self.count += 1;
+            return @intFromEnum(id);
+        }
+        if (self.cursor == self.count) return null;
+        defer self.cursor += 1;
+        return self.fields[self.cursor].id;
+    }
+    pub fn reset(self: *EntityFields) void {
+        self.planning = false;
+        self.cursor = 0;
+    }
+    pub fn value(self: *EntityFields, comptime T: type) !T {
+        return parseValue(T, self.allocator, self.fields[self.cursor - 1].field, self.parser, self.prepared);
+    }
+    fn begin(self: *EntityFields) void {
+        self.planning = true;
+        self.cursor = 0;
+        self.count = 0;
+    }
+};
+fn finishResidents(tasks: []ResidentTask, pool: *jobs.Pool, strings: std.mem.Allocator, residents: *std.ArrayList(Loaded)) !void {
+    var batch: [4]jobs.Job = undefined;
+    defer for (tasks) |*task| if (task.result) |*value| value.deinit(task.allocator);
+    for (tasks, batch[0..tasks.len]) |*task, *job| job.* = .{ .run = ResidentTask.run, .context = task };
+    try pool.run(batch[0..tasks.len]);
+    for (tasks) |*task| {
+        if (task.failure) |err| return err;
+        const nested = &task.result.?;
+        for (residents.items) |member| if (member.header.namespace == nested.header.namespace) return error.DuplicateWorldNamespace;
+        try residents.append(strings, nested.*);
+        task.result = null;
+    }
+}
+fn decodeWorld(allocator: std.mem.Allocator, bytes: []const u8, allow_visited: bool, region_member: bool, pool: ?*jobs.Pool, selection: ?Selection) anyerror!Loaded {
     if (bytes.len > maximum) return error.SnapshotCapacity;
     var reader = try stream.Reader.init(bytes);
     const campaign = (try reader.nextRecord()) orelse return error.MissingCampaign;
@@ -178,10 +434,14 @@ fn decodeWorld(allocator: std.mem.Allocator, bytes: []const u8, allow_visited: b
     arena.* = std.heap.ArenaAllocator.init(allocator);
     errdefer arena.deinit();
     const strings = arena.allocator();
+    var json_parser = @import("../../core/domain/json_struct.zig").Parser.init(allocator);
+    defer json_parser.deinit();
     var map: ?[]const u8 = null;
     var skill: ?u8 = null;
     var version: ?i32 = null;
     var header: ?Header = null;
+    var header_field: ?stream.Field = null;
+    var runtime: ?[]const u8 = null;
     while (try reader.nextField()) |field| {
         if (std.mem.eql(u8, field.name, "map")) {
             if (field.kind != .text or !validName(field.data)) return error.InvalidSaveMap;
@@ -193,27 +453,57 @@ fn decodeWorld(allocator: std.mem.Allocator, bytes: []const u8, allow_visited: b
         } else if (std.mem.eql(u8, field.name, "native_schema")) {
             if (field.count != 1) return error.InvalidSnapshotSchema;
             version = try field.integer(0);
-        } else if (std.mem.eql(u8, field.name, "state")) header = try parse(Header, strings, field) else return error.UnsupportedSnapshotField;
+        } else if (std.mem.eql(u8, field.name, "runtime")) {
+            if (field.kind != .text) return error.InvalidSnapshotField;
+            runtime = field.data;
+        } else if (std.mem.eql(u8, field.name, "state")) header_field = field else return error.UnsupportedSnapshotField;
     }
-    if (version == null or (version.? != 1 and version.? != schema)) return error.UnsupportedSnapshotSchema;
+    if (version == null or (version.? != 1 and version.? != schema and version.? != prepared_schema)) return error.UnsupportedSnapshotSchema;
+    if (version.? == prepared_schema) {
+        if (prepared_identity.len == 0 or runtime == null or !std.mem.eql(u8, runtime.?, prepared_identity)) return error.PreparedRuntimeMismatch;
+    } else if (runtime != null) return error.UnsupportedSnapshotField;
+    header = try parseValue(Header, strings, header_field orelse return error.MissingSnapshotState, &json_parser, version.? == prepared_schema);
     var state = header orelse return error.MissingSnapshotState;
     if (region_member and (version.? < 2 or state.namespace == null)) return error.InvalidResident;
     if (version.? == 1 and state.namespace != null) return error.UnsupportedSnapshotSchema;
     if (state.namespace == null) state.namespace = 0;
     var world = data.World.initNamespaced(allocator, 1024, state.namespace.?);
     errdefer world.deinit();
+    try world.beginConstruction();
     var archives: std.ArrayList(Archive) = .empty;
     var residents: std.ArrayList(Loaded) = .empty;
+    var cold: std.ArrayList(Cold) = .empty;
+    var tasks: [4]ResidentTask = undefined;
+    var task_count: usize = 0;
+    var entity_fields: EntityFields = .{ .reader = &reader, .allocator = strings, .parser = &json_parser, .prepared = version.? == prepared_schema };
     errdefer for (residents.items) |*member| member.deinit(allocator);
     while (try reader.nextRecord()) |record| {
         if (std.mem.eql(u8, record.name, "resident_level")) {
-            if (!allow_visited or region_member or residents.items.len >= archive_limit - 1 or record.id != residents.items.len + 1 or version.? < 2 or state.namespace == null) return error.InvalidResident;
+            if (!allow_visited or region_member or residents.items.len + task_count + cold.items.len >= archive_limit - 1 or record.id != residents.items.len + task_count + cold.items.len + 1 or version.? < 2 or state.namespace == null) return error.InvalidResident;
             const name_field = (try reader.nextField()) orelse return error.InvalidResident;
             const content = (try reader.nextField()) orelse return error.InvalidResident;
             if (!std.mem.eql(u8, name_field.name, "map") or name_field.kind != .text or !validName(name_field.data) or !std.mem.eql(u8, content.name, "snapshot") or content.kind != .bytes or content.data.len > world_limit or try reader.nextField() != null) return error.InvalidResident;
             if (std.mem.eql(u8, name_field.data, map orelse return error.InvalidSaveMap)) return error.InvalidResident;
             for (residents.items) |member| if (std.mem.eql(u8, member.map, name_field.data)) return error.DuplicateResident;
-            var nested = try decodeWorld(allocator, content.data, false, true);
+            for (tasks[0..task_count]) |task| if (std.mem.eql(u8, task.name, name_field.data)) return error.DuplicateResident;
+            for (cold.items) |member| if (std.mem.eql(u8, member.map, name_field.data)) return error.DuplicateResident;
+            if (selection) |chosen| if (!chosen.contains(name_field.data)) {
+                const namespace = try preparedNamespace(strings, content.data, &json_parser);
+                if (namespace == state.namespace) return error.InvalidResident;
+                for (cold.items) |member| if (member.namespace == namespace) return error.DuplicateWorldNamespace;
+                try cold.append(strings, .{ .map = try strings.dupe(u8, name_field.data), .namespace = namespace, .bytes = &.{} });
+                continue;
+            };
+            if (pool) |workers| {
+                tasks[task_count] = .{ .allocator = allocator, .bytes = content.data, .name = name_field.data, .namespace = state.namespace };
+                task_count += 1;
+                if (task_count == tasks.len) {
+                    try finishResidents(tasks[0..task_count], workers, strings, &residents);
+                    task_count = 0;
+                }
+                continue;
+            }
+            var nested = try decodeWorld(allocator, content.data, false, true, null, null);
             errdefer nested.deinit(allocator);
             if (nested.header.journey != null or nested.header.player_id != 0 or !std.mem.eql(u8, nested.map, name_field.data) or nested.header.namespace == state.namespace) return error.InvalidResident;
             for (residents.items) |member| if (member.header.namespace == nested.header.namespace) return error.DuplicateWorldNamespace;
@@ -221,38 +511,55 @@ fn decodeWorld(allocator: std.mem.Allocator, bytes: []const u8, allow_visited: b
             continue;
         }
         if (std.mem.eql(u8, record.name, "visited_level")) {
+            if (task_count != 0) {
+                try finishResidents(tasks[0..task_count], pool.?, strings, &residents);
+                task_count = 0;
+            }
             if (!allow_visited or archives.items.len >= archive_limit or record.id != archives.items.len + 1) return error.InvalidArchive;
             const name_field = (try reader.nextField()) orelse return error.InvalidArchive;
             const content = (try reader.nextField()) orelse return error.InvalidArchive;
             if (!std.mem.eql(u8, name_field.name, "map") or name_field.kind != .text or !validName(name_field.data) or !std.mem.eql(u8, content.name, "snapshot") or content.kind != .bytes or content.data.len > world_limit or try reader.nextField() != null) return error.InvalidArchive;
             if (std.mem.eql(u8, name_field.data, map orelse return error.InvalidSaveMap)) return error.InvalidArchive;
             for (archives.items) |prior| if (std.mem.eql(u8, prior.map, name_field.data)) return error.DuplicateArchive;
-            var nested = try decodeWorld(allocator, content.data, false, false);
+            var nested = try decodeWorld(allocator, content.data, false, false, null, null);
             defer nested.deinit(allocator);
             if (nested.header.journey != null or !std.mem.eql(u8, nested.map, name_field.data)) return error.InvalidArchive;
             try archives.append(strings, .{ .map = try strings.dupe(u8, name_field.data), .bytes = try strings.dupe(u8, content.data) });
             continue;
         }
-        if (archives.items.len != 0 or residents.items.len != 0) return error.InvalidSnapshotRecord;
+        if (archives.items.len != 0 or residents.items.len != 0 or task_count != 0 or cold.items.len != 0) return error.InvalidSnapshotRecord;
         if (!std.mem.eql(u8, record.name, "native_entity") or record.id == 0) return error.InvalidSnapshotRecord;
         if (version.? == 1 and record.id > world.id_last) return error.InvalidLegacyIdentity;
-        const entity = try world.create(record.id, .{});
-        while (try reader.nextField()) |field| {
-            var known = false;
-            inline for (std.meta.fields(data.Component)) |component| if (std.mem.eql(u8, field.name, component.name)) {
-                if (known) return error.DuplicateComponent;
-                try world.put(entity, try parse(component.type, strings, field));
-                known = true;
-            };
-            if (!known) return error.UnsupportedSnapshotComponent;
-        }
+        entity_fields.begin();
+        _ = try world.constructFrom(record.id, &entity_fields);
     }
+    if (task_count != 0) try finishResidents(tasks[0..task_count], pool.?, strings, &residents);
+    for (residents.items) |member| for (cold.items) |dormant| if (member.header.namespace == dormant.namespace) return error.DuplicateWorldNamespace;
     if (state.next_id < world.next_id or state.next_id == std.math.maxInt(u32)) return error.InvalidNextIdentity;
     world.next_id = state.next_id;
     if (state.namespace != null and state.next_id > world.id_last + 1) return error.InvalidNextIdentity;
-    var result: Loaded = .{ .arena = arena, .world = world, .header = state, .map = map orelse return error.InvalidSaveMap, .skill = skill orelse return error.InvalidSaveSkill, .visited = archives.items, .residents = residents.items, .region_member = region_member };
-    if (!region_member) try validateRegion(allocator, &result);
+    // Release detached storage before copying the completed world's ownership.
+    try world.finishConstruction();
+    var result: Loaded = .{ .arena = arena, .world = world, .header = state, .map = map orelse return error.InvalidSaveMap, .skill = skill orelse return error.InvalidSaveSkill, .visited = archives.items, .residents = residents.items, .region_member = region_member, .encoded = bytes, .encoded_schema = version.? };
+    result.cold = cold.items;
+    if (!region_member and selection == null) try validateRegion(allocator, &result);
     return result;
+}
+fn preparedNamespace(allocator: std.mem.Allocator, bytes: []const u8, parser: *@import("../../core/domain/json_struct.zig").Parser) !u7 {
+    var reader = try stream.Reader.init(bytes);
+    _ = (try reader.nextRecord()) orelse return error.MissingCampaign;
+    var state: ?stream.Field = null;
+    var runtime: ?[]const u8 = null;
+    var version: ?i32 = null;
+    while (try reader.nextField()) |field| {
+        if (std.mem.eql(u8, field.name, "state")) state = field;
+        if (std.mem.eql(u8, field.name, "runtime")) runtime = field.data;
+        if (std.mem.eql(u8, field.name, "native_schema")) version = try field.integer(0);
+    }
+    if (version != prepared_schema or prepared_identity.len == 0 or runtime == null or !std.mem.eql(u8, runtime.?, prepared_identity)) return error.PreparedRuntimeMismatch;
+    const header = try parseValue(Header, allocator, state orelse return error.MissingSnapshotState, parser, true);
+    if (header.player_id != 0 or header.journey != null) return error.InvalidResident;
+    return header.namespace orelse error.MissingWorldNamespace;
 }
 // Reject non-finite/unbounded data before it can reach physics or renderer casts.
 fn bounded(value: anytype) anyerror!void {
@@ -295,6 +602,7 @@ pub fn validate(snapshot: *Loaded) !void {
     try validateRegion(snapshot.world.allocator, snapshot);
 }
 pub fn validateRegion(allocator: std.mem.Allocator, snapshot: *Loaded) !void {
+    if (snapshot.cold.len != 0) return error.IncompletePreparedSource;
     if (snapshot.residents.len >= archive_limit or snapshot.region_member or snapshot.header.player_id == 0) return error.InvalidRegion;
     var owners: [archive_limit]*data.World = undefined;
     owners[0] = &snapshot.world;
@@ -661,6 +969,71 @@ fn validateWorld(snapshot: *Loaded, references: @import("world_references.zig").
         };
     };
     if (players != @intFromBool(snapshot.header.player_id != 0)) return error.InvalidSavedPlayer;
+}
+
+test "prepared region handoff retains durable source, namespaces and parallel validation" {
+    const t = std.testing;
+    var scratch = std.heap.ArenaAllocator.init(t.allocator);
+    defer scratch.deinit();
+    const allocator = scratch.allocator();
+    var world = data.World.init(t.allocator, 16);
+    defer world.deinit();
+    _ = try world.create(7, .{ data.Transform{}, data.Velocity{}, data.Player{}, data.Body{}, data.Binding{ .slot = 0 }, data.Health{}, data.Hurt{}, data.Weapons{ .weapon = 1 }, data.Character{}, data.Ailments{}, data.Keys{} });
+    var members: [6]Archive = undefined;
+    for (&members, 1..) |*member, i| {
+        var other = data.World.initNamespaced(t.allocator, 16, @intCast(i));
+        defer other.deinit();
+        _ = try other.create(null, .{data.Transform{ .position = .{ @floatFromInt(i), 0, 0 } }});
+        const buffer = try allocator.alloc(u8, 8192);
+        member.* = .{ .map = try std.fmt.allocPrint(allocator, "e1m{d}a", .{i}), .bytes = undefined };
+        member.bytes = try capture(t.allocator, buffer, &other, member.map, 3, .{ .at_ms = 1000, .episode = 1, .player_id = 0, .next_id = other.next_id, .namespace = @intCast(i) });
+    }
+    const storage = try allocator.alloc(u8, 65536);
+    const original = try captureRegion(t.allocator, storage, &world, "e1m7a", 3, .{ .at_ms = 1000, .episode = 1, .player_id = 7, .next_id = world.next_id, .namespace = 0 }, &.{}, &members);
+    var loaded = try decode(t.allocator, original);
+    defer loaded.deinit(t.allocator);
+    const plan = try planPrepared(&loaded);
+    try t.expect(plan.bytes < 65536);
+    try t.expectEqual(members.len, plan.members);
+    const prepared = try capturePreparedPlanned(t.allocator, try allocator.alloc(u8, plan.bytes), &loaded, plan);
+    try t.expectEqual(plan.bytes, prepared.len);
+    try t.expectError(error.InvalidPreparedPlan, capturePreparedPlanned(t.allocator, try allocator.alloc(u8, plan.bytes - 1), &loaded, plan));
+    const pool = try jobs.Pool.create(t.allocator, 2);
+    defer pool.destroy();
+    var restored = try decodeWithPool(t.allocator, prepared, pool);
+    defer restored.deinit(t.allocator);
+    try restored.bindOriginal(original);
+    try t.expectEqual(@as(i32, 2), restored.encoded_schema);
+    for (restored.residents, members) |*member, expected| {
+        try t.expectEqualStrings(expected.map, member.map);
+        try t.expectEqualSlices(u8, expected.bytes, member.encoded);
+        try t.expectEqual(@as(i32, 2), member.encoded_schema);
+        const recaptured = try capture(t.allocator, try allocator.alloc(u8, 8192), &member.world, member.map, member.skill, member.header);
+        try t.expectEqualSlices(u8, expected.bytes, recaptured);
+    }
+    const recaptured = try captureRegion(t.allocator, try allocator.alloc(u8, 65536), &restored.world, restored.map, restored.skill, restored.header, restored.visited, &members);
+    try t.expectEqualSlices(u8, original, recaptured);
+    var manifest: @import("campaign_regions.zig").Manifest = .{};
+    manifest.count = 1;
+    manifest.names[0] = loaded.map;
+    var subset = try decodeCertifiedSelection(t.allocator, prepared, &manifest, pool);
+    defer subset.deinit(t.allocator);
+    try subset.bindOriginal(original);
+    try t.expectEqual(@as(usize, 0), subset.residents.len);
+    try t.expectEqual(members.len, subset.cold.len);
+    try t.expectError(error.IncompletePreparedSource, validate(&subset));
+    for (subset.cold, members) |cold, expected| {
+        try t.expectEqualSlices(u8, expected.bytes, cold.bytes);
+        var woken = try decodeResident(t.allocator, cold.bytes);
+        defer woken.deinit(t.allocator);
+        try t.expectEqual(cold.namespace, woken.header.namespace.?);
+        try t.expectEqual(@as(usize, 1), woken.world.count());
+    }
+    const runtime = std.mem.indexOf(u8, prepared, prepared_identity).?;
+    const bad = try allocator.dupe(u8, prepared);
+    bad[runtime] ^= 1;
+    std.mem.writeInt(u32, bad[20..24], @import("../../core/domain/crc32_ieee.zig").hash(bad[24..]), .little);
+    try t.expectError(error.PreparedRuntimeMismatch, decodeWithPool(t.allocator, bad, pool));
 }
 
 test "campaign saves own flat archives and validate nested worlds before admission" {

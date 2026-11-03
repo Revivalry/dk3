@@ -36,6 +36,34 @@ fn trace(_: *anyopaque, request: collision.Request) !collision.Trace {
 fn contents(_: *anyopaque, point: v.Vec3, _: u16) !u32 {
     return @intCast(referenceContents(&point, 0));
 }
+const WaterLedge = struct {
+    upper_contents: u32,
+    fn sample(raw: *anyopaque, point: v.Vec3, _: u16) !u32 {
+        const self: *@This() = @ptrCast(@alignCast(raw));
+        if (point[0] >= 20) return if (point[2] < 8) c.CONTENTS_SOLID else self.upper_contents;
+        return if (point[2] < 16) c.CONTENTS_WATER else 0;
+    }
+    fn openTrace(_: *anyopaque, request: collision.Request) !collision.Trace {
+        return .{ .fraction = 1, .end = request.end, .normal = .{ 0, 0, 1 } };
+    }
+};
+test "water ledge clearance ignores nonblocking volumes but rejects solid clip and bodies" {
+    for ([_]u32{ 0, c.CONTENTS_WATER, c.CONTENTS_TRIGGER, c.CONTENTS_AREAPORTAL, c.CONTENTS_SOLID, c.CONTENTS_PLAYERCLIP, c.CONTENTS_BODY }) |upper| {
+        var ledge: WaterLedge = .{ .upper_contents = upper };
+        var player: move.Player = .{};
+        var motion: @import("../core/domain/slide.zig").State = .{ .position = @splat(0), .velocity = @splat(0) };
+        var parameters = bridge.parameters(0);
+        parameters.fixed_ms = 16;
+        parameters.snap_velocity = false;
+        _ = try move.run(&player, &motion, .{ .time_ms = 16, .angles = @splat(0), .forward = 127, .up = 127 }, parameters, .{ .context = &ledge, .trace_fn = WaterLedge.openTrace, .contents_fn = WaterLedge.sample });
+        const blocked = upper & parameters.mask != 0;
+        try std.testing.expectEqual(!blocked, player.timer == .water_jump);
+        if (blocked) try std.testing.expect(motion.velocity[2] < 100) else {
+            try std.testing.expect(motion.position[2] > 4);
+            try std.testing.expect(motion.velocity[2] > 300);
+        }
+    }
+}
 test "walking swimming diagonal crouch jump and gravity follow bundled movement" {
     var context: u8 = 0;
     defer water_surface = null;
