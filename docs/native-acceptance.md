@@ -5,6 +5,38 @@ with the merged source as of 20 October 2026. Results below retain their origina
 runtime, assets and limits. Implementation and focused passes do not establish
 complete episode/campaign or artistic acceptance.
 
+## Sequence 572 — perf-main-rebase — integrated PR and regression qualification
+
+The owner requested publishing pending code, merging performance PR #14 into
+main, then rebasing this checkout and updating its existing PR. The performance
+worktree was clean and matched its published head `2c5587f`. Canonical pending
+code was committed and pushed as `3f9b785` before #14 merged at `39e7e20`.
+The feature branch was then rebased onto that main commit and PR #13 updated.
+The pre-rebase branch is preserved locally as `backup/bots-pass-before-perf-572`.
+Local saves, `.keep`, screenshots and video files were excluded from publication.
+
+Conflict resolution retains main's complete loading, prepared-save, ECS and
+Vulkan implementations. The resulting gameplay PR has no renderer, snapshot
+decoder or ECS changes relative to main. Water-clearance coverage retains both
+checkouts' nonblocking-volume cases. The automatic companion duty and authored
+co-op routing remain on the rebased feature branch.
+
+| Scenario | State | Evidence / limits |
+|---|---|---|
+| Perf integration and branch ancestry | Passed | #14 merged through GitHub with its green checks and pinned head. Local main is `39e7e20`; both main and `perf/loading-rendering` are ancestors of the rebased branch. |
+| Integrated build and installation | Passed | `zig build test play-install -j4` with the existing pinned Python test environment builds the engine, all renderers and native modules and prepares generation `25af466ba3efe2d0bcb1bc76ef64a56744375f439c232d55edf73a8d5aafee29`. No desktop game launched. |
+| Python/component checks | Passed | All 397 Python tests pass with Pillow/scipy/yaml from the pinned test environment; codec, online, process and C contracts pass. Earlier sequence 571's Python dependency/fixture failures no longer occur after integration. |
+| Native integration regression | Repaired; passed | First aggregate: 579/580 Zig tests, one crash. Co-op target diagnostics queried verbosity inside perf's engine-free exit-arrival fixture. The fixture now binds/restores a gateway admitting only the cvar query; unexpected calls still fail. `zig build test-runtime -j4 --summary all` passes 33/33 steps and 437/437 tests. Together with the unchanged aggregate checks, all 580 Zig tests pass. No production exit behavior changed by this repair. |
+| Exact owner-save plate and return chain | Passed, scoped | `perf-main-rebase-572/full-save/`: complete original region copy, automatic physical press/hold, all four exit movers open, diagnostic activation of the actual release wheel, then automatic return. No companion orders. The original save hash is unchanged. This is not a walked route or ordinary wheel-use acceptance. |
+| Saving that copied region | Failed | The same replay still reports `Save/load refused: InvalidRegion`; its result explicitly records `persistence.passed=false`. Sequence 571's isolated-room persistence result remains scoped to that fixture. Full-region save acceptance remains open; the completed replay does not prove the earlier transport overflow generally resolved. |
+| Ownership and format | Passed | R1–R11 remain zero; Zig formatting and Git whitespace checks pass. |
+
+The final fixture repair changes test setup only, after the coherent installed
+runtime replay. No duplicate broad aggregate was run: affected native checks
+were refreshed while still-valid Python, codec, online, process and C results
+were retained. Gameplay evidence stays local under
+`zig-out/reports/perf-main-rebase-572/`.
+
 ## Sequence 571 — companion-puzzles — automatic station duties
 
 **Change.** Free companions now take physical puzzle stations advertised by an
