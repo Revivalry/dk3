@@ -13,7 +13,7 @@ jobs:
         with:
           version: 0.16.0
       - name: Install build and headless dependencies
-        run: sudo apt-get update && sudo apt-get install -y xvfb xauth libsdl2-dev pkg-config libvulkan-dev glslc python3-venv
+        run: sudo apt-get update && sudo apt-get install -y xvfb xauth libsdl2-dev pkg-config libsqlite3-dev libcurl4-openssl-dev libvulkan-dev glslc python3-venv
       - name: Install component test dependencies
         run: |
           python3 -m venv .venv-ci

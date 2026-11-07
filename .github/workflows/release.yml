@@ -29,7 +29,7 @@ jobs:
       - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsdl2-dev pkg-config libvulkan-dev glslc
+          sudo apt-get install -y libsdl2-dev pkg-config libsqlite3-dev libcurl4-openssl-dev libvulkan-dev glslc
       - name: Build Linux and Windows products
         run: |
           zig build -Doptimize=ReleaseSafe

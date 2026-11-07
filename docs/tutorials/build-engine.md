@@ -16,7 +16,7 @@ Make, Python and Python virtual-environment support.
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y git make pkg-config libsdl2-dev libsqlite3-dev libvulkan-dev glslc python3-venv xvfb xauth
+sudo apt-get install -y git make pkg-config libsdl2-dev libsqlite3-dev libcurl4-openssl-dev libvulkan-dev glslc python3-venv xvfb xauth
 ```
 
 ## Get the source
