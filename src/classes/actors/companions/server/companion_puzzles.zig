@@ -63,7 +63,7 @@ pub fn step(frame: pilot.Frame, entity: ecs.Entity, companion: *data.Companion, 
             above[2] = offer.maxs[2] - frame.hull.mins[2] + 32;
             var below = above;
             below[2] = offer.mins[2] - 64;
-            const floor = try frame.collision.trace(.{ .start = above, .end = below, .mins = frame.hull.mins, .maxs = frame.hull.maxs, .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
+            const floor = try frame.collision.trace(.{ .start = above, .end = below, .mins = frame.hull.mins, .maxs = frame.hull.maxs, .slot = frame.slot, .mask = frame.motionMask() & ~@as(u32, c.CONTENTS_BODY) });
             if (floor.start_solid or floor.all_solid or floor.fraction == 1 or floor.normal[2] < 0.7) continue;
             if (try frame.collision.contents(v.add(floor.end, .{ 0, 0, frame.hull.mins[2] + 1 }), frame.slot) & (c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_NITRO) != 0) continue;
             companion.puzzle = .{ .control = id, .point = floor.end };
@@ -87,7 +87,7 @@ pub fn step(frame: pilot.Frame, entity: ecs.Entity, companion: *data.Companion, 
     const distance = nav.horizontalDistance(position, puzzle.point);
     intent.* = .{
         .destination = if (distance > 4 or !puzzle.holding) puzzle.point else null,
-        .direct = distance < 96,
+        .direct = distance < 96 and @abs(position[2] - puzzle.point[2]) <= 24 and try pilot.walkable(frame, position, puzzle.point),
         .brake = true,
         .fight = false,
         .fire = .hold,

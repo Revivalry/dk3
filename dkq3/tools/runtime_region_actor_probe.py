@@ -34,6 +34,11 @@ def scenario(driver, report, capture, kind):
     hero = driver.until(lambda s: s['map'] == 'e1m1a' and s['mode'] == 'normal')
     assert 'map=e1m1b stage=client_ready' in driver.text()
     start = len(driver.text())
+    if kind == 'companion':
+        # Isolate following from the opening pods' real combat interruption.
+        # Pursuit/attack scenarios retain their hostile authored population.
+        driver.diagnostics('dk3_runtime_pacify_monsters', 'dk3 zig probe: pacified')
+        driver.diagnostics('dk3_runtime_pacify_monsters e1m1b', 'dk3 zig probe: pacified')
     driver.issue('dk3_runtime_place -752 -1392 525')
     driver.until(lambda s: math.dist(s['pos'], (-752, -1392, 525)) < 40,
                  description='controlled source-side approach accepted')
@@ -115,6 +120,7 @@ if __name__ == '__main__':
     parser.add_argument('--report', type=Path, required=True)
     parser.add_argument('--renderer', default='opengl2')
     parser.add_argument('--scenario', choices=('sentry', 'spit', 'pursuit', 'companion'), default='sentry')
+    parser.set_defaults(resident_worlds=True)
     args = parser.parse_args()
     args.engine, args.report = args.engine.resolve(), args.report.resolve()
     run(args, lambda driver, report, capture: scenario(driver, report, capture, args.scenario))

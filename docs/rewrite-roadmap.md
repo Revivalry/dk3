@@ -14,9 +14,36 @@ complete campaign, cinematic/visual and multiplayer acceptance remains open.
 
 Sequence 340 records continuous Ronin driver routes from New Game/intro to e1m3b
 with candidate navigation. Sequences 424–426 add focused play-feedback and companion
-hazard/water/catch-up evidence. No complete episode or full campaign is accepted.
-The next campaign gate is a current-build continuous replay and authored progression
-beyond e1m3b, followed by the remainder of all four episodes and the full release matrix.
+hazard/water/catch-up evidence. Sequence 579 records a complete headless scripted
+Episode 2 pass, including all rune revisits and the Episode 3 boundary, with zero
+deaths in final run168; earlier run159 used two combat checkpoint retries.
+Sequence581 fresh run394 repeats the complete headless Episode2 route, including
+all rune revisits, Medusa's awakened-statue counter, timestream23 and Episode3
+arrival, with zero deaths on its recorded native candidate. Navigation404 repeats
+all62 frozen manifests: actor failures fall91.304% and follower failures83.418%;
+two follower old-pass regressions keep the additional strict gate open.
+Full rendered/audio episode and full campaign acceptance
+remain open.
+Sequence583 fresh resident New Game148 completes intro, all17 Episode1 maps,
+the ending and Greece/Lemnos A into B on candidate84. It uses two normal combat
+checkpoint recoveries within unchanged limits, with no companion losses.
+The exact tested native generation is installed for `zig build play`; owner
+saves/settings remain unchanged. This is headless authoritative acceptance;
+rendering/audio remain open. The next campaign gates are current-candidate
+Episode2 coverage, authored Episodes3–4 and the full release matrix.
+
+Sequence584 records both episodes through their endings and next-episode arrivals
+using labelled attempts and ordinary checkpoint continuations. Both final
+chaptered MP4s pass full video/audio decoding and sampled-frame inspection.
+These walkthroughs expose the rendered game for review, without replacing the
+fresh-run and cinematic artistic-parity acceptance gates.
+
+Sequence585 repairs the movement presentation defect found by owner review of
+those videos. Short recorded Episode1/Greece samples pass actual camera/turn/cadence
+metrics; both replacement walkthroughs pass full movement/media checks:
+Episode1 is88m35s and Episode2 is73m41s. Frozen source inputs, continuation saves,
+packet cadence and sampled visual reviews are reconciled. Retain both old video
+evidence and the narrower scope of each movement/progression gate.
 
 The scope and historical step tables below remain the complete-port plan. Historical
 C/QVM guidance and pre-native acceptance are superseded by the

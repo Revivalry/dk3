@@ -7,6 +7,10 @@ pub var gateway: abi.Gateway = .{};
 pub fn print(text: [:0]const u8) void {
     _ = gateway.call(c.G_PRINT, .{text.ptr});
 }
+/// Exact contact against one linked engine entity, without unrelated bodies.
+pub fn entityContact(projection: *const abi.EntityProjection, mins: [3]f32, maxs: [3]f32) bool {
+    return gateway.call(c.G_ENTITY_CONTACT, .{ &mins, &maxs, projection }) != 0;
+}
 /// Diagnostic lines that recur during play: shown only with `developer 1`.
 pub fn developerPrint(text: [:0]const u8) void {
     if (integer("developer") != 0) print(text);

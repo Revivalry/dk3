@@ -51,7 +51,8 @@ pub const Observation = struct {
     escape_failed: bool = false,
     submerged: bool = false,
     air_left_ms: i64 = std.math.maxInt(i64),
-    /// In water the leader is not in: stuck there counts however near.
+    /// Stranded away from the leader's footing (water or a missing route):
+    /// lack of headway counts even inside the ordinary distance threshold.
     misplaced: bool = false,
 };
 
@@ -93,14 +94,14 @@ pub fn inView(collision: anytype, slot: u16, eye: v.Vec3, view: v.Vec3, point: v
 }
 
 /// Catch up when due: true when the companion was put down beside the leader.
-pub fn step(state: *State, frame: pilot.Frame, entity: ecs.Entity, actor: *data.Actor, pose: *data.Transform, owner: Ref, leader: data.Transform, leader_state: ?data.Player, trail: []const v.Vec3, report: pilot.Report, now: i64) !bool {
+pub fn step(state: *State, frame: pilot.Frame, entity: ecs.Entity, actor: *data.Actor, pose: *data.Transform, owner: Ref, leader: data.Transform, leader_state: ?data.Player, trail: []const v.Vec3, report: pilot.Report, near_exit: bool, now: i64) !bool {
     const world = frame.world;
     const companion = try world.get(entity, data.Companion);
     const body = (try world.get(entity, data.Body)).*;
     const health = (try world.get(entity, data.Health)).*;
     const liquid = actor.liquid;
     const harmful = liquid.initialized and liquid.level > 0 and (liquid.kind == .lava or liquid.kind == .slime);
-    const eligible = owner.world == world and health.current > 0 and companion.order == .follow and !companion.stopped and !companion.carrying and companion.collecting == 0 and companion.authored == .none and body.motion_owner == null and actor.scripted_pose == null and (world.get(entity, data.Performer) catch null) == null and !@import("../../../../mechanics/server/cinematics.zig").active(world) and (leader_state == null or leader_state.?.mode == .normal);
+    const eligible = owner.world == world and health.current > 0 and companion.order == .follow and !companion.stopped and !companion.carrying and companion.collecting == 0 and companion.puzzle == null and companion.authored == .none and body.motion_owner == null and actor.scripted_pose == null and (world.get(entity, data.Performer) catch null) == null and !@import("../../../../mechanics/server/cinematics.zig").active(world) and (leader_state == null or leader_state.?.mode == .normal);
     const reason = due(state, .{
         .now = now,
         .eligible = eligible,
@@ -109,7 +110,8 @@ pub fn step(state: *State, frame: pilot.Frame, entity: ecs.Entity, actor: *data.
         .escape_failed = report.escape_failed,
         .submerged = frame.state.water_level == 3,
         .air_left_ms = if (liquid.initialized) liquid.air_until_ms - now else std.math.maxInt(i64),
-        .misplaced = frame.state.water_level > 0 and !(if (leader_state) |player| player.water_level > 0 else false),
+        .misplaced = (frame.state.water_level > 0 and !(if (leader_state) |player| player.water_level > 0 else false)) or
+            ((report.routeless or near_exit or @abs(leader.position[2] - pose.position[2]) > 48) and v.length(v.subtract(leader.position, pose.position)) > 150),
     });
     if (reason == .none or now < state.next_try_ms) return false;
     state.next_try_ms = now + retry_ms;
@@ -186,6 +188,12 @@ test "a companion that gets no nearer for eight seconds catches up" {
     try testing.expectEqual(Reason.none, due(&state, .{ .now = 100, .eligible = true, .distance = 800 }));
     try testing.expectEqual(Reason.none, due(&state, .{ .now = 7000, .eligible = true, .distance = 780 }));
     try testing.expectEqual(Reason.stuck, due(&state, .{ .now = 8200, .eligible = true, .distance = 790 }));
+}
+test "a nearby follower stranded off its route can recover without increasing its separation" {
+    var state: State = .{};
+    try std.testing.expectEqual(Reason.none, due(&state, .{ .now = 100, .eligible = true, .distance = 480, .misplaced = true }));
+    try std.testing.expectEqual(Reason.none, due(&state, .{ .now = 5000, .eligible = true, .distance = 470, .misplaced = true }));
+    try std.testing.expectEqual(Reason.stuck, due(&state, .{ .now = 8200, .eligible = true, .distance = 480, .misplaced = true }));
 }
 test "orders, stops and scripts hold a companion where it is" {
     var state: State = .{};

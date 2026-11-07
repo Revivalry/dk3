@@ -25,6 +25,7 @@ pub fn fire(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
     const eye = rules.eye(shot.position, shot.view_height);
     const forward = v.basis(shot.angles).forward;
     const combat_policy = catalog.combatFor(shot.weapon, shot.sequence);
+    try @import("character_actions.zig").sound(world, slots, projections, owner, .attack, now);
     switch (combat_policy) {
         .pending => return error.MissingWeaponCombatPolicy,
         .hitscan => |policy| {

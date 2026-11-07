@@ -227,6 +227,7 @@ pub fn combat(actors: *const @import("../../../../mechanics/server/actors.zig").
     const occupants = slots.occupants;
     for (occupants) |occupant| {
         const entity = occupant orelse continue;
+        if ((world.get(entity, data.Companion) catch null) != null and (world.get(entity, data.Health) catch continue).current > 0) try @import("companion_anger.zig").unarmed(world, entity, table, actors.episode, now);
         const companion = world.get(entity, data.Companion) catch continue;
         const health = (try world.get(entity, data.Health)).current;
         if (health <= 0) {
@@ -305,7 +306,8 @@ pub fn required(world: *data.World, player: ecs.Entity, flags: u32) !bool {
 }
 
 /// An attempted departure calls distant required members to the owner, ahead of
-/// combat and optional collection. Reuse the saved Come order and normal motor.
+/// combat and optional collection. Following retains ordinary stranded-follower
+/// recovery; an automatic exit recall must not become an explicit Come hold.
 pub fn summonForExit(world: *data.World, player: ecs.Entity, flags: u32) !void {
     const owner = try world.persistentId(player);
     const origin = (try world.get(player, data.Transform)).position;
@@ -315,8 +317,8 @@ pub fn summonForExit(world: *data.World, player: ecs.Entity, flags: u32) !void {
         const companion = try ref.get(data.Companion);
         if (!companion.enabled or (try ref.get(data.Health)).current <= 0) continue;
         if (v.length(v.subtract((try ref.get(data.Transform)).position, origin)) < 150) continue;
-        if (companion.order == .come and !companion.stopped and v.length(v.subtract(companion.destination, origin)) < 32) continue;
-        companion.order = .come;
+        if (companion.order == .follow and !companion.stopped and companion.collecting == 0 and companion.authored == .none and companion.animation_until == null) continue;
+        companion.order = .follow;
         companion.destination = origin;
         companion.target = 0;
         companion.stopped = false;
@@ -441,7 +443,7 @@ test "departure summons only required members without waiving the distance check
     try t.expect(!try required(&world, player, 4));
     try summonForExit(&world, player, 4);
     const state = (try world.get(follower, data.Companion)).*;
-    try t.expectEqual(policy.Order.come, state.order);
+    try t.expectEqual(policy.Order.follow, state.order);
     try t.expectEqual(data.Vec3{ 0, 0, 0 }, state.destination);
     try t.expect(!state.stopped and state.collecting == 0 and !state.collect_forced);
     try t.expectEqual(policy.Order.stay, (try world.get(other, data.Companion)).order);

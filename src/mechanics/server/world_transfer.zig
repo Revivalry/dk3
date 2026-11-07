@@ -137,6 +137,8 @@ pub fn relocate(source: *Context, destination: *Context, original: @import("../.
     if (destination.world.?.get(moved, data.Actor) catch null) |actor| {
         actor.ground_entity = @import("../../engine/abi.zig").c.ENTITYNUM_NONE;
         actor.route = .{};
+        actor.yield_point = null;
+        actor.yield_until_ms = 0;
     }
     @import("../../game/server/session_classes.zig").party.afterTransfer(&destination.world.?, moved);
     if (destination.world.?.get(moved, data.Body) catch null) |body| body.grounded = false;

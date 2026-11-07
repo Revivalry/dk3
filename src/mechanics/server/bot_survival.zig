@@ -35,7 +35,7 @@ pub const Ignore = struct {
 };
 
 /// A visible health pack or soul close by and on this floor.
-pub fn healthNear(world: *data.World, position: v.Vec3) !bool {
+pub fn healthNear(world: *data.World, position: v.Vec3, rise: f32) !bool {
     var query = world.queryAccess(data.World.mask(.{ data.Pickup, data.Transform }), 0, 0);
     defer query.deinit();
     while (query.next()) |view| for (view.read(data.Pickup), view.read(data.Transform)) |pickup, pose| {
@@ -44,7 +44,7 @@ pub fn healthNear(world: *data.World, position: v.Vec3) !bool {
             .health, .soul => {},
             else => continue,
         }
-        if (v.length(v.subtract(pose.position, position)) < 560 and @abs(pose.position[2] - position[2]) <= 128) return true;
+        if (v.length(v.subtract(pose.position, position)) < 560 and @abs(pose.position[2] - position[2]) <= rise) return true;
     };
     return false;
 }
@@ -96,12 +96,15 @@ pub const Detour = struct {
             self.progress_ms = query.now;
         }
         const stuck = query.now - self.progress_ms > 5000 or stuck_control;
-        if (stuck) {
+        const expired = query.now >= self.until;
+        // Moving in a loop can keep the progress timer alive without ever
+        // reaching the pack. Its trip deadline must also reject that target.
+        if (stuck or (expired and pickup != null and pickup.?.visible and query.health.current < query.health.maximum)) {
             self.avoid[self.avoided % self.avoid.len] = self.target;
             self.avoided += 1;
             self.pause_until = query.now + 8000;
         }
-        if (pickup == null or !pickup.?.visible or query.now >= self.until or query.health.current >= query.health.maximum or stuck) {
+        if (pickup == null or !pickup.?.visible or expired or query.health.current >= query.health.maximum or stuck) {
             self.target = 0;
             return null;
         }
@@ -151,6 +154,7 @@ pub const Engagement = struct {
     since_ms: i64 = 0,
     covered_ms: ?i64 = null,
     stand: ?v.Vec3 = null,
+    empty_since_ms: ?i64 = null,
 };
 /// `distance` is the preference-weighted one the choice was made on.
 pub const Aggressor = struct { ref: Ref, id: u32, distance: f32 };
@@ -235,6 +239,7 @@ pub const Situation = struct {
     detouring: bool = false,
     /// Break off below this percentage of maximum health with a pack near.
     break_pct: i32 = 40,
+    health_rise: f32 = 128,
     max_reach: f32 = 900,
 };
 /// How to deal with `target`: hold and shoot, close in, break off for a
@@ -244,7 +249,7 @@ pub fn engage(state: *Engagement, situation: Situation, target: Aggressor) !Deci
     const frame = situation.frame;
     const now = frame.now;
     const health = situation.health;
-    if (situation.detouring or (health.current * 100 < health.maximum * situation.break_pct and try healthNear(frame.world, situation.position))) if (target.ref.get(data.Health) catch null) |enemy| if (enemy.current > pilot.finish_health) {
+    if (situation.detouring or (health.current * 100 < health.maximum * situation.break_pct and try healthNear(frame.world, situation.position, situation.health_rise))) if (target.ref.get(data.Health) catch null) |enemy| if (enemy.current > pilot.finish_health) {
         state.id = 0;
         return .none;
     };
@@ -252,22 +257,35 @@ pub fn engage(state: *Engagement, situation: Situation, target: Aggressor) !Deci
         state.id = target.id;
         state.since_ms = now;
         state.covered_ms = null;
+        state.empty_since_ms = null;
     }
-    const armed = combat.rangedFor(situation.loadout, frame.table, .{ .advancing = true }) or combat.ranged(situation.loadout, frame.table);
-    if (now - state.since_ms > 25_000 or situation.report.futile or !armed) {
+    const excluded = pilot.damageExclusions(target.ref, now);
+    const armed = combat.rangedFor(situation.loadout, frame.table, .{ .advancing = true, .excluded = excluded }) or combat.rangedFor(situation.loadout, frame.table, .{ .excluded = excluded });
+    const usable = combat.armedFor(situation.loadout, frame.table, .{ .advancing = true, .excluded = excluded });
+    const ammunition = combat.ammunition(armed, now, &state.empty_since_ms, combat.rearmDelay(situation.loadout));
+    if (now - state.since_ms > 25_000 or situation.report.futile or (ammunition == .empty and !usable)) {
         state.id = 0;
         return .{ .ignore = .{ .until = now + 15_000, .stale = true } };
     }
+    if (ammunition == .waiting and (target.distance > 128 or !usable)) {
+        if (state.stand == null) state.stand = situation.position;
+        return .{ .hold = state.stand.? };
+    }
     var at = (try target.ref.get(data.Transform)).position;
     if (target.ref.get(data.Body) catch null) |body| at[2] += (body.mins[2] + body.maxs[2]) * 0.5;
-    const weapon = combat.select(situation.loadout, frame.table, target.distance);
-    const reach = @min(situation.max_reach, @max(@as(f32, 96), frame.table.entries[weapon].range * 0.6));
+    const weapon = combat.selectFor(situation.loadout, frame.table, target.distance, .{ .excluded = excluded });
+    const reach = @min(situation.max_reach, combat.standOffFor(situation.loadout, frame.table, weapon));
+    var span = v.length(v.subtract(at, situation.position));
+    if (reach < 128) if (target.ref.get(data.Body) catch null) |body| {
+        const origin = (try target.ref.get(data.Transform)).position;
+        span = v.length(v.subtract(v.closestInBounds(situation.position, v.add(origin, body.mins), v.add(origin, body.maxs)), situation.position));
+    };
     // A lane cover keeps blocking for long is no firing position: close in.
     if (situation.report.enemy == target.id and situation.report.lane_blocked) {
         if (state.covered_ms == null) state.covered_ms = now;
     } else state.covered_ms = null;
     const covered = if (state.covered_ms) |since| now - since > 1500 else false;
-    const firing = situation.report.enemy == target.id and !covered and v.length(v.subtract(at, situation.position)) <= reach;
+    const firing = situation.report.enemy == target.id and !covered and span <= reach;
     if (firing) {
         if (state.stand == null) state.stand = situation.position;
         return .{ .hold = state.stand.? };
@@ -323,4 +341,12 @@ test "a detour ends when healed, gone, slow or shut, and avoids a stalled pack" 
     detour.progress_ms = 7000;
     query.health.current = 100;
     try std.testing.expectEqual(@as(?v.Vec3, null), try detour.current(query, false));
+    detour.target = 40;
+    query.health.current = 30;
+    query.now = 10_000;
+    query.position = .{ 60, 0, 0 };
+    try std.testing.expectEqual(@as(?v.Vec3, null), try detour.current(query, false));
+    try std.testing.expectEqual(query.now, detour.progress_ms);
+    try std.testing.expectEqual(@as(u32, 40), detour.avoid[1]);
+    try std.testing.expectEqual(@as(i64, 18_000), detour.pause_until);
 }

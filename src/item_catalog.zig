@@ -2,6 +2,7 @@
 //! Class registry: the item classes, the authored key names and item models. Holds no
 //! behaviour; the keys class is keys.zig.
 pub const drugbox = @import("classes/items/drugbox/drugbox.zig");
+pub const antidote = @import("classes/items/antidote/antidote.zig");
 pub const hosportal = @import("classes/items/hosportal/hosportal.zig");
 pub const healthtree = @import("classes/items/healthtree/healthtree.zig");
 pub const chest = @import("classes/items/chest/chest.zig");
@@ -45,7 +46,8 @@ pub fn model(name: []const u8) ?[]const u8 {
     for (models) |entry| if (std.mem.eql(u8, entry.name, name)) return entry.value;
     return null;
 }
-pub const Keys = @import("classes/items/keys/keys.zig").Keys;
+pub const key_policy = @import("classes/items/keys/keys.zig");
+pub const Keys = key_policy.Keys;
 test "key identities, bomb consumption and complete purifier parts" {
     try std.testing.expect(keyIndex("item_wood_chest") == null and keyIndex("item_black_chest") == null);
     try std.testing.expectEqual(@as(usize, 32), keys.len);
@@ -63,6 +65,7 @@ test "key identities, bomb consumption and complete purifier parts" {
 
 test {
     _ = chest;
+    _ = antidote;
     _ = healthtree;
     _ = hosportal;
     _ = drugbox;

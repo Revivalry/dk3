@@ -603,7 +603,9 @@ pub fn validate(snapshot: *Loaded) !void {
 }
 pub fn validateRegion(allocator: std.mem.Allocator, snapshot: *Loaded) !void {
     if (snapshot.cold.len != 0) return error.IncompletePreparedSource;
-    if (snapshot.residents.len >= archive_limit or snapshot.region_member or snapshot.header.player_id == 0) return error.InvalidRegion;
+    if (snapshot.residents.len >= archive_limit) return error.RegionMemberLimit;
+    if (snapshot.region_member) return error.UnexpectedRegionMember;
+    if (snapshot.header.player_id == 0) return error.MissingRegionPlayer;
     var owners: [archive_limit]*data.World = undefined;
     owners[0] = &snapshot.world;
     for (snapshot.residents, 1..) |*member, i| {
@@ -915,7 +917,8 @@ fn validateWorld(snapshot: *Loaded, references: @import("world_references.zig").
             const plan = melee.plan() catch return error.InvalidSavedMelee;
             if (melee.next_hit >= plan.hits or melee.damage < 0 or melee.damage > 1000000 or melee.experience < 0 or melee.timing_factor < 1 or melee.timing_factor > 3) return error.InvalidSavedMelee;
             const owner = references.find(melee.owner) orelse return error.InvalidSavedMeleeOwner;
-            try owner.require(.{ data.Player, data.Weapons, data.Binding, data.Health });
+            try owner.require(.{ data.Weapons, data.Binding, data.Health, data.Body });
+            if ((owner.get(data.Player) catch null) == null) try owner.require(.{data.Actor});
             if ((world.get(entity, data.Binding) catch null) != null) return error.InvalidSavedMelee;
         }
         if (world.get(entity, data.WeaponLaunch) catch null) |launch| {
@@ -923,7 +926,8 @@ fn validateWorld(snapshot: *Loaded, references: @import("world_references.zig").
             const policy = @import("weapon_catalog").combatFor(launch.weapon, launch.sequence);
             if ((policy != .projectile and policy != .flown) or class.spec.projectile.action_delay_ms == 0 or (world.get(entity, data.Binding) catch null) != null) return error.InvalidSavedLaunch;
             const owner = references.find(launch.owner) orelse return error.InvalidSavedLaunch;
-            try owner.require(.{ data.Player, data.Weapons, data.Health, data.Binding });
+            try owner.require(.{ data.Weapons, data.Health, data.Binding, data.Body });
+            if ((owner.get(data.Player) catch null) == null) try owner.require(.{data.Actor});
         }
         if (world.get(entity, data.Pickup) catch null) |pickup| {
             try require(world, entity, .{ data.Binding, data.Body, data.ItemMotion, data.MapObject });
@@ -945,6 +949,9 @@ fn validateWorld(snapshot: *Loaded, references: @import("world_references.zig").
         if (world.get(entity, data.Character) catch null) |character| {
             for (character.attributes) |attribute| if (attribute < 0 or attribute > 5) return error.InvalidSavedCharacter;
             if (character.environment_charge_ms < 0 or character.environment_charge_ms > 40000) return error.InvalidSavedEnvironment;
+            inline for (@import("../../game/domain/item_protections.zig").classes) |Class| {
+                try @field(character.item_protection, Class.state_field).validate();
+            }
             try validLiquid(character.liquid);
             if (character.level < 1 or character.level > 25 or character.points < 0 or character.experience < 0 or character.save_gems < 0) return error.InvalidSavedCharacter;
         }
@@ -1066,6 +1073,10 @@ test "portable native snapshots own strings and preserve IDs before rebasing" {
     var world = data.World.init(allocator, 64);
     defer world.deinit();
     const player = try world.create(7, .{ data.Transform{}, data.Velocity{}, data.Player{}, data.Body{}, data.Binding{ .slot = 0 }, data.Health{}, data.Hurt{}, data.Weapons{ .weapon = 1 }, data.Character{ .boost_until = .{ 0, 1300, 0, 0, 0 } }, data.Ailments{}, data.Keys{} });
+    inline for (@import("../../game/domain/item_protections.zig").classes) |Class| {
+        _ = Class.acquire(.{ .character = try world.get(player, data.Character) }, 1000);
+    }
+    const saved_protection = (try world.get(player, data.Character)).item_protection;
     var random: data.Random = .{ .state = 92817 };
     _ = random.next();
     try world.put(player, random);
@@ -1121,7 +1132,7 @@ test "portable native snapshots own strings and preserve IDs before rebasing" {
     _ = try world.create(70, .{ data.Transform{}, data.MapObject{ .classname = "worldspawn" }, data.Cinematic{ .name = "intro", .shot = 20, .started_ms = 500, .active = true, .sounds = 2, .queued = .{3} ++ @as([127]u16, @splat(0)) } });
     _ = try world.create(71, .{ data.Transform{}, data.Body{}, data.Binding{ .slot = 87, .model = 1 }, data.Performer{ .unique = "oka1", .classname = "cine_osaka", .model = "models/cinematic/c_osaka_intr.dkm", .animation = .{ .first = 10, .last = 20 }, .animation_ms = 800, .next_ms = 1050, .queue = .{42} ++ @as([127]u16, @splat(0)), .count = 1, .started = true, .due_ms = 1900 } });
 
-    const mover = try world.create(42, .{ data.Transform{}, data.MapObject{ .classname = "func_train", .target = "next" }, data.Train{ .phase = .dwelling, .action = .{ .at_ms = 2000 }, .next_target = "next" } });
+    const mover = try world.create(42, .{ data.Transform{}, data.MapObject{ .classname = "func_train", .target = "next" }, data.Train{ .phase = .dwelling, .action = .{ .at_ms = 2000 }, .crush_ready = .{ .at_ms = 1400 }, .next_target = "next" } });
     _ = mover;
     world.next_id = 100;
     var bytes: [65536]u8 = undefined;
@@ -1134,6 +1145,7 @@ test "portable native snapshots own strings and preserve IDs before rebasing" {
     try std.testing.expectEqual(random.next(), (try loaded.world.get(loaded.world.find(7).?, data.Random)).next());
     try std.testing.expectEqualStrings("next", (try loaded.world.get(loaded.world.find(42).?, data.Train)).next_target);
     try loaded.rebase(9000);
+    try std.testing.expectEqual(@as(?i64, 9400), (try loaded.world.get(loaded.world.find(42).?, data.Train)).crush_ready.at_ms);
     const charge = (try loaded.world.get(loaded.world.find(47).?, data.Charge)).*;
     try std.testing.expectEqual(@as(?i64, 9200), charge.detonate_ms);
     try std.testing.expectEqual(@as(?i64, 8900), charge.beep_ms);
@@ -1244,6 +1256,7 @@ test "portable native snapshots own strings and preserve IDs before rebasing" {
     try std.testing.expectEqual(@as(i64, 13000), (try loaded.world.get(loaded.world.find(44).?, data.Lifetime)).expires_ms);
     try std.testing.expectEqual(@as(?i64, 10000), (try loaded.world.get(loaded.world.find(42).?, data.Train)).action.at_ms);
     try std.testing.expectEqual(@as(i64, 9300), (try loaded.world.get(loaded.world.find(7).?, data.Character)).boost_until[1]);
+    try std.testing.expectEqualDeep(saved_protection, (try loaded.world.get(loaded.world.find(7).?, data.Character)).item_protection);
     try std.testing.expectEqual(@as(i64, 1300), (try world.get(world.find(7).?, data.Character)).boost_until[1]);
     (try world.get(world.find(47).?, data.Charge)).born_ms = std.math.minInt(i64);
     try std.testing.expectError(error.InvalidSnapshotNumber, capture(allocator, &bytes, &world, "e1m3a", 3, .{ .at_ms = 1000, .episode = 1, .player_id = 7, .next_id = 100 }));

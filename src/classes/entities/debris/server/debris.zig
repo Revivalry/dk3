@@ -10,6 +10,19 @@ const engine = @import("../../../../engine/server.zig");
 const Slots = @import("../../../../engine/slots.zig").Slots;
 const prop = @import("../../../../mechanics/server/properties.zig");
 const v = @import("../../../../core/domain/vector.zig");
+pub const contact_hazard = data.WorldControl;
+pub fn contactForecast(world: *data.World, entity: ecs.Entity, observer: v.Vec3, observer_velocity: v.Vec3, now: i64) !?policy.Forecast {
+    const control = (try world.get(entity, data.WorldControl)).*;
+    if (control.action != .debris) return null;
+    const state = control.action.debris;
+    if (!state.active or state.stopped or now > state.started_ms + 7500) return null;
+    const velocity = (try world.get(entity, data.Velocity)).linear;
+    if (v.length(velocity) < 30) return null;
+    const body = (try world.get(entity, data.Body)).*;
+    const expansion: f32 = if (state.expand_ms != null) 2.25 else 1;
+    const extent = @max(@max(@abs(body.mins[0]), @abs(body.maxs[0])), @max(@abs(body.mins[1]), @abs(body.maxs[1]))) * expansion;
+    return policy.forecast((try world.get(entity, data.Transform)).position, velocity, observer, observer_velocity, @max(48, extent + 32));
+}
 pub fn owns(name: []const u8) bool {
     return std.mem.eql(u8, name, "func_debris") or std.mem.eql(u8, name, "func_debris_visible");
 }
@@ -158,7 +171,7 @@ pub fn step(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
         remaining -= elapsed;
         const seconds = @as(f32, @floatFromInt(elapsed)) * 0.001;
         pose.angles = v.add(pose.angles, v.scale(state.spin, seconds));
-        velocity.linear[2] -= 800 * seconds;
+        velocity.linear[2] -= policy.gravity * seconds;
         const previous = pose.position;
         const hit = try engine.collisionService().trace(.{ .start = previous, .end = v.add(previous, v.scale(velocity.linear, seconds)), .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = c.MASK_SOLID });
         if (hit.start_solid or hit.all_solid) {

@@ -3,6 +3,11 @@
 pub const slot = "dk3-restart-internal";
 pub const arrival_slot = "autosave-arrival";
 pub const periodic_slot = "autosave";
+/// A lethal frozen pose still needs ordinary post-death input. A dead mode
+/// with positive health can instead represent a lost companion.
+pub fn requiresRestart(mode: @import("player_move.zig").Mode, health: i32) bool {
+    return health <= 0 or mode == .dead;
+}
 pub const Autosave = struct {
     next_ms: ?i64 = null,
     retry_ms: i64 = 0,
@@ -54,6 +59,14 @@ test "death recovery waits for input and cannot repeatedly enqueue loads" {
     try t.expect(!state.wantsRestart(false, true, 4200));
     try t.expect(!state.wantsRestart(true, true, 4300));
     try t.expect(!state.wantsRestart(false, true, 4400));
+}
+test "lethal frozen poses recover while living cinematics stay held" {
+    const t = @import("std").testing;
+    try t.expect(requiresRestart(.frozen, -99809));
+    try t.expect(requiresRestart(.normal, 0));
+    try t.expect(requiresRestart(.dead, 100));
+    try t.expect(!requiresRestart(.frozen, 100));
+    try t.expect(!requiresRestart(.normal, 100));
 }
 test "a hurt arrival keeps an existing checkpoint" {
     const t = @import("std").testing;

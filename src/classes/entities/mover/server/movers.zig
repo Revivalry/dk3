@@ -78,11 +78,14 @@ fn restoreTravel(object: data.MapObject, body: data.Body, mover: *data.Mover, tr
 }
 /// Pure staged admission, shared by active, resident and visited save worlds.
 pub fn admit(world: *data.World) !void {
-    var query = world.queryAccess(data.World.mask(.{ data.MapObject, data.Body, data.Mover, data.Transform }), 0, data.World.mask(.{ data.Mover, data.Transform }));
-    defer query.deinit();
-    while (query.next()) |view| for (view.read(data.MapObject), view.read(data.Body), view.write(data.Mover), view.write(data.Transform)) |object, body, *mover, *transform| {
-        try restoreTravel(object, body, mover, transform);
-    };
+    {
+        var query = world.queryAccess(data.World.mask(.{ data.MapObject, data.Body, data.Mover, data.Transform }), 0, data.World.mask(.{ data.Mover, data.Transform }));
+        defer query.deinit();
+        while (query.next()) |view| for (view.read(data.MapObject), view.read(data.Body), view.write(data.Mover), view.write(data.Transform)) |object, body, *mover, *transform| {
+            try restoreTravel(object, body, mover, transform);
+        };
+    }
+    try regroup(world);
 }
 /// Authored press/pop-back audio is registered while the map is admitted so the
 /// first use cannot wait on a late sound configstring. Missing means silent.
@@ -147,6 +150,42 @@ pub fn authoredPosition(object: data.MapObject, mover: data.Mover) ?v.Vec3 {
     const swapped = object.flags & 1 != 0 and !eq(object.classname, "func_button");
     return if (mover.platform != swapped) mover.opened else mover.closed;
 }
+fn rotatedEnd(object: data.MapObject, closed: v.Vec3) !v.Vec3 {
+    const axis: usize = if (object.flags & 128 != 0) 2 else if (object.flags & 256 != 0) 0 else 1;
+    var opened = closed;
+    const reverse: f32 = if (object.flags & 2 != 0) -1 else 1;
+    opened[axis] += (try prop.number(object, "distance", 90)) * reverse;
+    return opened;
+}
+fn rotatedOffset(point: v.Vec3, angles: v.Vec3) v.Vec3 {
+    const axes = v.basis(angles);
+    const left = v.scale(axes.right, -1);
+    return v.add(v.add(v.scale(axes.forward, point[0]), v.scale(left, point[1])), v.scale(v.cross(axes.forward, left), point[2]));
+}
+fn swingEnd(object: data.MapObject, closed: v.Vec3, pivot: v.Vec3, centre: v.Vec3, user: v.Vec3) !v.Vec3 {
+    var opened = try rotatedEnd(object, closed);
+    if (object.flags & 1 != 0) opened = v.subtract(v.scale(closed, 2), opened);
+    // The instantaneous motion of the leaf centre must point away from the
+    // activator. Opposite hinges then choose opposite angular signs while
+    // both panels move into the same side of the doorway. View yaw has no role.
+    const axis: usize = if (object.flags & 128 != 0) 2 else if (object.flags & 256 != 0) 0 else 1;
+    const delta = v.subtract(opened, closed);
+    const axes = v.basis(closed);
+    const offset = v.subtract(centre, pivot);
+    const local: v.Vec3 = .{ v.dot(offset, axes.forward), -v.dot(offset, axes.right), v.dot(offset, v.cross(axes.forward, v.scale(axes.right, -1))) };
+    var first = closed;
+    first[axis] += if (delta[axis] >= 0) @as(f32, 0.25) else -0.25;
+    const tangent = v.subtract(rotatedOffset(local, first), offset);
+    if (v.dot(tangent, v.subtract(user, centre)) > 0) opened = v.subtract(v.scale(closed, 2), opened);
+    return opened;
+}
+test "opposite hinges open into the same side and preserve a nonzero closed angle" {
+    const object: data.MapObject = .{ .classname = "func_door_rotate", .flags = 512 };
+    const user: v.Vec3 = .{ -100, 0, 0 };
+    try std.testing.expectEqual(v.Vec3{ 0, -90, 0 }, try swingEnd(object, @splat(0), .{ 0, -80, 0 }, .{ 0, -40, 0 }, user));
+    try std.testing.expectEqual(v.Vec3{ 0, 90, 0 }, try swingEnd(object, @splat(0), .{ 0, 80, 0 }, .{ 0, 40, 0 }, user));
+    try std.testing.expectEqual(v.Vec3{ 0, -45, 0 }, try swingEnd(object, .{ 0, 45, 0 }, .{ 0, -80, 0 }, .{ 0, -40, 0 }, user));
+}
 pub fn spawn(world: *data.World, slots: *const Slots, projections: []abi.EntityProjection) !void {
     for (slots.occupants) |occupant| {
         const entity = occupant orelse continue;
@@ -162,8 +201,7 @@ pub fn spawn(world: *data.World, slots: *const Slots, projections: []abi.EntityP
         const lip = try prop.number(object, "lip", if (button) 4 else 8);
         const size = authoredExtents(body);
         if (rotating) {
-            const axis: usize = if (object.flags & 128 != 0) 2 else if (object.flags & 256 != 0) 0 else 1;
-            opened[axis] += (try prop.number(object, "distance", 90)) * @as(f32, if (object.flags & 2 != 0) -1 else 1);
+            opened = try rotatedEnd(object, closed);
         } else if (platform) {
             closed[2] -= try prop.number(object, "height", size[2] - lip);
         } else {
@@ -182,26 +220,41 @@ pub fn spawn(world: *data.World, slots: *const Slots, projections: []abi.EntityP
         }
         try publish(world, entity, projections);
     }
-    // Stable, transitive grouping by explicit team or touching doors with equal targetname.
+    try regroup(world);
+}
+/// Gold links door leaves through touching bounds, independently of repeated
+/// editor team labels. Distant pairs named alike must remain locally operable.
+fn regroup(world: *data.World) !void {
+    var entities: [ecs.max_entities]ecs.Entity = undefined;
+    var count: usize = 0;
+    {
+        var query = world.queryAccess(data.World.mask(.{ data.MapObject, data.Body, data.Mover, data.Transform }), 0, data.World.mask(.{data.Mover}));
+        defer query.deinit();
+        while (query.next()) |view| for (view.entities(), view.write(data.Mover)) |entity, *mover| {
+            mover.group = try world.persistentId(entity);
+            entities[count] = entity;
+            count += 1;
+        };
+    }
     var changed = true;
     while (changed) {
         changed = false;
-        for (slots.occupants, 0..) |left, i| {
-            const a = left orelse continue;
+        for (entities[0..count], 0..) |a, i| {
             const ma = world.get(a, data.Mover) catch continue;
             const oa = (try world.get(a, data.MapObject)).*;
-            for (slots.occupants[i + 1 ..]) |right| {
-                const b = right orelse continue;
+            for (entities[i + 1 .. count]) |b| {
                 const mb = world.get(b, data.Mover) catch continue;
                 if (ma.group == mb.group) continue;
                 const ob = (try world.get(b, data.MapObject)).*;
+                const door_a = std.mem.startsWith(u8, oa.classname, "func_door");
+                const door_b = std.mem.startsWith(u8, ob.classname, "func_door");
                 const team = prop.text(oa, "team") orelse "";
-                var match = team.len > 0 and eq(team, prop.text(ob, "team") orelse "");
-                if (!match and oa.flags & 4 == 0 and ob.flags & 4 == 0 and std.mem.startsWith(u8, oa.classname, "func_door") and std.mem.startsWith(u8, ob.classname, "func_door") and eq(oa.targetname, ob.targetname)) {
-                    const pa = &projections[(try world.get(a, data.Binding)).slot];
-                    const pb = &projections[(try world.get(b, data.Binding)).slot];
+                var match = !door_a and !door_b and team.len > 0 and eq(team, prop.text(ob, "team") orelse "");
+                if (door_a and door_b and oa.flags & 4 == 0 and ob.flags & 4 == 0 and eq(oa.targetname, ob.targetname)) {
+                    const pa = try closedBounds(world, a);
+                    const pb = try closedBounds(world, b);
                     match = true;
-                    for (0..3) |axis| if (pa.shared.absmin[axis] > pb.shared.absmax[axis] + 1 or pb.shared.absmin[axis] > pa.shared.absmax[axis] + 1) {
+                    for (0..3) |axis| if (pa[0][axis] > pb[1][axis] + 1 or pb[0][axis] > pa[1][axis] + 1) {
                         match = false;
                         break;
                     };
@@ -215,6 +268,37 @@ pub fn spawn(world: *data.World, slots: *const Slots, projections: []abi.EntityP
             }
         }
     }
+}
+fn closedBounds(world: *data.World, entity: ecs.Entity) ![2]v.Vec3 {
+    const mover = try world.get(entity, data.Mover);
+    const body = try world.get(entity, data.Body);
+    const position = if (mover.angular) (try world.get(entity, data.Transform)).position else mover.closed;
+    return .{ v.add(position, body.mins), v.add(position, body.maxs) };
+}
+test "distant door pairs with the same editor team retain separate local masters" {
+    const t = std.testing;
+    var world = data.World.init(t.allocator, 16);
+    defer world.deinit();
+    var leaves: [4]ecs.Entity = undefined;
+    for (0..4) |i| {
+        leaves[i] = try world.create(@intCast(i + 1), .{
+            data.MapObject{ .classname = "func_door_rotate", .properties = &.{.{ .key = "team", .value = "gold" }} },
+            data.Transform{ .position = .{ @as(f32, @floatFromInt(i / 2)) * 600, @as(f32, @floatFromInt(i % 2)) * 16, 0 } },
+            data.Body{ .mins = .{ -2, -8, -24 }, .maxs = .{ 2, 8, 32 } },
+            data.Mover{ .closed = @splat(0), .opened = .{ 0, 90, 0 }, .angular = true, .motion = .{}, .group = 1 },
+        });
+    }
+    try regroup(&world);
+    try t.expectEqual(@as(u32, 1), (try world.get(leaves[1], data.Mover)).group);
+    try t.expectEqual(@as(u32, 3), (try world.get(leaves[2], data.Mover)).group);
+    try t.expectEqual(@as(u32, 3), (try world.get(leaves[3], data.Mover)).group);
+    (try world.get(leaves[3], data.MapObject)).flags = 4;
+    try regroup(&world);
+    try t.expectEqual(@as(u32, 4), (try world.get(leaves[3], data.Mover)).group);
+    (try world.get(leaves[3], data.MapObject)).flags = 0;
+    (try world.get(leaves[3], data.MapObject)).targetname = "independent_control";
+    try regroup(&world);
+    try t.expectEqual(@as(u32, 4), (try world.get(leaves[3], data.Mover)).group);
 }
 pub fn publish(world: *data.World, entity: ecs.Entity, projections: []abi.EntityProjection) !void {
     const mover = (try world.get(entity, data.Mover)).*;
@@ -292,6 +376,20 @@ pub fn use(world: *data.World, slots: *Slots, projections: []abi.EntityProjectio
     if (!@import("../../../../mechanics/server/locks.zig").allows(world, object, activator)) return;
     const pressed = original.use_sound;
     if (try mover.use(now, activator)) |opened| {
+        if (opened) if (@import("../../../../mechanics/server/region_access.zig").find(world, activator)) |user| {
+            if (user.get(data.Transform) catch null) |user_pose| for (slots.occupants) |occupant| {
+                const leaf = occupant orelse continue;
+                const motion = world.get(leaf, data.Mover) catch continue;
+                const description = (try world.get(leaf, data.MapObject)).*;
+                if (motion.group != mover.group or !motion.angular or description.flags & 512 == 0) continue;
+                const bounds = (try world.get(leaf, data.Body)).*;
+                const pivot = (try world.get(leaf, data.Transform)).position;
+                // Engine world bounds become a sphere for rotated brushes;
+                // derive the actual panel centre from its local model bounds.
+                const centre = v.add(pivot, rotatedOffset(v.scale(v.add(bounds.mins, bounds.maxs), 0.5), motion.closed));
+                motion.opened = try swingEnd(description, motion.closed, pivot, centre, user_pose.position);
+            };
+        };
         try start(world, slots, projections, mover.group, opened, now, true);
         if (opened) try emit(world, slots, projections, entity, pressed, now, original.sound_parameters);
     }
@@ -347,16 +445,23 @@ pub fn step(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
                 const at: data.Vec3 = if (blocker_pose) |pose| pose.position else @splat(0);
                 engine.print(std.fmt.bufPrintZ(&text, "dk3 zig mover blocked: id={d} blocker={d} at={d:.0},{d:.0},{d:.0} state={s}\n", .{ try world.persistentId(entity), try world.persistentId(blocker), at[0], at[1], at[2], @tagName(master.state) }) catch "");
             }
-            _ = try @import("../../../../mechanics/server/damage.zig").apply(world, blocker, master.damage, now, .{});
-            // Daikatana's movers do not give way: the reference handler bound to
-            // every DK3 mover class (`MoverBlocked`, set for all mover kinds in
-            // DK_SpawnEntity) hurts what is in the way and then resumes the
-            // travel - it tails to BinaryMove - instead of reversing like Quake
-            // 2's Blocked_Door. Hold the travel clock while held up rather than
-            // running it out against an obstruction, so the mover continues from
-            // where it was stopped once the way clears. e1m1c's exit door is
-            // opened by a switch upstairs and a Crox crossing its sweep used to
-            // seal the level for good, since the switch fires a trigger_once.
+            const object = (try world.get(entity, data.MapObject)).*;
+            const ordinary_door = std.mem.startsWith(u8, object.classname, "func_door");
+            // A closing leaf must release an occupant it cannot push clear.
+            // Holding it against a jamb traps the occupant in a repeated
+            // push/fall cycle. Reopen the whole assembly without firing its
+            // use targets again; opening obstructions still hold the clock.
+            if (ordinary_door and !master.force and master.state == .closing) {
+                try start(world, slots, projections, master.group, true, now, false);
+                continue;
+            }
+            // Ordinary doors already attempt a swept physical push. If there
+            // is no room, hold the travel clock without damaging the occupant.
+            // Authored crushing platforms and water retain their own damage.
+            if (!ordinary_door) _ = try @import("../../../../mechanics/server/damage.zig").apply(world, blocker, master.damage, now, .{ .source = try world.persistentId(entity) });
+            // Hold the travel clock while blocked, then continue once the
+            // occupant can move. Running the clock out against an obstruction
+            // can permanently seal a door operated by a one-use switch.
             if (master.moving()) {
                 for (moves[0..count]) |held| {
                     if (world.get(held.entity, data.Mover)) |member| {

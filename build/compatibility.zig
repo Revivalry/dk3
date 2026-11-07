@@ -14,7 +14,7 @@ pub fn declare(b: *std.Build) []const u8 {
         while (walker.next(b.graph.io) catch @panic("cannot walk gameplay source")) |entry| {
             const presentation = std.mem.startsWith(u8, entry.path, "client/") or std.mem.indexOf(u8, entry.path, "/client/") != null;
             if (entry.kind != .file or (presentation and !std.mem.eql(u8, root, "engine/ioquake3/code/game"))) continue;
-            if (!std.mem.endsWith(u8, entry.path, ".c") and !std.mem.endsWith(u8, entry.path, ".h") and !std.mem.endsWith(u8, entry.path, ".zig") and !std.mem.endsWith(u8, entry.path, ".def")) continue;
+            if (!std.mem.endsWith(u8, entry.path, ".c") and !std.mem.endsWith(u8, entry.path, ".h") and !std.mem.endsWith(u8, entry.path, ".zig") and !std.mem.endsWith(u8, entry.path, ".def") and !std.mem.endsWith(u8, entry.path, ".tsv")) continue;
             paths.append(b.allocator, b.pathJoin(&.{ root, entry.path })) catch @panic("OOM");
         }
     }

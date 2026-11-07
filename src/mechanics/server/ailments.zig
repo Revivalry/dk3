@@ -15,13 +15,24 @@ pub fn apply(world: *data.World, target: ecs.Entity, effect: Effect, source: u32
     }
 }
 pub fn step(world: *data.World, now: i64) !void {
-    var query = world.queryAccess(data.World.mask(.{ data.Ailments, data.Health }), 0, 0);
-    defer query.deinit();
-    while (query.next()) |view| for (view.entities()) |entity| {
+    // Damage hooks can create sounds, death effects and pickups. Retain
+    // entity handles, then release the query before dispatching those hooks.
+    var entities: [ecs.max_entities]ecs.Entity = undefined;
+    var count: usize = 0;
+    {
+        var query = world.queryAccess(data.World.mask(.{ data.Ailments, data.Health }), 0, 0);
+        defer query.deinit();
+        while (query.next()) |view| for (view.entities()) |entity| {
+            entities[count] = entity;
+            count += 1;
+        };
+    }
+    for (entities[0..count]) |entity| {
+        if (!world.alive(entity)) continue;
         var state = (try world.get(entity, data.Ailments)).*;
         if ((try world.get(entity, data.Health)).current <= 0) continue;
         while (state.next(now)) |tick| {
-            const result = try @import("damage.zig").apply(world, entity, @intFromFloat(@ceil(tick.amount)), now, .{ .source = tick.source, .weapon = tick.weapon, .bypass_armor = tick.bypass_armor, .self_hazard = tick.source == try world.persistentId(entity), .suppress_flash = true });
+            const result = try @import("damage.zig").apply(world, entity, @intFromFloat(@ceil(tick.amount)), now, .{ .source = tick.source, .weapon = tick.weapon, .bypass_armor = tick.bypass_armor, .self_hazard = tick.source == try world.persistentId(entity), .suppress_flash = true, .toxic = tick.toxic });
             if (result.blood > 0 and engine.integer("developer") > 0) {
                 var text: [160]u8 = undefined;
                 engine.print(try std.fmt.bufPrintZ(&text, "dk3 zig status tick: target={d} weapon={d} blood={d} killed={d}\n", .{ try world.persistentId(entity), tick.weapon, result.blood, @intFromBool(result.killed) }));
@@ -33,5 +44,5 @@ pub fn step(world: *data.World, now: i64) !void {
         }
         try @import("psychic_warp.zig").step(world, entity, &state, now);
         (try world.get(entity, data.Ailments)).* = state;
-    };
+    }
 }

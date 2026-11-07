@@ -48,6 +48,6 @@ fn leap(strike: *const ground.Strike) !void {
 }
 /// Of the Episode 2 weapons only the trident harms it.
 pub fn admitDamage(_: *const data.Actor, damage: context.Damage) bool {
-    const weapons = @import("weapon_catalog").classes;
-    return policy.admits(damage.weapon, &.{ weapons.discus.id, weapons.venom.id, weapons.sunflare.id, weapons.hammer.id }, weapons.trident.id);
+    const weapon = @import("weapon_catalog").find(damage.weapon) orelse return true;
+    return policy.admits(weapon.classname);
 }

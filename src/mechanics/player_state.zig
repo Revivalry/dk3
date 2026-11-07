@@ -80,9 +80,12 @@ pub fn writeWeapons(ps: *c.playerState_t, state: data.Weapons) void {
 }
 
 pub fn characterParameters(slot: u16, character: data.Character, ailments: data.Ailments, now: i64) move.Parameters {
+    return characterParametersForMode(slot, character, ailments, now, false);
+}
+pub fn characterParametersForMode(slot: u16, character: data.Character, ailments: data.Ailments, now: i64, multiplayer: bool) move.Parameters {
     var result = parameters(slot);
     result.speed = @floatFromInt(@as(i32, @intFromFloat(result.speed * @import("weapon_catalog").character.movementFactor(character.attribute(.speed, now)))));
-    result.jump_speed *= @import("weapon_catalog").character.movementFactor(character.attribute(.acro, now));
+    result.jump_speed *= @import("weapon_catalog").character.acrobaticsFactor(character.attribute(.acro, now), multiplayer);
     if (ailments.mask & 4 != 0) result.speed = @floatFromInt(@as(i32, @intFromFloat(result.speed * (1 - 0.8 * ailments.freeze_level))));
     if (ailments.mask & 128 != 0) result.speed = 0;
     return result;
@@ -116,7 +119,8 @@ test "character projections round-trip and use integer speed with float jump sca
     try std.testing.expectEqualDeep(character, readCharacter(&ps));
     const boosted = characterParameters(0, character, .{}, 999);
     try std.testing.expectEqual(@as(f32, 448), boosted.speed);
-    try std.testing.expectApproxEqAbs(@as(f32, 378), boosted.jump_speed, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 472.5), boosted.jump_speed, 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 675), characterParametersForMode(0, character, .{}, 999, true).jump_speed, 0.001);
     try std.testing.expectEqual(@as(f32, 320), characterParameters(0, character, .{}, 1000).speed);
     character.attributes[2] = 5;
     try std.testing.expectEqual(@as(f32, 448), characterParameters(0, character, .{}, 1000).speed);

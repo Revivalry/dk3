@@ -205,6 +205,10 @@ def network():
                 until(lambda p: p[0]['cmd'] > player['cmd'] + 150, 'Aim processed')
 
             # Actual world pickup in DM, with no grant to Character.
+            # The placement fixture chooses a clear firing position; it does
+            # not change view angles. Face that lane before spawning the item
+            # and walking, rather than inheriting a random DM spawn heading.
+            aim_at(sample()[1]['pos'])
             diagnostic(server, 'dk3_runtime_spawn_item item_speed_boost', 'dk3 fixture item:')
             clients[0].issue('+forward')
             try:
@@ -277,10 +281,13 @@ def network():
             assert reacted and reacted['sleep'] == '0', reacted
             assert sample()[0]['score'] == score, 'Corpse hit awarded another kill'
             response = [reacted]
-            for _ in range(8):
+            for _ in range(160):
                 text = diagnostic(clients[0], 'dk3_runtime_presentation', 'dk3 presentation:')
                 response.extend(dict(re.findall(r'(\w+)=([^ ]+)', line)) for line in text.splitlines()
                                 if line.startswith('dk3 ragdoll: ') and f'identity={victim} ' in line)
+                if len(response) >= 10 and all(row['sleep'] == '1' for row in response[-10:]):
+                    break
+            assert len(response) >= 10 and all(row['sleep'] == '1' for row in response[-10:]), ('Corpse did not resettle after its impulse', response[-10:])
             displacement = max(math.dist(vector(physical[-1]['pelvis']), vector(row['pelvis'])) for row in response)
             # Small handgun impulses can be arrested by floor friction; require
             # actual motion above the 0.01-unit diagnostic resolution, not a

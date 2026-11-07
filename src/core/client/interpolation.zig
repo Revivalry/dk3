@@ -39,11 +39,13 @@ const Track = struct {
 };
 var entities: [c.MAX_GENTITIES]Track = @splat(.{});
 var camera_track: Track = .{};
+var player_track: Track = .{};
 var prior_time: i32 = 0;
 var world_id: i32 = 0;
 pub fn reset() void {
     @memset(&entities, .{});
     camera_track = .{};
+    player_track = .{};
     prior_time = 0;
     world_id = 0;
 }
@@ -58,6 +60,19 @@ pub fn ingest(snapshot: *const c.snapshot_t, boundary: u32) void {
         entities[@intCast(entity.number)].put(.{ .position = entity.pos.trBase, .angles = entity.apos.trBase }, key, snapshot.serverTime, prior_time);
     }
     camera_track.put(.{ .position = snapshot.ps.dk3CameraOrigin, .angles = snapshot.ps.dk3CameraAngles, .fov = snapshot.ps.dk3CameraFov }, @as(u64, boundary) << 32 | @as(u32, @bitCast(snapshot.ps.dk3CameraActive)), snapshot.serverTime, prior_time);
+    const ps = &snapshot.ps;
+    const key = (@as(u128, @as(u32, @bitCast(ps.dk3World))) << 96) |
+        (@as(u128, @as(u32, @bitCast(ps.persistant[c.PERS_SPAWN_COUNT]))) << 64) |
+        (@as(u128, boundary) << 32) |
+        (@as(u128, @intCast(@max(0, ps.clientNum))) << 16) |
+        (@as(u128, @intCast(ps.pm_type)) << 8) |
+        (@as(u128, @intCast(ps.dk3CameraActive)) << 1) |
+        @intFromBool(ps.eFlags & c.EF_TELEPORT_BIT != 0);
+    // Save loads, missed snapshot windows and unflagged large relocations are
+    // cuts. Never turn a genuine teleport into a flight through solid geometry.
+    if (snapshot.serverTime - @as(i64, prior_time) > 250 or
+        v.length(v.subtract(ps.origin, player_track.current.position)) > 256) player_track.valid = false;
+    player_track.put(.{ .position = ps.origin, .angles = ps.viewangles }, key, snapshot.serverTime, prior_time);
     prior_time = snapshot.serverTime;
 }
 pub fn apply(value: *c.entityState_t, now: i32) void {
@@ -72,6 +87,9 @@ pub fn apply(value: *c.entityState_t, now: i32) void {
 }
 pub fn camera(now: i32) Pose {
     return camera_track.sample(now);
+}
+pub fn player(now: i32) Pose {
+    return player_track.sample(now);
 }
 pub fn blendedMotion(now: i32) usize {
     var count: usize = 0;
@@ -108,4 +126,48 @@ test "captured client clock interpolates both actors and cameras before the newe
     try std.testing.expectApproxEqAbs(@as(f32, 2.4), track.sample(862).position[0], 0.001);
     try std.testing.expectApproxEqAbs(@as(f32, 5.6), track.sample(878).position[0], 0.001);
     try std.testing.expectApproxEqAbs(@as(f32, 8.8), track.sample(894).position[0], 0.001);
+}
+
+test "replay player blends feet and shortest view angles but cuts at world respawn teleport and time boundaries" {
+    const t = std.testing;
+    reset();
+    defer reset();
+    const snapshot = try t.allocator.create(c.snapshot_t);
+    defer t.allocator.destroy(snapshot);
+    snapshot.* = std.mem.zeroes(c.snapshot_t);
+    snapshot.serverTime = 100;
+    snapshot.ps.viewangles[1] = 359;
+    ingest(snapshot, 0);
+    snapshot.serverTime = 150;
+    snapshot.ps.origin[0] = 16;
+    snapshot.ps.viewangles[1] = 1;
+    ingest(snapshot, 0);
+    try t.expectEqual(@as(f32, 8), player(125).position[0]);
+    try t.expectEqual(@as(f32, 360), player(125).angles[1]);
+    try t.expectEqual(@as(f32, 0), snapshot.ps.origin[1]);
+    try t.expectEqual(@as(f32, 16), snapshot.ps.origin[0]); // Sampling never predicts physics.
+    inline for (.{ "dk3World", "eFlags", "clientNum", "pm_type", "dk3CameraActive" }) |field| {
+        snapshot.serverTime += 50;
+        snapshot.ps.origin[0] += 16;
+        @field(snapshot.ps, field) += if (std.mem.eql(u8, field, "eFlags")) c.EF_TELEPORT_BIT else 1;
+        ingest(snapshot, 0);
+        try t.expectEqual(snapshot.ps.origin[0], player(snapshot.serverTime - 25).position[0]);
+    }
+    snapshot.serverTime += 50;
+    snapshot.ps.persistant[c.PERS_SPAWN_COUNT] += 1;
+    snapshot.ps.origin[0] += 16;
+    ingest(snapshot, 0);
+    try t.expectEqual(snapshot.ps.origin[0], player(snapshot.serverTime - 25).position[0]);
+    snapshot.serverTime += 50;
+    snapshot.ps.origin[0] += 512;
+    ingest(snapshot, 0);
+    try t.expectEqual(snapshot.ps.origin[0], player(snapshot.serverTime - 25).position[0]);
+    snapshot.serverTime += 500;
+    snapshot.ps.origin[0] += 16;
+    ingest(snapshot, 0);
+    try t.expectEqual(snapshot.ps.origin[0], player(snapshot.serverTime - 25).position[0]);
+    snapshot.serverTime = 50;
+    snapshot.ps.origin[0] = 2;
+    ingest(snapshot, 0);
+    try t.expectEqual(@as(f32, 2), player(25).position[0]);
 }

@@ -25,6 +25,7 @@ pub const Context = struct {
     resources: @import("resources.zig").State = .{},
     prepared_at: i64 = 0,
     stepped_at: i64 = 0,
+    campaign_hud_at: i64 = -1000,
     handle: ?worlds.Handle = null,
     network_id: u32 = 0,
     activated: bool = false,

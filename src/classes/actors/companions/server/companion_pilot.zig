@@ -83,7 +83,8 @@ pub fn output(id: u32, now: i64) ?Output {
 
 pub fn frame(actors: *const Actors, world: *data.World, slots: *Slots, projections: []abi.EntityProjection, entity: ecs.Entity, service: nav.Service, definition: @import("../../../../mechanics/domain/actors.zig").Definition, now: i64) !pilot.Frame {
     const companion = try world.get(entity, data.Companion);
-    return .{
+    const retaliation = if (companion.anger.retaliating) @import("../../../../mechanics/server/region_access.zig").find(world, companion.owner) else null;
+    var result: pilot.Frame = .{
         .world = world,
         .slots = slots,
         .projections = projections,
@@ -96,12 +97,17 @@ pub fn frame(actors: *const Actors, world: *data.World, slots: *Slots, projectio
         .hull = .{ .mins = definition.mins, .maxs = definition.maxs },
         .now = now,
         .region = true,
+        .targets = if (retaliation) |target| .{ .specified = target } else .actors,
         .capabilities = .{ .controls = false, .operate_lifts = false, .passages = false, .exits = false, .use = false, .nuisance = false, .ignore_ambient = true, .duck_to_shoot = false, .careful_footing = true, .tread_water = true },
         .exclusion = .{ .context = actors, .mask = exclusion },
         // Companions keep out of anything that hurts, not only what kills.
         .hazard_damage = 5,
         .label = "sidekick",
     };
+    if (companion.order == .follow and companion.authored == .none) if (@import("../../../../mechanics/server/region_access.zig").find(world, companion.owner)) |owner| if (owner.get(data.Player) catch null) |leader| {
+        if (leader.water_level == 0) result.liquid_mask |= c.CONTENTS_WATER;
+    };
+    return result;
 }
 fn exclusion(context: *const anyopaque, at: pilot.Frame, enemy: ?v.Vec3) anyerror!i32 {
     const actors: *const Actors = @ptrCast(@alignCast(context));
@@ -114,19 +120,14 @@ pub fn drive(actors: *const Actors, world: *data.World, slots: *Slots, projectio
     const companion = try world.get(entity, data.Companion);
     const id = try world.persistentId(entity);
     const flown = entry(world, id, @intFromEnum(companion.identity), now);
-    const plan_frame = try frame(actors, world, slots, projections, entity, service, definition, now);
+    var plan_frame = try frame(actors, world, slots, projections, entity, service, definition, now);
+    const parameters: movement.Parameters = .{ .speed = speed, .jump_speed = definition.upward_speed, .slot = plan_frame.slot, .mask = body.collision_mask, .water_mask = c.MASK_WATER, .solid_mask = c.CONTENTS_SOLID, .currents = @import("../../../../mechanics/player_state.zig").currents, .mins = definition.mins, .maxs = definition.maxs, .snap_velocity = false };
+    plan_frame.motor = parameters;
     const steering = try flown.pilot.steer(plan_frame, flown.intent);
     flown.report = steering.report;
-    var command = steering.command;
-    // An emptied thrown weapon still strikes up close (the reviewed policy);
-    // the bot ladder only counts weapons with rounds.
-    if (!command.attack and flown.intent.fight and flown.intent.fire != .hold and steering.report.enemy != 0 and steering.report.enemy_distance <= 128) {
-        const loadout = (try world.get(entity, data.Weapons)).*;
-        if (@import("companion_weapons.zig").emptyMelee(loadout, &actors.weapons, actors.episode)) |weapon| {
-            command.weapon = weapon;
-            command.attack = loadout.weapon == weapon;
-        }
-    }
+    // The shared pilot qualifies empty-weapon melee too. Do not force an
+    // attack after it has rejected the owner's body in the striking lane.
+    const command = steering.command;
     flown.output = .{ .at_ms = now, .fire = command.attack, .weapon = command.weapon };
     // The weapon step checks its leader-safety lane against this frame's target.
     if (flown.intent.fight) actor.threat = steering.report.enemy;
@@ -149,7 +150,16 @@ pub fn drive(actors: *const Actors, world: *data.World, slots: *Slots, projectio
     companion.motor.command_ms = @max(companion.motor.command_ms, now - elapsed);
     companion.motor.mode = if (body.motion_owner != null) .frozen else .normal;
     var motion: @import("../../../../core/domain/slide.zig").State = .{ .position = pose.position, .velocity = velocity.linear };
-    const result = try movement.run(&companion.motor, &motion, input, .{ .speed = speed, .jump_speed = definition.upward_speed, .slot = plan_frame.slot, .mask = body.collision_mask, .water_mask = c.MASK_WATER, .solid_mask = c.CONTENTS_SOLID, .currents = @import("../../../../mechanics/player_state.zig").currents, .mins = definition.mins, .maxs = definition.maxs, .snap_velocity = false }, @import("../../../../mechanics/server/actor_collision.zig").service());
+    if (body.motion_owner == null and !flown.intent.direct and companion.motor.water_level < 2 and (companion.motor.ground_entity == c.ENTITYNUM_NONE or input.up > 0 or input.forward != 0 or input.right != 0)) {
+        const proposed = input;
+        const forbidden = plan_frame.liquid_mask & (if (companion.motor.water_level > 0) ~@as(u32, c.CONTENTS_WATER) else std.math.maxInt(u32));
+        input = try @import("../../../../mechanics/domain/motion_forecast.zig").protect(companion.motor, motion, input, parameters, @import("../../../../mechanics/server/actor_collision.zig").probe(), forbidden, if (steering.report.waypoint) |waypoint| waypoint.point else flown.intent.destination);
+        if ((input.forward != proposed.forward or input.right != proposed.right or input.up != proposed.up) and @import("../../../../engine/server.zig").integer("developer") >= 2) {
+            var text: [192]u8 = undefined;
+            @import("../../../../engine/server.zig").print(try std.fmt.bufPrintZ(&text, "dk3 landing guard: who={s} t={d} pos={d:.0},{d:.0},{d:.0} input={d},{d},{d} guarded={d},{d},{d}\n", .{ @tagName(companion.identity), now, pose.position[0], pose.position[1], pose.position[2], proposed.forward, proposed.right, proposed.up, input.forward, input.right, input.up }));
+        }
+    }
+    const result = try movement.run(&companion.motor, &motion, input, parameters, @import("../../../../mechanics/server/actor_collision.zig").service());
     for (result.events[0..result.event_count]) |event| switch (event) {
         .jump => companion.jump_started_ms = now,
         else => {},

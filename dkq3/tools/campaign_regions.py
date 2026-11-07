@@ -12,12 +12,16 @@ import sys
 
 from portable_lock import locked
 
-# Sequence 298, seam-vertex-evidence.json: shared corridor geometry and authored
-# reciprocal brushes. Identity is a measured transform, not a spawn-name fallback.
+# Sequences 298/581: shared corridor geometry and authored reciprocal brushes.
+# The 581 comparison preserves every entity, plane, model and render-geometry
+# lump. Only distant water-current contents changed; side surface semantics are
+# identical. Renew the exact BSP pins without weakening admission to new assets.
+# Evidence: gameplay-stability-581/transition-inputs/seam-bsp-comparison.json.
+# Identity is a measured transform, not a spawn-name fallback.
 REVIEWED = {
-    'e1m1a': '2273864c32923737cbdadbe4bd9f2c875d8aac5f098f12b2cc0fde9a24665688',
+    'e1m1a': '6c0b7f17620ad8614649b1cb70c258c68edf40b150a88c0e68462ed66759e9e4',
     'e1m1b': '049d13238b73a0a85cd7116ffc98e6887b6f4fec054ac91818e90e3f183c51b4',
-    'e1m1c': '5ffdd31e7f3d9304c2f4a3517e0bf8c2dafc19d5d9dfd84ae6eb38ab469ed7db',
+    'e1m1c': '799a65e78e26774d391f70991ed7bcd162efedf81c34014bd5e6c8e33a4b34e9',
 }
 SEAMS = {('e1m1a', 25): ('e1m1b', 449),
          ('e1m1b', 449): ('e1m1a', 25),

@@ -324,8 +324,18 @@ pub const Body = struct {
                 if (iteration % 4 != 3) continue;
                 for (&self.points, 0..) |*p, i| {
                     const hit = try service.trace(.{ .brushes_only = true, .start = before[i], .end = p.*, .mins = @splat(-radii[i]), .maxs = @splat(radii[i]), .slot = slot, .mask = mask });
-                    if (hit.all_solid) {
-                        p.* = before[i];
+                    if (hit.all_solid or hit.start_solid) {
+                        if (try service.separate(.{ .brushes_only = true, .start = before[i], .end = before[i], .mins = @splat(-radii[i]), .maxs = @splat(radii[i]), .slot = slot, .mask = mask }, radii[i] * 2)) |contact| {
+                            const correction = v.subtract(contact.end, before[i]);
+                            p.* = contact.end;
+                            // Positional repair is not an impact velocity.
+                            self.previous[i] = v.add(self.previous[i], correction);
+                            normals[i] = contact.normal;
+                            self.contacts += 1;
+                        } else {
+                            p.* = before[i];
+                            self.previous[i] = before[i];
+                        }
                         continue;
                     }
                     if (hit.fraction < 1 and !hit.start_solid) {

@@ -166,7 +166,7 @@ pub const Clients = struct {
         if (ailments.mask & 128 != 0) motion.velocity = @splat(0);
         var events: weapons.Events = .{};
         var weapon_context: weapons.Context = .{ .ps = try world.get(entity, data.Weapons), .healthy = (try world.get(entity, data.Health)).current > 0, .single_player = engine.integer("g_gametype") == c.GT_SINGLE_PLAYER, .table = &self.weapon_table, .events = &events, .service = engine.collisionService(), .slot = @intCast(index), .shot_mask = c.MASK_SHOT, .attack_boost = character.attribute(.attack, command.time_ms) };
-        const parameters = bridge.characterParameters(@intCast(index), character, ailments, command.time_ms);
+        const parameters = bridge.characterParametersForMode(@intCast(index), character, ailments, command.time_ms, !weapon_context.single_player);
         const prior = motion;
         const result = try @import("../domain/player_move.zig").runWithHook(player, &motion, command, parameters, engine.collisionService(), weapon_context.hook());
         // A rise that comes to nothing is a movement question, not a route
@@ -203,6 +203,7 @@ pub const Clients = struct {
         try self.publish(world, projections, states, index, now);
         for (result.events[0..result.event_count]) |event| switch (event) {
             .land => |speed| try @import("environment.zig").land(world, entity, speed, now),
+            .jump => try @import("character_actions.zig").sound(world, slots, projections, entity, .jump, now),
             else => {},
         };
         // Dispatch after movement/projection: spawning events may relocate ECS columns.
@@ -284,7 +285,7 @@ pub const Clients = struct {
         projection.state.number = @intCast(index);
         projection.state.clientNum = @intCast(index);
         projection.state.eType = c.ET_PLAYER;
-        projection.state.eFlags = (ps.eFlags & ~@as(i32, c.EF_DEAD)) | (if (health.current <= 0) @as(i32, c.EF_DEAD) else 0);
+        projection.state.eFlags = (ps.eFlags & ~@as(i32, c.EF_DEAD | abi.Presentation.cinematic_body)) | abi.Presentation.gameplay_body | (if (health.current <= 0) @as(i32, c.EF_DEAD) else 0);
         projection.state.modelindex = if ((try world.get(entity, data.Hurt)).feedback.gibbed) 0 else (try world.get(entity, data.Binding)).model;
         projection.state.angles2 = @splat(1);
         projection.state.dk3Team = ps.persistant[c.PERS_TEAM];

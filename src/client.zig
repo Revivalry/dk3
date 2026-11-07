@@ -144,6 +144,7 @@ fn init(server_message: i32, sequence: i32, client: i32, boundary: i32) !void {
     weapon_table = try weapons.Table.parse(table_bytes);
     weapon_view.init();
     try hud.init();
+    @import("mechanics/client/campaign_hud.zig").init();
     try resident_worlds.captureInitial(&game, &inline_models);
     loading.publish(loading.bar.registered());
     loading.mark("registered", loadingNow());
@@ -157,14 +158,14 @@ fn init(server_message: i32, sequence: i32, client: i32, boundary: i32) !void {
     _ = engine.gateway.call(c.CG_ADDCOMMAND, .{@as([*:0]const u8, "viewpos")});
     _ = engine.gateway.call(c.CG_ADDCOMMAND, .{@as([*:0]const u8, "dk3_runtime_render_world")});
     _ = engine.gateway.call(c.CG_ADDCOMMAND, .{@as([*:0]const u8, "use")});
-    for ([_][*:0]const u8{ "cin_skip", "dk3_runtime_presentation", "weapon", "weapnext", "weapprev", "attribute", "inventory", "invnext", "invprev", "attribute_next", "attribute_increase", "save", "load", "+scores", "-scores", "say", "say_team", "ready", "team", "callvote", "vote" }) |command_name| _ = engine.gateway.call(c.CG_ADDCOMMAND, .{command_name});
+    for ([_][*:0]const u8{ "objectives", "minimap", "cin_skip", "dk3_runtime_presentation", "weapon", "weapnext", "weapprev", "attribute", "inventory", "invnext", "invprev", "attribute_next", "attribute_increase", "save", "load", "+scores", "-scores", "say", "say_team", "ready", "team", "callvote", "vote" }) |command_name| _ = engine.gateway.call(c.CG_ADDCOMMAND, .{command_name});
     for (hud_cycle.commands) |command_name| _ = engine.gateway.call(c.CG_ADDCOMMAND, .{command_name});
     inline for (presenters) |Class| if (@hasDecl(Class, "console_commands")) for (Class.console_commands) |command_name| {
         _ = engine.gateway.call(c.CG_ADDCOMMAND, .{command_name});
     };
     engine.print("dk3 zig: shared movement prediction initialized\n");
 }
-fn draw(now: i32) !void {
+fn draw(now: i32, demo: bool) !void {
     const prior_collision = engine.gateway.call(c.CG_DK3_COLLISION_CURRENT_V1, .{});
     defer if (prior_collision != 0) {
         _ = engine.gateway.call(c.CG_DK3_COLLISION_SELECT_V1, .{prior_collision});
@@ -283,7 +284,10 @@ fn draw(now: i32) !void {
     ailments.* = .{ .mask = @as(u32, @bitCast(snapshot.ps.dk3Status)) & (7 | 128), .freeze_level = snapshot.ps.dk3FreezeLevel };
     const current: i32 = @intCast(engine.gateway.call(c.CG_GETCURRENTCMDNUMBER, .{}));
     var number = @max(0, current - c.CMD_BACKUP + 1);
-    while (number <= current) : (number += 1) {
+    // A recorded demo and a visible pilot use authoritative commands. Local
+    // keyboard history belongs to neither and must not replace their view.
+    const replay_local = !demo and engine.integer("dk3_coop_render") == 0;
+    while (replay_local and number <= current) : (number += 1) {
         var input: c.usercmd_t = undefined;
         if (engine.gateway.call(c.CG_GETUSERCMD, .{ @as(isize, number), &input }) == 0 or input.serverTime <= player.command_ms or input.serverTime > now) continue;
         bridge.holdView(player, transform.angles, input);
@@ -292,7 +296,7 @@ fn draw(now: i32) !void {
         if (ailments.mask & 128 != 0) motion.velocity = @splat(0);
         var events: weapons.Events = .{};
         var weapon_context: weapons.Context = .{ .ps = loadout, .healthy = snapshot.ps.stats[c.STAT_HEALTH] > 0, .single_player = engine.integer("g_gametype") == c.GT_SINGLE_PLAYER, .table = &weapon_table, .events = &events, .service = engine.collisionService(), .slot = @intCast(client_number), .shot_mask = c.MASK_SHOT, .attack_boost = character.attribute(.attack, command.time_ms) };
-        const movement = try move.runWithHook(player, &motion, command, bridge.characterParameters(@intCast(client_number), character.*, ailments.*, command.time_ms), engine.collisionService(), weapon_context.hook());
+        const movement = try move.runWithHook(player, &motion, command, bridge.characterParametersForMode(@intCast(client_number), character.*, ailments.*, command.time_ms, !weapon_context.single_player), engine.collisionService(), weapon_context.hook());
         var step: f32 = 0;
         for (movement.events[0..movement.event_count]) |event| switch (event) {
             .step => |height| step += height,
@@ -321,6 +325,17 @@ fn draw(now: i32) !void {
     ref.fov_x = 90 + psychic.fov;
     ref.fov_y = std.math.atan(@tan(ref.fov_x * std.math.pi / 360) * @as(f32, @floatFromInt(ref.height)) / @as(f32, @floatFromInt(ref.width))) * 360 / std.math.pi;
     ref.vieworg = transform.position;
+    if (!replay_local) {
+        const replay_pose = @import("core/client/interpolation.zig").player(now);
+        ref.vieworg = replay_pose.position;
+        view_angles = replay_pose.angles;
+        // Replay feet already include the mover's interpolated carry. The
+        // authoritative transform and collision state stay at snapshot time.
+        if (engine.integer("cg_debugReplay") != 0 and snapshot.ps.dk3CameraActive == 0) {
+            var message: [512]u8 = undefined;
+            engine.print(try std.fmt.bufPrintZ(&message, "dk3 replay pose: now={d} snapshot={d} world={d} spawn={d} teleport={d} ground={d} pos={d:.4},{d:.4},{d:.4} source={d:.4},{d:.4},{d:.4} angles={d:.4},{d:.4} source_angles={d:.4},{d:.4} velocity={d:.4},{d:.4}\n", .{ now, snapshot.serverTime, snapshot.ps.dk3World, snapshot.ps.persistant[c.PERS_SPAWN_COUNT], snapshot.ps.eFlags & c.EF_TELEPORT_BIT, snapshot.ps.groundEntityNum, ref.vieworg[0], ref.vieworg[1], ref.vieworg[2], snapshot.ps.origin[0], snapshot.ps.origin[1], snapshot.ps.origin[2], view_angles[0], view_angles[1], snapshot.ps.viewangles[0], snapshot.ps.viewangles[1], snapshot.ps.velocity[0], snapshot.ps.velocity[1] }));
+        }
+    }
     ref.vieworg[2] += player.view_height;
     camera_height = player.view_height;
     camera_offset = if (player.mode == .normal and snapshot.ps.dk3CameraActive == 0) view_motion.offset(player.view_height, now) else 0;
@@ -355,6 +370,7 @@ fn draw(now: i32) !void {
     presentation = .{ .now = now };
     foreign_count = 0;
     for (display_entities[0..@intCast(snapshot.numEntities)]) |entity| {
+        if (snapshot.ps.dk3CameraActive == 1 and entity.eFlags & abi.Presentation.gameplay_body != 0 and entity.eFlags & abi.Presentation.cinematic_body == 0) continue;
         const scope = try resident_worlds.selectPresentation(@bitCast(entity.dk3World));
         defer scope.deinit();
         const owner = try resident_worlds.view(@bitCast(entity.dk3World));
@@ -454,7 +470,7 @@ fn draw(now: i32) !void {
         if (entity.eType == c.ET_GENERAL) try render_classes.overlay(&model);
         if (entity.eType == c.ET_GENERAL and entity.generic1 > 0 and entity.generic1 <= 1000) try @import("mechanics/client/status_visuals.zig").frost(rendered, @as(f32, @floatFromInt(entity.generic1)) / 1000);
     }
-    try @import("mechanics/client/ragdolls.zig").drawDetached(&resident_worlds, now);
+    if (snapshot.ps.dk3CameraActive != 1) try @import("mechanics/client/ragdolls.zig").drawDetached(&resident_worlds, now);
     if (snapshot.ps.dk3CameraActive != 0) @import("mechanics/client/cinematics.zig").audio(ref.vieworg);
     @import("mechanics/client/impacts.zig").draw(now, &ref);
     @import("mechanics/client/fx_particles.zig").draw(now, &ref);
@@ -476,12 +492,22 @@ fn draw(now: i32) !void {
             if (Class.holdsInventoryColumn()) hud.column_taken = true;
         };
         try hud.render(display, .{ .current = snapshot.ps.stats[c.STAT_HEALTH], .armor = snapshot.ps.stats[c.STAT_ARMOR] }, character.*, .{ .mask = @bitCast(snapshot.ps.dk3Keys), .quest = @bitCast(snapshot.ps.dk3Quest) }, loadout.*, &weapon_table, selected_weapon, now);
+        try @import("mechanics/client/campaign_hud.zig").render(&hud, display, &game, transform.position, view_angles[1], client_number, now);
         inline for (presenters) |Class| if (@hasDecl(Class, "hud")) Class.hud(&snapshot.ps, now, display);
     }
     _ = engine.gateway.call(c.CG_S_RESPATIALIZE, .{ @as(isize, client_number), &ref.vieworg, &ref.viewaxis, @as(isize, @intFromBool(player.water_level == 3)) });
     if (hide_hud) return;
     @import("mechanics/client/messages.zig").render(hud.font, display, now);
     try @import("mechanics/client/scoreboard.zig").render(hud.font, display, &game, &snapshot.ps, now);
+}
+fn cinematicModelDiagnostics() !void {
+    for (display_entities[0..@intCast(snapshot.numEntities)]) |entity| {
+        if (entity.eFlags & @import("engine/abi.zig").Presentation.cinematic_body == 0) continue;
+        const owner = try resident_worlds.view(@bitCast(entity.dk3World));
+        const clip = try @import("engine/animation.zig").sample(entity, presentation.now);
+        var detail: [512]u8 = undefined;
+        engine.print(try std.fmt.bufPrintZ(&detail, "dk3 cinematic model: entity={d} model={s} frame={d} oldframe={d} backlerp={d:.4} scale={d:.3},{d:.3},{d:.3}\n", .{ entity.number, try engine.config(owner.game, c.CS_MODELS + @as(usize, @intCast(entity.modelindex))), clip.frame, clip.oldframe, clip.backlerp, entity.angles2[0], entity.angles2[1], entity.angles2[2] }));
+    }
 }
 fn console() isize {
     var name_buffer: [128]u8 = @splat(0);
@@ -527,6 +553,7 @@ fn run(name: []const u8) isize {
         @import("mechanics/client/attachments.zig").diagnostics(snapshot.entities[0..@intCast(snapshot.numEntities)], display_entities[0..@intCast(snapshot.numEntities)], snapshot.serverTime, presentation.now);
         @import("mechanics/client/neural_models.zig").diagnostics(presentation.now);
         @import("mechanics/client/ragdolls.zig").diagnostics();
+        cinematicModelDiagnostics() catch engine.print("dk3 cinematic model: diagnostics unavailable\n");
         var message: [512]u8 = undefined;
         engine.print(std.fmt.bufPrintZ(&message, "dk3 view motion: now={d} height={d:.3} offset={d:.3} steps={d} pos={d:.3},{d:.3},{d:.3}\n", .{ presentation.now, camera_height, camera_offset, view_motion.steps, camera_position[0], camera_position[1], camera_position[2] }) catch unreachable);
         engine.print(std.fmt.bufPrintZ(&message, "dk3 weapon presentation: now={d} incarnation={d} weapon={d} phase={s} serial={d} frame={d} oldframe={d} backlerp={d:.4} started={d}\n", .{ weapon_view.presented_ms, weapon_view.state.incarnation orelse 0, weapon_view.state.weapon, @tagName(weapon_view.state.phase), weapon_view.state.fire_serial orelse 0, weapon_view.presented.frame, weapon_view.presented.oldframe, weapon_view.presented.backlerp, weapon_view.started_ms }) catch unreachable);
@@ -535,6 +562,7 @@ fn run(name: []const u8) isize {
         return 1;
     }
     if (@import("mechanics/client/scoreboard.zig").input(name)) return 1;
+    if (@import("mechanics/client/campaign_hud.zig").command(name)) return 1;
     if (hud.command(name)) return 1;
     inline for (presenters) |Class| if (@hasDecl(Class, "console")) {
         if (Class.console(name, presentation.now)) return 1;
@@ -579,7 +607,7 @@ export fn vmMain(command: c_int, arg0: isize, arg1: isize, arg2: isize, arg3: is
     switch (command) {
         c.CG_INIT => init(@intCast(arg0), @intCast(arg1), @intCast(arg2), @intCast(arg3)) catch |err| failure(err),
         c.CG_SHUTDOWN => shutdown(),
-        c.CG_DRAW_ACTIVE_FRAME => draw(@intCast(arg0)) catch |err| failure(err),
+        c.CG_DRAW_ACTIVE_FRAME => draw(@intCast(arg0), arg2 != 0) catch |err| failure(err),
         c.CG_CONSOLE_COMMAND => return console(),
         c.CG_CROSSHAIR_PLAYER, c.CG_LAST_ATTACKER => return -1,
         else => {},

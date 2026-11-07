@@ -1046,7 +1046,7 @@ pub fn submitScene() c.VkCommandBuffer {
 }
 
 /// Submits the slot's uploads then its draws (or, after submitScene, the swapchain
-/// composite), and starts the next slot.
+/// composite). The caller must queue presentation before starting the next slot.
 pub fn submitFrame(present: Present) u64 {
     const slot = frame();
     const split = slot.scene_submitted;
@@ -1088,10 +1088,15 @@ pub fn submitFrame(present: Present) u64 {
     const submitted_result = d.QueueSubmit2.?(s.queue, 1, &submit, null);
     unlockQueue();
     must(submitted_result, "vkQueueSubmit2");
-    const submitted = timeline_value;
+    return timeline_value;
+}
+
+/// Reuse a slot only after the current image's presentation has been queued.
+/// Waiting here inside submitFrame would defer that present behind an unrelated
+/// GPU wait, allowing presentation backpressure to prevent the wait completing.
+pub fn startNextFrame() void {
     frame_index = (frame_index + 1) % frames_in_flight;
     beginUploads(frame());
-    return submitted;
 }
 
 /// Submits pending uploads now and waits for them, so the staging ring can be reused.

@@ -605,12 +605,13 @@ pub fn beginFrame() bool {
     if (remaster) {
         vk.barrier(cmd, hdr.image, c.VK_IMAGE_ASPECT_COLOR_BIT, c.VK_IMAGE_LAYOUT_UNDEFINED, c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, vk.stage_all, 0, c.VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, color_access);
         vk.barrier(cmd, motion.image, c.VK_IMAGE_ASPECT_COLOR_BIT, c.VK_IMAGE_LAYOUT_UNDEFINED, c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, vk.stage_all, 0, c.VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, color_access);
-        vk.barrier(cmd, hdr_depth.image, c.VK_IMAGE_ASPECT_DEPTH_BIT, c.VK_IMAGE_LAYOUT_UNDEFINED, c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, vk.stage_all, 0, c.VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | c.VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
+        vk.barrier(cmd, hdr_depth.image, c.VK_IMAGE_ASPECT_DEPTH_BIT, c.VK_IMAGE_LAYOUT_UNDEFINED, c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, vk.stage_all, c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, c.VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | c.VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
         @import("taa.zig").beginFrame();
     }
     shadow_readable = false;
     shadow_cleared = false;
-    vk.barrier(cmd, depth.image, c.VK_IMAGE_ASPECT_DEPTH_BIT, c.VK_IMAGE_LAYOUT_UNDEFINED, c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, vk.stage_all, 0, c.VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | c.VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
+    // Discarding depth contents does not waive the previous frame's write dependency.
+    vk.barrier(cmd, depth.image, c.VK_IMAGE_ASPECT_DEPTH_BIT, c.VK_IMAGE_LAYOUT_UNDEFINED, c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, vk.stage_all, c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, c.VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | c.VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | c.VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
     current_target = .classic;
     hdr_cleared = false;
     hdr_used = false;
@@ -899,7 +900,7 @@ pub fn endFrame() u64 {
     recording = false;
     const submit_start = profile.cpuBegin();
     const value = vk.submitFrame(present);
-    profile.cpuEnd("submit (+ next slot wait)", submit_start);
+    profile.cpuEnd("submit", submit_start);
     if (acquired) {
         if (!presenterStart(image_index, present.signal)) {
             const info = std.mem.zeroInit(c.VkPresentInfoKHR, .{
@@ -921,6 +922,9 @@ pub fn endFrame() u64 {
         c.SDL_Vulkan_GetDrawableSize(window, &w, &h);
         if (w > 0 and h > 0 and (@as(u32, @intCast(w)) != swapchain.extent.width or @as(u32, @intCast(h)) != swapchain.extent.height)) recreateSwapchain();
     }
+    const next_slot_start = profile.cpuBegin();
+    vk.startNextFrame();
+    profile.cpuEnd("next slot wait (after present queued)", next_slot_start);
     if ((cvars.swapInterval.integer != 0) != swapchain.vsync) recreateSwapchain();
     toggleFullscreen();
     followDrawable();

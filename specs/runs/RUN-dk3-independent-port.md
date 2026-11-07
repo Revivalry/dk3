@@ -10516,3 +10516,609 @@ mechanic was touched.
 | Past the arrival rooms | Not authored, walked further than before | `m7b2b` reached ctl 171's trigger and the `comp_hatch2` button at 656,1312 before `advance: no reachable control left after 2 rounds` at 641,1317,208 |
 | Episode advance | Not advanced | Episode 1 incomplete: e1m7a blocked at ctl 647 (435), e1m7b authored only to its hatch; `episode2/3/4.lua` remain `progress` chains and e2m1a was never entered |
 | Shared mechanics and tools | Untouched | `interactions.use`, `authored_nodes.partyDoor`, `movers.openForParty` and the class-ownership baseline unchanged; no engine or tool change this round |
+
+## Sequence 580 — episode1-handoff — connected Episode 1 into Episode 2
+
+Implemented; unverified. Owner requests a continuous Episode 1 route and ordinary
+handoff into Episode 2. The final Vault yard stop is replaced with the guide's
+crate vent, falling floor and moving-platform course. Vault part 2 now authors
+the hatch, shaft descent, companion return, three tubes, three subsidiary brains,
+central brain, two psychic guardians and ending. Objectives now include the vent,
+party return, hatch and actual two-guardian counter. Native door/puzzle conditions
+remain authoritative; the route uses ordinary movement, attack, use and saves.
+
+`episode1-pass.lua` includes the normal campaign and sets `finish_map=e2m1b`,
+finishing only after normal arrival preparation there. The run therefore must
+cross E1/E2 and traverse Lemnos A. Isolated profiles and `zig-out/episode1-handoff-580`
+modules preserve the original installation and player saves. Reports live under
+`zig-out/reports/episode1-handoff-580/`.
+
+| Scenario | State | Evidence / limits |
+|---|---|---|
+| New Game intro and Marsh | Passed in connected segments | Run03 plays the full intro and enters Marsh B; its held ford hunt times out. Run05 confirms extending the timeout merely exhausts the ion pack against submerged Crox. The hunt is removed: these enemies control no gate, and ordinary route combat follows the bank. Run07 crosses Marsh B/C into Sewer A. |
+| Sewer upper landing and timed pod door | Repaired; scoped passed | Run07 chases a creature below a solid ramp; run08 restricts that sweep but cannot approach the upper door through AAS. Supplied nodes approach the real door; run10 then exposes the separate pod-button approach, run12 a node requiring an unsupported settled stance on the sloping lip. Run13 follows that slope without demanding a stop and completes Sewer A into B. |
+| Tank underwater passage | Failed; repair in progress | Run13 repeatedly drowns after accepting dive coordinates above their actual tunnel depth. Run16 enforces explicit depths and reaches the far bend, but automatic breathing turns back at nine seconds toward the old surface. Precise authored dives now retain their corridor/depth; normal drowning remains enabled. Replay pending. |
+| Vault fresh supplied arrival through vent | Passed, scoped | Run09 exposes AAS sending a lower-room walk back onto its raised lift. Run11 uses the real short direct floor lane, completes all earlier Vault stages, reaches the vent and falls into the shaft with zero deaths. It then times out because the old goal remains above the falling floor; run14 targets the real lower landing and reaches the ladder. |
+| Vault ladder/platform course | Failed; repair in progress | Run15 reaches the ladder head but demands a point eleven units inside the solid rung backing with an eight-unit radius. Its approach radius now admits the real supported stance. The platform course and final map remain unverified. |
+| Old low-health Vault save | Failed; retained | Run04 restores the old stage11 checkpoint and exhausts 30 retries before the new course. Run06 restores an earlier equipped checkpoint and reaches the vent, but lacks reliable health for its drop and repeats earlier combat; stopped after sufficient diagnostics. No acceptance inferred. Run01 has duplicate-level harness registration, and run02 supplies the wrong stage; both remain failed evidence. |
+| Complete E1→E2 with resident worlds | Unverified | Full connected acceptance remains open; no grants, placement or forced activation are used. |
+
+Continuation: `sewer-air-pocket-20/` completes Sewer B and reaches Prison B via
+Prison A, with three real combat checkpoint retries in A. The explicit tank dive
+retains its route through the far bend, enters the control room, takes health and
+returns to air; its last air-pocket coordinate is corrected to the reachable
+surface. `prison-console-23/` follows supplied nodes to Prison B's upper console,
+collects the keycard, frees Superfly and crosses all three Crematorium maps into
+Processing A. Processing's open sliding door still occupies the AAS waypoint;
+`processing-door-gap-26/` crosses its clear southern lane, completes A/B and reaches
+Icelab A. The plant-floor hunts had pulled the player into an unreturnable lower
+pocket; `icelab-landing-corridor-32/` takes the supplied corridor before fighting
+and reaches the upper exit, then fails waiting for Superfly. Automatic departure
+recall assigned Come and excluded normal catch-up; Follow recall plus the existing
+eight-second recovery for a stalled required follower near an exit is implemented,
+under replay39. Admission distance and visibility/supported-placement checks remain.
+
+Vault repair evidence: runs17–22 distinguish a genuine moving landing from a
+fixed sampled point. Run24 lands on the first moving deck; diagnostics28 show the
+ordinary ride helper repeatedly replacing the next jump's destination with the
+current deck's centre. Explicit transfers now retain their departure, carry the
+run-up through takeoff without a braking frame, and steer at the moving surface.
+Relative surface stances align subsequent run-ups without requiring an old height.
+Run34 physically lands on decks175,173,170. Its next crossing hits the fixed acro
+ledge, which the guide requires before the last two decks. Run36 reaches that
+ledge's jump but overshoots; staging the takeoff at the deck's edge and reducing
+the short hop's pace is under replay38. Later decks, Vault B, the full fresh
+Episode 1 and E1/E2 handoff remain unverified. Failed experiments and original
+inputs remain in their separate report directories.
+
+Continuation through run69: Icelab departure recall crosses A→B; the upper landing
+fight retains 66 health, and run48 crosses A/B/C into Vault A with resident worlds.
+This is not seamless acceptance: B uses 25 checkpoint retries, including repeated
+deaths on the optional shield approach. The unreachable upper-side clinic detour
+is removed. Both Icelab A corridor leaves are now waited fully open.
+
+The connected Vault arrival exposes more route dependencies than a fresh map:
+run59 releases the companion holding the corner platform up and crosses the
+ladder/cage lift; run62 uses the actual upper cage corridor and ion shots, opens
+the timed gate, then fails on the next ladder's approach. Run66 approaches its
+rung column from the south and passes through the gallery with zero deaths,
+then exposes a false “already riding” test accepting a distant upper floor.
+That test now includes the platform's position; replay pending.
+
+Runs49–68 diagnose rising-source false landings, recoil, cover movement during
+holds and the two final decks' phase relationship. Explicit leap radius/height
+checks reject wrong landings; optional air braking and a real run-up land on the
+fixed acro ledge. Held shots now retain their stance and declared arena; the ion
+shot avoids the shotcycler's recoil and C4's nearby blast. Fixed and moving waits
+retain their authored stance. Run69 physically crosses all five decks, takes the
+acro boost, kills the deathsphere and breaks the exit vent with zero deaths.
+It then stalls when automatic lift centering overrides the direct vent approach.
+Explicit literal direct movement now owns that departure; affected replay pending.
+Vault B, complete fresh E1→E2 and consolidated checks remain unverified.
+
+## Sequence 579 — episode2-coop — progression, movement and encounter repairs
+
+Current acceptance update (5 November 2026):
+
+| Scenario | State | Evidence / scope |
+|---|---|---|
+| Fresh complete Episode 2 | Passed, headless Ronin, zero deaths | `episode2-final-controls-168/`: all 19 Episode 2 maps, all Acropolis revisits, Cerberus, Medusa, ten awakened enemies, both ending films, timestream and Episode 3. Zero deaths; no fatal route failure. Two caught optional Lemnos preparation attempts remain recorded. Earlier run159 also completes the episode, with two combat checkpoint retries. Classic map reload, cinematics enabled, ordinary input and real saves; no grants or diagnostic placement. |
+| Second antidote and river from the failing fresh-run save | Passed, scoped | `medusa-antidote-collection-route-158/`: supplied approach followed by normal collection navigation, then the whole ending into Episode 3 with no deaths. |
+| Low-health AEGIS return | Passed, scoped | `aegis-before-runes-refill-164/`: actual 32-health arrival from run163, refill before placing runes, save a supplied checkpoint, then Cerberus and the complete Medusa/ending chain into Episode 3. One later Medusa B checkpoint retry. |
+| Counter HUD, living target markers and save/load | Passed | `final-accepted-hud-173/`: final coherent Debug modules matching the accepted run168 server, real run123 partial save, 3/10 before and after ordinary save/load, three living target markers, independent toggles and inspected restored capture. No grants, activation or placement fixtures. Earlier run166 also passes. |
+| Consolidated checks | Passed after test-fixture repair | `aggregate.log`: 397 Python tests, 265 other Zig tests and engine C contracts pass; runtime compilation catches a stale registry name. `runtime-checks-01.log` then catches an old Hammer fixture missing the held-button state. Both test-only fixtures are corrected; final accepted-source refresh `runtime-checks-04.log` passes 33/33 steps and 467/467 tests, including 345 runtime-root cases. Other passing aggregate targets were not rerun. Formatting passes; final ownership update reports R1–R11 zero. |
+| Final supply/recovery replay | Repaired; passed | Run165 preserves the AEGIS fountain timeout caused by automatic health trips toward a secret goldensoul. The explicit fountain route keeps focus (`cautious=false`), and native control-use actions retain their documented exemption from automatic health detours. Scoped167 completes the ending with three E4 retries; fresh168 completes the whole episode with zero deaths. |
+
+Final accepted inputs: server `qagame.so` SHA-256
+`8bfab9f6e8834385dc9b2947e6d97d3836068a83d605d51605ec14ee8c350397`;
+`coop/episode2.lua` SHA-256
+`69aa3786db1d0fbc05eff00cae94abdf55e961620c3dce90d9f2592de0e0d44d`.
+The final isolated Debug build and route match run168's recorded hashes exactly.
+The later speculative `health_detours` option and navigation-cost control approach
+were rejected and reverted after runs170–172; run172 regresses Athens A and remains
+failed evidence. No speculative mechanism is retained. The original installation
+and player saves remain untouched.
+
+The cold-save failures in runs160–163 remain recorded. A speculative contact-round
+weapon preference was reverted after worsening close fights. The final route uses
+the actual G-platform fountain and checkpoints the supplied I approach, then
+refills at the AEGIS fountain before placing runes. The companion adapter retains
+the shared pilot's strike qualifications; friendly-fire and delayed collision
+remain ordinary gameplay. All source ownership rules remain at zero. Full rendered
+cinematic/audio and four-episode campaign acceptance are outside this headless result.
+
+Historical continuation evidence below retains then-pending repairs and failures;
+the current acceptance table above supersedes its complete-episode status.
+
+Continuation evidence: `athens-corridor-clearance-63/` replays the ordinary console
+save from `athens-corridor-snapshot-62/` and clears Mikiko in 2.45 seconds, zero
+deaths. `athens-contact-fields-68/` passes Athens A stage 3 into B with zero deaths;
+resting Venomous shots now survive precise-route hazard filtering and unsupported
+evasion can wait for a contact field to expire. `athens-casket-underpass-69/`
+passes all of B into C with zero deaths: real dial, deep swim, ladder, silver armor,
+gate, Mikiko reunion and exit. Read-only sweeps in `athens-casket-depth-67/` show
+the world obstruction through z=-224 and the clear z=-240 passage. Both longer
+runs later fail after health detours. The return anchor was being cleared while
+the detour was still active; its lifecycle is repaired and awaiting replay.
+Catacomb C's actual rescue cinematic and ladder return also pass in
+`catacomb-rescue-ladder-return-51/`. Objective catalog stages reflect these
+dependencies and the actual ten-enemy ending counter. Ownership R1–R11 remain
+zero. Aggregate tests and final client installation remain pending.
+
+Further continuation: `catacomb-connected-route-70/` completes the full Catacomb
+A/B/C chain, including Mikiko's actual rescue film and return ladder, without a
+death before Athens. `athens-local-door-pairs-73/` demonstrates the repaired far
+Athens C door: Gold links touching leaves, while repeated editor team names had
+incorrectly combined distant pairs. Grouping is repaired on spawn and save
+admission; a two-pair regression is added but unrun. `athens-slope-hull-query-76/`
+measures a supplied node at z123 with actual supported stance z83.2. Walking
+nodes now resolve nearby dry supported floor, including nodes initially buried
+inside the slope; water/climb coordinates retain their authored depth. A
+health/fight return anchor also resolves nearby support so it cannot demand an
+airborne pose forever. These changes have not established full Athens C acceptance.
+Its limited ammunition makes the guide's gold armor and Trident route relevant.
+`athens-guide-supplies-78/` obtains the gold armor but confirms that the Trident's
+iron door is an exit opened from inside. `athens-trident-column-79/` opens the real
+pool column using normal movement/use and saves the result. Read-only geometry
+queries map its underwater passage; `athens-trident-wide-water-query-85/` exceeds
+the Lua query instruction budget and is diagnostic failure only. The later
+coarser query86 finds the south/west underwater course. Traversal is under repair.
+`objective-catalog-current.json` admits the revised 192 goals across all 62 maps;
+this is identity/role evidence, not full campaign semantics or traversal acceptance.
+
+Continuation results: Trident bank traversal94 passes with normal inputs and a
+real pickup. Connected Athens C97 passes armor, column, water tunnel, inner ramp,
+ledge drop, Trident, towers and A4 admission without a death in C. The optional
+airborne-centre exit approach fails; retaining the exit brush and resolving its
+reachable touch point repairs that preparation (Lua regression added, unrun).
+Acropolis A110 passes from its legitimate stage2 checkpoint into B without a
+death in A, with ROTATE_SWING handled per leaf and pickup routes respecting
+physical obstructions after partial node paths. B collects A and opens the real
+Mikiko plate door, then stalls returning from the plate corner. Diagnostic112
+is capturing that actual state. Fresh opening96 exposes the omitted Lemnos A
+lower route. Diagnostic109 completes the statue descent and armor150 with zero
+deaths;111 completes its tight water tunnel, health, ramp and admission into B
+with zero deaths (health57/armor129). Main route intent now includes these legs.
+The shared combat return follows a clear submerged lane at its original depth,
+rather than following a navigation node forever below its saved anchor. Full
+episode acceptance, aggregate tests and final coherent client build remain open.
+
+In progress. The owner requested a complete Episode 2 bot pass and repairs for
+every observed problem. The accepted scope remains the whole episode, including
+rune revisits, companions, bosses and the Episode 3 boundary. Full acceptance has
+not been demonstrated. The current scenario matrix is in
+`docs/native-acceptance.md`, sequence 579.
+
+Guide semantics were reviewed against the official GameSpot guide, ISBN
+1-58422-060-0. All traversal uses ordinary movement, view, attack, use, pickups,
+travel and acknowledged saves. Isolated dkguard profiles use copied native saves;
+the preserved installation and the owner's saves are not overwritten.
+
+Connected code replaces the linear Episode 2 exit list with authored puzzle
+intent. Repairs cover supplied-node routes and explicit exit selectors, climbing,
+submerged steps, dismounting moving actors under low ceilings, slope-qualified
+combat retreats, weapon reserves/return waits/charge cycles and class-owned boss
+damage admission. Copied resident saves retain their ownership. Checkpoints wait
+for save admission, resumed stages replan from saved state, and a queued load
+holds route execution until the requested world commits. Further repairs exclude
+unintended exits from supplied-node routes, use a firing stand within the selected
+weapon's reach and admit passing shallow-water waypoints under currents. Finite
+antidote protection and a class-owned gaze-warning response are implemented;
+complete poison-river and Medusa acceptance remain open.
+
+The isolated Debug module is built with:
+
+```sh
+zig build game-server --prefix zig-out/episode2-coop-579 -Doptimize=Debug -Dpython=/usr/bin/python3 -j4
+```
+
+Scenario runner: `dkq3/tools/runtime_coop_bot.py`, using the bundled engine from
+`zig-out/native-dev`, the isolated module directory, `episode2-pass.lua`, skill 1
+and fresh report slugs under `zig-out/reports/episode2-coop-579/`. Every report
+records module, engine and script hashes. Later-map fixtures are diagnostic
+replays, not a continuous episode pass. No broad suite or final coherent client
+installation has yet been accepted in this sequence. Ownership baseline remains
+R1–R11 zero.
+
+Continuation: the collapsed Medusa B column route and west-pool south steps are
+demonstrated through antidote25 in scoped normal-input saves (`medusa-column-climb-21`,
+`medusa-upper-ledge-22`, `medusa-west-stairs-26`). The poison tunnel still fails;
+collision traces identify narrow vertical clearance, and precise depth control
+is implemented pending replay. Liquid arrivals skip the absent-cinematic grace
+and supply detours. The pilot's air recovery now uses the environment's exposure
+contract: slime consumes finite toxic protection, rather than drowning air.
+Lemnos C reaches the drachma (`lemnos-near-gates-50`) after restricting unrelated
+gate detours, and physically collects the Venomous niche pickup
+(`lemnos-courtyard-supplies-53`), but its statue ambush still exhausts the death
+allowance in that earlier fixture. `lemnos-equipped-return-60/` now resumes the
+normal equipped stage-3 save and reaches Catacomb A through the real coin, four
+statue kills, fallen-column return and Charon film without a death (health65).
+`medusa-round-clearance-59/` completes all ten post-boss monsters, the actual
+ending counter and both ending films into Episode 3 without a death, starting
+from a normal post-boss save (health88/armor98). Autonomous hunts now use careful
+footing; blast safety traces the projectile's declared collision bounds, fixing
+false rejection of trident shots by an invented six-unit box. Actor-activated
+cinematics find the living local viewer while preserving the authored actor
+activator. Closed remotely operated doors no longer shortcut a ground corridor;
+`medusa-remote-gates-51/` traverses the real C courtyard loop and lever through D
+to E. Full C-to-ending consolidation remains under replay.
+Sword bot declarations account for body-origin aim and held-input
+chains; normal class strike resolution is unchanged. Catacomb A's missing upper
+waterway connection remains under diagnosis. Full Episode 2 acceptance stays open.
+
+Further continuation: `medusa-column-through-ending-66/` consolidates the real
+B fountain stage-3 save through its submerged column, west pool and poison river,
+all C/D, Medusa, the ten awakened monsters and both ending films into Episode 3
+with zero deaths (health72/armor80). `medusa-submerged-to-ending-63/` retains the
+antidote poison-tick `StructuralMutation` failure; ailment dispatch now releases
+its query before class damage hooks create sound carriers. The affected C save
+also passes through the ending without a death in `medusa-flame-fields-65/`.
+Enabled flame contact fields are class-owned; evasion ignores harmless forecasts
+and accounts for vertical separation and continuing motion.
+
+Catacomb A now follows the real east cave, first ledge, black-rock staircase and
+north-face summit ramp. `catacomb-pool-drop-39/` reaches the pool with unchanged
+health65 and no deaths. `catacomb-underwater-passage-43/` then demonstrates its
+crouched underwater tunnel, west-rim climb and upper waterway through the A/B
+seam without a death; B's generic bridge crossing fails. `catacomb-alcove-trigger-45/`
+enters the first chamber to break the real rear armor wall, collects the silver
+armor and supplies and reaches the collapsed bridge. `catacomb-railing-gap-46/`
+jumps the remaining right-railing gap and reaches C without a death. C's hammer,
+plank barrier and ladder descent work in `catacomb-ladder-planks-47/`; the lower
+hall's missing ground link still sends a generic dial route upstairs. Explicit
+lower-hall continuation and Mikiko's actual rescue trigger are under replay.
+Broad suites and final coherent client installation remain pending.
+
+Continuation of sequence579: fresh `episode2-connected-waterways-113/` traverses
+all Lemnos, Catacomb and Athens maps and Acropolis A into B (eleven distinct maps,
+eight combat checkpoint retries), then fails B. Subsequent real checkpoint runs
+repair B's plate/dial timing: `acropolis-dial-before-recall-126/` waits for the
+exterior dial's entire target chain before recalling Mikiko, collects S and
+returns to B; `acropolis-lower-path-footing-130/` follows lower C, collects E and
+enters D. The initial D entrance cannot reach G's platform. The guide's actual
+first mountain loop is now implemented and demonstrated in
+`acropolis-first-mountain-132/`: lower dial262, mountain dial358, return561 to C,
+waterfall entrance61 back to D, G130, I73, upper exit151 to E, zero deaths.
+That run later fails after returning for a missing A rune. Run120's previous
+apparent A pickup was false: horizontal arrival above the submerged tablet
+reported a declined pickup as success. `acropolis-a-pool-dive-134/` demonstrates
+the ordinary crouched dive to224 and asserts acquired key21. Main B now includes
+that dive and actual ownership assertion; wanted but uncollected native pickup
+actions fail. Complete connected replay137 remains in progress.
+
+`medusa-column-landing-121/` demonstrates the explicit fallen-column-to-rim leap.
+`medusa-direct-bank-pickups-123/` starts from its legitimate western-bank save,
+collects the antidote and bank supplies, traverses all C/D, kills Medusa and all
+ten awakened enemies and reaches Episode3 through both ending films without a
+death (health88/armor100). Ordinary console queries/save record3/10,6/10,10/10
+and preserve a real partial ending save. `counter-hud-roundtrip-135/` renders
+that actual3/10 checkpoint, saves/reloads at3/10 and captures independent HUD
+toggles. Restored journal inspected; earlier127–133 retain harness failures.
+Admission audit now covers195 goals across62 maps, including distinct lower
+mountain and waterfall branches and the actual ten-enemy counter quantity.
+Coherent Debug game modules build successfully; full episode acceptance and
+the final aggregate suite remain open. All reports are under the sequence579
+report root; no preserved user installation/save was modified.
+
+Run137 reaches Athens A, where the exit doubles back for Mikiko after the final
+bridge door has closed. The main script now waits for her across the door;
+`athens-bridge-party-wait-140/` passes that seam through B/C into Acropolis A,
+then exhausts combat retries. Run136 collects the previously missing A, returns
+to E, places all five runes and opens the wheel gate, but repeatedly dies at
+Cerberus without firing. Detailed138/141 diagnostics show the selected trident
+refusing contact-range shots. The issue is survival dispatch: a harmless listed
+field prevented ordinary combat strafe/retreat, even when it selected no dodge.
+The pilot now retains ordinary survival movement in that case.
+`cerberus-harmless-field-retreat-142/` kills the actual750-health boss in8.1seconds,
+zero deaths, and enters Medusa A. The speculative retreat floor-clearance change
+in139 was reverted. Fresh full replay143 and the remainder of142 are in progress;
+aggregate checks remain pending.
+
+Further sequence579 evidence: `medusa-bank-ambush-combat-144/` restores run142's
+actual stage6 save (health66/armor0), fights on the dry poison-river banks,
+then traverses C/D, Medusa and all ten awakened monsters through both ending
+films into Episode3 without a death. Previously the authored route explicitly
+disabled combat on those banks and restored directly into repeated melee deaths.
+Counter markers also now follow living bodies whose death outputs advance the
+authored counter; the backstage trigger brush is no longer presented as a switch.
+`counter-enemy-markers-146/` renders three actual living targets and3/10 progress,
+then retains3/10 after an ordinary save/load, with independent toggle captures.
+The restored display is inspected. New marker regression remains unrun.
+
+Fresh143 reaches eleven distinct maps with no deaths, but fails Acropolis B's
+post-dial return at1801,-1747. Surveys147–149 identify static overhang geometry:
+standing is blocked, crouching clears the center, and the southern edge admits
+the standing hull. Main B uses explicit supported southern waypoints.
+`acropolis-south-bank-return-150/` demonstrates that crossing, fountain refill,
+S temple, lower C/E rune and first D entry without a death; remainder in progress.
+Fresh final151 now includes that route and the dry-bank combat repair. Full episode
+acceptance and final aggregate checks remain pending.
+
+## Sequence 580 — episode1-handoff — connected repair continuation
+
+Evidence remains under `zig-out/reports/episode1-handoff-580/`; game modules
+are built into `zig-out/episode1-handoff-580`. All runs use isolated temporary
+profiles through dkguard. Original installations and player saves are unchanged.
+No whole-episode acceptance or final aggregate suite is claimed yet.
+
+The legitimate central-brain checkpoint in `vault-ending-handoff-148/` kills
+both guardians, plays the ending and traverses Lemnos A into E2M1B with zero
+deaths. Full Vault B continuations151/156 finish with two/nine combat retries.
+This establishes the scoped boundary, not the complete Episode 1 route.
+
+Connected native repairs include physical rotated brush centres and local
+surface stances, dynamic moving landings, real cage-floor boarding, explicit
+mover departure steering, recoil-safe held shots, ladder facing and top-rung
+exits, unlinked resident-exit fencing, and healthy recovery admission. Companion
+automatic exit recall keeps Follow and its existing recovery eligibility; a
+follower above its leader no longer falsely settles on a raised platform.
+Runner cleanup verifies ownership before reaping its isolated process group.
+Related focused regressions are written; aggregate verification remains pending.
+
+`icelab-plant-corridor-178/` follows the real plant corridor, upper hatch and
+plasteel detour, then clears the lower doorway before recalling Superfly. It
+crosses Icelab A/B/C into Vault A with zero deaths. Subsequent Vault repairs use
+the Disruptor to break the submerged pipe grate without the Shotcycler burst
+recoil, then step off the hall ladder onto its actual landing. Replay191 passes
+that landing and exposes a gallery route selecting the upper floor from below.
+Replay200 reaches the correct lift but waits for it to return beneath its own
+rider; replay204 explicitly waits for that rising deck's upper landing and
+passes the gallery and plat stages.
+
+Fresh default-mode run176 passes the intro and Marsh A/B, then fails an optional
+submerged Crox hunt in C. Those enemies fire no gate outputs; the required exit
+controls remain authoritative. Continuation181 passes into Sewer B but replays
+the initial dive from an already far-side tank save. That checkpoint is now
+idempotent. Run190 follows the actual valve ramp and shelf, using Ion shots to
+avoid recoiling into the pit, then enters Prison A without a death. Run194
+reveals the hatch jump accelerating toward its approach point for one frame
+before reversing in the air. Native leap departure now steers toward its landing
+in the same command that jumps. Run197 passes the hatch, keycard, Superfly rescue
+and all three Crematorium maps into Processing A with zero deaths. Its generic
+pool approach goes around the far rocks; direct-window-drop replay203 passes
+the pool and tunnel into the shaft. No placements or grants are used.
+
+The platform phases from run139 complete all five decks with zero deaths, but
+the later run175 save exposes a different unsafe phase. Repair entries now
+stop at the first death instead of repeating a structural failure. Replay195
+clears the first two decks above the fixed frame but hits the next overhead
+beam. Replay202 departs low, catches the rising third deck, and takes the acro
+ledge, then retains a fatal final-deck phase mismatch. Replay205 changes the
+last boarding window; its result remains pending. Failed reports remain intact.
+
+Shared Episode 2 replay177 demonstrates actual Athens healing pickups and
+passes C/Acropolis A. Replay196 opens the Acropolis B companion gate from the
+bottom stair firing position, takes the silver armor and continues through
+Acropolis C/Medusa A into B without a death before a later spider death.
+Sequence579's full zero-death Episode 2 result retains its original inputs;
+it is not attributed to these newer modules. Objective binding audit admits
+199 goals across 62 maps; static admission does not prove traversal.
+
+## Sequence 583 — episode1-pass — fresh Episode 1 through the Greece handoff
+
+The owner requests completion of Episode1 traversal. Evidence lives in
+`zig-out/reports/episode1-pass-583/`; the detailed failure history is in
+`docs/native-acceptance.md`, sequence583. Ordinary bot commands, Ronin skill1,
+complete cinematics and resident worlds remain enabled. The connected route
+retains two deaths per map and eight total; repair entries stop at the first
+death. Chained checkpoint passes do not establish a fresh episode pass.
+
+The shared pilot recognizes descending ladder intent and attempts supported
+crouched clearance under hovering bodies before choosing a lateral detour.
+Implicit recovery hops no longer override explicit crawling or gate waits.
+The bundled server skips final network transmission to bot-only transports;
+isolated SIGTERM replay14 verifies normal cleanup without the former channel
+sequence error. Candidate45 is ReleaseSafe generation
+`b52f85043a4f5c8885be67892945e908cf711eb6fe1c1a35a830828c15cbaff4`.
+Ownership48 is zero for R1–R11; aggregate50 exits0, including406 Python checks,
+native contracts and bundled engine contracts. Original profiles and saves
+are not inputs to installation mutations.
+
+Routes now collect the authored Prison fence shield and Processing niche
+shield, cross the Processing pool with the guide's weapon choices, use the
+upper Icelab card corridor, collect the actual ion packs, clear the hatch
+guards before operating the console and ride the actual upper lift. The
+Icelab second-alcove ladder/pipe detour collects shield13 and returns through
+the same rungs; replay56 completes Icelab B/C without deaths. Lower Icelab
+clinic return and exit stairs, Vault ladders/platforms/console aisle and the
+finale have earlier scoped passing evidence. Replay40 completes lower Icelab
+through the ending and Lemnos A into B with zero deaths; it is not a fresh run.
+
+Fresh11 fails in Prison B, fresh24 in Processing A and fresh41 at the Prison A
+slab; all remain recorded. Replay47 passes the repaired slab, then exposes a
+Crematorium conveyor corner cut. Replay52 passes the repaired corner but
+stops at the Processing niche ladder. Regrouping outside before ordering Stay
+clears that climb in57, which passes Processing A/B without deaths. Replay56
+exposes an unwanted overhead-sphere pursuit at the Vault trap corridor; that
+short crossing now retains its explicit line. Fresh resident New Game58 and
+affected Vault replay59 are in progress. Complete rendered/audio acceptance
+and the remaining campaign remain open.
+
+The later fresh65 run completes the first16 Episode1 maps and reaches the
+central brain in the finale, with one ordinary checkpoint recovery after the Vault chute, then
+stops because a short-range firing approach meets still-closed dais125.
+Native pilot injury safety now admits explicitly aimed static-object blasts
+through the actual muzzle/impact/party checks; a self-distance check and
+injected collision/party regression retain the necessary blast exclusions.
+The finale route explicitly requests a ranged gun. Final candidate84 is
+`816281db2d80f49cf695433a019775211c44390988b24c805820433d21789e43`;
+aggregate86 exits0 and ownership85 remains zero. Finale88 repeats the exact
+43-health/32-armor checkpoint that failed65 and completes the central brain,
+both guardians, ending and Lemnos A into B with zero deaths (96/97 actions).
+Platform replay73 separately passes all five decks and the same ending with
+zero deaths. Fresh87 fails at the Crematorium recess; fresh104 clears that
+repair and fails at Processing B's south-hall area route. Ground-corridor
+replay108 passes Processing B. The freezer inside-landing repair passes105;
+stair-defense replay110 passes Icelab B but later dies in C. Explicit Ion2
+on the Icelab run-up/leap passes107's gap and all three Icelab maps. Direct
+Vault deck traversal passes109's troublesome landing. New Game111 is in
+progress on candidate84 with these current frozen routes; scoped successes
+do not establish a fresh pass. Full evidence remains in native acceptance.
+Run75 was explicitly interrupted after its frozen route became obsolete.
+South108 subsequently exposes Superfly blocking the Icelab jump; the Stay
+command now precedes the descent, leaving him on the upper floor. Replay112
+crosses that exact checkpoint and all Icelab maps without deaths. Fresh111
+was explicitly interrupted in Sewer A, zero deaths, after this route change;
+fresh113 includes the final upper-floor hold and is in progress.
+
+Fresh113 passes the first14 Episode1 maps and fails Icelab C's Shockwave
+opener/restore (two deaths total, including Prison). Ion2 at the solid entrance
+clears that fight in114; the far-side button then exposes a catwalk edge fall.
+Both buttons operate the same three-part gate. Wait for its floor and leaves
+after pressing the near button and use the supplied ground corridor; replay115
+passes all Icelab C without deaths into the Vault. Fresh116 includes both
+repairs on candidate84; it is the current complete-run attempt.
+
+Replay115 later dies to fall damage boarding Vault deck171 at10 health. The
+new rising-deck phase initially conflicts with the generic window in117;
+118/119 then land back on the ledge. The50ms trace identifies insufficient
+run-up speed below the frame. Run from−432 through−380, jump to the rising
+deck's center and settle onto its original safe offset. Replay120 boards
+at10 health without additional damage and completes all Vault/ending/Lemnos A
+into B, zero deaths (302/306 actions). Fresh116 is deliberately interrupted
+in Processing A because its frozen script predates this repair; retain its
+incomplete outcome and one Prison recovery. Fresh121 includes every final
+route repair on the unchanged native candidate84.
+
+Fresh121 completes all16 maps before the finale and reaches the central brain
+in the17th, then its automatic firing approach meets closed dais125 (one
+Prison recovery, 1751/1797 actions). The guide's northern perimeter supplies
+a clear firing lane. Retain combat evasion there; stationary fire and blind
+turret pursuit fail123–132. After the brain, weak arrivals take the actual
+northeast health50 box73 before the guardians. Replays133/134 complete both
+the old45-health fixture and121's111-health arrival through the ending and
+Lemnos A into B, zero deaths (100/101 and99/100 actions). Fresh135 is the
+current full New Game gate on the same native candidate84; no native code
+changed after aggregate86.
+
+Fresh135 exhausts the unchanged Vault A retry cap at sphere99: the player
+reaches it at2 health after deck/ramp cryotech spray and the required chute.
+Retain its five deaths (Prison, Icelab A companion loss and three Vault deaths).
+Fight678/26 from range before approaching;137 passes the exact78-health ramp
+checkpoint through ending/Lemnos B, zero deaths. Hold Superfly upstairs until
+Icelab A drains;138 passes all Icelab maps without the companion loss, then
+exposes a different platform phase. Keep the nominal400 departure sample with
+a fractional-contact margin (139 passes). A low jump misses140; preserve the
+safe jump window and return through the real pool/ladder when the phase is
+unsuitable before the source reaches the roof. Replay141 records one such
+ordinary retry and finishes through Lemnos B without deaths. Integrated142
+combines the earlier deck/ramp fights and full platform/finale repairs from
+135's deck checkpoint:390/394 actions, zero deaths, ending and Lemnos B arrival
+complete. Fresh143 is the current full New Game gate on candidate84.
+
+Fresh143 passes all15 pre-Vault maps with one Prison recovery and no Icelab
+companion loss, then fails an unnecessary westward detour before the Vault
+ladder keypad. Follow the guide's nearby lower-floor keypad directly;144/145
+both pass that route and the platforms. Replay145 finishes ending/Lemnos B
+with zero deaths, three ordinary pool/ladder phase retries (535/544 actions).
+Replay144 later meets the north-ammunition-alcove pillar on its health detour.
+Return south to the main ledge before going east;146/147 repeat144's exact
+finale and the old45-health checkpoint into Lemnos B without deaths (98/99,
+102/103 actions). Fresh148 is the current full New Game gate, candidate84.
+
+**Final148 passed, headless.** Fresh resident New Game/intro completes all17
+Episode1 maps, the ending and Greece/Lemnos A through B arrival preparation:
+1854/1902 actions, two normal combat checkpoint recoveries (Prison A/Icelab C),
+no companion losses, no platform phase retries. All earlier failures and43
+failed-action events remain retained. Ronin1, full cinematics and the unchanged
+two-per-map/eight-total limits apply. Greece's first snapshot is weapon8,
+inventory`100` hex, only Daikatana before actual Discus collection.
+
+Native aggregate86 and ownership85 pass (R1–R11 zero); native source is unchanged
+since candidate84. `play-install`150 exits0 and installs exactly tested generation
+`816281db2d80f49cf695433a019775211c44390988b24c805820433d21789e43`
+for the default `zig build play`. Installation file identities match the tested
+candidate; all107 owner profile/save/cache files preserve hashes, sizes and
+mtimes against immediate pre-install snapshot149 and earlier snapshot122.
+`zig-out/reports/episode1-pass-583/acceptance-151.json` reconciles the evidence.
+This closes the Episode1 headless progression gate, including the Greece handoff;
+rendered/cinematic character/audio, prediction, FPS and the remaining campaign
+release matrix remain unverified.
+
+## [seq:584] coop-video — Episode 1 and Episode 2 recordings
+
+Owner requests videos of the bot playing both episodes. Implemented opt-in local
+client ownership, ordinary snapshot/world-publication transport, pilot-only input
+and authoritative demo camera. `runtime_coop_video.py` freezes modules/routes,
+records engine demos, replays under dkguard/private Xvfb and encodes720p30 MP4
+with game audio. Owner profiles are isolated (107-file before snapshot retained).
+No canonical play installation is replaced.
+
+Greece sample03 passes1186 video/audio frames, inspected HUD/weapon/minimap and
+non-silent audio. Samples01/02 retain the32 startup-command truncation failure;
+private autoexec.cfg fixes it. Full recording01 stops during the intro because
+local gamestate admission resets timing cvars; explicit `dk3_coop_fast` now
+restores the dedicated pilot's50 ms clock without enabling cheats. Recording02
+uses generation`6a386ef7a264d5f4451184f5956050f29f2b5ba040952b2b93a8eea711d60e91`,
+Ronin1, cinematics1, resident worlds1, two-deaths-per-map/eight-total limits.
+Native/engine and406 Python checks pass after the connected changes; ownership
+R1–R11 remains zero. Full recordings/exports are in progress, unverified.
+Evidence: `zig-out/reports/coop-video-584/`.
+
+Recording exposed route failures at the Crematorium grate, Icelab Cryotech stair,
+Catacomb rock/summit, Hammer corridor, Athens combat/health and courtyard exits,
+Medusa crawl and awakened-statue altar. Corrected normal movement/weapon/pickup
+inputs pass the affected checkpoints; all failures remain retained. Segments now
+cover all17 Episode1 maps and19 Episode2 maps, their endings and next-episode
+arrivals. These are labelled edited attempts/checkpoint continuations, not fresh
+uninterrupted passes. Death limits, Ronin1 and cinematics remain unchanged.
+
+The long AVI export exposed signed overflow at2 GiB. Promoting operands before
+arithmetic fixes rollover; an extracted actual-function UBSan boundary regression
+passes. Engine candidate`d7d410bba832af007feb9ff7580f987af8ba601693523544fb23928c9dea989a`
+retains byte-identical native modules. The aggregate passes407 Python checks plus
+native/engine checks; ownership R1–R11 stays zero. Episode1 MP4 validates5470.148 s,
+164064 decoded frames,720p30 H.264/AAC48 kHz stereo and three chapters. Its first
+640x480 source is pillarboxed; remaining sources are720p. Episode2 export and final
+validation remain pending. Media/source manifests are retained in
+`zig-out/recordings/coop-video-584/`; source/failure evidence is in the report tree.
+
+The Acropolis replay subsequently exposes permanent rejection of the fifth
+renderer request when four reads are active. Vulkan and shared GL now reserve
+queued handles and start bounded reads when capacity is available. The actual
+nine-world burst/retry/failure contract passes after correcting its initial test
+index cast. Other aggregate components and407 Python tests pass; the repaired
+renderer component passes the focused rerun. Renderer generation`a702f6be6b5b8fc29c4d62b7f30a8dce31fca47766aa29514f68f23287d89069`
+replays with the original frozen native modules and unchanged rules identity.
+The corrected27-minute Acropolis demo crosses D and reaches natural EOF. Failed
+chunks and an inspected error excerpt remain retained; a premature retry overwrote
+the original complete replay log, explicitly recorded in its failure evidence.
+
+**Both requested videos passed final validation.** Episode1:5470.148 s,164064
+frames, three chapters. Episode2:4187.643 s,125619 frames, nine chapters. Both are
+720p30 H.264/AAC48 kHz stereo; complete decoding exits0, frame counts match and
+both contact sheets were inspected. Episode2 normalizes fractional concatenation
+boundary gaps onto30 fps, retaining audio/chapters and the pre-normalization
+assembly. All107 owner files retain hash/size/mtime, with no added/missing files;
+the owner installation is not replaced. `acceptance.json` reconciles the media,
+all17/19 maps, endings/boundaries, checks and explicit checkpoint-edit scope.
+Fresh uninterrupted current-candidate passes and cinematic artistic parity remain
+separate open gates.
+
+## [seq:585] replay-motion — continuous first-person bot movement
+
+Owner identifies teleport-like movement in the exported walkthroughs. Added
+presentation-only player position/view interpolation with explicit discontinuity
+cuts, while preserving authoritative physics and local human prediction. Campaign
+view turns cap at360 degrees/s independently of aim skill. A local corridor input
+had bypassed that limit; reorientation now preserves its walking stroke through
+the actual motor, including crouch/input scaling. Fast capture advances client
+frames16 ms between20 Hz server ticks, with private local throughput unrestricted,
+so fragments finish before the next snapshot. Required media admission completes
+before a replay consumes the corresponding world reference.
+
+The initial aggregate passes407 Python checks and all other components except a
+new yaw-wrap assertion; correcting its expected canonical angle passes the focused
+runtime rerun. Later connected runtime03/04 passes; ownership R1–R11 stays zero.
+The presentation build initially exposes detached-ragdoll error cases requiring
+expansion, then build05 passes. Candidate`1843affd365c4af9418c2fda2587c68d9b0a9fad3fc1d656721149b3dafdff5c`
+retains the recorded50c game/UI bytes and rules identity for explicit sample replay.
+
+Sample02 Episode1:1564 grounded-moving frame pairs,35.55% to0.064% frozen frames,
+speed p95484.85 to322.75 units/s. Greece:1453 pairs,34.62% to0% frozen,481.50 to
+320.12 units/s. Both have median/p95 snapshot gaps50 ms and maximum issued yaw
+360.108 degrees/s, passing the retained v2 movement gate. Episode1 full sample
+decode and contiguous-frame inspection pass. The failed Episode1 media-admission
+replay and initial local-walk turn failure remain retained. Replacement full
+recordings01 have started; their outcomes/exports remain unverified. Evidence:
+`zig-out/reports/replay-motion-585/`. Owner107-file profile baseline is preserved.

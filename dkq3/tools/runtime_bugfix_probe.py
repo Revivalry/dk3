@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import time
 
-from runtime_input import NativeInput, record_identity
+from runtime_input import NativeInput, jpeg_complete, record_identity
 from runtime_opening_route import actors
 from runtime_probe import client_settings, stage_client_modules, wait
 
@@ -177,6 +177,8 @@ def run(args, scenario=None, setup=None):
             setup(home, args.report)
         settings = client_settings(args.engine, home, args.renderer)
         settings.update(g_spSkill="3", r_picmip="0")
+        if getattr(args, 'resident_worlds', False):
+            settings['g_residentWorlds'] = '1'
         if getattr(args,'capture_size',None):
             width,height=args.capture_size
             settings.update(r_customwidth=str(width),r_customheight=str(height))
@@ -203,9 +205,10 @@ def run(args, scenario=None, setup=None):
             process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT)
             driver = NativeInput(process, home / "dk3/commands.fifo", log, home, inputs, diagnostic=True)
             def capture(name):
-                driver.issue(f"screenshotJPEG {name}")
                 source = home / f"dk3/screenshots/{name}.jpg"
-                wait(process, log, lambda _: source.exists() and source.stat().st_size > 0, 5)
+                source.unlink(missing_ok=True)
+                driver.issue(f"screenshotJPEG {name}")
+                wait(process, log, lambda _: jpeg_complete(source), 5)
                 shutil.copy2(source, args.report / source.name)
             try:
                 wait(process, log, lambda text: "first snapshot applied" in text and driver.pipe.exists(), 40)

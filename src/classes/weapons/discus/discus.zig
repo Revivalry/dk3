@@ -7,6 +7,9 @@ pub const spec: profiles.Spec = .{
     .companion = .{ .slot = 0, .ammunition = false, .empty_melee = true, .clearance = 8 },
     .player_grip = .glove, // discus
     .combat = .flown,
+    .bot_ammo_reserve = 0,
+    .bot_rearm_ms = 3000,
+    .bot_contact_melee_range = 96,
     .visual = .{ .projectile_model = "models/e2/we_discus.dkm", .glow = false },
     .world_model = "models/e2/a_discus.dkm",
     .animation = .{

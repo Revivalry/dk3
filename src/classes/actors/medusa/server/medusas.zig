@@ -5,11 +5,28 @@ const data = @import("../../../../game/domain/components.zig");
 const Ref = @import("../../../../mechanics/domain/world_references.zig").Ref;
 const ecs = @import("../../../../core/ecs/world.zig");
 const abi = @import("../../../../engine/abi.zig");
+const c = abi.c;
 const engine = @import("../../../../engine/server.zig");
 const v = @import("../../../../core/domain/vector.zig");
 const Slots = @import("../../../../engine/slots.zig").Slots;
 const policy = @import("actor_catalog").medusa;
 const Definition = @import("../../../../mechanics/domain/actors.zig").Definition;
+pub const hazard = data.Actor;
+/// The audible warning gives a player time to avert their eyes.
+pub fn avoidLook(world: *data.World, entity: ecs.Entity, viewer: ecs.Entity, _: i64) !?v.Vec3 {
+    const actor = try world.get(entity, data.Actor);
+    if (@import("actor_catalog").entries[actor.definition].kind != .medusa) return null;
+    if (actor.medusa.phase != .rattle and actor.medusa.phase != .gaze) return null;
+    if (actor.medusa.target != try world.persistentId(viewer) or (try world.get(entity, data.Health)).current <= 0) return null;
+    const at = (try world.get(entity, data.Transform)).position;
+    const body = (try world.get(entity, data.Body)).*;
+    const warning = v.add(at, .{ 0, 0, (body.maxs[2] - body.mins[2]) * 0.4 });
+    const eye = v.add((try world.get(viewer, data.Transform)).position, .{ 0, 0, 22 });
+    const gaze_trace = try @import("../../../../mechanics/server/region_collision.zig").trace(.{ .start = eye, .end = warning, .mins = @splat(0), .maxs = @splat(0), .slot = (try world.get(viewer, data.Binding)).slot, .mask = c.MASK_SOLID });
+    // Seeing the warned actor's own hull is a clear warning sightline.
+    // Its feet can lie behind the floor lip while the upper body is visible.
+    return if (@import("../../../../mechanics/server/region_collision.zig").reaches(world, gaze_trace, .{ .world = world, .entity = entity })) at else null;
+}
 pub fn step(actors: *@import("../../../../mechanics/server/actors.zig").Actors, world: *data.World, slots: *Slots, projections: []abi.EntityProjection, entity: ecs.Entity, actor: *data.Actor, pose: *data.Transform, body: *data.Body, velocity: *data.Velocity, navigation: @import("../../../../core/domain/navigation.zig").Service, now: i64, elapsed: u32, slow: f32) !void {
     const definition = actors.table.definitions[actor.definition];
     if (now >= actor.think_ms) {

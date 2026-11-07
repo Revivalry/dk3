@@ -14,7 +14,204 @@ const targets = @import("coop_targets.zig");
 const catalog = @import("actor_catalog");
 const Frame = @import("coop_motor.zig").Frame;
 const prelude = @embedFile("coop_prelude.lua");
+
+test "armour does not qualify a near-death arrival as a recovery checkpoint" {
+    const vm = try lua.Vm.create(1024 * 1024, 100_000);
+    defer vm.destroy();
+    try vm.run(prelude, "=coop_prelude");
+    try vm.run(
+        \\local health = 20
+        \\dk3 = {
+        \\  health = function() return health,100,200 end,
+        \\  position = function() return 0,0,0 end,
+        \\  contents = function() return 32 end,
+        \\  cinematic = function() return false end,
+        \\  log = function() end,
+        \\}
+        \\level("weak", function() finish() end)
+        \\local thread = coroutine.create(function() __dk3_level("weak")(1,false) end)
+        \\local ok, action = coroutine.resume(thread)
+        \\assert(ok and action.op == "finish")
+        \\health = 60
+        \\level("ready", function() finish() end)
+        \\thread = coroutine.create(function() __dk3_level("ready")(1,false) end)
+        \\ok, action = coroutine.resume(thread)
+        \\assert(ok and action.op == "save")
+    , "=recovery_checkpoint");
+}
+
+test "a bounded campaign finishes only in the requested admitted map" {
+    const vm = try lua.Vm.create(1024 * 1024, 100_000);
+    defer vm.destroy();
+    try vm.run(prelude, "=coop_prelude");
+    try vm.run(
+        \\settings {level_saves = false, finish_map = "destination"}
+        \\level("previous", function() wait(1) end)
+        \\level("destination", function() error("walked past the bounded destination") end)
+        \\local before = coroutine.create(function() __dk3_level("previous")(1, false) end)
+        \\local ok, action = coroutine.resume(before)
+        \\assert(ok and action.op == "wait")
+        \\assert(coroutine.resume(before, true, "waited"))
+        \\local arrival = coroutine.create(function() __dk3_level("destination")(1, false) end)
+        \\ok, action = coroutine.resume(arrival)
+        \\assert(ok and action.op == "finish")
+        \\assert(coroutine.resume(arrival, true, "finished"))
+        \\assert(coroutine.status(arrival) == "dead")
+    , "=bounded_campaign");
+}
+
+test "moving jump landings retain their entity selector across the Lua boundary" {
+    const vm = try lua.Vm.create(1024 * 1024, 100_000);
+    defer vm.destroy();
+    try vm.run(prelude, "=coop_prelude");
+    try vm.run(
+        \\local thread = coroutine.create(function() leap({1,2,3}, {index=175}, {pace=1, around={0,-40,0}}) end)
+        \\local ok, action = coroutine.resume(thread)
+        \\assert(ok)
+        \\moving_jump = action
+    , "=moving_jump");
+    _ = L_.lua_getglobal(vm.state, "moving_jump");
+    const action = try decode(vm.state, L_.lua_absindex(vm.state, -1));
+    try std.testing.expectEqual(route.Op.leap, action.op);
+    try std.testing.expect(!action.fight);
+    try std.testing.expectEqual(@as(u32, 175), action.landing.?.index);
+    try std.testing.expectEqual(v.Vec3{ 1, 2, 3 }, action.target.?.point.?);
+    try std.testing.expectEqual(v.Vec3{ 0, -40, 0 }, action.around.?);
+}
+
+test "ground corridor segment options leave neighbouring movement and the objective route intact" {
+    const vm = try lua.Vm.create(1024 * 1024, 100_000);
+    defer vm.destroy();
+    try vm.run(prelude, "=coop_prelude");
+    try vm.run(
+        \\local x = 0
+        \\dk3 = {
+        \\  ground_route = function(goal)
+        \\    assert(goal.index == 73)
+        \\    return {{0,0,24},{64,0,24},{128,0,24}}
+        \\  end,
+        \\  position = function() return x,0,24 end,
+        \\  trace = function() return {index=0,fraction=1,start_solid=false} end,
+        \\  plan = function() return nil end,
+        \\}
+        \\local thread = coroutine.create(function()
+        \\  nodepath({index=73}, {segment_options=function(point)
+        \\    if point[1] == 64 then return {fight=false,radius=8} end
+        \\  end})
+        \\end)
+        \\for i=1,3 do
+        \\  local ok, action = coroutine.resume(thread, true)
+        \\  assert(ok and action.op == "move")
+        \\  assert(action.target.point[1] == (i-1)*64)
+        \\  if i==2 then assert(action.fight==false and action.radius==8)
+        \\  else assert(action.fight==nil and action.radius==28) end
+        \\  x = action.target.point[1]
+        \\end
+        \\assert(coroutine.resume(thread,true))
+        \\assert(coroutine.status(thread)=="dead")
+    , "=corridor_segment_options");
+}
+
+test "conditional waits keep a crouched stance on their moving surface" {
+    const vm = try lua.Vm.create(1024 * 1024, 100_000);
+    defer vm.destroy();
+    try vm.run(prelude, "=coop_prelude");
+    try vm.run(
+        \\dk3 = {time=function() return 0 end}
+        \\local ready = false
+        \\local thread = coroutine.create(function()
+        \\  wait_until(function() return ready end,
+        \\    {stance={index=173}, around={0,-40,0}, crouch=true, fight=false})
+        \\end)
+        \\local ok, action = coroutine.resume(thread)
+        \\assert(ok and action.op == "frame" and action.crouch and action.fight == false)
+        \\assert(action.target.index == 173 and action.around[2] == -40)
+        \\ready = true
+        \\assert(coroutine.resume(thread, true, "frame"))
+        \\assert(coroutine.status(thread) == "dead")
+    , "=crouched_surface_wait");
+}
+
+test "a constrained checkpoint saves without fetching supplies across its footing" {
+    const vm = try lua.Vm.create(1024 * 1024, 100_000);
+    defer vm.destroy();
+    try vm.run(prelude, "=coop_prelude");
+    try vm.run(
+        \\dk3 = {
+        \\  stage = function() end,
+        \\  map = function() return "pit" end,
+        \\  health = function() return 54,100,0 end,
+        \\}
+        \\tend = function() error("left footing to tend") end
+        \\recover = function() error("left footing for health") end
+        \\arm = function() error("left footing for ammunition") end
+        \\local run = stages {
+        \\  {"crossing", checkpoint=true, supplies=false, function() move({10,20,30}) end},
+        \\}
+        \\local thread = coroutine.create(function() run(1,false) end)
+        \\local ok, action = coroutine.resume(thread)
+        \\assert(ok and action.op == "save" and action.slot == "coop-pit-1")
+        \\ok, action = coroutine.resume(thread,true,"saved")
+        \\assert(ok and action.op == "move" and action.target.point[1] == 10)
+        \\assert(coroutine.resume(thread,true,"arrived"))
+        \\assert(coroutine.status(thread) == "dead")
+    , "=constrained_checkpoint");
+}
+test "restored stages replan conditional actions instead of skipping old ordinals" {
+    const vm = try lua.Vm.create(1024 * 1024, 100_000);
+    defer vm.destroy();
+    try vm.run(prelude, "=coop_prelude");
+    try vm.run(
+        \\dk3 = {
+        \\  checkpoint_stage = function() return 2, 90 end,
+        \\  stage = function() end,
+        \\  where = function() return "test" end,
+        \\}
+        \\local restored = stages {
+        \\  {"completed", function() error("replayed an earlier stage") end},
+        \\  {"dynamic-path", function() move({10, 20, 30}) use({index = 7}) end},
+        \\}
+        \\local thread = coroutine.create(function() restored(1, true) end)
+        \\local ok, action = coroutine.resume(thread)
+        \\assert(ok and action.op == "move" and action.target.point[1] == 10)
+        \\ok, action = coroutine.resume(thread, true, "arrived")
+        \\assert(ok and action.op == "use" and action.target.index == 7)
+        \\assert(coroutine.resume(thread, true, "activated"))
+        \\assert(coroutine.status(thread) == "dead")
+    , "=restored_stage");
+}
 const script_limit = 1024 * 1024;
+test "exit preparation retains the selected brush rather than its airborne center" {
+    const vm = try lua.Vm.create(1024 * 1024, 100_000);
+    defer vm.destroy();
+    try vm.run(prelude, "=coop_prelude");
+    try vm.run(
+        \\dk3 = {entity = function() return {id=99,x=3440,y=-2560,z=760} end}
+        \\local thread = coroutine.create(function() exit({index=31}) end)
+        \\local ok, action = coroutine.resume(thread)
+        \\assert(ok and action.op == "move" and action.target.id == 99 and action.target.point == nil)
+    , "=exit_brush");
+}
+test "a ladder corridor executes its first upper landing without skipping the nearby corridor" {
+    const vm = try lua.Vm.create(1024 * 1024, 100_000);
+    defer vm.destroy();
+    try vm.run(prelude, "=coop_prelude");
+    try vm.run(
+        \\dk3 = {
+        \\  ground_route = function() return {{0,0,0},{0,0,160},{-72,0,160},{-20,-68,160},{56,-45,160},{280,40,160}} end,
+        \\  position = function() return 0,0,0 end,
+        \\  trace = function() return {fraction=1,start_solid=false,index=0} end,
+        \\  plan = function() return nil end,
+        \\  where = function() return "ladder-test" end,
+        \\}
+        \\local thread = coroutine.create(function() nodepath({280,40,160}) end)
+        \\local ok, action = coroutine.resume(thread)
+        \\assert(ok and action.op == "move" and action.target.point[3] == 0)
+        \\ok, action = coroutine.resume(thread, true, "arrived")
+        \\assert(ok and action.op == "move" and action.target.point[1] == -72 and action.target.point[3] == 160)
+        \\assert(action.vertical_radius == 24)
+    , "=ladder_landing");
+}
 /// World access for queries, present only while the driver resumes a level body.
 pub const Query = struct { frame: Frame, map: []const u8, visit: u32, stage: *u32, stage_actions: *u32, operated: []const u32 = &.{} };
 var active_query: ?*const Query = null;
@@ -28,17 +225,18 @@ pub const Script = struct {
         errdefer vm.destroy();
         var self: Script = .{ .vm = vm };
         for ([_]struct { [:0]const u8, lua.Function }{
-            .{ "time", &time },                        .{ "map", &mapName },          .{ "position", &position },
-            .{ "health", &health },                    .{ "alive", &alive },          .{ "mode", &mode },
-            .{ "weapon", &weapon },                    .{ "has_weapon", &hasWeapon }, .{ "entity", &entity },
-            .{ "hostiles", &hostiles },                .{ "mover", &mover },          .{ "cinematic", &cinematic },
-            .{ "log", &log },                          .{ "event", &event },          .{ "include", &include },
-            .{ "visit", &visit },                      .{ "visible", &visible },      .{ "stage", &stage },
-            .{ "checkpoint_stage", &checkpointStage }, .{ "where", &where },          .{ "skipped", &skipped },
-            .{ "reachable", &reachable },              .{ "controls", &controls },    .{ "exit_to", &exitTo },
-            .{ "route", &routeTo },                    .{ "trace", &traceLine },      .{ "pickups", &pickups },
-            .{ "contents", &pointContents },           .{ "ammo", &ammo },            .{ "plan", &plan },
-            .{ "currents", &currents },                .{ "threats", &threats },      .{ "sidekick", &sidekick },
+            .{ "time", &time },                .{ "map", &mapName },                      .{ "position", &position },
+            .{ "health", &health },            .{ "alive", &alive },                      .{ "mode", &mode },
+            .{ "weapon", &weapon },            .{ "has_weapon", &hasWeapon },             .{ "entity", &entity },
+            .{ "has_key", &hasKey },           .{ "hostiles", &hostiles },                .{ "mover", &mover },
+            .{ "cinematic", &cinematic },      .{ "log", &log },                          .{ "event", &event },
+            .{ "include", &include },          .{ "visit", &visit },                      .{ "visible", &visible },
+            .{ "stage", &stage },              .{ "checkpoint_stage", &checkpointStage }, .{ "where", &where },
+            .{ "reachable", &reachable },      .{ "controls", &controls },                .{ "exit_to", &exitTo },
+            .{ "route", &routeTo },            .{ "trace", &traceLine },                  .{ "pickups", &pickups },
+            .{ "ground_route", &groundRoute }, .{ "contents", &pointContents },           .{ "ammo", &ammo },
+            .{ "plan", &plan },                .{ "currents", &currents },                .{ "threats", &threats },
+            .{ "sidekick", &sidekick },
         }) |entry| vm.register("dk3", entry[0], entry[1], vm);
         vm.run(prelude, "=coop_prelude") catch return self.report(error.ScriptLoad);
         var name: [c.MAX_QPATH + 1]u8 = undefined;
@@ -157,6 +355,10 @@ fn decode(L: *lua.State, index: c_int) !route.Action {
     if (lua.number(L, index, "timeout")) |seconds| action.timeout_ms = milliseconds(seconds);
     if (lua.number(L, index, "duration")) |seconds| action.duration_ms = milliseconds(seconds);
     if (lua.number(L, index, "radius")) |value| action.radius = @floatCast(value);
+    if (lua.number(L, index, "vertical_radius")) |value| {
+        if (!std.math.isFinite(value) or value <= 0) return error.InvalidArrivalRadius;
+        action.vertical_radius = @floatCast(value);
+    }
     if (lua.number(L, index, "yaw")) |value| action.yaw = @floatCast(value);
     if (lua.number(L, index, "pitch")) |value| action.pitch = @floatCast(value);
     if (lua.number(L, index, "pace")) |value| action.pace = std.math.clamp(@as(f32, @floatCast(value)), 0.1, 1);
@@ -165,6 +367,7 @@ fn decode(L: *lua.State, index: c_int) !route.Action {
     if (lua.boolean(L, index, "fight")) |value| action.fight = value;
     if (lua.boolean(L, index, "hold")) |value| action.hold = value;
     if (lua.boolean(L, index, "direct")) |value| action.direct = value;
+    if (lua.boolean(L, index, "settle")) |value| action.settle = value;
     if (lua.boolean(L, index, "crouch")) |value| action.crouch = value;
     if (lua.boolean(L, index, "cautious")) |value| action.cautious = value;
     if (lua.boolean(L, index, "blast")) |value| action.blast = value;
@@ -188,6 +391,10 @@ fn decode(L: *lua.State, index: c_int) !route.Action {
     if (lua.string(L, index, "slot")) |text| action.slot = try route.Name.from(text);
     if (L_.lua_getfield(L, index, "target") == L_.LUA_TTABLE) {
         action.target = try selector(L, L_.lua_absindex(L, -1));
+    }
+    L_.lua_settop(L, -2);
+    if (L_.lua_getfield(L, index, "landing") == L_.LUA_TTABLE) {
+        action.landing = try selector(L, L_.lua_absindex(L, -1));
     }
     L_.lua_settop(L, -2);
     if (action.target == null) if (lua.string(L, index, "class")) |text| {
@@ -295,6 +502,13 @@ fn hasWeapon(L: ?*lua.State) callconv(.c) c_int {
     L_.lua_pushboolean(L, @intFromBool(id >= 0 and id < 31 and loadout.dk3Inventory & (@as(i32, 1) << @intCast(id)) != 0));
     return 1;
 }
+/// One-based campaign key ordinal, matching objective catalog owned entries.
+fn hasKey(L: ?*lua.State) callconv(.c) c_int {
+    const id = L_.luaL_checkinteger(L, 1);
+    const keys = player(L, data.Keys);
+    L_.lua_pushboolean(L, @intFromBool(id >= 1 and id <= 32 and keys.acquired(@intCast(id - 1))));
+    return 1;
+}
 fn checkedSelector(L: ?*lua.State, index: c_int) route.Target {
     return selector(L.?, index) catch {
         _ = L_.luaL_error(L, "invalid target selector");
@@ -317,9 +531,17 @@ fn entity(L: ?*lua.State) callconv(.c) c_int {
     }
     if (found.entity) |handle| {
         const world = query.frame.world;
+        if (world.get(handle, data.Transform) catch null) |pose| {
+            for (pose.angles, [_][*:0]const u8{ "pitch", "yaw", "roll" }) |value, key| {
+                L_.lua_pushnumber(L, value);
+                L_.lua_setfield(L, -2, key);
+            }
+        }
         if (world.get(handle, data.MapObject) catch null) |object| {
             _ = L_.lua_pushlstring(L, object.classname.ptr, object.classname.len);
             L_.lua_setfield(L, -2, "classname");
+            L_.lua_pushinteger(L, object.objective_uses);
+            L_.lua_setfield(L, -2, "uses");
         }
         if (world.get(handle, data.Health) catch null) |value| {
             L_.lua_pushinteger(L, value.current);
@@ -336,6 +558,9 @@ fn entity(L: ?*lua.State) callconv(.c) c_int {
         if (world.get(handle, data.Pickup) catch null) |value| {
             L_.lua_pushboolean(L, @intFromBool(value.visible));
             L_.lua_setfield(L, -2, "visible");
+            const wanted = @import("items.zig").wanted(world, query.frame.entity, value.*, &query.frame.clients.weapon_table, query.frame.now) catch false;
+            L_.lua_pushboolean(L, @intFromBool(wanted));
+            L_.lua_setfield(L, -2, "wanted");
         }
     }
     return 1;
@@ -378,6 +603,9 @@ fn pickups(L: ?*lua.State) callconv(.c) c_int {
         L_.lua_setfield(L, -2, "id");
         L_.lua_pushinteger(L, id & 0xffffff);
         L_.lua_setfield(L, -2, "index");
+        const wanted = @import("items.zig").wanted(world, query.frame.entity, pickup, &query.frame.clients.weapon_table, query.frame.now) catch false;
+        L_.lua_pushboolean(L, @intFromBool(wanted));
+        L_.lua_setfield(L, -2, "wanted");
         _ = L_.lua_pushlstring(L, object.classname.ptr, object.classname.len);
         L_.lua_setfield(L, -2, "classname");
         for ([_][:0]const u8{ "x", "y", "z" }, pose.position) |key, value| {
@@ -616,6 +844,12 @@ fn standingGoal(frame: Frame, found: targets.Resolved) !v.Vec3 {
 /// empty without a route. For authoring: it shows which passages navigation
 /// believes are open.
 fn routeTo(L: ?*lua.State) callconv(.c) c_int {
+    return routeQuery(L, false);
+}
+fn groundRoute(L: ?*lua.State) callconv(.c) c_int {
+    return routeQuery(L, true);
+}
+fn routeQuery(L: ?*lua.State, authored: bool) c_int {
     const query = current(L);
     const target = checkedSelector(L, 1);
     var point = (query.frame.world.get(query.frame.entity, data.Transform) catch unreachable).position;
@@ -627,9 +861,60 @@ fn routeTo(L: ?*lua.State) callconv(.c) c_int {
     L_.lua_createtable(L, 16, 0);
     const found = (targets.resolve(query.frame, target, .any) catch null) orelse return 1;
     const goal = standingGoal(query.frame, found) catch return 1;
-    var points: [64]v.Vec3 = undefined;
-    const count = query.frame.service.predict(.{ .position = point, .destination = goal, .slot = query.frame.index, .player = true }, &points) catch 0;
-    for (points[0..count], 1..) |step, index| {
+    const nodes = @import("authored_nodes.zig");
+    var excluded: [256]nodes.Bounds = undefined;
+    var excluded_count: usize = 0;
+    if (authored) {
+        var exits = query.frame.world.queryAccess(data.World.mask(.{ data.Exit, data.Binding }), 0, 0);
+        defer exits.deinit();
+        while (exits.next()) |view| for (view.entities(), view.read(data.Binding)) |exit_entity, binding| {
+            if (found.entity != null and exit_entity.index == found.entity.?.index) continue;
+            if (binding.slot >= query.frame.projections.len) continue;
+            const box = query.frame.projections[binding.slot].shared;
+            if (box.linked == 0) continue;
+            if (route.overlaps(point, .{ -15, -15, -24 }, .{ 15, 15, 32 }, box.absmin, box.absmax)) continue;
+            if (excluded_count == excluded.len) return L_.luaL_error(L, "ground_route: too many exit volumes");
+            excluded[excluded_count] = .{ .mins = v.subtract(box.absmin, .{ 15, 15, 32 }), .maxs = v.add(box.absmax, .{ 15, 15, 24 }) };
+            excluded_count += 1;
+        };
+        // A remote-controlled closed door is a real break in the corridor.
+        // Route around it to its control, instead of preferring the short
+        // passage that the supplied graph recorded with that door open.
+        var doors = query.frame.world.queryAccess(data.World.mask(.{ data.Mover, data.MapObject, data.Binding }), 0, 0);
+        defer doors.deinit();
+        while (doors.next()) |view| for (view.read(data.Mover), view.read(data.MapObject), view.read(data.Binding)) |motion, object, binding| {
+            if (motion.state != .closed and motion.state != .closing) continue;
+            if (object.targetname.len == 0 or @import("entity_classes/registry.zig").traitsOf(object.classname).door == .none) continue;
+            if (binding.slot >= query.frame.projections.len) continue;
+            const box = query.frame.projections[binding.slot].shared;
+            if (box.linked == 0 or box.contents & c.CONTENTS_SOLID == 0) continue;
+            if (excluded_count == excluded.len) return L_.luaL_error(L, "ground_route: too many blocked volumes");
+            excluded[excluded_count] = .{ .mins = v.subtract(box.absmin, .{ 15, 15, 32 }), .maxs = v.add(box.absmax, .{ 15, 15, 24 }) };
+            excluded_count += 1;
+        };
+    }
+    var points: [512]v.Vec3 = undefined;
+    const count = if (authored)
+        nodes.route(point, goal, &points, excluded[0..excluded_count]) catch 0
+    else
+        query.frame.service.predict(.{ .position = point, .destination = goal, .slot = query.frame.index, .player = true }, &points) catch 0;
+    for (points[0..count], 1..) |raw_step, index| {
+        // Supplied walking nodes can float above a slope. Resolve a nearby
+        // supported stance instead of accepting an arbitrary height tolerance
+        // which can silently complete a point on the wrong storey.
+        var step = raw_step;
+        const collision = engine.collisionService();
+        const wet = collision.contents(raw_step, query.frame.index) catch 0;
+        if (wet & (c.CONTENTS_WATER | c.CONTENTS_SLIME | c.CONTENTS_LAVA) == 0) {
+            for ([_]f32{ 0, 8, 24, 64 }) |lift| {
+                const floor = collision.trace(.{ .start = v.add(raw_step, .{ 0, 0, lift }), .end = v.add(raw_step, .{ 0, 0, -72 }), .mins = .{ -15, -15, -24 }, .maxs = .{ 15, 15, 32 }, .slot = query.frame.index, .mask = @as(u32, c.MASK_PLAYERSOLID) & ~@as(u32, c.CONTENTS_BODY) }) catch null;
+                if (floor) |hit| {
+                    if (hit.start_solid or hit.all_solid) continue;
+                    if (hit.fraction < 1 and hit.normal[2] > 0.7) step = hit.end;
+                    break;
+                }
+            }
+        }
         L_.lua_createtable(L, 3, 0);
         for (0..3) |axis| {
             L_.lua_pushnumber(L, step[axis]);
@@ -730,11 +1015,6 @@ fn exitTo(L: ?*lua.State) callconv(.c) c_int {
     if (best == 0) L_.lua_pushnil(L) else L_.lua_pushinteger(L, best);
     return 1;
 }
-/// Counts an action the route skipped while fast-forwarding a restored stage.
-fn skipped(L: ?*lua.State) callconv(.c) c_int {
-    current(L).stage_actions.* += 1;
-    return 0;
-}
 /// Records the running stage; the next game save remembers it for restoration.
 fn stage(L: ?*lua.State) callconv(.c) c_int {
     const query = current(L);
@@ -758,11 +1038,9 @@ fn checkpointStage(L: ?*lua.State) callconv(.c) c_int {
     var words = std.mem.tokenizeScalar(u8, std.mem.sliceTo(&value, 0), ' ');
     const map = words.next() orelse "";
     const number = std.fmt.parseInt(i64, words.next() orelse "0", 10) catch 0;
-    const completed = std.fmt.parseInt(i64, words.next() orelse "0", 10) catch 0;
     const same = std.mem.eql(u8, map, query.map);
     L_.lua_pushinteger(L, if (same) number else 0);
-    L_.lua_pushinteger(L, if (same) completed else 0);
-    return 2;
+    return 1;
 }
 fn hostiles(L: ?*lua.State) callconv(.c) c_int {
     const query = current(L);

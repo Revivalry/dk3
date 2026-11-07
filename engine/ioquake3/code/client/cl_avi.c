@@ -432,12 +432,12 @@ CL_CheckFileSize
 */
 static qboolean CL_CheckFileSize( int bytesToAdd )
 {
-  unsigned int newFileSize;
+  uint64_t newFileSize;
 
   newFileSize =
-    afd.fileSize +                // Current file size
-    bytesToAdd +                  // What we want to add
-    ( afd.numIndices * 16 ) +     // The index
+    (uint64_t)afd.fileSize +       // Widen before adding, not after overflow.
+    (uint64_t)bytesToAdd +
+    ( (uint64_t)afd.numIndices * 16 ) + // The index
     4;                            // The index size
 
   // I assume all the operating systems

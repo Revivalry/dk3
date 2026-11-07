@@ -43,6 +43,41 @@ pub fn loadAnimations(load: context.Load) !void {
 pub fn spawn(spawning: *context.Spawn) !void {
     try @import("companions.zig").initialize(spawning.world, spawning.entity, spawning.actors.episode, &spawning.actors.weapons, spawning.definition.health, spawning.now);
 }
+pub fn weaponMotion(world: *data.World, entity: @import("../../../../core/ecs/world.zig").Entity) !?data.Player {
+    return (try world.get(entity, data.Companion)).motor;
+}
+
+test "delayed companion weapons use the current class motor without a player component" {
+    const t = std.testing;
+    var world = data.World.init(t.allocator, 8);
+    defer world.deinit();
+    const entity = try world.create(2, .{ data.Actor{ .definition = catalog.find("mikiko").? }, data.Companion{ .identity = .mikiko } });
+    const posture = @import("../../../../mechanics/server/weapon_pose.zig");
+    try t.expectEqual(@as(f32, 22), (try posture.motion(&world, entity)).view_height);
+    (try world.get(entity, data.Companion)).motor.ducked = true;
+    (try world.get(entity, data.Companion)).motor.view_height = 12;
+    try t.expect((try posture.motion(&world, entity)).ducked);
+    try t.expectEqual(@as(f32, 12), (try posture.motion(&world, entity)).view_height);
+    try t.expectError(error.MissingComponent, world.get(entity, data.Player));
+}
+
+test "companion delayed throws and empty-weapon melee survive portable save admission" {
+    const t = std.testing;
+    const snapshot = @import("../../../../mechanics/domain/snapshot.zig");
+    var world = data.World.init(t.allocator, 8);
+    defer world.deinit();
+    _ = try world.create(1, .{ data.Transform{}, data.Velocity{}, data.Player{}, data.Body{}, data.Binding{ .slot = 0 }, data.Health{}, data.Hurt{}, data.Weapons{ .weapon = 9 }, data.Character{}, data.Ailments{}, data.Keys{} });
+    _ = try world.create(2, .{ data.Transform{}, data.Velocity{}, data.Body{}, data.Binding{ .slot = 64 }, data.MapObject{ .classname = "mikiko" }, data.Health{}, data.Hurt{}, data.Random{ .state = 7 }, data.Actor{ .definition = catalog.find("mikiko").? }, data.Companion{ .identity = .mikiko, .owner = 1 }, data.Weapons{ .weapon = 9, .dk3Inventory = 1 << 9 }, data.Character{}, data.Ailments{}, data.Keys{} });
+    _ = try world.create(3, .{ data.Transform{}, data.WeaponLaunch{ .owner = 2, .weapon = 9, .sequence = 0, .charge = 0, .execute_ms = 1200 } });
+    _ = try world.create(4, .{ data.Transform{}, data.Melee{ .owner = 2, .weapon = 9, .sequence = 128, .experience = 0, .damage = 20, .started_ms = 900 } });
+    var buffer: [32768]u8 = undefined;
+    const bytes = try snapshot.capture(t.allocator, &buffer, &world, "e2m4c", 1, .{ .at_ms = 1000, .episode = 2, .player_id = 1, .next_id = world.next_id });
+    var loaded = try snapshot.decode(t.allocator, bytes);
+    defer loaded.deinit(t.allocator);
+    try t.expectEqual(@as(u32, 2), (try loaded.world.get(loaded.world.find(3).?, data.WeaponLaunch)).owner);
+    try t.expectEqual(@as(u32, 2), (try loaded.world.get(loaded.world.find(4).?, data.Melee)).owner);
+    try t.expectError(error.MissingComponent, loaded.world.get(loaded.world.find(2).?, data.Player));
+}
 pub fn die(frame: *Frame) !void {
     try @import("companion_damage.zig").death(frame.world, frame.slots, frame.projections, frame.entity, frame.actors.episode, frame.now);
 }
@@ -66,6 +101,11 @@ pub fn think(frame: *Frame) !void {
     try @import("companion_brain.zig").think(frame.actors, frame.navigation, frame.world, frame.slots, frame.projections, frame.entity, frame.actor, frame.pose, frame.definition.*, frame.now);
     try @import("companion_navigation.zig").prepare(frame.world, frame.slots, frame.projections, frame.entity, frame.actor, frame.pose.*, frame.body.*, frame.now);
     if (frame.actor.mode != previous) frame.actor.changed_ms = frame.now;
+}
+pub fn diagnose(view: context.View, writer: *std.Io.Writer) !void {
+    const member = (try view.world.get(view.entity, data.Companion)).*;
+    const body = (try view.world.get(view.entity, data.Body)).*;
+    try writer.print(" owner={d} enabled={d} anger={d} retaliation={d} driven={d} stepped={d}", .{ member.owner, @intFromBool(member.enabled), member.anger.value, @intFromBool(member.anger.retaliating), body.motion_owner orelse 0, view.actor.stepped_ms orelse -1 });
 }
 pub fn move(frame: *Frame) !void {
     if (frame.dead) return common.move(frame);

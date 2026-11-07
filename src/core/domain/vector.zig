@@ -7,6 +7,19 @@ pub fn add(a: Vec3, b: Vec3) Vec3 {
 pub fn subtract(a: Vec3, b: Vec3) Vec3 {
     return .{ a[0] - b[0], a[1] - b[1], a[2] - b[2] };
 }
+pub fn closestInBounds(point: Vec3, mins: Vec3, maxs: Vec3) Vec3 {
+    var result = point;
+    for (0..3) |axis| result[axis] = @min(maxs[axis], @max(mins[axis], point[axis]));
+    return result;
+}
+test "a large body's near surface can be in reach while its centre is outside" {
+    const t = @import("std").testing;
+    const eye: Vec3 = .{ 70, 0, 10 };
+    const closest = closestInBounds(eye, .{ -40, -40, -24 }, .{ 40, 40, 24 });
+    try t.expectEqual(Vec3{ 40, 0, 10 }, closest);
+    try t.expectApproxEqAbs(@as(f32, 30), length(subtract(closest, eye)), 0.001);
+    try t.expectEqual(Vec3{ 0, 0, 0 }, closestInBounds(.{ 0, 0, 0 }, .{ -40, -40, -24 }, .{ 40, 40, 24 }));
+}
 pub fn scale(a: Vec3, factor: f32) Vec3 {
     return .{ a[0] * factor, a[1] * factor, a[2] * factor };
 }

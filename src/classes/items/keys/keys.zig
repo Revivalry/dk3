@@ -2,9 +2,15 @@
 //! item-class: keys. Keys, quest parts and their assemblies (the bomb, the purifier).
 const std = @import("std");
 const keyIndex = @import("../../../item_catalog.zig").keyIndex;
+pub const rotating_names = [_][]const u8{"item_bottle"};
 pub const Keys = struct {
     mask: u32 = 0,
     quest: u32 = 0,
+    /// Acquisition history includes ingredients consumed by automatic assembly.
+    pub fn acquired(self: Keys, index: u5) bool {
+        return self.mask & (@as(u32, 1) << index) != 0 or
+            (index >= 14 and index <= 17 and self.quest & 1 != 0);
+    }
     /// Bomb assembly consumes its four parts; all other keys remain reusable.
     pub fn collect(self: *Keys, index: u5) bool {
         self.mask |= @as(u32, 1) << index;

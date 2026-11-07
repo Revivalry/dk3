@@ -42,13 +42,21 @@ pub fn pilotFrame(frame: Frame) !pilot.Frame {
         .slot = frame.index,
         .entity = frame.entity,
         .state = (try frame.world.get(frame.entity, data.Player)).*,
+        .motor = @import("../player_state.zig").characterParametersForMode(frame.index, (try frame.world.get(frame.entity, data.Character)).*, (try frame.world.get(frame.entity, data.Ailments)).*, frame.now, engine.integer("g_gametype") != abi.c.GT_SINGLE_PLAYER),
         .now = frame.now,
+        .liquid_mask = pilot.liquidMask(frame.world, frame.entity, frame.clients.episode),
         .gates = frame.gates,
+        .turn_rate_limit = 360,
     };
 }
 pub fn drive(motor: *Motor, frame: Frame, intent: Intent) !Report {
     const steering = try motor.steer(try pilotFrame(frame), intent);
     @import("bot_input.zig").submit(frame.index, steering.command, (try frame.world.get(frame.entity, data.Player)).delta_angles, frame.now);
+    if (engine.integer("dk3_coop_motion_trace") != 0) {
+        const pose = (try frame.world.get(frame.entity, data.Transform)).*;
+        var message: [192]u8 = undefined;
+        engine.print(try std.fmt.bufPrintZ(&message, "dk3 coop motion: now={d} pos={d:.4},{d:.4},{d:.4} angles={d:.4},{d:.4}\n", .{ frame.now, pose.position[0], pose.position[1], pose.position[2], steering.command.angles[0], steering.command.angles[1] }));
+    }
     if (engine.integer("developer") >= 2 and steering.command.up != 0) {
         var echoed: [192]u8 = undefined;
         var heard: abi.c.usercmd_t = undefined;

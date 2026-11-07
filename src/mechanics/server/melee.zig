@@ -43,6 +43,20 @@ fn arc(pose: data.Transform, plan: catalog.melee.Plan, index: u8, range: f32, mu
     }
     return last;
 }
+/// Qualify a known class strike, such as an empty weapon's fixed close attack.
+/// Randomly selected swing families must not be qualified by one nominal arc.
+pub fn canReach(world: *data.World, owner: ecs.Entity, weapon: u5, sequence: i32, table: *const weapons.Table, angles: v.Vec3, target: @import("../domain/world_references.zig").Ref) !bool {
+    const strike_plan = try catalog.meleePlan(weapon, sequence, (try world.get(owner, data.Weapons)).dk3SwordExperience);
+    var pose = (try world.get(owner, data.Transform)).*;
+    pose.angles = angles;
+    const slot = (try world.get(owner, data.Binding)).slot;
+    const ducked = (try @import("weapon_pose.zig").motion(world, owner)).ducked;
+    for (0..strike_plan.hits) |index| {
+        const hit = try arc(pose, strike_plan, @intCast(index), if (table.entries[weapon].range > 0) table.entries[weapon].range else strike_plan.fallback_range, table.entries[weapon].muzzle, slot, ducked);
+        if (@import("region_collision.zig").reaches(world, hit, target)) return true;
+    }
+    return false;
+}
 pub fn step(world: *data.World, slots: *Slots, projections: []abi.EntityProjection, table: *const weapons.Table, now: i64) !void {
     var entities: [ecs.max_entities]ecs.Entity = undefined;
     var count: usize = 0;
@@ -68,7 +82,7 @@ pub fn step(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
         }
         const binding = (try world.get(owner, data.Binding)).*;
         const pose = (try world.get(owner, data.Transform)).*;
-        const ducked = (try world.get(owner, data.Player)).ducked;
+        const ducked = (try @import("weapon_pose.zig").motion(world, owner)).ducked;
         while (try action.due(now)) {
             const hit = try arc(pose, plan, action.next_hit, if (table.entries[action.weapon].range > 0) table.entries[action.weapon].range else plan.fallback_range, table.entries[action.weapon].muzzle, binding.slot, ducked);
             if (plan.sound_on_strike and action.next_hit == 0) if (catalog.fireSound(action.weapon, action.sequence, try world.persistentId(entity))) |sound| try @import("events.zig").sound(world, slots, projections, sound, pose.position, binding.slot, c.CHAN_WEAPON, now);
@@ -86,7 +100,7 @@ pub fn step(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
             try @import("impacts.zig").contact(world, slots, projections, action.weapon, hit, .{ .sequence = action.sequence }, now);
             if (engine.integer("developer") > 0) {
                 var message: [160]u8 = undefined;
-                engine.print(try std.fmt.bufPrintZ(&message, "dk3 zig melee: weapon={d} sequence={d} strike={d} age={d} hit={d} id={d}\n", .{ action.weapon, action.sequence, action.next_hit, now - action.started_ms, @intFromBool(hit.fraction < 1), try world.persistentId(entity) }));
+                engine.print(try std.fmt.bufPrintZ(&message, "dk3 zig melee: weapon={d} sequence={d} strike={d} age={d} hit={d} id={d} slot={d} at={d:.1},{d:.1},{d:.1}\n", .{ action.weapon, action.sequence, action.next_hit, now - action.started_ms, @intFromBool(hit.fraction < 1), try world.persistentId(entity), hit.entity, hit.end[0], hit.end[1], hit.end[2] }));
             }
             action.next_hit += 1;
         }

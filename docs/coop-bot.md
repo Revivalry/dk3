@@ -1,12 +1,14 @@
 # Scripted co-op bot
 
 Sequence 335 (`coop-bot`) adds a player bot that plays the single-player
-campaign headless, to verify the game end to end. **Status: implemented; the
-route New Game → intro → e1m1a → e1m1b → e1m1c → e1m2a → e1m2b → e1m3a arrival
-passes continuously at Ronin (`--skill 1`, no deaths in the recorded run); e1m3a
-is partly routed and later maps are not yet routed.** The campaign verification
-uses Ronin: Samurai's additional e1m2b sludgeminions outlast the ammunition. See
-[native acceptance](native-acceptance.md).
+campaign headless, to verify the game end to end. Current sequence581 has routes
+covering Episodes1/2, including the episode boundaries. Fresh Episode2 run394
+completes every map and rune revisit through Episode3 arrival with zero deaths.
+Sequence583 fresh Episode1 run148 completes New Game through Greece/Lemnos B
+with two combat checkpoint recoveries and no companion losses.
+Episodes3/4 still have placeholder routes. Campaign verification uses Ronin
+(`--skill 1`); results retain their actual recovery counts and configured limits.
+See [native acceptance](native-acceptance.md).
 
 ## What it is
 
@@ -29,7 +31,100 @@ uses Ronin: Samurai's additional e1m2b sludgeminions outlast the ammunition. See
 Not exercised: rendering, audio, client prediction and HUD (the dedicated
 server has no client module). Use the existing probes for those.
 
+## Gameplay recordings
+
+Sequence584 adds `dk3_coop_render 1`: the pilot controls the ordinary local
+single-player client instead of allocating a dedicated-server bot. The real
+client receives snapshots and acknowledges resident-world publication. Only
+pilot-origin user commands move its player; idle keyboard commands are ignored.
+The view uses authoritative state, as demo playback does, rather than predicting
+unrelated local keyboard input. Dedicated and ordinary player modes are unchanged.
+The recorder explicitly enables `dk3_coop_fast 1` with16 ms client frames;
+the server retains its normal50 ms simulation ticks. Client frames between
+server ticks and unrestricted private local transport drain fragmented snapshots
+instead of dropping their cadence during accelerated capture. Gamestate admission
+resets timing cvars, so the opt-in driver restores these recorder settings.
+This changes neither `sv_cheats` nor gameplay rules; playback uses normal time.
+
+`dkq3/tools/runtime_coop_video.py record` stages all three native modules and
+frozen routes in its report's private profile, then records ordinary engine demos
+under a guarded private X display. `render` replays those demos, captures 720p
+30 fps AVI with mixed game audio, and encodes H.264/AAC MP4. Logs, module/route
+hashes, demo hashes, actual deaths and failed actions remain in the report.
+The owner profile is never used. Supply an immutable `play/<generation>` as
+`--engine`, a fresh `--report`, and the appropriate route/map:
+
+```sh
+python3 dkq3/tools/runtime_coop_video.py record --engine "$generation" \
+  --report zig-out/reports/coop-video-584/episode1 \
+  --script episode1-connected.lua --map intro --until-map e2m1a
+python3 dkq3/tools/runtime_coop_video.py render --engine "$generation" \
+  --report zig-out/reports/coop-video-584/episode1 --output episode1.mp4
+```
+
+Episode2 uses `--script episode2-connected.lua --map e2m1a` and finishes on
+Episode3 arrival. `--seconds N` records an explicitly labelled short sample,
+which does not establish episode acceptance. Full recording acceptance is
+tracked in [native acceptance](native-acceptance.md).
+`--load <recorded.sav> --stage N --map <map>` records an ordinary checkpoint
+continuation. Export a failed attempt only with explicit `--include-failed`;
+its actual failure stays in result.json. An assembled video must label such
+attempts and continuations, and does not count as a fresh episode pass.
+`assemble_coop_video.py <specification.json>` combines completed exports with
+chapter cards. Its specification names `title`, `output`, and ordered `parts`
+containing `report` and `label`. It verifies every demo reached natural EOF,
+normalizes the output canvas while preserving aspect ratio, and writes a source
+and media manifest beside the MP4. `--software-record` lets demo capture use
+guarded software rendering while an independent GPU replay exports video.
+An optional `clips` list selects original demo indices for a part; include it in
+the retained specification when trimming bootstrap loads or duplicate retries.
+The output manifest records the selected indices alongside the complete source
+outcomes and demo hashes, so editing does not become a fresh-pass claim.
+`render --clips 1 3` exports only the named original demo indices; use the same
+selection in the assembly specification. `verify_coop_video.py <assembled.mp4>`
+checks its adjacent source manifest, frame rate, chapters, complete video/audio
+decoding and audible sound, then produces a sampled contact sheet. Review that
+sheet separately before marking visual acceptance. For arrival saves, pass
+`--stage 1` explicitly: replaying an already-completed arrival cinematic can wait
+indefinitely for a sequence that will not start again.
+
+Sequence585 interpolates the first-person replay's feet and view between actual
+snapshots, retaining cuts for teleport/load/respawn/world/cinematic boundaries.
+It does not apply mover carry twice or predict unrelated keyboard commands.
+Campaign steering caps view turns at360 degrees/second, including physical local
+corridor corrections; perception and aiming skill are independent of that cap.
+Required resident media finishes before a replay consumes a world reference.
+
+For a movement sample, add `--seconds 120 --motion-trace` to recording and
+`--motion-trace` to rendering, then run
+`python3 dkq3/tools/evaluate_replay_motion.py <report>`. It compares interpolated
+and raw positions on identical grounded-moving frames, checks real issued turns
+and snapshot cadence, and writes the retained metrics. Console notification text
+is hidden from recordings while logs retain those measurements. A reviewed
+presentation-only update can replay a frozen recording with
+`render --update-presentation`; the recorded game/UI modules must remain identical,
+the new cgame must match its immutable installation, and completed old exports
+must first be retained separately. `render-inputs.json` records actual modules;
+assembly includes its hash alongside original recording inputs.
+
+The assembler and verifier also check actual packet presentation gaps and
+durations. Explicit filter/encoder time bases and sequential timestamps keep
+chapter boundaries on the30 Hz grid; a nominal30 fps header alone is insufficient.
+`verify_coop_video.py` produces machine evidence and a contact sheet; retain a
+separate sampled visual review after inspecting it. Sequence585's replacement
+Episode1/Episode2 videos pass these checks and retain labelled source failures
+and checkpoint continuations. See the scenario ledger for their exact scope.
+
 ## Run it
+
+Episode 2 has a dedicated entry, `--script episode2-pass.lua --map e2m1a
+--skill 1`. Sequence581 run394 uses the stricter `episode2-connected.lua` entry
+and completes the fresh headless route with zero deaths. Full rendered/audio
+episode acceptance remains open; see [native acceptance](native-acceptance.md).
+`zig build game-server --prefix zig-out/native-dev` builds only the game module
+for dedicated-server iteration. The runner also accepts `--resident-worlds` for
+explicit regional admission coverage; a loaded save always retains its saved
+ownership graph.
 
 ```sh
 zig build engine-server game --prefix zig-out/native-dev
@@ -61,7 +156,28 @@ Evidence: `server.log` contains `dk3 coop:` lines (`level`, `stage`, `action`,
 failures, game time and speed-up; `inputs.json` records the launch and the
 SHA-256 of the module, server and every route file.
 
+For a scoped repair, `episode1-repair.lua` and `episode2-repair.lua` use the same
+routes and stop at the first death, retaining its evidence. Use the corresponding
+`*-pass.lua` entry for the final campaign replay and its declared combat retries.
+
 ## Route language
+
+`leap(takeoff, {index = platform}, opts)` follows the current surface of a
+moving platform throughout the jump and succeeds only when that platform supports
+the player. Point landings retain their existing behavior. Moving decks need a
+real run-up and an ordinary jump; this does not place the player or move a deck.
+`move({index = platform}, {around = {x_offset,y_offset,z_offset}, direct = true})`
+settles at an offset from its current top surface, so a run-up stays aligned while
+the deck rises or falls. Offsets belong to the brush's local coordinates and
+rotate with it. Surface positions use the physical brush pose, since linked
+collision bounds can expand to a sphere during rotation. `dk3.entity` exposes
+`pitch`, `yaw` and `roll` for observing an authored rotation cycle.
+Explicit jumps and these stances own their departure;
+ordinary lift rides retain the pilot's protection against leaving mid-ride.
+An explicit direct dive with a height/depth tolerance owns its underwater route:
+automatic breathing does not turn it back toward a previous surface mid-tunnel.
+Normal air depletion and drowning remain active, so the authored route must reach
+its next air pocket.
 
 Routes live in `dkq3/coop/` and are loaded through the engine filesystem as
 `coop/<file>`. `campaign.lua` is the entry; `include "coop/episode1.lua"`
@@ -93,9 +209,26 @@ Targets: a targetname string, a point `{x, y, z}`, or a selector
 `{ name=, class=, id=, index=, near={x,y,z} }`. `index` is the BSP entity index
 of the current map (see the survey tool below).
 
+An explicit fountain approach can use `cautious=false` to keep moving while
+firing instead of starting unrelated combat or health-pickup trips. A control-use
+action is never interrupted by an automatic health trip.
+
+`exit({index = N})` selects the actual seam, including maps with several exits
+to the same destination. `dk3.ground_route(t)` reads the supplied node links;
+`nodepath(t)` walks that corridor with ordinary commands, using a 24-unit height
+tolerance unless explicitly overridden. Its first landing above ladder rungs is
+walked rather than being repeatedly skipped. A cautious direct segment preserves
+its original footing during combat or a health trip and routes back there before
+resuming. Node links are authoring
+data, not proof of live reachability: separate water drops, jumps and puzzle
+controls still need explicit route intent and recorded traversal. `dk3.has_key(n)`
+reads the one-based campaign key ordinal used by objective catalog `owned` rows;
+use inventory facts for revisits and mid-episode saved games. Named kill targets
+are chased beyond the default room scan unless an explicit radius is supplied.
+
 | Action | Completes when |
 |---|---|
-| `move(t, {radius, direct, crouch, cautious, pace})` | within `radius` (default 40); `direct` steers straight (falls into water, ledges the area graph lacks) and must end standing, braking into the goal; `pace` (0.1–1) walks it (off a narrow ledge, to drop close under it); `cautious` stops to fight whatever engages the player (held on a short tether, dodging) and goes on once nothing has engaged it for 2.5 s, the stand cannot hurt its prey, 45 s have passed, or nothing is left to shoot with at range |
+| `move(t, {radius, vertical_radius, direct, crouch, cautious, pace})` | within `radius` (default 40); `vertical_radius` optionally sets precise depth/height tolerance instead of the normal step allowance; `direct` steers straight and brakes into the goal, settling on dry land while admitting a passing waypoint in water; `pace` (0.1–1) walks it; `cautious` stops to fight whatever engages the player and resumes when the engagement ends |
 | `path({points}, opts)` | every point reached, starting at the point nearest the player |
 | `touch(t)` | the hull overlaps the trigger, or it fired/was consumed |
 | `use(t)` | the control reacted (mover/trigger state); presses are retried with re-aim |
@@ -112,7 +245,8 @@ of the current map (see the survey tool below).
 | `dk3.sidekick(who, order)`, `companion_take(item, who)` | a companion order (`stay`, `follow`, …); `collect` for the item the player looks at |
 | `regroup(radius, timeout)` | every living sidekick is within `radius` (one let through a door just opened for it) |
 | `tend(radius, fraction)` | a hurt sidekick was sent for the reachable health nearest it until healthy or none is near (also run before stage checkpoints and exits: a sidekick's death loses the level) |
-| `survey(map)`, `trace(t, from)`, `flood(goals, box)` | authoring logs: reachable controls, the area graph's route, a live flood fill through air and water (routes with their longest stretch under water) |
+| `survey(map)`, `trace(t, from)`, `flood(goals, box, step, from, hull)` | read-only authoring logs: reachable controls, the area graph's route, a live flood fill through air and water (routes with their longest stretch under water); optional `from` changes the queried origin, without moving the player; `hull` defaults to standing and accepts `"crouch"` for low passages |
+| `walkflood(goals, box, step, opts)` | read-only floor search; `opts.from` selects the query origin, `jump` is the probe's rise and `jump_span` (1–8) permits jump rays spanning several grid cells; `crouch` admits low passages. These geometric probes do not establish ballistic jump or traversal acceptance. |
 
 Routes state intent: what to operate, shoot, take or reach, by entity. Getting
 there is navigation's job, including closed doors, switched lasers and force
@@ -123,6 +257,10 @@ only for what the area graph cannot express (a boosted jump, a draught). e1m3a i
 written this way.
 
 Every action takes `timeout` (seconds) and `fight` (default true). Movement
+can use `settle = false` for a through-point at the top of a climb, followed
+immediately by its landing; ordinary direct moves wait for supported footing.
+`vertical_radius` also supplies precise depth control on direct submerged moves.
+Movement
 actions also fail after 25 s without approaching the goal (along the area
 graph's route where there is one, so a long way round counts), or 8 s without
 any navigation route. A failure raises a Lua error naming the route line.
@@ -130,7 +268,7 @@ any navigation route. A failure raises a Lua error naming the route line.
 Read-only queries: `dk3.time()`, `dk3.map()`, `dk3.visit()`, `dk3.position()`,
 `dk3.health()` (current, maximum, armor), `dk3.alive()`, `dk3.mode()`,
 `dk3.weapon()`, `dk3.has_weapon(id)`, `dk3.entity(t)` (id, classname, x/y/z,
-health, state, visible, fruit), `dk3.mover(t)`, `dk3.hostiles(radius)`,
+health, state, visible, wanted, fruit), `dk3.mover(t)`, `dk3.hostiles(radius)`,
 `dk3.visible(t)`, `dk3.cinematic()`, `dk3.log(text)`. For authoring:
 `dk3.route(t, from)` (the area graph's predicted route as points, from the
 player or a given point), `dk3.trace(start, end, hull)` (live collision against
@@ -146,26 +284,52 @@ without movers such as a train of water) cannot answer.
 
 ### Stages, checkpoints and deaths
 
-Game saves happen as in normal play: the bot's `coop-<map>` arrival save, the
-game's arrival and 60 s periodic autosaves. Each save records the running
-stage and how many of its actions had completed. When the bot dies it requests
+For a checkpoint on constrained footing, use `supplies = false` alongside
+`checkpoint = true`. The health admission rule and save still apply; the stage
+does not automatically leave its catwalk for healing, ammunition or companion
+supplies. Required supplies can be collected explicitly from a safe approach.
+An explicit combat `arena` also keeps a held order bounded when its target
+remains out of sight; the blind-target pursuit fallback applies only without
+an arena.
+
+Game saves include the bot's `coop-<map>` arrival save, the game's arrival and
+60 s periodic autosaves. During a scripted run, periodic files remain available
+on disk but do not replace the explicit stage recovery checkpoint: restarting
+a stage from its midpoint can repeat an already operated lift or control.
+Normal player autosave recovery is unchanged. Admitted checkpoints record the
+running stage and how many of its actions had completed. When the bot dies it requests
 the authored death checkpoint (attack); the world restores (often a full map
 load), the bot is re-admitted and the level body resumes at that stage,
-fast-forwarding past actions the saved world already reflects. Retries vary the
+replanning it from the restored position and live objective state. Generated
+paths and conditional pickups must never be resumed by skipping an action
+ordinal: their action sequence changes with the saved world. Stage bodies
+must check completed controls and collected items before operating them. Retries vary the
 bot's own choices per attempt (strafe sides, dodge order, aim noise), so a
 deterministic replay is a new attempt. `level_deaths` (default 3) bounds
 restorations per map (`map_deaths = { e1m2a = 10 }` raises it for one map);
 `deaths` optionally bounds the whole run. Long levels
 mark stages `{ "canal", checkpoint = true, function() … end }`: the stage saves
-as it begins (slot `coop-<map>-<index>`) when the player has at least 60% of
-its health (first tending the sidekicks, recovering health and collecting ammunition
-near by), so a later death resumes there rather than at the arrival. (The runtime does not spend save gems on saves.)
+as it begins (slot `coop-<map>-<index>`). Supply preparation tries to reach60%
+health. Save admission requires at least25% health, with health plus half the
+armor (capped at maximum health) reaching50% of maximum health. A later death
+resumes there rather than at the arrival. The runtime does not spend save gems
+on saves.
 Saves are not counted among a stage's actions (one may be written after the
 next action began), and a checkpoint save records its stage with none of the
 body's actions done. `runtime_coop_bot.py --load <save> --stage N` resumes a
 mid-level save inside stage N, for iterating on one stage.
 
+Precise leaps default to `fight = false` so weapon recoil cannot change their
+takeoff or landing. Moving-platform waits accept `crouch`, including through
+`wait_until`; the declared surface offset follows the platform's physical pose.
+
 ## How the bot plays
+
+Wanted pickups must actually leave the world or stop being wanted. A nearby
+approach that remains above a submerged item fails rather than silently advancing
+the route; authored dive legs can assert key ownership before leaving a puzzle.
+Nearby harmless hazard forecasts do not suppress normal combat retreat. A bank
+ambush must be fought before an explicitly noncombat underwater passage.
 
 `server/coop_motor.zig` turns one frame of intent into a command:
 
@@ -336,21 +500,24 @@ sources of authored waypoints.
 
 ## Open work
 
-- Episode 1 is authored as far as e1m7a's walled yard, and e1m7a is not
-  completable from its co-op spawn: with the yard's north door shut the compiled
-  area graph refuses every route to the changelevel, on every reach type, and
-  the door's only panel stands on the wall's far face (sequences 434 and 435).
-  The route stops there with the reason in its failure line rather than forcing
-  a door the reference refuses to open. That block also holds up the map behind
-  it: `e1m7b`'s arrival rooms are now authored (sequence 436), but its guard
-  post can only be measured with the arsenal a campaign arrival would carry in,
-  and the campaign cannot deliver one; a standalone start there has no rounds
-  and dies. Nothing past that map's hatch button, and no map of episodes 2–4
-  (including the timestream and ending maps), is authored: those still only
-  head for the forward exit with `progress`. Each needs authored steps where
-  navigation alone does not suffice (puzzles, movers the area graph lacks,
-  timed doors). e1m2a shows the typical pattern: the offline area-graph path
-  per leg, live traces where movers matter, and checkpointed stages.
+- Episode 1's complete route is authored, including the Vault crate vent,
+  moving platforms, companion return and brain/guardian finale. The earlier
+  walled-yard block is passed through the guide's actual vent loop and return
+  panel. Sequence583 fresh resident New Game148 completes all17 Episode1 maps,
+  the ending and Lemnos A into B on native candidate84, with two normal combat
+  checkpoint recoveries, no companion losses and unchanged recovery limits.
+  This is a continuous headless campaign pass with cinematics enabled;
+  rendering/audio remain unverified. The frozen inputs and exact installed
+  native generation are reconciled in `episode1-pass-583/acceptance-151.json`.
+  A standalone finale start lacks the campaign's arsenal and is not encounter
+  acceptance.
+  Episode 2 is now fully authored and its fresh Ronin headless run168 completes
+  every map into Episode 3 with zero deaths. Episodes 3–4 retain generic
+  `progress` bodies and need authored puzzle and encounter steps.
+  `episode1-pass.lua` runs the normal campaign with `settings {finish_map =
+  "e2m1b"}`: finish only after ordinary arrival preparation in that map, having
+  crossed the E1/E2 boundary and traversed Lemnos A. This setting does not skip
+  an exit, force travel or replace a level body.
 - Companion handling in routes (Superfly, Mikiko): orders and exits that
   require them. The companions themselves now fly the same pilot; see
   [bots-zig](bots-zig.md#companions).

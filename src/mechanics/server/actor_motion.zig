@@ -20,7 +20,11 @@ fn floorWith(collision: Collision, position: v.Vec3, body: data.Body, slot: u16)
 }
 pub const Limits = struct { maximum_drop: f32 = 32 };
 fn floorWithin(collision: Collision, limits: Limits, position: v.Vec3, body: data.Body, slot: u16) !?v.Vec3 {
-    const hit = try collision.trace(.{ .start = v.add(position, .{ 0, 0, 18 }), .end = v.add(position, .{ 0, 0, -limits.maximum_drop - 0.25 }), .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = worldMask(body) });
+    // Sweep upward first: a low ceiling limits step clearance, but does not
+    // turn an otherwise supported walking corridor into a missing floor.
+    const clearance = try collision.trace(.{ .start = position, .end = v.add(position, .{ 0, 0, 18 }), .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = worldMask(body) });
+    if (clearance.all_solid) return null;
+    const hit = try collision.trace(.{ .start = clearance.end, .end = v.add(position, .{ 0, 0, -limits.maximum_drop - 0.25 }), .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = worldMask(body) });
     if (hit.start_solid or hit.fraction == 1 or hit.normal[2] < 0.7 or hit.contents & (c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_NITRO) != 0) return null;
     return hit.end;
 }
@@ -32,10 +36,57 @@ pub fn navigationOrigin(position: v.Vec3, body: data.Body) v.Vec3 {
 pub fn direct(position: v.Vec3, destination: v.Vec3, body: data.Body, slot: u16) !bool {
     return directWith(@import("actor_collision.zig").service(), position, destination, body, slot);
 }
-fn directWith(collision: Collision, position: v.Vec3, destination: v.Vec3, body: data.Body, slot: u16) !bool {
+pub fn directWith(collision: Collision, position: v.Vec3, destination: v.Vec3, body: data.Body, slot: u16) !bool {
     return directWithin(collision, .{}, position, destination, body, slot);
 }
 fn directWithin(collision: Collision, limits: Limits, position: v.Vec3, destination: v.Vec3, body: data.Body, slot: u16) !bool {
+    return directProbe(collision, limits, position, destination, body, slot);
+}
+/// Static raised-box probes can overlap a stair riser even where the swept
+/// step motor crosses it. Qualify that alternative with the actual motor,
+/// retaining floor, drop, liquid and final-height constraints throughout.
+fn sweptWalk(collision: Collision, limits: Limits, position: v.Vec3, destination: v.Vec3, body: data.Body, slot: u16, speed: f32) !bool {
+    const span = nav.horizontalDistance(position, destination);
+    if (span > 512) return false;
+    var motion: slide.State = .{ .position = position, .velocity = @splat(0) };
+    if (speed <= 0) return false;
+    // Ramps project horizontal motion onto their plane. Budget that slower
+    // progress rather than assuming every tick covers a flat-ground stride.
+    const steps: usize = @intFromFloat(@min(200, @ceil(span / (speed * 0.025)) + 12));
+    for (0..steps) |_| {
+        const before = motion.position;
+        const wanted = nav.velocity(before, destination, speed, 0.05);
+        motion.velocity[0] = wanted[0];
+        motion.velocity[1] = wanted[1];
+        const ground = try collision.trace(.{ .start = before, .end = v.add(before, .{ 0, 0, -0.25 }), .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = worldMask(body) });
+        const supported = !ground.start_solid and !ground.all_solid and ground.fraction < 1 and ground.normal[2] >= 0.7;
+        if (supported and motion.velocity[2] < 0) motion.velocity[2] = 0;
+        var stepper: slide.Context = .{ .service = collision, .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = worldMask(body), .delta = 0.05, .gravity = 800, .ground = if (supported) ground.normal else null };
+        try stepper.step(&motion);
+        const floor = try collision.trace(.{ .start = motion.position, .end = v.add(motion.position, .{ 0, 0, -limits.maximum_drop - 0.25 }), .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = worldMask(body) | c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_NITRO });
+        // A stair's bevel can be the hull's temporary contact while the
+        // actual step motor climbs it. It is not a standing destination.
+        const climbing = motion.position[2] >= before[2] - 0.1 and floor.fraction < 0.01 and floor.normal[2] > 0.15;
+        if (floor.start_solid or floor.all_solid or floor.fraction == 1 or (floor.normal[2] < 0.7 and !climbing) or floor.contents & (c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_NITRO) != 0) {
+            walkRejected(slot, position, destination, motion.position, "support", floor.fraction, floor.start_solid, floor.normal[2]);
+            return false;
+        }
+        if (before[2] - motion.position[2] > limits.maximum_drop) return false;
+        if (nav.horizontalDistance(motion.position, destination) <= 8 and floor.normal[2] >= 0.7) return @abs(motion.position[2] - destination[2]) <= 24;
+        if (nav.horizontalDistance(before, motion.position) < 0.01) {
+            walkRejected(slot, position, destination, motion.position, "no-progress", 0, false, 0);
+            return false;
+        }
+    }
+    walkRejected(slot, position, destination, motion.position, "budget", 0, false, 0);
+    return false;
+}
+fn walkRejected(slot: u16, start: v.Vec3, goal: v.Vec3, point: v.Vec3, reason: []const u8, fraction: f32, solid: bool, normal: f32) void {
+    if (@import("builtin").is_test or engine.integer("developer") < 3) return;
+    var text: [384]u8 = undefined;
+    engine.print(std.fmt.bufPrintZ(&text, "dk3 actor walk rejected: slot={d} reason={s} start={d:.2},{d:.2},{d:.2} goal={d:.2},{d:.2},{d:.2} point={d:.2},{d:.2},{d:.2} fraction={d:.3} solid={d} normal={d:.3}\n", .{ slot, reason, start[0], start[1], start[2], goal[0], goal[1], goal[2], point[0], point[1], point[2], fraction, @intFromBool(solid), normal }) catch "");
+}
+fn directProbe(collision: Collision, limits: Limits, position: v.Vec3, destination: v.Vec3, body: data.Body, slot: u16) !bool {
     const distance = v.length(v.subtract(destination, position));
     if (distance > 512) return false;
     const count: usize = @intFromFloat(@ceil(distance / 24));
@@ -52,13 +103,16 @@ fn directWithin(collision: Collision, limits: Limits, position: v.Vec3, destinat
         // sweep between floor heights can cut through the supporting ledge.
         var start = previous;
         var end = supported;
-        start[2] = @max(previous[2], supported[2]) + 18;
+        const base_z = @max(previous[2], supported[2]);
+        const rise = try collision.trace(.{ .start = previous, .end = .{ previous[0], previous[1], base_z + 18 }, .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = worldMask(body) });
+        if (rise.start_solid or rise.all_solid or rise.end[2] < base_z) return false;
+        start[2] = rise.end[2];
         end[2] = start[2];
         const hit = try collision.trace(.{ .start = start, .end = end, .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = worldMask(body) });
         if (hit.start_solid or hit.fraction < 1) return false;
         previous = supported;
     }
-    return true;
+    return @abs(previous[2] - destination[2]) <= 24;
 }
 /// A route service that falls back to the authored node graph where the player-hull navigation
 /// areas have none: a small actor in a pipe, a corner or under a prop, where a player cannot stand.
@@ -119,6 +173,7 @@ pub fn stepLimited(limits: Limits, actor: *data.Actor, pose: *data.Transform, bo
     _ = try stepLimitedWithCollision(@import("actor_collision.zig").service(), limits, .{}, actor, pose, body, velocity, service, threat, speed, slot, now, elapsed);
 }
 fn stepLimitedWithCollision(collision: Collision, limits: Limits, flee: Flee, actor: *data.Actor, pose: *data.Transform, body: *data.Body, velocity: *data.Velocity, service: nav.Service, threat: v.Vec3, speed: f32, slot: u16, now: i64, elapsed: u32) !bool {
+    const planning = @import("actor_collision.zig").asProbe(collision);
     const driven = body.motion_owner != null;
     var moving = !driven and (actor.mode == .flee or actor.mode == .chase);
     const worker = flee.settles;
@@ -131,7 +186,7 @@ fn stepLimitedWithCollision(collision: Collision, limits: Limits, flee: Flee, ac
     }
     if (moving and actor.mode == .flee) {
         if (!actor.route.fleeing or (!worker and now >= actor.escape_until) or actor.route.blocked or nav.horizontalDistance(pose.position, actor.route.destination) < 24) {
-            const destination = try escapeWith(collision, service, pose.position, threat, body.*, slot);
+            const destination = try escapeWith(planning, service, pose.position, threat, body.*, slot);
             actor.route = .{ .destination = destination orelse pose.position, .fleeing = true, .progress_ms = now, .progress_position = pose.position };
             actor.escape_until = now + 800;
             if (worker and destination == null) {
@@ -143,11 +198,26 @@ fn stepLimitedWithCollision(collision: Collision, limits: Limits, flee: Flee, ac
         }
     } else if (actor.route.fleeing) actor.route = .{};
     var goal: ?nav.Waypoint = null;
+    var physical_corridor = false;
     if (moving) {
         const destination = if (actor.mode == .flee) actor.route.destination else actor.threat_position;
         goal = try actor.route.update(service, .{ .position = navigationOrigin(pose.position, body.*), .destination = destination, .slot = slot }, now);
         // A nearby visible goal needs no detour, but must have a continuous safe floor.
-        if (try directWithin(collision, limits, pose.position, destination, body.*, slot)) goal = .{ .point = destination };
+        if (try directWithin(planning, limits, pose.position, destination, body.*, slot)) goal = .{ .point = destination };
+        physical_corridor = now < actor.route.physical_until_ms and v.length(v.subtract(destination, actor.route.physical_goal)) < 8;
+        if (physical_corridor or try sweptWalk(planning, limits, pose.position, destination, body.*, slot, speed)) {
+            if (!physical_corridor) {
+                actor.route.physical_until_ms = now + 500;
+                actor.route.physical_goal = destination;
+            }
+            physical_corridor = true;
+            goal = .{ .point = destination };
+            // Keep the physically qualified corridor long enough to walk it;
+            // switching back after the first successful stride recreates the
+            // same obstruction/route oscillation that caused the stall.
+            actor.route.waypoint = goal;
+            actor.route.refresh_ms = now + 2000;
+        }
     }
     var motion: slide.State = .{ .position = pose.position, .velocity = velocity.linear };
     var remaining = elapsed;
@@ -163,14 +233,14 @@ fn stepLimitedWithCollision(collision: Collision, limits: Limits, flee: Flee, ac
         var grounded = !departing and !ground.all_solid and !ground.start_solid and ground.fraction < 1 and ground.normal[2] >= 0.7;
         actor.ground_entity = if (grounded) ground.entity else c.ENTITYNUM_NONE;
         body.grounded = grounded;
-        if (grounded and !driven) {
+        if ((grounded or physical_corridor) and !driven) {
             motion.velocity[0] = 0;
             motion.velocity[1] = 0;
-            if (motion.velocity[2] < 0) motion.velocity[2] = 0;
+            if (grounded and motion.velocity[2] < 0) motion.velocity[2] = 0;
             if (goal) |point| {
                 const horizontal = nav.velocity(motion.position, point.point, speed, delta);
                 const ahead = v.add(motion.position, v.scale(horizontal, @max(delta, 0.1)));
-                if (point.jump or try floorWithin(collision, limits, ahead, body.*, slot) != null) {
+                if (point.jump or physical_corridor or try floorWithin(planning, limits, ahead, body.*, slot) != null or try sweptWalk(planning, limits, motion.position, ahead, body.*, slot, speed)) {
                     motion.velocity[0] = horizontal[0];
                     motion.velocity[1] = horizontal[1];
                     if (v.length(horizontal) > 0.1) pose.angles[1] = std.math.atan2(horizontal[1], horizontal[0]) * (180.0 / std.math.pi);
@@ -189,6 +259,11 @@ fn stepLimitedWithCollision(collision: Collision, limits: Limits, flee: Flee, ac
     }
     pose.position = motion.position;
     velocity.linear = motion.velocity;
+    if (!@import("builtin").is_test and engine.integer("developer") >= 3 and moving) {
+        const point = if (goal) |waypoint| waypoint.point else pose.position;
+        var text: [384]u8 = undefined;
+        engine.print(try std.fmt.bufPrintZ(&text, "dk3 actor motor: t={d} slot={d} pos={d:.2},{d:.2},{d:.2} vel={d:.2},{d:.2},{d:.2} goal={d:.2},{d:.2},{d:.2} physical={d} blocked={d} ground={d}\n", .{ now, slot, pose.position[0], pose.position[1], pose.position[2], velocity.linear[0], velocity.linear[1], velocity.linear[2], point[0], point[1], point[2], @intFromBool(physical_corridor), @intFromBool(actor.route.blocked), @intFromBool(body.grounded) }));
+    }
     return settled;
 }
 

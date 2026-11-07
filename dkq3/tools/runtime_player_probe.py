@@ -2236,14 +2236,16 @@ def sidekick_hud_scenario(issue, capture, log):
         raise RuntimeError(f"the window did not order Superfly to come: {orders}")
     if not any(o[1] == "follow" for o in orders):
         raise RuntimeError(f"the default companion bind gave no order: {orders}")
-    # The reference's HUD cycle: a profile without the cycle binds gets them (o, k, l, ;); o steps
+    # A profile without the cycle binds gets them (p, [, ], ;); p steps
     # weapons, items, Superfly's then Mikiko's command mode; ; gives the lit order.
     mark = len(log.read_text(errors="replace"))
-    for key in ("o", "k", "l", "SEMICOLON"):
+    for key in ("p", "[", "]", "SEMICOLON", "o", "m"):
         issue(f"bind {key}", 0.1)
-    binds = dict(re.findall(r'"(\w+)" = "([^"]*)"', re.sub(r"\^\d", "", log.read_text(errors="replace")[mark:])))
-    if [binds.get(key) for key in ("o", "k", "l", ";")] != ["hud_cycle", "hud_prev", "hud_next", "hud_use"] and [binds.get(key) for key in ("o", "k", "l", "SEMICOLON")] != ["hud_cycle", "hud_prev", "hud_next", "hud_use"]:
+    binds = dict(re.findall(r'"([^"\n]+)" = "([^"]*)"', re.sub(r"\^\d", "", log.read_text(errors="replace")[mark:])))
+    if [binds.get(key) for key in ("p", "[", "]", ";")] != ["hud_cycle", "hud_prev", "hud_next", "hud_use"] and [binds.get(key) for key in ("p", "[", "]", "SEMICOLON")] != ["hud_cycle", "hud_prev", "hud_next", "hud_use"]:
         raise RuntimeError(f"the HUD cycle binds were not added: {binds}")
+    if binds.get("o") != "objectives" or binds.get("m") != "minimap":
+        raise RuntimeError(f"campaign HUD binds were not added: {binds}")
     issue("hud_cycle", 0.6)
     capture("cycle-superfly")
     issue("hud_next", 0.3)
@@ -2775,6 +2777,11 @@ def run(args):
     with tempfile.TemporaryDirectory(prefix="dk3-runtime-client-", delete=not os.environ.get("DK3_PROBE_KEEP_HOME")) as temporary:
         home = Path(temporary)
         stage_client_modules(args.prefix, home)
+        if profile_config := getattr(args, "profile_config", None):
+            config = home / "dk3/dk3config.cfg"
+            if config.exists():
+                raise RuntimeError("isolated probe profile already has a config")
+            config.write_text(profile_config)
         command = [str(args.guard), "--headless", "--screen", "960x540",
                    "--timeout", "180s" if args.scenario in ("controllers", "crox", "sidekick-water", "sidekick-surface", "sidekick-nitro", "sidekick-slime", "sidekick-lava") else "90s", "--mem", "8G", "--", str(args.engine / "bin/dk3")]
         settings = client_settings(args.engine, home, args.renderer, args.workers)
@@ -2825,6 +2832,10 @@ def run(args):
                     wait(process, log, lambda text: "dk3 zig client: first snapshot applied" in text)
                     driver = NativeInput(process, pipe, log, home, inputs, diagnostic=True)
                     result = scenario(driver, args.report, args.checkpoint) if args.scenario in ("frog-landing", "arena-damage") else scenario(driver, args.report)
+                elif args.scenario == "campaign-hud":
+                    from campaign_hud_probe import scenario
+                    wait(process, log, lambda text: "dk3 zig client: first snapshot applied" in text)
+                    result = scenario(issue, capture, log, home, legacy_expected=getattr(args, "legacy_profile", False), checkpoint=getattr(args, "checkpoint", None))
                 elif args.scenario == "navigation":
                     result = navigation_scenario(issue, capture, log)
                 elif args.scenario == "travel":

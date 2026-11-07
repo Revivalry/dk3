@@ -33,7 +33,7 @@ pub fn step(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
         }
         if (now < action.execute_ms) continue;
         const pose = (try world.get(owner, data.Transform)).*;
-        const player = (try world.get(owner, data.Player)).*;
+        const player = try @import("weapon_pose.zig").motion(world, owner);
         const slot = (try world.get(owner, data.Binding)).slot;
         try world.destroy(entity);
         try @import("projectiles.zig").launch(world, slots, projections, owner, .{ .weapon = action.weapon, .sequence = action.sequence, .charge = action.charge, .position = pose.position, .angles = pose.angles, .view_height = player.view_height, .ducked = player.ducked, .command_ms = now }, table, now);

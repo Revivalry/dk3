@@ -38,7 +38,7 @@ const comfort_near: f32 = 48;
 const comfort_far: f32 = 192;
 /// By an exit that takes the companion along (the reference counts it only
 /// within 150 units of the player who enters): no further than this.
-const exit_far: f32 = 112;
+const exit_far: f32 = 64;
 /// How near the leader such an exit has to be for that.
 const exit_reach: f32 = 320;
 /// Cosine of the half-angle ahead of the leader kept clear (30 degrees).
@@ -129,6 +129,10 @@ pub fn think(actors: *const Actors, navigation: nav.Service, world: *data.World,
         actor.mode = .idle;
         return;
     };
+    if (try @import("companion_anger.zig").plan(world, entity, actor, pose.*, owner, &flown.intent, now)) {
+        brain.why = "retaliation";
+        return;
+    }
     if (companion.order == .collect and companion.collecting == 0 and companion.target != 0) {
         companion.collecting = companion.target;
         companion.collect_forced = true;
@@ -146,7 +150,8 @@ pub fn think(actors: *const Actors, navigation: nav.Service, world: *data.World,
         brain.why = if (companion.puzzle.?.holding) "puzzle-hold" else "puzzle-approach";
         return;
     }
-    if (try @import("companion_catchup.zig").step(&brain.catchup, frame, entity, actor, pose, owner, leader, leader_state, brain.crumbs[0..brain.crumb_count], flown.report, now)) {
+    brain.exit_near = try partyExit(frame, leader.position, companion.identity);
+    if (try @import("companion_catchup.zig").step(&brain.catchup, frame, entity, actor, pose, owner, leader, leader_state, brain.crumbs[0..brain.crumb_count], flown.report, brain.exit_near, now)) {
         brain.why = "catch-up";
         return;
     }
@@ -206,8 +211,17 @@ pub fn think(actors: *const Actors, navigation: nav.Service, world: *data.World,
     }
     if (companion.order == .stay and brain.stay_anchor == null) brain.stay_anchor = pose.position;
 
-    brain.exit_near = try partyExit(frame, leader.position, companion.identity);
     const follow_point = followPoint(frame, brain, leader, leader_wet, companion.identity, pose.position, now);
+    // Leave room for the leader's last strides into a party exit. Trading
+    // fire at the ordinary trailing distance repeatedly breaks admission
+    // while the leader crosses the threshold and makes both walk back.
+    if (brain.exit_near and companion.order == .follow and nav.horizontalDistance(pose.position, leader.position) > exit_far) {
+        intent.destination = follow_point;
+        intent.close_in = false;
+        brain.following = true;
+        brain.why = "exit follow";
+        return;
+    }
     var aggressor: ?survival.Aggressor = null;
     // Something hunting the party but out of sight and not close may never
     // find a way here: it does not pin the companion down meanwhile.
@@ -320,9 +334,9 @@ pub fn think(actors: *const Actors, navigation: nav.Service, world: *data.World,
     if (brain.exit_near and nav.horizontalDistance(pose.position, leader.position) > exit_far and gap > 8) brain.following = true;
     // Standing in the leader's line of fire: step aside however short the way.
     if (brain.in_way and gap > 8) brain.following = true;
-    // Never settled under water, in water the leader is not in, or well
-    // below the spot (the floor of a pool under the leader): an idle body
-    // there sinks.
+    // Never settled under water, in water the leader is not in, or on a
+    // different floor. A nearby follower above the leader must still leave
+    // its landing instead of holding a lift up indefinitely.
     if (unsettled(frame.state.water_level, leader_wet, pose.position, follow_point)) brain.following = true;
     if (brain.following) {
         intent.destination = follow_point;
@@ -421,7 +435,7 @@ fn cornered(report: pilot.Report, aggressor: ?survival.Aggressor) bool {
     return false;
 }
 fn unsettled(water_level: u2, leader_wet: bool, position: v.Vec3, follow_point: v.Vec3) bool {
-    return water_level == 3 or (water_level > 0 and !leader_wet) or follow_point[2] - position[2] > 48;
+    return water_level == 3 or (water_level > 0 and !leader_wet) or @abs(follow_point[2] - position[2]) > 48;
 }
 fn tethered(leader: v.Vec3, point: v.Vec3, reach: f32) bool {
     return nav.horizontalDistance(leader, point) <= reach and @abs(point[2] - leader[2]) <= tether_rise;
@@ -476,7 +490,8 @@ fn followPoint(frame: pilot.Frame, brain: *State, leader: data.Transform, leader
     // Not in water the leader is not in: there holding still is treading
     // water for good; out toward the leader instead.
     const stranded_wet = frame.state.water_level > 0 and !leader_wet;
-    brain.follow = chosen orelse if (brain.in_way and !stranded_wet) position else leader.position;
+    const close = nav.horizontalDistance(position, leader.position) <= resume_radius and @abs(position[2] - leader.position[2]) <= 48;
+    brain.follow = chosen orelse if (brain.in_way and close and !stranded_wet) position else leader.position;
     brain.follow_ms = now;
     brain.follow_leader = leader.position;
     return brain.follow.?;
@@ -752,12 +767,17 @@ test "a leader with its back to a drop gets the companion beside it, never homin
     const blocked: data.Transform = .{ .position = .{ 199, 150, 24 }, .angles = .{ 0, 180, 0 } };
     brain = .{};
     try testing.expectEqual(v.Vec3{ 120, 150, 24 }, followPoint(frame, &brain, blocked, false, .superfly, .{ 120, 150, 24 }, 1000));
+    // A distant follower in that same viewing cone still has to rejoin.
+    // Lack of a safe flanking post must not freeze it in another room/map.
+    brain = .{};
+    try testing.expectEqual(blocked.position, followPoint(frame, &brain, blocked, false, .superfly, .{ -100, 150, 24 }, 1000));
 }
-test "a companion is never settled under water, in water the leader is not in, or below its spot" {
+test "a companion is never settled under water, in different water, or on another floor" {
     try testing.expect(!unsettled(0, false, .{ 0, 0, 24 }, .{ 40, 0, 24 }));
     try testing.expect(unsettled(3, true, .{ 0, 0, 24 }, .{ 40, 0, 24 }));
     try testing.expect(unsettled(1, false, .{ 0, 0, 24 }, .{ 40, 0, 24 }));
     try testing.expect(!unsettled(2, true, .{ 0, 0, 24 }, .{ 40, 0, 24 }));
     // The floor of a pool right under the leader.
     try testing.expect(unsettled(2, true, .{ 0, 0, -80 }, .{ 0, 0, 24 }));
+    try testing.expect(unsettled(0, false, .{ 0, 0, 152 }, .{ 0, 0, 24 }));
 }

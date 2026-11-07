@@ -34,7 +34,8 @@ pub fn spawn(world: *data.World, slots: *Slots, projections: []abi.EntityProject
             projections[slot].state.eType = c.ET_MOVER;
         }
         const speed = try prop.number(object, "speed", 100);
-        try world.put(entity, data.Train{ .next_target = object.target, .speed = if (speed > 0) speed else 100, .position = .{ .base = transform.position, .end = transform.position }, .angles = .{ .base = transform.angles, .end = transform.angles }, .action = try @import("../../../../core/domain/time.zig").Deadline.after(now, 100), .force = object.flags & 64 != 0 or try prop.number(object, "forcemove", 0) != 0, .damage = @intFromFloat(try prop.number(object, "damage", try prop.number(object, "dmg", 2))) });
+        const damage = try prop.number(object, "damage", try prop.number(object, "dmg", 10));
+        try world.put(entity, data.Train{ .next_target = object.target, .speed = if (speed > 0) speed else 100, .position = .{ .base = transform.position, .end = transform.position }, .angles = .{ .base = transform.angles, .end = transform.angles }, .action = try @import("../../../../core/domain/time.zig").Deadline.after(now, 100), .force = object.flags & 64 != 0 or try prop.number(object, "forcemove", 0) != 0, .damage = @intFromFloat(if (damage != 0) damage else 10) });
         try publish(world, entity, projections);
     }
 }
@@ -186,7 +187,8 @@ pub fn step(world: *data.World, slots: *const Slots, projections: []abi.EntityPr
         const destination = if (train.phase == .moving) data.Transform{ .position = train.position.sample(now), .angles = train.angles.sample(now) } else (try world.get(entity, data.Transform)).*;
         const move: @import("../../../../mechanics/server/pusher.zig").Move = .{ .entity = entity, .destination = destination };
         if (try @import("../../../../mechanics/server/pusher.zig").push(world, slots, projections, &.{move}, now, elapsed, .held)) |blocker| {
-            _ = try @import("../../../../mechanics/server/damage.zig").apply(world, blocker, train.damage, now, .{});
+            const damage = try train.crush(now);
+            if (damage != 0) _ = try @import("../../../../mechanics/server/damage.zig").apply(world, blocker, damage, now, .{ .source = try world.persistentId(entity) });
         }
     }
 }

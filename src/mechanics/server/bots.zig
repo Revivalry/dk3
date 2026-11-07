@@ -260,6 +260,7 @@ pub const State = struct {
             .slot = @intCast(index),
             .entity = entity,
             .state = player,
+            .motor = @import("../player_state.zig").characterParametersForMode(@intCast(index), (try world.get(entity, data.Character)).*, (try world.get(entity, data.Ailments)).*, now, true),
             .now = now,
             .gates = gates,
             .capabilities = .{ .exits = false, .nuisance = false, .alert = true, .sweep = true, .conserve_ammo = false, .yield_to_allies = true, .duck_to_shoot = false },

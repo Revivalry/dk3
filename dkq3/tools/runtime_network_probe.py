@@ -18,7 +18,7 @@ import subprocess
 import tempfile
 import time
 
-from runtime_input import engine_failure, record_identity
+from runtime_input import engine_failure, jpeg_complete, record_identity
 from runtime_match_probe import fields
 from runtime_probe import client_settings, send, stage_client_modules, wait
 
@@ -71,8 +71,9 @@ class Endpoint:
 
     def capture(self, report, name):
         source = self.home / f"dk3/screenshots/{name}.jpg"
+        source.unlink(missing_ok=True)
         self.issue(f"screenshotJPEG {name}")
-        wait(self.process, self.log, lambda _: source.exists() and source.stat().st_size > 0, 10)
+        wait(self.process, self.log, lambda _: jpeg_complete(source), 10)
         shutil.copy2(source, report / source.name)
 
     def close(self):

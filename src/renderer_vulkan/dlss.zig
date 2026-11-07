@@ -15,6 +15,40 @@ const cvars = @import("cvars.zig");
 const vk = @import("vk.zig");
 const fsr = @import("fsr.zig");
 
+var ngx_barrier: c.PFN_vkCmdPipelineBarrier = null;
+
+/// NGX initializes GENERAL images with clears after shader-only first-use
+/// transitions. Keep transfer writes in that dependency's destination scope;
+/// synchronization validation otherwise reports WRITE_AFTER_WRITE on the clear.
+fn ngxPipelineBarrier(cmd: c.VkCommandBuffer, source: c.VkPipelineStageFlags, destination: c.VkPipelineStageFlags, flags: c.VkDependencyFlags, memory_count: u32, memory: [*c]const c.VkMemoryBarrier, buffer_count: u32, buffers: [*c]const c.VkBufferMemoryBarrier, image_count: u32, images: [*c]const c.VkImageMemoryBarrier) callconv(.c) void {
+    var needs_clear = false;
+    for (0..image_count) |index| if (firstUseClear(images[index])) {
+        needs_clear = true;
+        break;
+    };
+    if (!needs_clear) return ngx_barrier.?(cmd, source, destination, flags, memory_count, memory, buffer_count, buffers, image_count, images);
+    const expanded = std.heap.c_allocator.dupe(c.VkImageMemoryBarrier, images[0..image_count]) catch @panic("NGX image barrier allocation failed");
+    defer std.heap.c_allocator.free(expanded);
+    for (expanded) |*barrier| if (firstUseClear(barrier.*)) {
+        barrier.dstAccessMask |= c.VK_ACCESS_TRANSFER_WRITE_BIT;
+    };
+    ngx_barrier.?(cmd, source, destination | c.VK_PIPELINE_STAGE_TRANSFER_BIT, flags, memory_count, memory, buffer_count, buffers, image_count, expanded.ptr);
+}
+
+fn firstUseClear(barrier: c.VkImageMemoryBarrier) bool {
+    return barrier.oldLayout == c.VK_IMAGE_LAYOUT_UNDEFINED and barrier.newLayout == c.VK_IMAGE_LAYOUT_GENERAL;
+}
+
+fn ngxInstanceProc(instance: c.VkInstance, name: [*c]const u8) callconv(.c) c.PFN_vkVoidFunction {
+    if (std.mem.eql(u8, std.mem.span(name), "vkCmdPipelineBarrier")) return @ptrCast(&ngxPipelineBarrier);
+    return vk.getInstanceProcAddr().?(instance, name);
+}
+
+fn ngxDeviceProc(device: c.VkDevice, name: [*c]const u8) callconv(.c) c.PFN_vkVoidFunction {
+    if (std.mem.eql(u8, std.mem.span(name), "vkCmdPipelineBarrier")) return @ptrCast(&ngxPipelineBarrier);
+    return vk.i.GetDeviceProcAddr.?(device, name);
+}
+
 // NGX interface (NVSDK_NGX API 1.5, the version this was written against).
 const sdk_version: c_int = 0x15;
 const result_success: u32 = 1;
@@ -175,7 +209,8 @@ fn start() void {
     const info: FeatureCommonInfo = .{ .paths = .{ .path = &paths, .length = 1 } };
     // Any application id serves for DLSS Super Resolution outside NVIDIA's app profiles.
     const home = common.span(common.ri.Cvar_Get.?("fs_homepath", "", 0).*.string);
-    const result = ngx.init(0x6b3d6b33, wide(&data_wide, if (home.len != 0) home else ".") orelse return, vk.s.instance, vk.s.physical, vk.s.device, vk.getInstanceProcAddr(), vk.i.GetDeviceProcAddr, sdk_version, &info);
+    ngx_barrier = @ptrCast(vk.i.GetDeviceProcAddr.?(vk.s.device, "vkCmdPipelineBarrier"));
+    const result = ngx.init(0x6b3d6b33, wide(&data_wide, if (home.len != 0) home else ".") orelse return, vk.s.instance, vk.s.physical, vk.s.device, ngxInstanceProc, ngxDeviceProc, sdk_version, &info);
     if (result != result_success) {
         common.developer("dlss: NGX init failed ({x})\n", .{result});
         return;

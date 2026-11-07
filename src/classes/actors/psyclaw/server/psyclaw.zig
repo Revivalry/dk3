@@ -23,6 +23,9 @@ pub fn spawn(spawning: *context.Spawn) !void {
 pub fn think(frame: *Frame) !void {
     try @import("psyclaws.zig").think(frame.world, frame.slots, frame.projections, frame.entity, frame.actor, frame.pose, frame.definition.*, frame.now);
 }
+pub fn move(frame: *Frame) !void {
+    try common.moveWithLimits(frame, .{ .maximum_drop = policy.maximum_drop });
+}
 /// Newly spawned, it shrugs off damage.
 pub fn admitDamage(actor: *const data.Actor, damage: context.Damage) bool {
     return damage.now > actor.psyclaw.protected_until_ms;

@@ -1,0 +1,203 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Campaign facts: GameSpot official Daikatana guide, ISBN 1-58422-060-0.
+# Original concise goal labels; no guide prose or game assets are reproduced.
+# map|stage|rule[:counter quantity]|one-based authored entity ordinals (owned: key indices + 1)|label
+e1m1a|0|exit|25|Follow the waterway through the marsh
+e1m1b|0|broken|91|Shoot the first turret power box
+e1m1b|1|broken|86|Shoot the second turret power box
+e1m1b|2|exit|105|Survive the bridge ambush; take the lower water route
+e1m1c|0|broken|130|Climb the pipes and destroy the door power box
+e1m1c|1|used|82|Let the worker open the circular door
+e1m1c|2|used|118|Operate the lift and regroup
+e1m1c|3|exit|312|Enter the sewers
+e1m2a|0|used|109|Open sewer tunnel one from the control room
+e1m2a|1|used|159|Open sewer tunnel two
+e1m2a|2|used|125|Call the trolley and return to the hub
+e1m2a|3|used|48|Open the timed upper passage from tunnel two
+e1m2a|4|used|160|Extend the ladder above the flooded tunnel
+e1m2a|5|exit|63|Climb out and follow the pipe
+e1m2b|0|used|199|Drain the water; swim back over the hydraulics
+e1m2b|1|used|275|Open the door above the waterfall
+e1m2b|2|used|135|Use the prison access console
+e1m2b|3|exit|54|Enter the prison
+e1m3a|0|used|435|Open the entrance security door
+e1m3a|1|used|238|Unlock cell block one
+e1m3a|2|used|27|Unlock the upper cell block access
+e1m3a|3|used|357|Extend the bridge
+e1m3a|4|used|101|Unlock the far passage
+e1m3a|5|exit|131|Continue into the medical cell block
+e1m3b|0|taken|99|Recover the prison keycard
+e1m3b|1|used|423|Release Superfly and open the exit
+e1m3b|2|exit|80|Leave with Superfly
+e1m4a|0|used|283|Open the loading dock
+e1m4a|1|exit|90|Bring Superfly through the loading area
+e1m4b|0|used|509|Inspect the conveyor controls
+e1m4b|1|broken|383|Break the pipe and flood the conveyor recess
+e1m4b|2|exit|374|Flood the recess, bypass the fans and regroup
+e1m4c|0|used|30|Activate the processing lift
+e1m4c|1|exit|28|Continue to processing with Superfly
+e1m5a|0|exit|104|Bypass the locked door through the water and vents
+e1m5b|0|used|168|Unlock the freezer from the console
+e1m5b|1|exit|42|Cross processing and enter the ice laboratory
+e1m6a|0|used|15|Request access and defeat the security response
+e1m6a|1|taken|2|Recover the blue control card
+e1m6a|2|used|85|Use the blue card at the security console
+e1m6a|3|used|64|Open the timed passage; bring Superfly
+e1m6a|4|exit|33|Continue through the ice laboratory
+e1m6b|0|used|61|Open the door from the lower pipe route
+e1m6b|1|exit|18|Reach the holding area with Superfly
+e1m6c|0|used|44|Open the final ice laboratory passage
+e1m6c|1|exit|17|Free Mikiko and leave with both companions
+e1m7a|0|used|118|Extend the access ladder
+e1m7a|1|used|208|Open the submerged hatch
+e1m7a|2|used|207|Extend the bridge for the party
+e1m7a|3|used|150|Use the computer room controls
+e1m7a|4|broken|176|Break the vent above the crates and enter the shaft
+e1m7a|5|broken|505|Cross the moving platforms and break the duct exit grate
+e1m7a|6|used|646|Reopen the route for your companions
+e1m7a|7|exit|98|Bring Mikiko and Superfly into the vault
+e1m7b|0|used|139|Open the hatch and climb the shaft
+e1m7b|1|used|86|Reopen the route for the companions
+e1m7b|2|broken|17,454,457|Destroy all three ceiling power tubes
+e1m7b|3|broken|98,340,341|Destroy all three exposed brains
+e1m7b|4|broken|92|Destroy the central brain
+e1m7b|5|used|82|Defeat both released psychic guardians
+e1m7b|6|exit|80|Recover the sword and enter the timestream
+e2m1a|0|used|44,45|Press both submerged statue tiles
+e2m1a|1|exit|25|Drop below the statue; swim through the lower pool's tight tunnel
+e2m1b|0|exit|39|Cross the ruins to Charon's temple
+e2m1c|0|taken|58|Collect Charon's horn
+e2m1c|1|used|56|Sound the horn at the ferry
+e2m1c|2|broken|158|Break the cracked wall beside the temple stairs
+e2m1c|3|taken|57|Retrieve the drachma
+e2m1c|4|exit|54|Pay Charon and take the ferry
+e2m2a|0|exit|75|Climb the black rocks beside the falls; dive through the cave pool
+e2m2b|0|exit|45|Cross the collapsed bridge along its edge
+e2m2c|0|used|209|Open the gate before the collapsing floor
+e2m2c|1|used|65|Cross the collapsing floor and rescue Mikiko
+e2m2c|2|exit|68|Return up the ladder with Mikiko and enter Athens
+e2m3a|0|used|123|Open the passage from the courtyard
+e2m3a|1|exit|16|Cross the bridge with Mikiko
+e2m3b|0|used|67|Open the casket route
+e2m3b|1|used|10|Swim through the casket, climb the ladder and open Mikiko's gate
+e2m3b|2|exit|494|Recall Mikiko and take the last upper door to the courtyard
+e2m3c|0|used|48|Lower the columns using the pool tile
+e2m3c|1|used|50,301|Operate both tower levers
+e2m3c|2|exit|31|Pass the gate and reach the Acropolis
+e2m4a|0|exit|90|Climb to the Acropolis temple
+e2m4b|0|taken|129|Collect the A rune from the spider pool
+e2m4b|1|used|130|Bring Mikiko to the yellow floor plate and step aside
+e2m4b|2|used|128|Hold the door open and recall Mikiko
+e2m4b|3|exit|152|Search the hillside temple for the S rune
+e2m4c|0|taken|38|Collect the E rune
+e2m4c|1|used|241|Lower the boulder with the dial
+e2m4c|2|exit|64|Follow the lower path to the mountain controls
+e2m4c|3|exit|61|Climb the temple; take the waterfall ledge toward the G rune
+e2m4d|0|used|262|Turn the temple dial to open the mountain path
+e2m4d|1|used|358|Climb the mountain temple and turn the high dial
+e2m4d|2|exit|561|Return down the mountain to the cave route
+e2m4d|3|taken|130|Enter from the waterfall ledge and collect the G rune
+e2m4d|4|taken|73|Take the upper mountain route to the I rune
+e2m4d|5|exit|151|Reach the AEGIS gate
+e2m4e|0|taken|68|Collect the S rune from the fountain
+e2m4e|1|used|110|Turn the fountain dial to open the return path
+e2m4e|2|exit|192|Return to the lower tunnel to find the other runes
+e2m4e|3|owned|21,22,23,24,25|Gather all five AEGIS runes
+e2m4e|4|used|106|Turn the hall dial to open the temple doors
+e2m4e|5|used|79,532,533,534,535|Place all five runes at the gate
+e2m4e|6|used|662|Turn the wheel behind the uncovered rune bars
+e2m4e|7|defeated|76|Defeat the three-headed guardian
+e2m4e|8|exit|71|Continue into Medusa's lair
+e2m5a|0|exit|63|Take the temple weapon and follow the river
+e2m5b|0|exit|172|Leave Mikiko safely; cross the lower waterways using antidote
+e2m5c|0|used|56|Open the snake gate from the far side
+e2m5c|1|exit|28|Use antidote to cross the poisonous tunnels
+e2m5d|0|exit|2|Descend toward Medusa's chamber
+e2m5e|0|defeated|32|Defeat Medusa; take cover from her gaze
+e2m5e|1|used:10|43|Defeat the awakened enemies to reunite with Superfly
+e2m5e|2|exit|30|Follow Superfly into the timestream
+e3m1a|0|owned|8,9,10|Find the hex, quad and trigon keystones
+e3m1a|1|used|69,70,71|Place all three keystones at the village gate
+e3m1a|2|exit|60|Leave the village with the party
+e3m1b|0|taken|27|Break the fountain ice and recover the quad keystone
+e3m1b|1|exit|115|Reach the church and learn about the Purifier
+e3m1c|0|taken|56|Recover the Purifier fragment by the organ
+e3m1c|1|taken|83|Recover the trigon keystone from the cellar
+e3m1c|2|taken|55|Recover the Purifier fragment from the crypt
+e3m1c|3|taken|82|Recover the hex keystone
+e3m1c|4|exit|132|Regroup and return to the keystone gate
+e3m2a|0|taken|42|Collect the Purifier fragment in the passage
+e3m2a|1|exit|56|Lead the party into the dungeon
+e3m3a|0|exit|232|Open the dungeon route for Superfly carrying Mikiko
+e3m3b|0|taken|35|Collect the Purifier fragment in the prison cell
+e3m3b|1|used|102|Turn the wheel behind the fragment
+e3m3b|2|exit|671|Cross the blade trap and enter the inner dungeon
+e3m3c|0|used|48,49,50|Operate the dungeon gate controls
+e3m3c|1|used|128|Defeat the sorcerer and extend the escape platform
+e3m3c|2|exit|56|Lower the bridge for Superfly and leave
+e3m4a|0|taken|4|Collect the Purifier fragment above the ice
+e3m4a|1|used|59|Lower the drawbridge from the far tower
+e3m4a|2|taken|169|Retrieve the crypt key beyond the lightning corridor
+e3m4a|3|used|642|Unlock the crypt passage
+e3m4a|4|exit|786|Enter the inner tower with Superfly
+e3m4b|0|taken|90,91|Collect the tower key and spellbook
+e3m4b|1|used|71|Unlock the lightning chamber
+e3m4b|2|used|36|Use the spellbook to disable the lightning rod
+e3m4b|3|exit|33|Pursue and defeat the wizard; leave the tower
+e3m5a|0|used|100|Lower the torch stand
+e3m5a|1|taken|3|Collect the Purifier fragment above the torch
+e3m5a|2|defeated|62|Defeat the necromancer
+e3m5a|3|taken|4|Recover the final Purifier fragment
+e3m5a|4|exit|55|Enter the throne stronghold
+e3m6a|0|owned|26,27,28,29,30,31,32|Complete the Purifier
+e3m6a|1|used|159|Raise the bridge lift
+e3m6a|2|used|158|Raise the upper lift
+e3m6a|3|used|481|Bring Superfly up on the companion lift
+e3m6a|4|exit|68|Confront the king and restore the Purifier
+e4m1a|0|taken|111|Find the empty bottle in the cell ventilation shaft
+e4m1a|1|exit|115|Explore the prison for bomb ingredients
+e4m1b|0|owned|15,16,17,18|Assemble the bomb from all four ingredients
+e4m1b|1|used|57|Place the bomb at the cracked yard wall
+e4m1b|2|exit|64|Escape Alcatraz with both companions
+e4m1c|0|taken|27,102,104|Collect saltpeter, charcoal and sulphur
+e4m1c|1|exit|37|Return to the yard with the bomb ingredients
+e4m2a|0|used|81|Operate the gondola winch
+e4m2a|1|used|257|Open the gondola route
+e4m2a|2|exit|45|Ride out from beneath the Rock
+e4m2b|0|exit|66|Follow the waterway back to the tram
+e4m3a|0|exit|23|Fight through the streets to the tower basement
+e4m3b|0|exit|53|Climb through the tower
+e4m3c|0|used|14|Open the final tower door
+e4m3c|1|exit|10|Bring Mikiko into Mishima's laboratories
+e4m4a|0|taken|637|Recover the green control card
+e4m4a|1|used|634|Unlock the green security section
+e4m4a|2|owned|4|Find the yellow control card in the barracks
+e4m4a|3|used|38|Unlock the yellow security section
+e4m4a|4|exit|61|Enter the second transport complex
+e4m4b|0|taken|56|Recover the blue control card
+e4m4b|1|used|476|Unlock the firing range
+e4m4b|2|taken|3|Complete the firing range and recover the green card
+e4m4b|3|used|479|Unlock the warehouse and barracks route
+e4m4b|4|taken|70|Recover the yellow control card from the barracks
+e4m4b|5|exit|413|Return to the yellow security door
+e4m4c|0|taken|6|Retrieve the green card from the transport stop
+e4m4c|1|used|679|Unlock the laboratory wing
+e4m4c|2|taken|49|Retrieve the blue card near the atrium computers
+e4m4c|3|used|682|Unlock the power wing
+e4m4c|4|broken|92,664|Destroy both generator weak points
+e4m4c|5|used|155,363,366,369|Open the monkey cages to restore the lift
+e4m4c|6|exit|14|Escape the laboratories with Mikiko
+e4m5a|0|used|57|Reopen the garden route for Mikiko
+e4m5a|1|used|265,562,563,564|Press all four rock buttons to lower the ladder
+e4m5a|2|used|173|Lower the museum ladder
+e4m5a|3|used|721|Activate the chamber lift
+e4m5a|4|used|1024|Press the upper red button and climb to Superfly
+e4m5a|5|exit|94|Reunite the party and leave the hideout
+e4m6a|0|exit|50|Cross the SEAL training course
+e4m6a|1|used|29,249|Press both support column buttons
+e4m6a|2|used|95|Ride the lift and regroup with the companions
+e4m6a|3|exit|48|Descend to the submarine
+e4m6b|0|exit|24|Cross the rotating cages, pistons and shark tank
+e4m6c|0|used|53|Defeat Mishima at the submarine
+e4m6c|1|used|41|Reach the reactor and confront the betrayal
+e4m6c|2|exit|39|Defeat the final opponent and restore the timeline

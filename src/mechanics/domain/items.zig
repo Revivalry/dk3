@@ -4,7 +4,14 @@ const std = @import("std");
 const catalog = @import("item_catalog");
 const weapons = @import("weapons.zig");
 const classes = @import("../../game/domain/item_classes.zig");
-pub const rotates = classes.rotates;
+/// Rotation follows declared pickup families and class-supplied exceptions.
+/// Weapons retain their authored single-player orientation.
+pub fn rotates(kind: Kind, classname: []const u8, single_player: bool) bool {
+    if (kind == .weapon) return !single_player;
+    if (std.mem.indexOfScalar(std.meta.Tag(Kind), &classes.rotating_kinds, std.meta.activeTag(kind)) != null) return true;
+    if (kind == .key) for (classes.rotating_keys) |name| if (std.mem.eql(u8, classname, name)) return true;
+    return false;
+}
 pub const canonicalName = classes.canonicalName;
 pub const episodeModel = classes.episodeModel;
 pub const classify = classes.classify;
@@ -19,17 +26,26 @@ pub fn weaponStays(pickup: Pickup, enabled: bool) bool {
     return enabled and !pickup.dropped and pickup.kind == .weapon and weapon_catalog.find(pickup.kind.weapon).?.spec.respects_weapons_stay;
 }
 pub const Receiver = struct { keys: *Keys, health: *Health, loadout: *weapons.State, character: *character.State, ailments: *character.Ailments };
+/// Query the same acquisition policy on private copies, without consuming a
+/// pickup or changing the receiver. Class-owned acquisition hooks stay pure.
+pub fn canGive(pickup: Pickup, receiver: Receiver, table: *const weapons.Table, now: i64, single_player: bool) bool {
+    var keys = receiver.keys.*;
+    var health = receiver.health.*;
+    var loadout = receiver.loadout.*;
+    var person = receiver.character.*;
+    var ailments = receiver.ailments.*;
+    return give(pickup, .{ .keys = &keys, .health = &health, .loadout = &loadout, .character = &person, .ailments = &ailments }, table, now, single_player);
+}
 pub fn give(pickup: Pickup, receiver: Receiver, table: *const weapons.Table, now: i64, single_player: bool) bool {
     const keys = receiver.keys;
     const health = receiver.health;
     const loadout = receiver.loadout;
     if (health.current <= 0 or !pickup.visible) return false;
+    inline for (classes.acquisition_hooks) |Class| {
+        if (std.meta.activeTag(pickup.kind) == Class.pickup_kind) return Class.acquire(receiver, now);
+    }
     switch (pickup.kind) {
         .boost => |which| return receiver.character.boost(which, now),
-        .antidote => {
-            receiver.ailments.cure();
-            return true;
-        },
         .invincibility => {
             receiver.character.invincible_until = now + 30000;
             return true;
@@ -89,6 +105,7 @@ pub fn give(pickup: Pickup, receiver: Receiver, table: *const weapons.Table, now
             health.absorption = armor.absorption;
             return true;
         },
+        else => return false, // Class-owned acquisitions dispatch above.
     }
 }
 test "pickups preserve full inventory and health; ammunition does not grant ownership" {
@@ -102,10 +119,18 @@ test "pickups preserve full inventory and health; ammunition does not grant owne
     table.entries[2].ammoMax = 100;
     table.entries[2].initialAmmo = 20;
     const ammo: Pickup = .{ .kind = classify("ammo_ionpack").?, .amount = std.math.maxInt(i32) };
+    try std.testing.expect(canGive(ammo, receiver, &table, 0, true));
+    try std.testing.expectEqual(@as(i32, 0), loadout.ammo[2]);
     try std.testing.expect(give(ammo, receiver, &table, 0, true));
     try std.testing.expectEqual(@as(i32, 100), loadout.ammo[2]);
     try std.testing.expectEqual(@as(i32, 0), loadout.dk3Inventory);
     try std.testing.expect(!give(ammo, receiver, &table, 0, true));
+    try std.testing.expect(!canGive(ammo, receiver, &table, 0, true));
+    const before = effects;
+    try std.testing.expect(canGive(.{ .kind = .antidote }, receiver, &table, 0, true));
+    try std.testing.expectEqualDeep(before, effects);
+    try std.testing.expect(canGive(.{ .kind = .soul }, receiver, &table, 0, true));
+    try std.testing.expectEqual(@as(i32, 100), health.current);
     try std.testing.expect(!give(.{ .kind = .{ .health = 25 } }, receiver, &table, 0, true));
     try std.testing.expect(give(.{ .kind = .soul }, receiver, &table, 0, true));
     try std.testing.expectEqual(@as(i32, 200), health.current);
@@ -194,6 +219,7 @@ test "staying weapons exclude consumed classes and death drops preserve ammuniti
 
 test "authored armor rotation does not turn floor ammunition or campaign weapons" {
     try std.testing.expect(rotates(classify("item_plasteel_armor").?, "item_plasteel_armor", true));
+    try std.testing.expect(rotates(classify("item_megashield").?, "item_megashield", true));
     try std.testing.expect(!rotates(classify("ammo_ionpack").?, "ammo_ionpack", true));
     try std.testing.expect(!rotates(classify("weapon_ionblaster").?, "weapon_ionblaster", true));
     try std.testing.expect(rotates(classify("weapon_ionblaster").?, "weapon_ionblaster", false));

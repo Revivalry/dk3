@@ -3,6 +3,16 @@
   "application": "One-time source import; the build compiles these checked-in source files directly.",
   "changes": [
     {
+      "name": "resident-render-request-backpressure",
+      "path": "code/renderercommon/dk3_worlds.inc",
+      "reason": "Reserve queued world handles and bound active reads during polling; a demo announcement burst must not permanently reject its fifth world. Native Vulkan applies the same bounded queue."
+    },
+    {
+      "name": "avi-rollover-wide-size-arithmetic",
+      "path": "code/client/cl_avi.c",
+      "reason": "Promote every projected AVI size operand before addition; the signed intermediate previously trapped near 2 GiB during long gameplay exports before the rollover check could run."
+    },
+    {
       "name": "max-submodels-512",
       "path": "code/qcommon/cm_local.h",
       "reason": "e1dt1 has 305 models and e4m5a 300; the temporary box and capsule handles stay the last two numbers"

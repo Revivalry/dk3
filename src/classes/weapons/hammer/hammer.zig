@@ -5,9 +5,8 @@ pub const id: u5 = 12;
 pub const spec: profiles.Spec = .{
     .player_grip = .rifle,
     .combat = .owned,
-    .bot_charge_ms = 900,
+    .bot_charge_ms = 1800,
     .bot_range = 110,
-    .start_episode = 2, // hammer
     .visual = .{},
     .world_model = "models/e2/a_hammer.dkm",
     .animation = .{
@@ -87,7 +86,6 @@ pub const identity = .{ .classname = "weapon_hammer", .label = "Hammer of Hephae
 
 const shot_rules = @import("../../../mechanics/policy/weapons/shot.zig");
 const state = @import("../../../mechanics/policy/weapons/weapon_state.zig");
-const sword = @import("../sword/sword_rules.zig");
 pub fn predictionShot(controller: anytype) shot_rules.Shot {
     var shot = shot_rules.standard(controller);
     shot.duration_ms = @as(i32, @intFromFloat((31 - chargeFrame(controller.ps.dk3Charge)) * 25)) + 50;

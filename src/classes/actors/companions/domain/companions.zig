@@ -7,6 +7,7 @@ pub const State = struct {
     enabled: bool = true,
     order: policy.Order = .follow,
     owner: u32 = 0,
+    anger: policy.anger.State = .{},
     target: u32 = 0,
     destination: [3]f32 = @splat(0),
     authored: policy.Authored = .none,
@@ -38,6 +39,7 @@ pub const State = struct {
     }
     /// Moves saved timestamps onto the restoring clock (`clock`: shift, active, deadline).
     pub fn rebase(self: *State, clock: anytype) !void {
+        try self.anger.rebase(clock);
         try clock.active(&self.motor.teleport_until_ms);
         try clock.shift(&self.motor.command_ms);
         try clock.active(&self.jump_started_ms);
@@ -52,6 +54,7 @@ pub const State = struct {
     }
     /// Rejects saved values its class could never hold (snapshot.zig `Check`).
     pub fn validateSaved(self: *const State, check: anytype) !void {
+        if (!self.anger.valid()) return error.InvalidSavedCompanionAnger;
         try check.require(.{ "Actor", "Health", "Weapons", "Character", "Keys", "Ailments" });
         const kind = @import("actor_catalog").entries[(try check.get("Actor")).definition];
         if (!@import("actor_catalog").traitsOf(kind.kind).party or self.carrying != @import("std").mem.eql(u8, kind.classname, "mikikofly") or (self.identity == .mikiko) != @import("std").mem.eql(u8, kind.classname, "mikiko")) return error.InvalidSavedCompanion;
@@ -88,4 +91,42 @@ pub fn captureFollowers(comptime Follower: type, world: anytype, player: anytype
         if (state.owner != leader) continue;
         out[@intFromEnum(state.identity)] = try Follower.capture(world, entity, origin);
     };
+}
+
+/// Preserve hidden provocation while resetting transient travel orders.
+pub fn arriveFollower(follower: anytype, now: i64, delta: i64, episode: u8, previous_episode: u8, table: *const @import("../../../../mechanics/domain/weapons.zig").Table) !void {
+    try @import("../../../../mechanics/domain/snapshot_time.zig").rebase(.character, &follower.character, delta);
+    follower.character.liquid = .{};
+    try @import("../../../../mechanics/domain/snapshot_time.zig").rebase(.weapons, &follower.weapons, delta);
+    try follower.state.anger.rebase(@import("actor_catalog").saved_time.Clock{ .delta = delta });
+    follower.state.motor = .{ .command_ms = now };
+    follower.state.jump_started_ms = 0;
+    follower.state.target = 0;
+    follower.state.collecting = 0;
+    follower.state.collect_forced = false;
+    follower.state.collect_scan_ms = now;
+    follower.state.collect_until_ms = 0;
+    follower.state.avoided_item = 0;
+    follower.state.avoid_until_ms = 0;
+    follower.state.yielding_until_ms = 0;
+    follower.state.selected_weapon = 0;
+    follower.state.owner = 0;
+    follower.state.order = .follow;
+    follower.state.authored = .none;
+    follower.state.animation_until = null;
+    follower.state.stopped = false;
+    follower.state.next_ms = now;
+    follower.state.last_ms = now;
+    follower.ailments.cure();
+    follower.weapons.weaponTime = 0;
+    follower.weapons.weaponstate = 0;
+    follower.weapons.dk3AttackHeld = 0;
+    if (episode != previous_episode) {
+        follower.keys = .{};
+        follower.weapons = .{};
+        if (episode == 1 and !follower.state.carrying) {
+            const initial = @import("weapon_catalog").starting(episode);
+            _ = follower.weapons.acquire(table, initial, table.entries[initial].initialAmmo);
+        }
+    }
 }

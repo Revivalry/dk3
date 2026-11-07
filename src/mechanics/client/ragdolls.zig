@@ -404,10 +404,11 @@ pub fn drawDetached(worlds: *@import("resident_worlds.zig").State, now: i32) !vo
         }
         if (corpse.seen == now) continue;
         const scope = worlds.selectPresentation(corpse.entity.dk3World) catch |err| switch (err) {
-            error.WorldNotAdmitted, error.InitialWorldUnavailable => {
+            error.WorldNotAdmitted, error.InitialWorldUnavailable, error.WorldConfigIncomplete, error.WorldAdmissionTimeout => {
                 corpse.used = false;
                 continue;
             },
+            else => return err,
         };
         defer scope.deinit();
         try update(corpse, now);

@@ -6,6 +6,7 @@ pub const spec: profiles.Spec = .{
     .companion = .{ .slot = 2, .pickup = false, .clearance = 16, .safety = .owner },
     .player_grip = .rifle,
     .combat = .owned,
+    .splash_hazard = true,
     .protects_water = true,
     .ammo_class = "ammo_tritips", // trident
     .ammo_pack = 30,

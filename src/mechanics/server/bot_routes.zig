@@ -11,6 +11,43 @@ const prop = @import("properties.zig");
 const Slots = @import("../../engine/slots.zig").Slots;
 pub const Control = struct { id: u32, obstacle: u32, route_obstacle: u32, point: v.Vec3, action: enum { use, touch, shoot } };
 pub const Passage = struct { id: u32, point: v.Vec3 };
+/// Propose a supported walking step clear of the moving solid that just
+/// crushed a body. Angular solids reserve their complete horizontal sweep;
+/// linear solids reserve both endpoints. Collision still owns all movement.
+pub fn crushEscape(world: *data.World, actor: ecs.Entity, source: u32, collision: @import("../../core/domain/collision.zig").Collision) !?v.Vec3 {
+    const solid = world.find(source) orelse return null;
+    const mover = world.get(solid, data.Mover) catch return null;
+    if (!mover.moving()) return null;
+    const solid_pose = (try world.get(solid, data.Transform)).*;
+    const solid_body = (try world.get(solid, data.Body)).*;
+    const position = (try world.get(actor, data.Transform)).position;
+    const body = (try world.get(actor, data.Body)).*;
+    const slot = (try world.get(actor, data.Binding)).slot;
+    var radius: f32 = 0;
+    for ([_]f32{ solid_body.mins[0], solid_body.maxs[0] }) |x| for ([_]f32{ solid_body.mins[1], solid_body.maxs[1] }) |y| {
+        radius = @max(radius, @sqrt(x * x + y * y));
+    };
+    const actor_radius = @sqrt(body.maxs[0] * body.maxs[0] + body.maxs[1] * body.maxs[1]);
+    const forbidden: u32 = c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_NITRO;
+    for ([_]f32{ 48, 80, 112 }) |distance| for (0..8) |way| {
+        const angle = @as(f32, @floatFromInt(way)) * std.math.pi / 4;
+        const candidate = v.add(position, .{ @cos(angle) * distance, @sin(angle) * distance, 0 });
+        if (mover.angular) {
+            if (nav.horizontalDistance(candidate, solid_pose.position) < radius + actor_radius + 4) continue;
+        } else {
+            var outside = false;
+            for (0..2) |axis| {
+                const low = @min(mover.closed[axis], mover.opened[axis]) + solid_body.mins[axis] - body.maxs[axis] - 4;
+                const high = @max(mover.closed[axis], mover.opened[axis]) + solid_body.maxs[axis] - body.mins[axis] + 4;
+                outside = outside or candidate[axis] < low or candidate[axis] > high;
+            }
+            if (!outside) continue;
+        }
+        const point = try @import("../../core/domain/navigation_input.zig").walkPathDrop(collision, .{ .start = position, .end = candidate, .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = c.MASK_PLAYERSOLID }, forbidden, &.{}, 64) orelse continue;
+        return point;
+    };
+    return null;
+}
 /// Authored teleporter recovery for a physically blocked AAS route. Reaching
 /// the trigger is ordinary walking, qualified through every intervening hull.
 pub fn teleportPassage(world: *data.World, projections: []const @import("../../engine/abi.zig").EntityProjection, actor: ecs.Entity, toward: v.Vec3, goal: v.Vec3, service: nav.Service, now: i64) !?Passage {
@@ -169,7 +206,18 @@ pub fn aim(world: *data.World, control: Control) !?v.Vec3 {
 pub fn center(world: *data.World, entity: ecs.Entity) !v.Vec3 {
     const pose = (try world.get(entity, data.Transform)).*;
     const body = world.get(entity, data.Body) catch return pose.position;
-    return v.add(pose.position, v.scale(v.add(body.mins, body.maxs), 0.5));
+    const local = v.scale(v.add(body.mins, body.maxs), 0.5);
+    return v.add(pose.position, @import("../domain/poses.zig").rotate(local, @splat(0), pose.angles));
+}
+test "a rotating off-centre brush carries its physical centre" {
+    var world = data.World.init(std.testing.allocator, 4);
+    defer world.deinit();
+    const entity = try world.create(333, .{
+        data.Transform{ .position = .{ 10, 20, 30 }, .angles = .{ 0, 90, 0 } },
+        data.Body{ .mins = .{ -8, -100, -4 }, .maxs = .{ 8, -20, 4 } },
+    });
+    const point = try center(&world, entity);
+    for (point, [_]f32{ 70, 20, 30 }) |actual, expected| try std.testing.expectApproxEqAbs(expected, actual, 0.001);
 }
 /// Stay inside a lift shaft until its authored travel brings the rider to the
 /// requested floor. Running into the upper landing early can block the pusher.
@@ -493,6 +541,10 @@ fn findLift(world: *data.World, projections: []const @import("../../engine/abi.z
 pub const approach_points = 13;
 /// Nearest supported, reachable standing point from which `action` can operate `target`.
 pub fn approach(world: *data.World, target: ecs.Entity, actor: ecs.Entity, action: @FieldType(Control, "action"), service: nav.Service, projections: []const @import("../../engine/abi.zig").EntityProjection, diagnostic: bool, obstructions: *[approach_points]u16, lane: ?Lane) !?v.Vec3 {
+    return approachWithin(world, target, actor, action, service, projections, diagnostic, obstructions, lane, 2000);
+}
+/// A firing stand must be within the selected weapon's actual reach.
+pub fn approachWithin(world: *data.World, target: ecs.Entity, actor: ecs.Entity, action: @FieldType(Control, "action"), service: nav.Service, projections: []const @import("../../engine/abi.zig").EntityProjection, diagnostic: bool, obstructions: *[approach_points]u16, lane: ?Lane, reach: f32) !?v.Vec3 {
     const pose = (try world.get(actor, data.Transform)).*;
     const body = (try world.get(actor, data.Body)).*;
     const target_slot = (try world.get(target, data.Binding)).slot;
@@ -512,6 +564,7 @@ pub fn approach(world: *data.World, target: ecs.Entity, actor: ecs.Entity, actio
         .target_slot = target_slot,
         .middle = middle,
         .lane = lane,
+        .reach = reach,
         // A shot at an explosive (a barrel, a charged panel) is fired from
         // outside the worst of its blast.
         .blast = if (action != .shoot) 0 else if (world.get(target, data.Scenery) catch null) |scenery| (if (scenery.explosive) 100 else 0) else if (world.get(target, data.Destructible) catch null) |destructible| (if (destructible.damage > 0) destructible.radius else 0) else 0,
@@ -522,15 +575,17 @@ pub fn approach(world: *data.World, target: ecs.Entity, actor: ecs.Entity, actio
         // A shooter stands anywhere with a line to it: out along eight
         // directions from its edge, the first good spot on each (a target
         // down a narrow corridor is in sight only from along it).
-        const half = @max(box.absmax[0] - box.absmin[0], box.absmax[1] - box.absmin[1]) / 2 + body.maxs[0];
+        const half = v.scale(v.subtract(box.absmax, box.absmin), 0.5);
         for (0..8) |way| {
             const angle = @as(f32, @floatFromInt(way)) * std.math.pi / 4;
+            const bearing: v.Vec3 = .{ @cos(angle), @sin(angle), 0 };
+            const clearance = outlineRadius(half, bearing) + @max(body.maxs[0], body.maxs[1]);
             // Close rings first, then farther out down a long corridor (a
             // panel behind a gated stretch is shot from its near end).
             var ring: f32 = 8;
             while (ring <= 640) : (ring += if (ring < 200) 16 else 48) {
                 var blocker: u16 = c.ENTITYNUM_NONE;
-                const point = try probe.check(.{ middle[0] + @cos(angle) * (half + ring), middle[1] + @sin(angle) * (half + ring), middle[2] }, &blocker);
+                const point = try probe.check(v.add(middle, v.scale(bearing, clearance + ring)), &blocker);
                 if (ring == 8) obstructions[1 + way] = blocker;
                 const found = point orelse continue;
                 const length = v.length(v.subtract(pose.position, found));
@@ -643,6 +698,19 @@ pub fn isStation(world: *data.World, entity: ecs.Entity) bool {
 /// its blast carries once it bursts (`reach`, the same distance the pilot holds
 /// itself out to); and whether the round needs a blast at all to do its work.
 pub const Lane = struct { muzzle: v.Vec3, reach: f32 = 0, direct: bool = true };
+/// Distance from the centre to the rectangular face along this bearing.
+fn outlineRadius(half: v.Vec3, bearing: v.Vec3) f32 {
+    var radius = std.math.inf(f32);
+    for (0..2) |axis| if (@abs(bearing[axis]) > 0.0001) {
+        radius = @min(radius, half[axis] / @abs(bearing[axis]));
+    };
+    return if (std.math.isFinite(radius)) radius else 0;
+}
+test "a wide thin target permits a close firing stand at its near face" {
+    try std.testing.expectApproxEqAbs(@as(f32, 4), outlineRadius(.{ 45, 4, 12 }, .{ 0, 1, 0 }), 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 45), outlineRadius(.{ 45, 4, 12 }, .{ -1, 0, 0 }), 0.001);
+    try std.testing.expectApproxEqAbs(@as(f32, 4 * @sqrt(@as(f32, 2))), outlineRadius(.{ 45, 4, 12 }, .{ 0.7071068, -0.7071068, 0 }), 0.001);
+}
 /// Whether a round bursting at `point` can affect a mark centred on `mark`.
 /// The game measures a blast from an object's centre, so a splash-only round
 /// that bursts at the near end of a long target (the end of a window pane)
@@ -670,6 +738,7 @@ pub fn laneClear(slot: u16, eye: v.Vec3, point: v.Vec3, lane: Lane, target_slot:
 }
 /// One candidate standing point for `approach`.
 const Stand = struct {
+    reach: f32 = 2000,
     world: *data.World,
     target: ecs.Entity,
     action: @FieldType(Control, "action"),
@@ -715,6 +784,7 @@ const Stand = struct {
         if (self.diagnostic) engine.print(try std.fmt.bufPrintZ(&text, "dk3 control floor: slot={d} control={d} point={d:.2},{d:.2},{d:.2} fraction={d:.3} solid={d} normal_z={d:.3}\n", .{ self.slot, try self.world.persistentId(self.target), floor.end[0], floor.end[1], floor.end[2], floor.fraction, @intFromBool(floor.start_solid or floor.all_solid), floor.normal[2] }));
         if (try engine.collisionService().contents(v.add(floor.end, .{ 0, 0, self.body.mins[2] + 1 }), self.slot) & (c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_NITRO) != 0) return null;
         const eye = v.add(floor.end, .{ 0, 0, self.view_height });
+        if (self.action == .shoot and v.length(v.subtract(self.middle, eye)) > self.reach) return null;
         // Actors and corpses move or can be cleared; only geometry hides a control.
         // A shot is a bolt-sized box: an edge the sight line just clears
         // stops it.

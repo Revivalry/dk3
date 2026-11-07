@@ -8,6 +8,28 @@ const engine = @import("../../../../engine/server.zig");
 const ecs = @import("../../../../core/ecs/world.zig");
 const Slots = @import("../../../../engine/slots.zig").Slots;
 const W = @import("weapon_catalog").classes.sunflare;
+/// The burning field hurts its owner too; expose the actual remaining hazard.
+pub const hazard = data.Projectile;
+pub fn forecast(world: *data.World, entity: ecs.Entity, now: i64) !?struct { eta: f32, point: v.Vec3, radius: f32, field: bool } {
+    const projectile = try world.get(entity, data.Projectile);
+    if (projectile.flight != .sunflare) return null;
+    const flame = projectile.flight.sunflare;
+    if (flame.phase != .settling and flame.phase != .burning) return null;
+    if (flame.phase == .burning and now >= projectile.born_ms + flame.burn_ms + 5000) return null;
+    return .{ .eta = 0.3, .point = (try world.get(entity, data.Transform)).position, .radius = if (flame.phase == .settling) 150 else flame.radius(), .field = true };
+}
+test "damage forecast ends when burning ends and carries the actual flame radius" {
+    var world = data.World.init(std.testing.allocator, 4);
+    defer world.deinit();
+    const entity = try world.create(1, .{ data.Projectile{ .owner = 2, .weapon = W.id, .damage = 10, .born_ms = 100, .stepped_ms = 100, .flight = .{ .sunflare = .{ .phase = .burning, .burn_ms = 50, .flames = 9 } } }, data.Transform{ .position = .{ 1, 2, 3 } } });
+    const active = (try forecast(&world, entity, 200)).?;
+    try std.testing.expect(active.field);
+    try std.testing.expectEqual(@as(f32, 150), active.radius);
+    try std.testing.expectEqual(v.Vec3{ 1, 2, 3 }, active.point);
+    try std.testing.expect(try forecast(&world, entity, 5150) == null);
+    (try world.get(entity, data.Projectile)).flight.sunflare.phase = .cooling;
+    try std.testing.expect(try forecast(&world, entity, 200) == null);
+}
 const v = @import("../../../../core/domain/vector.zig");
 const c = abi.c;
 const remove = @import("../../../../mechanics/server/weapon_entities.zig").remove;

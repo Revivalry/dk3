@@ -8,6 +8,9 @@ const v = @import("../../core/domain/vector.zig");
 const collision = @import("../../core/domain/collision.zig");
 const slide = @import("../../core/domain/slide.zig");
 pub const Mode = enum { normal, spectator, noclip, dead, frozen };
+pub const water_jump_speed: f32 = 350;
+/// Controllers must not declare attachment before the motor can touch a rung.
+pub const ladder_contact_distance: f32 = 3;
 pub const Timer = enum { none, land, knockback, water_jump };
 pub const Player = struct {
     command_ms: i64 = 0,
@@ -219,7 +222,7 @@ const Frame = struct {
         for (0..4) |axis| {
             var direction: v.Vec3 = @splat(0);
             direction[axis / 2] = if (axis & 1 == 0) 1 else -1;
-            const hit = try self.trace(self.motion.position, v.add(self.motion.position, v.scale(direction, 3)));
+            const hit = try self.trace(self.motion.position, v.add(self.motion.position, v.scale(direction, ladder_contact_distance)));
             if (hit.fraction == 1 or !hit.ladder or @abs(hit.normal[2]) >= 0.5) continue;
             const facing = v.dot(horizontal, hit.normal);
             if (self.cmd.forward != 0 and (if (self.cmd.forward < 0) facing < -0.1 else facing > 0.1)) return false;
@@ -247,7 +250,7 @@ const Frame = struct {
                 // ledge do not obstruct this mover's collision mask.
                 if (try self.service.contents(spot, self.parameters.slot) & self.parameters.mask == 0) {
                     self.motion.velocity = v.scale(self.forward, 200);
-                    self.motion.velocity[2] = 350;
+                    self.motion.velocity[2] = water_jump_speed;
                     self.player.timer = .water_jump;
                     self.player.timer_ms = 2000;
                     try self.waterJump();
@@ -265,7 +268,9 @@ const Frame = struct {
         if (self.ground) |hit| if (v.dot(self.motion.velocity, hit.normal) < 0) {
             self.motion.velocity = v.scale(v.normalize(v.clip(self.motion.velocity, hit.normal)), v.length(self.motion.velocity));
         };
-        try self.slideMove(false, false);
+        // Submerged steps still admit the ordinary stair height. A flat
+        // slide alone traps swimmers against even an eight-unit tunnel sill.
+        try self.slideMove(false, true);
     }
     fn waterJump(self: *Frame) !void {
         try self.slideMove(true, true);

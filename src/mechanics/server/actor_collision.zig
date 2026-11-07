@@ -120,6 +120,13 @@ pub fn probe() collision.Collision {
     const frame = active orelse return engine.collisionService();
     return .{ .context = frame, .trace_fn = Frame.probeTrace, .contents_fn = Frame.contents };
 }
+/// Preserve an injected collision fixture while making the active actor
+/// service read-only for a controller's simulated alternatives.
+pub fn asProbe(service_value: collision.Collision) collision.Collision {
+    const frame = active orelse return service_value;
+    if (service_value.context != @as(*anyopaque, @ptrCast(frame)) or service_value.trace_fn != Frame.trace) return service_value;
+    return probe();
+}
 
 test "alternate step probes retain the ownership of the accepted position" {
     var world = data.World.init(std.testing.allocator, 1);

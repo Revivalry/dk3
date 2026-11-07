@@ -6,6 +6,7 @@ pub const spec: profiles.Spec = .{
     .companion = .{ .slot = 1, .empty_melee = true, .clearance = 16, .safety = .owner },
     .player_grip = .rifle,
     .combat = .projectile,
+    .bot_contact_melee_range = 128,
     .projectile = .{ .mins = .{ -8, -8, -2 }, .maxs = .{ 8, 8, 14 }, .inertial = true, .lifetime_scale = 2, .action_delay_ms = 350, .contact_when_resting = true, .resting_lifetime_scale = 0.5 },
     .ammo_class = "ammo_venomous", // venom
     .visual = .{ .projectile_model = "models/e2/we_3dvenom.dkm", .resting_sprite = "models/e2/we_venstand.sp2", .sprite_additive = false, .impact_sprite = "models/e2/we_vendis.sp2", .color = .{ 0.35, 1, 0.2 }, .glow = false },
@@ -74,7 +75,6 @@ pub fn impact(context: @import("../../../mechanics/policy/weapons/impact.zig").C
 
 const shot_rules = @import("../../../mechanics/policy/weapons/shot.zig");
 const state = @import("../../../mechanics/policy/weapons/weapon_state.zig");
-const sword = @import("../sword/sword_rules.zig");
 pub fn predictionShot(controller: anytype) shot_rules.Shot {
     var result = shot_rules.standard(controller);
     // Underwater, out of venom, or with a body within reach, it bites instead of spitting.
