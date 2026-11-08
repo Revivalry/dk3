@@ -1,9 +1,32 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 import unittest
+from pathlib import Path
+import tempfile
 from unittest.mock import patch
 
-from runtime_input import NativeInput
+from runtime_input import NativeInput, jpeg_complete
 from runtime_arena_combat import evade, incoming
+
+
+class ScreenshotCompletionTests(unittest.TestCase):
+    def test_partial_writer_is_not_copied_before_its_final_marker(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / 'screenshot.jpg'
+            self.assertFalse(jpeg_complete(source))
+            with source.open('wb') as writer:
+                writer.write(b'\xff\xd8partial encoded image')
+                writer.flush()
+                self.assertFalse(jpeg_complete(source))
+                writer.write(b'last encoded rows\xff\xd9')
+                writer.flush()
+                self.assertTrue(jpeg_complete(source))
+
+    def test_other_formats_and_short_files_do_not_qualify(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / 'screenshot.jpg'
+            for value in (b'', b'\xff', b'\xff\xd8', b'other image\xff\xd9'):
+                source.write_bytes(value)
+                self.assertFalse(jpeg_complete(source))
 
 
 class NativeInputTests(unittest.TestCase):

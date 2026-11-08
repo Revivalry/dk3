@@ -25,3 +25,18 @@ The native code is `src/classes/actors/psyclaw/psyclaw.zig` (policy: blast tunin
 
 - Unit test: the sphere pulse reverses at its bounds.
 - Implemented, not yet verified in game: the acquiring-hit pain rule.
+
+## Sequence 581 — Vault spawn platforms
+
+The official GameSpot finale description requires the two spawned guardians to
+enter combat after the central brain breaks. Failure251 preserves both natural
+spawns chasing from Z344 with no waypoint: the shared32-unit descent bound
+rejects their96-unit arena platforms. The Psyclaw now supplies a128-unit bound
+through the existing checked movement hook. Floor support, collision, hazardous
+liquids and gravity remain shared; there is no positional relocation or new
+saved field. Its animations and attack timing are unchanged.
+
+Replay258 from the legitimate central-brain checkpoint defeats both guardians,
+completes the Episode1 ending and enters Greece without a death. This verifies
+the actual spawned actors and handoff, not a fresh whole-episode run. The later
+Greece tunnel failure is retained separately from the successful finale.

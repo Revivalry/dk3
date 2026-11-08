@@ -6,6 +6,8 @@
 const v = @import("vector.zig");
 const collision = @import("collision.zig");
 pub const State = struct { position: v.Vec3, velocity: v.Vec3 };
+/// Diagnostic: why a slide abandoned the frame's movement.
+pub const Abort = struct { where: u8 = 0, fraction: f32 = 1, normal: v.Vec3 = @splat(0), entity: u16 = 2047, contents: u32 = 0, from: v.Vec3 = @splat(0), to: v.Vec3 = @splat(0) };
 pub const Context = struct {
     service: collision.Collision,
     mins: v.Vec3,
@@ -20,6 +22,7 @@ pub const Context = struct {
     touch_count: usize = 0,
     impact_speed: f32 = 0,
     step_height: f32 = 0,
+    abort: ?Abort = null,
     pub fn trace(self: *const Context, from: v.Vec3, to: v.Vec3) !collision.Trace {
         return self.service.trace(.{ .start = from, .end = to, .mins = self.mins, .maxs = self.maxs, .slot = self.slot, .mask = self.mask });
     }
@@ -53,6 +56,15 @@ pub const Context = struct {
         for (0..4) |_| {
             const hit = try self.trace(state.position, v.add(state.position, v.scale(state.velocity, time_left)));
             if (hit.all_solid) {
+                // Brush contact rounding can leave a rider a fraction inside
+                // a vertical rail. Recover only a shallow overlap through an
+                // actual outside-to-inside separating trace, then retry the
+                // ordinary sweep without adding velocity or skipping a wall.
+                if (try self.service.separate(.{ .start = state.position, .end = state.position, .mins = self.mins, .maxs = self.maxs, .slot = self.slot, .mask = self.mask }, 1)) |contact| {
+                    state.position = contact.end;
+                    continue;
+                }
+                self.abort = .{ .where = 1, .fraction = hit.fraction, .normal = hit.normal, .entity = hit.entity, .contents = hit.contents, .from = state.position, .to = v.add(state.position, v.scale(state.velocity, time_left)) };
                 state.velocity[2] = 0;
                 return true;
             }
@@ -62,6 +74,7 @@ pub const Context = struct {
             self.touch(hit.entity);
             time_left -= time_left * hit.fraction;
             if (plane_count == planes.len) {
+                self.abort = .{ .where = 4, .fraction = hit.fraction, .normal = hit.normal, .entity = hit.entity, .contents = hit.contents, .from = state.position, .to = v.add(state.position, v.scale(state.velocity, time_left)) };
                 state.velocity = @splat(0);
                 return true;
             }
@@ -92,6 +105,7 @@ pub const Context = struct {
                     clipped_end = v.scale(crease, v.dot(crease, end_velocity));
                     for (planes[0..plane_count], 0..) |third, k| {
                         if (k == i or k == j or v.dot(clipped, third) >= 0.1) continue;
+                        self.abort = .{ .where = 5, .fraction = hit.fraction, .normal = hit.normal, .entity = hit.entity, .contents = hit.contents, .from = state.position, .to = v.add(state.position, v.scale(state.velocity, time_left)) };
                         state.velocity = @splat(0);
                         return true;
                     }
@@ -106,6 +120,20 @@ pub const Context = struct {
         return bumped;
     }
     pub fn step(self: *Context, state: *State) !void {
+        // BSP hulls use a contact epsilon. Resolve only shallow floor contact,
+        // bounded to one unit, before a normal swept step. Large overlaps and
+        // blocked ceilings retain their collision rather than being relocated.
+        const overlap = try self.trace(state.position, state.position);
+        if (overlap.start_solid or overlap.all_solid) {
+            for (1..9) |i| {
+                const raised = v.add(state.position, .{ 0, 0, @as(f32, @floatFromInt(i)) * 0.125 });
+                const clear = try self.trace(raised, raised);
+                if (clear.start_solid or clear.all_solid) continue;
+                const floor = try self.trace(raised, v.add(state.position, .{ 0, 0, -0.25 }));
+                if (!floor.start_solid and !floor.all_solid and floor.fraction < 1 and floor.normal[2] >= 0.7) state.position = floor.end;
+                break;
+            }
+        }
         const start = state.*;
         if (!try self.move(state)) return;
         var down = start.position;
@@ -115,7 +143,10 @@ pub const Context = struct {
         var up = start.position;
         up[2] += 18;
         hit = try self.trace(start.position, up);
-        if (hit.all_solid) return;
+        if (hit.all_solid) {
+            self.abort = .{ .where = 2, .fraction = hit.fraction, .normal = hit.normal, .entity = hit.entity, .contents = hit.contents, .from = state.position, .to = up };
+            return;
+        }
         const height = hit.end[2] - start.position[2];
         state.position = hit.end;
         state.velocity = start.velocity;
@@ -123,8 +154,32 @@ pub const Context = struct {
         down = state.position;
         down[2] -= height;
         hit = try self.trace(state.position, down);
+        if (hit.all_solid) self.abort = .{ .where = 3, .fraction = hit.fraction, .normal = hit.normal, .entity = hit.entity, .contents = hit.contents, .from = state.position, .to = down };
         if (!hit.all_solid) state.position = hit.end;
         if (hit.fraction < 1) state.velocity = v.clip(state.velocity, hit.normal);
         self.step_height = @max(0, state.position[2] - start.position[2]);
     }
 };
+
+test "shallow wall overlap recovers into an ordinary parallel slide while deep overlap stays blocked" {
+    const std = @import("std");
+    const Wall = struct {
+        fn trace(_: *anyopaque, request: collision.Request) !collision.Trace {
+            const a = request.start[0] + request.mins[0];
+            const b = request.end[0] + request.mins[0];
+            if (a < 0) return .{ .fraction = 0, .end = request.start, .normal = @splat(0), .start_solid = true, .all_solid = b < 0 };
+            if (b >= 0) return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+            const fraction = a / (a - b);
+            return .{ .fraction = fraction, .end = v.add(request.start, v.scale(v.subtract(request.end, request.start), fraction)), .normal = .{ 1, 0, 0 }, .entity = 2046 };
+        }
+    };
+    var fixture: u8 = 0;
+    var context: Context = .{ .service = .{ .context = &fixture, .trace_fn = Wall.trace }, .mins = .{ -16, -16, -24 }, .maxs = .{ 16, 16, 32 }, .slot = 0, .mask = 1, .delta = 0.05 };
+    var state: State = .{ .position = .{ 15.5, 0, 24 }, .velocity = .{ -30, 120, 0 } };
+    _ = try context.move(&state);
+    try std.testing.expect(state.position[0] >= 16 and state.position[0] < 16.1);
+    try std.testing.expect(state.position[1] > 5.5);
+    state = .{ .position = .{ 10, 0, 24 }, .velocity = .{ -30, 120, 0 } };
+    _ = try context.move(&state);
+    try std.testing.expectEqual(v.Vec3{ 10, 0, 24 }, state.position);
+}

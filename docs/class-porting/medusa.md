@@ -20,3 +20,30 @@ The native code is `src/classes/actors/medusa/` (`medusa.zig`: range, spit style
 ## Verification (sequence 410)
 
 - Implemented, not yet verified in game.
+
+Sequence 579 adds a class-owned bot hazard hook for her rattle/gaze phases.
+The warned target averts its view and holds fire while the source is visible,
+then resumes ordinary aiming. The shared pilot discovers this declaration
+through the hazard registry; it does not inspect Medusa state. No attack timing,
+gaze admission, damage or animation is changed. Full encounter replay remains open.
+
+Sequence585 records a lethal gaze in the rendered Episode2 continuation. The
+warning hook traces to the actor's feet and accepts only a completely empty ray;
+an actor-body hit or a floor lip can incorrectly suppress its warning. The repair
+aims within the source body and admits a ray reaching that same actor through the
+existing checked region-collision mechanism. Class-owned attack timing, mutual
+eye-contact admission, petrified pose and damage remain unchanged. This repair is
+verified by focused run22 on generation
+`b2069a612bade486dc5a75acbf745176beed69b7e7b88fa91e25bb1c376a839c`:
+147 issued commands avert the view during warnings. The run defeats Medusa,
+completes the ten awakened-monster counter and timestream, and arrives in Episode3
+with zero deaths. Visible continuation07 repeats the encounter and reaches
+Episode3 with zero deaths; its rendered export passes movement and full media
+checks. Hiro is visible in the inspected timestream ending frame. Artistic
+gaze/cinematic comparison remains a separate gate.
+
+The same run exposes a separate driver recovery defect: a lethally petrified
+player retains frozen mode. The shared driver and input motor now recognize
+nonpositive health when requesting the ordinary checkpoint restart. Regression
+tests distinguish that case from a living cinematic hold and retain the existing
+companion-loss path. This is a recovery mechanism change, not a new Medusa rule.

@@ -2,9 +2,11 @@
 //! Shared mechanism: what each actor classname declares: its kind, idle/run/death clips and
 //! classname-level choices. Each policy lists its classnames' definitions in `definitions`.
 const Kind = @import("kinds.zig").Kind;
+pub const Clips = struct { player: bool = false, monster: bool = true, npc: bool = false };
 pub const Definition = struct {
     kind: Kind,
     classname: []const u8,
+    clips: Clips = .{},
     idle: []const u8 = "amba",
     run: []const u8 = "runa",
     death: []const u8 = "diea",

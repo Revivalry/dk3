@@ -91,6 +91,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define CS_DK3_LOADSCREEN 28
 #define CS_DK3_LIGHTSTYLES 29
 #define CS_DK3_SKY 30
+#define CS_DK3_CAMPAIGN 31
 #define CS_BOTINFO				25
 
 #define	CS_ITEMS				27		// string of 0's and 1's that tell which items are present

@@ -55,8 +55,12 @@ pub const State = struct {
     progress_position: v.Vec3 = @splat(0),
     blocked: bool = false,
     fleeing: bool = false,
+    physical_until_ms: i64 = 0,
+    physical_goal: v.Vec3 = @splat(0),
+    physical_point: v.Vec3 = @splat(0),
     pub fn update(self: *State, service: Service, request: Request, now: i64) !?Waypoint {
         const changed = v.length(v.subtract(request.destination, self.destination)) > 48;
+        if (changed) self.physical_until_ms = 0;
         // Horizontal: hopping in place against an obstruction is no progress.
         if (horizontalDistance(request.position, self.progress_position) > 8 or changed) {
             self.progress_position = request.position;

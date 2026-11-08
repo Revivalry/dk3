@@ -10,6 +10,29 @@ const prop = @import("../../../../mechanics/server/properties.zig");
 const context = @import("../../../../mechanics/server/entity_classes/context.zig");
 const Control = context.Control;
 pub const tag = .light;
+pub const hazard = data.WorldControl;
+/// Flames are persistent contact fields, including decorative episode fires.
+/// Their small touch volume still needs room for the approaching body.
+pub fn forecast(world: *data.World, entity: ecs.Entity, _: i64) !?struct { eta: f32, point: v.Vec3, radius: f32, field: bool, bounds: @import("../../../../core/domain/navigation_input.zig").Bounds } {
+    const control = try world.get(entity, data.WorldControl);
+    if (control.action != .light or control.action.light.kind != .flame or !control.action.light.enabled) return null;
+    const point = (try world.get(entity, data.Transform)).position;
+    return .{ .eta = 0.5, .point = point, .radius = 32, .field = true, .bounds = .{ .mins = point, .maxs = point } };
+}
+test "only an enabled flame forecasts a contact field" {
+    var world = data.World.init(std.testing.allocator, 4);
+    defer world.deinit();
+    const entity = try world.create(1, .{ data.Transform{ .position = .{ 20, 30, 40 } }, data.WorldControl{ .action = .{ .light = .{ .kind = .flame } } } });
+    const field = (try forecast(&world, entity, 0)).?;
+    try std.testing.expectEqual(v.Vec3{ 20, 30, 40 }, field.point);
+    try std.testing.expect(field.field and field.radius > 15);
+    const light = &(try world.get(entity, data.WorldControl)).action.light;
+    light.enabled = false;
+    try std.testing.expectEqual(null, try forecast(&world, entity, 0));
+    light.enabled = true;
+    light.kind = .light;
+    try std.testing.expectEqual(null, try forecast(&world, entity, 0));
+}
 pub fn owns(name: []const u8) bool {
     return @import("lights.zig").owns(name);
 }

@@ -44,6 +44,10 @@ pub const Talk = struct {
     }
 };
 const Segment = struct { a: v.Vec3, b: v.Vec3 };
+const linked = @import("../../core/domain/linked_routes.zig");
+pub const Bounds = linked.Bounds;
+const RouteNode = linked.Node;
+const RouteEdge = linked.Edge;
 const Graph = struct {
     map: [64]u8 = undefined,
     map_len: usize = 0,
@@ -51,6 +55,8 @@ const Graph = struct {
     teleports: []Teleport = &.{},
     stops: []Stop = &.{},
     talks: []Talk = &.{},
+    nodes: []RouteNode = &.{},
+    edges: []RouteEdge = &.{},
 };
 const Node = struct { index: u16, flags: u32 = 0, position: v.Vec3, data: ?v.Vec3 = null, links: []const [2]i16 = &.{}, target: []const u8 = "" };
 var graph: Graph = .{};
@@ -64,6 +70,8 @@ pub fn current() *const Graph {
     allocator.free(graph.teleports);
     allocator.free(graph.stops);
     allocator.free(graph.talks);
+    allocator.free(graph.nodes);
+    allocator.free(graph.edges);
     graph = .{};
     const length = @min(map.len, graph.map.len);
     @memcpy(graph.map[0..length], map[0..length]);
@@ -88,7 +96,17 @@ fn load(map: []const u8) !void {
     errdefer stops.deinit(allocator);
     var talks: std.ArrayList(Talk) = .empty;
     errdefer talks.deinit(allocator);
+    var nodes: std.ArrayList(RouteNode) = .empty;
+    errdefer nodes.deinit(allocator);
+    var edges: std.ArrayList(RouteEdge) = .empty;
+    errdefer edges.deinit(allocator);
     for (graphs.ground) |node| {
+        const first = edges.items.len;
+        for (node.links) |link| for (graphs.ground, 0..) |other, index| if (other.index == link[1]) {
+            try edges.append(allocator, .{ .to = index, .cost = @max(1, @as(f32, @floatFromInt(link[0]))) });
+            break;
+        };
+        try nodes.append(allocator, .{ .position = node.position, .first = first, .count = edges.items.len - first });
         // A zero point teleports nobody (the reference only plays the node's line).
         if (node.flags & teleport_flag != 0) if (node.data) |point| if (v.length(point) > 0) try teleports.append(allocator, .{ .position = node.position, .point = point });
         if (node.flags & stop_flag != 0) {
@@ -113,6 +131,17 @@ fn load(map: []const u8) !void {
     graph.teleports = try teleports.toOwnedSlice(allocator);
     graph.stops = try stops.toOwnedSlice(allocator);
     graph.talks = try talks.toOwnedSlice(allocator);
+    graph.nodes = try nodes.toOwnedSlice(allocator);
+    graph.edges = try edges.toOwnedSlice(allocator);
+}
+
+/// Read-only authoring route over supplied ground links. These links describe
+/// intended corridors, not current collision: the caller must still walk them
+/// with ordinary inputs and operate any doors. A disconnected destination
+/// returns the reachable node closest to it, exposing the remaining gap.
+pub fn route(origin: v.Vec3, destination: v.Vec3, points: []v.Vec3, excluded: []const Bounds) !usize {
+    const source = current();
+    return linked.routeAvoiding(allocator, source.nodes, source.edges, origin, destination, points, excluded);
 }
 /// The current map's stop nodes; a line once said is not pending again.
 pub fn stopNodes() []Stop {

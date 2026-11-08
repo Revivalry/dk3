@@ -187,11 +187,26 @@ pub const Actors = struct {
         try world.put(entity, data.Health{ .current = @intFromFloat(health), .maximum = @intFromFloat(health) });
         try world.put(entity, data.Velocity{});
         try world.put(entity, data.Random{ .state = try world.persistentId(entity) });
-        try world.put(entity, data.Body{ .mins = definition.mins, .maxs = definition.maxs, .contents = c.CONTENTS_BODY, .collision_mask = c.MASK_PLAYERSOLID, .mass = definition.mass });
+        try world.put(entity, data.Body{ .mins = definition.mins, .maxs = definition.maxs, .contents = c.CONTENTS_BODY, .collision_mask = clipMask(catalog.entries[id].clips), .mass = definition.mass });
         const model = try @import("resources.zig").model(definition.model);
         const slot = try slots.acquire(entity, null);
         try world.put(entity, data.Binding{ .slot = slot, .model = model });
         projections[slot] = std.mem.zeroes(abi.EntityProjection);
+        // Some authored origins were placed for a shorter hull than aidata
+        // supplies. Repair only initial floor penetration within one stair:
+        // a clear raised hull and a walkable separating plane are mandatory.
+        const shape = (try world.get(entity, data.Body)).*;
+        const pose = try world.get(entity, data.Transform);
+        const mask = shape.collision_mask & ~@as(u32, c.CONTENTS_BODY);
+        const overlap = try engine.collisionService().trace(.{ .start = pose.position, .end = pose.position, .mins = shape.mins, .maxs = shape.maxs, .slot = slot, .mask = mask });
+        if (overlap.start_solid or overlap.all_solid) {
+            const raised = v.add(pose.position, .{ 0, 0, 18 });
+            const clear = try engine.collisionService().trace(.{ .start = raised, .end = raised, .mins = shape.mins, .maxs = shape.maxs, .slot = slot, .mask = mask });
+            if (!clear.start_solid and !clear.all_solid) {
+                const floor = try engine.collisionService().trace(.{ .start = raised, .end = pose.position, .mins = shape.mins, .maxs = shape.maxs, .slot = slot, .mask = mask });
+                if (!floor.start_solid and !floor.all_solid and floor.fraction < 1 and floor.normal[2] >= 0.7) pose.position = floor.end;
+            }
+        }
         var spawning: classes.Spawn = .{ .actors = self, .world = world, .slots = slots, .projections = projections, .entity = entity, .kind = catalog.entries[id].kind, .object = object, .definition = definition, .now = now };
         try classes.spawn(catalog.entries[id].kind, &spawning);
         try self.publish(world, entity, projections, now);
@@ -228,6 +243,10 @@ pub const Actors = struct {
         return .{ .kind = catalog.entries[actor.definition].kind, .actor = actor, .definition = &self.table.definitions[actor.definition], .now = now, .actors = self, .world = world, .entity = entity };
     }
     pub fn publish(self: *const Actors, world: *data.World, entity: ecs.Entity, projections: []abi.EntityProjection, now: i64) !void {
+        if ((world.get(entity, data.Performer) catch null) != null) {
+            try @import("cinematics.zig").publish(world, entity, projections, now);
+            return;
+        }
         const actor = (try world.get(entity, data.Actor)).*;
         const definition = &self.table.definitions[actor.definition];
         const pose = (try world.get(entity, data.Transform)).*;
@@ -237,7 +256,7 @@ pub const Actors = struct {
         const projection = &projections[binding.slot];
         projection.state.number = binding.slot;
         projection.state.eType = c.ET_GENERAL;
-        projection.state.eFlags = (projection.state.eFlags & ~@as(i32, c.EF_DEAD)) | (if (actor.mode == .dead) @as(i32, c.EF_DEAD) else 0);
+        projection.state.eFlags = (projection.state.eFlags & ~@as(i32, c.EF_DEAD | abi.Presentation.cinematic_body)) | abi.Presentation.gameplay_body | (if (actor.mode == .dead) @as(i32, c.EF_DEAD) else 0);
         projection.state.modelindex = if (actor.gibbed) 0 else binding.model;
         projection.state.angles2 = definition.scale;
         // The pitch toward the enemy it is engaging: skeletal models bend their spine to it.
@@ -283,6 +302,9 @@ pub const Actors = struct {
             const entity = occupant orelse continue;
             if (!world.alive(entity)) continue;
             const actor_state = world.get(entity, data.Actor) catch continue;
+            // A borrowed cinematic performer owns both its movement and its
+            // animation until completion restores the gameplay body.
+            if ((world.get(entity, data.Performer) catch null) != null) continue;
             if (actor_state.stepped_ms == now) continue;
             actor_state.stepped_ms = now;
             var collision = try @import("actor_collision.zig").Frame.init(world, entity);
@@ -376,6 +398,19 @@ pub const Actors = struct {
         if (!dead and @import("held.zig").held(world, entity)) {
             try self.publish(world, entity, projections, now);
             return;
+        }
+        if (!dead and actor.yield_point != null and actor.threat == 0 and body.motion_owner == null) {
+            const point = actor.yield_point.?;
+            if (now < actor.yield_until_ms and v.length(v.subtract(point, pose.position)) > 8) {
+                actor.mode = .chase;
+                const previous = actor.threat_position;
+                frame.direct_path = true;
+                try classes.pathMove(kind, &frame, point, definition.speed);
+                actor.threat_position = previous;
+                return self.finish(&frame);
+            }
+            actor.yield_point = null;
+            actor.mode = .idle;
         }
         if (!dead) try classes.prepare(kind, &frame);
         const script = world.get(entity, data.Script) catch null;
@@ -510,6 +545,16 @@ fn retirement(world: *data.World, entity: ecs.Entity, reason: []const u8, now: i
 }
 /// Restored or transferred actors are projected by their class (projection_classes.zig).
 pub const projected = .{data.Actor};
+pub fn restoreAdmit(world: *data.World) !void {
+    var query = world.queryAccess(data.World.mask(.{ data.Actor, data.Body, data.Health }), 0, data.World.mask(.{data.Body}));
+    defer query.deinit();
+    while (query.next()) |view| for (view.read(data.Actor), view.write(data.Body), view.read(data.Health)) |actor, *body, health| {
+        if (health.current > 0 and body.collision_mask == c.MASK_PLAYERSOLID) body.collision_mask = clipMask(catalog.entries[actor.definition].clips);
+    };
+}
+fn clipMask(clips: anytype) u32 {
+    return @as(u32, c.MASK_SOLID | c.CONTENTS_BODY) | (if (clips.player) @as(u32, c.CONTENTS_PLAYERCLIP) else 0) | (if (clips.monster) @as(u32, c.CONTENTS_MONSTERCLIP) else 0) | (if (clips.npc) @as(u32, c.CONTENTS_BOTCLIP) else 0);
+}
 pub fn project(projecting: *const @import("system_context.zig").Project) !bool {
     try projecting.systems.actors.publish(projecting.world, projecting.entity, projecting.projections, projecting.now);
     return true;

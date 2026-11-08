@@ -64,12 +64,13 @@ def liquids(data):
 
 
 def floors(data, min_normal=0.7, volumes=()):
-    """Upward faces as triangles, without the surfaces of liquid volumes."""
+    """World upward faces, excluding liquids and inline trigger/mover models."""
     parts = lumps(data)
     vertices = np.frombuffer(parts[10], dtype=np.float32).reshape(-1, 11)[:, :3]
     meshverts = np.frombuffer(parts[11], dtype=np.int32)
     triangles = []
-    for face in struct.iter_unpack('<12i12f2i', parts[13]):
+    first, count = struct.unpack_from('<6f4i', parts[7])[6:8]
+    for face in struct.iter_unpack('<12i12f2i', parts[13][first * 104:(first + count) * 104]):
         kind, first, count, mesh_first, mesh_count = face[2], face[3], face[4], face[5], face[6]
         if kind not in (1, 3):
             continue

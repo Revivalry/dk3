@@ -19,22 +19,30 @@ pub const entries = [_]Entry{
     .{ .label = "Sidekicks follow", .command = "companion follow" }, .{ .label = "Sidekicks stay", .command = "companion stay" },
     .{ .label = "Sidekicks attack", .command = "companion attack" }, .{ .label = "Sidekicks get item", .command = "companion get" },
     .{ .label = "Sidekick commands", .command = "sidekick_next" },   .{ .label = "Give sidekick order", .command = "sidekick_apply" },
-    .{ .label = "Switch sidekick", .command = "sidekick_swap" },
+    .{ .label = "Switch sidekick", .command = "sidekick_swap" },     .{ .label = "Objectives", .command = "objectives" },
+    .{ .label = "Minimap", .command = "minimap" },
 };
 /// Default binds the game added after a profile was saved, in versions. `upgrade` brings a saved
 /// profile forward once: renamed commands keep their keys, a key still holding its old default takes
 /// the new one, and a new command unbound everywhere takes its default key while that key is free.
-pub const binds_version = 2;
+pub const binds_version = 3;
 const Rename = struct { old: []const u8, new: [:0]const u8 };
 const renames = [_]Rename{ .{ .old = "companion wait", .new = "companion stay" }, .{ .old = "companion pickup", .new = "companion get" } };
 const Replace = struct { key: i32, old: []const u8, new: [:0]const u8 };
 /// The reference's HUD cycle key (default.cfg `o hud_cycle`) replaces the old attribute default.
-const replacements = [_]Replace{.{ .key = 'o', .old = "attribute_increase", .new = "hud_cycle" }};
+const replacements = [_]Replace{
+    .{ .key = 'o', .old = "attribute_increase", .new = "objectives" },
+    .{ .key = 'o', .old = "hud_cycle", .new = "objectives" },
+    .{ .key = 'p', .old = "attribute_next", .new = "hud_cycle" },
+    .{ .key = 'k', .old = "hud_prev", .new = "" },
+    .{ .key = 'l', .old = "hud_next", .new = "" },
+};
 const Default = struct { key: i32, command: [:0]const u8 };
 const added = [_]Default{
-    .{ .key = 'o', .command = "hud_cycle" },      .{ .key = 'k', .command = "hud_prev" },           .{ .key = 'l', .command = "hud_next" },
-    .{ .key = ';', .command = "hud_use" },        .{ .key = 'u', .command = "attribute_increase" }, .{ .key = 'z', .command = "sidekick_next" },
-    .{ .key = 'x', .command = "sidekick_apply" }, .{ .key = 'v', .command = "sidekick_swap" },
+    .{ .key = 'p', .command = "hud_cycle" },          .{ .key = '[', .command = "hud_prev" },      .{ .key = ']', .command = "hud_next" },
+    .{ .key = 'o', .command = "objectives" },         .{ .key = 'm', .command = "minimap" },       .{ .key = ';', .command = "hud_use" },
+    .{ .key = 'u', .command = "attribute_increase" }, .{ .key = 'z', .command = "sidekick_next" }, .{ .key = 'x', .command = "sidekick_apply" },
+    .{ .key = 'v', .command = "sidekick_swap" },
 };
 pub fn upgrade() void {
     var buffer: [256]u8 = undefined;

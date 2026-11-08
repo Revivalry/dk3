@@ -15,6 +15,9 @@ pub const Clients = struct {
     returning: [c.MAX_CLIENTS]?data.Session = @splat(null),
     episode: u8 = 1,
     poses: [3]?@import("../domain/player_pose.zig").Set = @splat(null),
+    pmove_told: [c.MAX_CLIENTS]i64 = @splat(0),
+    heard_told: [c.MAX_CLIENTS]i64 = @splat(0),
+    abort_told: [c.MAX_CLIENTS]i64 = @splat(0),
     pub fn begin(self: *Clients, world: *data.World, slots: *Slots, projections: []abi.EntityProjection, states: []c.playerState_t, index: usize, now: i64, journey: ?@import("../domain/travel.zig").Journey) !void {
         if (index >= self.entities.len) return error.InvalidClient;
         var session: data.Session = .{ .team = @import("multiplayer.zig").chooseTeam(world), .joined_ms = now };
@@ -126,6 +129,11 @@ pub const Clients = struct {
         const entity = self.entities[index] orelse return;
         var input: c.usercmd_t = undefined;
         engine.usercmd(@intCast(index), &input);
+        if (engine.integer("developer") >= 2 and now >= self.heard_told[index]) {
+            self.heard_told[index] = now + 400;
+            var heard: [192]u8 = undefined;
+            engine.print(std.fmt.bufPrintZ(&heard, "dk3 zig: t={d} event=heard slot={d} up={d} fw={d} st={d} held={d}\n", .{ now, index, input.upmove, input.forwardmove, input.serverTime, if (world.get(entity, data.Player) catch null) |p| p.command_ms else -1 }) catch "");
+        }
         if (world.get(entity, data.Session) catch null) |session| {
             const force = engine.integer("g_forcerespawn");
             // Bots hold attack while dead too. Let the entire death performance
@@ -143,14 +151,37 @@ pub const Clients = struct {
         const ailments = (try world.get(entity, data.Ailments)).*;
         (try world.get(entity, data.Health)).maximum = 100 + 20 * character.attribute(.vita, now);
         if ((try world.get(entity, data.Health)).current <= 0) player.mode = if (ailments.petrified_frame != null) .frozen else .dead;
-        if (command.time_ms <= player.command_ms) return;
+        if (command.time_ms <= player.command_ms) {
+            if (engine.integer("developer") >= 2 and input.upmove != 0 and now >= self.pmove_told[index]) {
+                self.pmove_told[index] = now + 200;
+                var text: [192]u8 = undefined;
+                engine.print(std.fmt.bufPrintZ(&text, "dk3 zig: t={d} event=pmove-drop slot={d} moved_to={d} wanted={d} up={d}\n", .{ now, index, player.command_ms, command.time_ms, input.upmove }) catch "");
+            }
+            return;
+        }
         const transform = try world.get(entity, data.Transform);
         const velocity = try world.get(entity, data.Velocity);
-        var motion: @import("../../core/domain/slide.zig").State = .{ .position = transform.position, .velocity = velocity.linear };
+        const slide = @import("../../core/domain/slide.zig");
+        var motion: slide.State = .{ .position = transform.position, .velocity = velocity.linear };
         if (ailments.mask & 128 != 0) motion.velocity = @splat(0);
         var events: weapons.Events = .{};
         var weapon_context: weapons.Context = .{ .ps = try world.get(entity, data.Weapons), .healthy = (try world.get(entity, data.Health)).current > 0, .single_player = engine.integer("g_gametype") == c.GT_SINGLE_PLAYER, .table = &self.weapon_table, .events = &events, .service = engine.collisionService(), .slot = @intCast(index), .shot_mask = c.MASK_SHOT, .attack_boost = character.attribute(.attack, command.time_ms) };
-        const result = try @import("../domain/player_move.zig").runWithHook(player, &motion, command, bridge.characterParameters(@intCast(index), character, ailments, command.time_ms), engine.collisionService(), weapon_context.hook());
+        const parameters = bridge.characterParametersForMode(@intCast(index), character, ailments, command.time_ms, !weapon_context.single_player);
+        const prior = motion;
+        const result = try @import("../domain/player_move.zig").runWithHook(player, &motion, command, parameters, engine.collisionService(), weapon_context.hook());
+        // A rise that comes to nothing is a movement question, not a route
+        // question: what the frame saw and what it did to the body.
+        if (engine.integer("developer") >= 2 and input.upmove != 0 and now >= self.pmove_told[index]) {
+            self.pmove_told[index] = now + 200;
+            var text: [448]u8 = undefined;
+            engine.print(std.fmt.bufPrintZ(&text, "dk3 zig: t={d} event=pmove slot={d} cmd={d},{d},{d} talk={d} speed={d:.0} was={d:.0},{d:.0},{d:.0} at={d:.0},{d:.0},{d:.0} vel={d:.0},{d:.0},{d:.0} mode={d} duck={d} water={d} timer={d}/{d} ground={d} ail=0x{x}\n", .{ now, index, command.forward, command.right, command.up, @intFromBool(command.talking), parameters.speed, prior.position[0], prior.position[1], prior.position[2], motion.position[0], motion.position[1], motion.position[2], motion.velocity[0], motion.velocity[1], motion.velocity[2], @intFromEnum(player.mode), @intFromBool(player.ducked), player.water_level, @intFromEnum(player.timer), player.timer_ms, player.ground_entity, ailments.mask }) catch "");
+            if (result.slide_abort) |aborted| {
+                if (now >= self.abort_told[index]) self.abort_told[index] = now + 200;
+                var why: [448]u8 = undefined;
+                const blocker: ?abi.EntityProjection = if (aborted.entity < projections.len) projections[aborted.entity] else null;
+                engine.print(std.fmt.bufPrintZ(&why, "dk3 zig: t={d} event=abort slot={d} where={d} fraction={d:.3} normal={d:.1},{d:.1},{d:.1} entity={d} contents=0x{x} from={d:.1},{d:.1},{d:.1} bet={d} bmodel={d} borigin={d:.0},{d:.0},{d:.0} bcur={d:.0},{d:.0},{d:.0} bmin={d:.0},{d:.0},{d:.0} bmax={d:.0},{d:.0},{d:.0}\n", .{ now, index, aborted.where, aborted.fraction, aborted.normal[0], aborted.normal[1], aborted.normal[2], aborted.entity, aborted.contents, aborted.from[0], aborted.from[1], aborted.from[2], if (blocker) |b| @as(i32, b.state.eType) else -1, if (blocker) |b| @as(i32, b.state.modelindex) else -1, if (blocker) |b| b.state.origin[0] else 0, if (blocker) |b| b.state.origin[1] else 0, if (blocker) |b| b.state.origin[2] else 0, if (blocker) |b| b.shared.currentOrigin[0] else 0, if (blocker) |b| b.shared.currentOrigin[1] else 0, if (blocker) |b| b.shared.currentOrigin[2] else 0, if (blocker) |b| b.shared.mins[0] else 0, if (blocker) |b| b.shared.mins[1] else 0, if (blocker) |b| b.shared.mins[2] else 0, if (blocker) |b| b.shared.maxs[0] else 0, if (blocker) |b| b.shared.maxs[1] else 0, if (blocker) |b| b.shared.maxs[2] else 0 }) catch "");
+            }
+        }
         for (events.values[0..events.count], 0..) |event, i| {
             const sequence = weapon_context.ps.event_sequence -% @as(u32, @intCast(events.count - i));
             states[index].events[sequence & (c.MAX_PS_EVENTS - 1)] = switch (event) {
@@ -172,6 +203,7 @@ pub const Clients = struct {
         try self.publish(world, projections, states, index, now);
         for (result.events[0..result.event_count]) |event| switch (event) {
             .land => |speed| try @import("environment.zig").land(world, entity, speed, now),
+            .jump => try @import("character_actions.zig").sound(world, slots, projections, entity, .jump, now),
             else => {},
         };
         // Dispatch after movement/projection: spawning events may relocate ECS columns.
@@ -253,7 +285,7 @@ pub const Clients = struct {
         projection.state.number = @intCast(index);
         projection.state.clientNum = @intCast(index);
         projection.state.eType = c.ET_PLAYER;
-        projection.state.eFlags = (ps.eFlags & ~@as(i32, c.EF_DEAD)) | (if (health.current <= 0) @as(i32, c.EF_DEAD) else 0);
+        projection.state.eFlags = (ps.eFlags & ~@as(i32, c.EF_DEAD | abi.Presentation.cinematic_body)) | abi.Presentation.gameplay_body | (if (health.current <= 0) @as(i32, c.EF_DEAD) else 0);
         projection.state.modelindex = if ((try world.get(entity, data.Hurt)).feedback.gibbed) 0 else (try world.get(entity, data.Binding)).model;
         projection.state.angles2 = @splat(1);
         projection.state.dk3Team = ps.persistant[c.PERS_TEAM];

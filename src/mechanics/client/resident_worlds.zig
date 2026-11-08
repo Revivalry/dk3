@@ -55,7 +55,22 @@ pub const State = struct {
         }
         for (&self.entries) |*maybe| if (maybe.*) |*entry| if (entry.admission) |admission| {
             if (admission.server_id != id) continue;
-            if (!entry.ready or !admission.ready or admission.failed) return error.WorldNotAdmitted;
+            if (entry.failed or admission.failed) return error.WorldNotAdmitted;
+            if (!entry.ready or !admission.ready) {
+                // Live publication waits for our ready acknowledgement. Demo
+                // playback replays that decision without the original client's
+                // loading time. A required reference is an admission barrier:
+                // finish media already transmitted before advancing this frame.
+                if (!admission.definitions) return error.WorldConfigIncomplete;
+                const started = engine.gateway.call(c.CG_MILLISECONDS, .{});
+                while (!entry.ready or !admission.ready) {
+                    if (!try self.stepOne() or entry.failed or admission.failed) return error.WorldNotAdmitted;
+                    if (engine.gateway.call(c.CG_MILLISECONDS, .{}) - started > 30_000) return error.WorldAdmissionTimeout;
+                    std.Thread.yield() catch {};
+                }
+                var message: [128]u8 = undefined;
+                engine.print(try std.fmt.bufPrintZ(&message, "dk3 required world: owner={d} ready=1 waited_ms={d}\n", .{ id, engine.gateway.call(c.CG_MILLISECONDS, .{}) - started }));
+            }
             return .{ .render = entry.handle, .collision = admission.collision, .game = &admission.game, .inline_models = &admission.inline_models, .sky = &admission.sky };
         };
         return error.WorldNotAdmitted;

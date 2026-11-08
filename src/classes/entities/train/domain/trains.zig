@@ -17,7 +17,13 @@ pub const Train = struct {
     angles: Motion = .{},
     action: Deadline = .{},
     force: bool = false,
-    damage: i32 = 2,
+    damage: i32 = 10,
+    crush_ready: Deadline = .{},
+    pub fn crush(self: *Train, now: i64) !i32 {
+        if (self.crush_ready.at_ms != null and !self.crush_ready.due(now)) return 0;
+        self.crush_ready = try Deadline.after(now, 500);
+        return self.damage;
+    }
     pub fn reached(self: *Train, now: i64, triggered_corner: bool, corner_health: f32) !void {
         const paused = self.departure_wait_ms <= 0 and (triggered_corner or self.departure_wait_ms < 0 or corner_health > 0);
         self.phase = if (paused or self.next_target.len == 0) .paused else .dwelling;
@@ -36,6 +42,7 @@ pub const Train = struct {
         try clock.shift(&self.position.start_ms);
         try clock.shift(&self.angles.start_ms);
         try clock.deadline(&self.action.at_ms);
+        try clock.deadline(&self.crush_ready.at_ms);
     }
     /// Rejects saved values its class could never hold (snapshot.zig `Check`).
     pub fn validateSaved(self: *const Train, check: anytype) !void {
@@ -43,6 +50,15 @@ pub const Train = struct {
         if (self.position.duration_ms <= 0 or self.angles.duration_ms <= 0 or self.speed <= 0) return error.InvalidSavedTrain;
     }
 };
+
+test "a blocked train damages at half-second intervals independent of simulation rate" {
+    var train: Train = .{};
+    var total: i32 = 0;
+    for (0..20) |frame| total += try train.crush(@as(i64, @intCast(frame)) * 50);
+    try std.testing.expectEqual(@as(i32, 20), total);
+    try std.testing.expectEqual(@as(i32, 10), try train.crush(1000));
+    try std.testing.expectEqual(@as(?i64, 1500), train.crush_ready.at_ms);
+}
 /// Whether a train leaves its first corner as soon as it is placed there (reference train_find):
 /// START_ON, an unnamed train whose first corner does not wait for a trigger, or a named train
 /// whose first corner gives it health. A START_ON train leaves even a wait-for-trigger corner;

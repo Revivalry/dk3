@@ -40,6 +40,8 @@ pub const Frame = struct {
     threat: v.Vec3 = @splat(0),
     /// Freeze slowdown (1 when unaffected), filled before `move`.
     slow: f32 = 1,
+    /// A short straight corridor already qualified against the live hull.
+    direct_path: bool = false,
 };
 
 /// Read-only presentation of one actor, for choosing what it shows. Pure choices need only the

@@ -11,6 +11,9 @@ const engine = @import("../../engine/server.zig");
 const Slots = @import("../../engine/slots.zig").Slots;
 const resources = @import("resources.zig");
 const c = abi.c;
+pub fn wanted(world: *data.World, collector: ecs.Entity, pickup: data.Pickup, table: *const @import("../domain/weapons.zig").Table, now: i64) !bool {
+    return rules.canGive(pickup, .{ .keys = try world.get(collector, data.Keys), .health = try world.get(collector, data.Health), .loadout = try world.get(collector, data.Weapons), .character = try world.get(collector, data.Character), .ailments = try world.get(collector, data.Ailments) }, table, now, engine.integer("g_gametype") == c.GT_SINGLE_PLAYER);
+}
 fn model(object: data.MapObject, kind: rules.Kind, episode: u8, buffer: []u8) ![]const u8 {
     if (object.model.len > 0) return object.model;
     if (kind == .weapon) return @import("weapon_catalog").find(kind.weapon).?.spec.world_model orelse "";

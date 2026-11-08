@@ -9,6 +9,18 @@ import time
 from runtime_probe import runtime_files, send, wait
 
 
+def jpeg_complete(path):
+    """Wait for the streaming screenshot writer's final JPEG marker."""
+    try:
+        with path.open('rb') as image:
+            if image.read(2) != b'\xff\xd8':
+                return False
+            image.seek(-2, 2)
+            return image.read(2) == b'\xff\xd9'
+    except OSError:
+        return False
+
+
 def engine_failure(text):
     """Include client and engine drops, which leave a live process at the menu."""
     return next((line for line in reversed(text.splitlines()) if line.startswith("ERROR: ") or "fatal crashed:" in line

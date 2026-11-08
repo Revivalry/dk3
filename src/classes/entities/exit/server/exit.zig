@@ -60,6 +60,19 @@ pub fn useAuthored(using: *context.Use) !void {
 test "arrival overlap stays disarmed until leaving and reentering the exit" {
     const std = @import("std");
     const t = std.testing;
+    const Fixture = struct {
+        fn syscall(operation: isize, ...) callconv(.c) isize {
+            // Routing may query diagnostic verbosity. Other engine calls
+            // would be an unexpected side effect of this arrival fixture.
+            return switch (operation) {
+                c.G_CVAR_VARIABLE_INTEGER_VALUE => 0,
+                else => unreachable,
+            };
+        }
+    };
+    const previous_gateway = engine.gateway;
+    defer engine.gateway = previous_gateway;
+    engine.gateway.bind(Fixture.syscall);
     var world = data.World.init(t.allocator, 4);
     defer world.deinit();
     const player = try world.create(7, .{ data.Transform{}, data.Player{}, data.Health{ .current = 100, .maximum = 100 }, data.Binding{ .slot = 0 } });

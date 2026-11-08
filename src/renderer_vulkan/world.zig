@@ -246,18 +246,27 @@ fn reserve(name: []const u8) ?*World {
 pub fn request(name_ptr: [*c]const u8) u32 {
     const name = common.span(name_ptr);
     if (name.len == 0) return 0;
-    var reading: u32 = 0;
     for (&worlds) |*w| {
         if (w.status != .free and std.mem.eql(u8, w.nameSlice(), name)) return w.handle();
-        if (w.read != null) reading += 1;
     }
-    if (reading >= 4) return 0;
     const w = reserve(name) orelse return 0;
-    var path: [c.MAX_QPATH]u8 = undefined;
-    w.read = common.ri.BeginBackgroundRead.?(common.qpath(&path, name).ptr, 128 * 1024 * 1024);
-    beginPrepared(w, name);
-    if (w.read == null) w.status = .failed;
+    startRead(w);
     return w.handle();
+}
+
+// A burst of recorded world announcements can exceed the live server's four
+// in-flight admissions. Reserve every valid world, but keep file work bounded.
+// Polling retries queued reads instead of permanently rejecting the fifth map.
+fn startRead(w: *World) void {
+    var reading: usize = 0;
+    for (&worlds) |*entry| if (entry.read != null) {
+        reading += 1;
+    };
+    if (reading >= 4) return;
+    var path: [c.MAX_QPATH]u8 = undefined;
+    w.read = common.ri.BeginBackgroundRead.?(common.qpath(&path, w.nameSlice()).ptr, 128 * 1024 * 1024);
+    if (w.read != null) beginPrepared(w, w.nameSlice());
+    if (w.read == null) w.status = .failed;
 }
 fn beginPrepared(w: *World, name: []const u8) void {
     if (cvars.vkPreparedAssets.integer != 0) {
@@ -287,7 +296,8 @@ pub fn poll(handle_value: u32) c_int {
         .ready => return 1,
         else => {},
     }
-    const job = w.read orelse return -1;
+    if (w.read == null) startRead(w);
+    const job = w.read orelse return if (w.status == .failed) -1 else 0;
     var bytes_ptr: ?*const anyopaque = null;
     var length: c_int = 0;
     const result = common.ri.PollBackgroundRead.?(job, &bytes_ptr, &length);
@@ -965,6 +975,51 @@ fn commitGeometry(w: *World) void {
         .flare => flares += 1,
     };
     common.info("...loaded {d} faces, {d} meshes, {d} trisurfs, {d} flares\n", .{ faces, meshes, tris, flares });
+}
+
+test "world announcement bursts queue beyond four reads and retry without losing handles" {
+    const t = std.testing;
+    const Fake = struct {
+        var count: usize = 0;
+        var fail: bool = false;
+        fn begin(_: [*c]const u8, _: c_int) callconv(.c) ?*c.struct_fsReadJob_s {
+            count += 1;
+            return if (fail) null else @ptrFromInt(count);
+        }
+    };
+    common.ri = std.mem.zeroes(c.refimport_t);
+    common.ri.BeginBackgroundRead = Fake.begin;
+    var prepared = std.mem.zeroes(c.cvar_t);
+    cvars.vkPreparedAssets = &prepared;
+    defer {
+        for (&worlds, 0..) |*w, i| w.* = .{ .index = @intCast(i), .generation = 0 };
+        common.ri = undefined;
+        cvars.vkPreparedAssets = undefined;
+    }
+    Fake.count = 0;
+    Fake.fail = false;
+    var handles: [9]u32 = undefined;
+    for (&handles, 0..) |*handle_value, i| {
+        var path: [64]u8 = undefined;
+        handle_value.* = request((try std.fmt.bufPrintZ(&path, "maps/queue{d}.bsp", .{i})).ptr);
+        try t.expect(handle_value.* != 0);
+    }
+    try t.expectEqual(@as(usize, 4), Fake.count);
+    const queued = resident(handles[4]).?;
+    try t.expectEqual(handles[4], request("maps/queue4.bsp"));
+    startRead(queued);
+    try t.expect(queued.read == null and queued.status == .reading);
+    resident(handles[0]).?.read = null; // A completed read releases capacity.
+    resident(handles[0]).?.status = .ready;
+    startRead(queued);
+    try t.expect(queued.read != null);
+    try t.expectEqual(@as(usize, 5), Fake.count);
+    queued.read = null;
+    queued.status = .ready;
+    Fake.fail = true;
+    const missing = resident(handles[5]).?;
+    startRead(missing);
+    try t.expect(missing.status == .failed);
 }
 
 test "offline world packages preserve geometry and HDR bytes with source/settings checks" {

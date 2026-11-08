@@ -7,8 +7,15 @@ const engine = @import("../../engine/server.zig");
 const c = @import("../../engine/abi.zig").c;
 const pilot = @import("bot_pilot.zig");
 
+/// BOTLIB_USER_COMMAND calls GAME_CLIENT_THINK synchronously. A visible bot
+/// client also sends idle keyboard commands; distinguish the pilot's input.
+pub var submitting: ?u16 = null;
+
 pub fn submit(index: u16, command: pilot.Command, delta_angles: [3]i32, now: i64) void {
     var input = encode(command, delta_angles, now);
+    const previous = submitting;
+    submitting = index;
+    defer submitting = previous;
     _ = engine.gateway.call(c.BOTLIB_USER_COMMAND, .{ @as(isize, index), &input });
     if (command.use) _ = engine.gateway.call(c.BOTLIB_EA_COMMAND, .{ @as(isize, index), @as([*:0]const u8, "use") });
 }

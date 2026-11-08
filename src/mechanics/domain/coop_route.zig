@@ -44,13 +44,19 @@ pub const Action = struct {
     timeout_ms: i64 = 60_000,
     /// Arrival radius for move, search radius for kill.
     radius: f32 = 0,
+    /// move: explicit depth/height tolerance; zero retains the normal step allowance.
+    vertical_radius: f32 = 0,
     around: ?Vec3 = null,
+    /// leap: a moving landing surface, resolved again throughout the jump.
+    landing: ?Target = null,
     fight: bool = true,
     /// kill: engage from the current position instead of closing in.
     hold: bool = false,
     /// move: steer straight at the goal without navigation (drops into water,
     /// jumps across gaps, authored falls the area graph does not represent).
     direct: bool = false,
+    /// A through-point on a climb may complete before reaching supported footing.
+    settle: bool = true,
     /// move: hold crouch for the whole segment (low pipes, vents).
     crouch: bool = false,
     /// move: stop and fight what engages the player (held on a short tether,
@@ -58,9 +64,9 @@ pub const Action = struct {
     cautious: bool = false,
     /// leap: a shotcycler jump (fired at the floor as the player jumps).
     blast: bool = false,
-    /// leap: fraction of full running input, for a short hop onto a narrow
-    /// ledge that a running jump would carry the player past.
-    pace: f32 = 1,
+    /// leap: fraction of full running input, for a hop whose arc must not be
+    /// its own. Unset means the hop works out its own pace from the gap.
+    pace: ?f32 = null,
     /// kill with hold: the horizontal box (min, max) dodges and strafes stay in.
     arena: ?[2][2]f32 = null,
     map: Name = .{},
@@ -77,6 +83,13 @@ pub const Action = struct {
     }
     pub fn searchRadius(self: Action) f32 {
         return if (self.radius > 0) self.radius else 1536;
+    }
+    /// Exact targets are chased wherever authored, unless a radius was
+    /// explicitly requested. A default room scan cannot discard a named boss.
+    pub fn limitedHunt(self: Action) bool {
+        if (self.radius > 0) return true;
+        if (self.target) |selector| return selector.id == 0 and selector.index == 0 and selector.name.empty();
+        return true;
     }
 };
 pub const Result = union(enum) { running, done: []const u8, failed: []const u8 };
@@ -106,9 +119,12 @@ pub fn overlaps(position: Vec3, hull_mins: Vec3, hull_maxs: Vec3, box_mins: Vec3
 }
 /// Horizontal arrival with a vertical allowance for step height and crouching.
 pub fn arrived(position: Vec3, goal: Vec3, radius: f32) bool {
+    return arrivedWithin(position, goal, radius, @max(radius, 56));
+}
+pub fn arrivedWithin(position: Vec3, goal: Vec3, radius: f32, vertical: f32) bool {
     const dx = position[0] - goal[0];
     const dy = position[1] - goal[1];
-    return dx * dx + dy * dy <= radius * radius and @abs(position[2] - goal[2]) <= @max(radius, 56);
+    return dx * dx + dy * dy <= radius * radius and @abs(position[2] - goal[2]) <= vertical;
 }
 /// Watchdog for physical progress: the bot must reduce its distance to the goal
 /// by a meaningful amount within the window, or the action is reported stuck.
@@ -139,6 +155,8 @@ test "names, targets and arrival geometry" {
     try t.expectApproxEqAbs(@as(f32, -592 + 15 - 1), point[0], 0.001);
     try t.expect(arrived(.{ 10, 0, 30 }, .{ 0, 0, 0 }, 40));
     try t.expect(!arrived(.{ 50, 0, 0 }, .{ 0, 0, 0 }, 40));
+    try t.expect(!arrivedWithin(.{ 0, 0, -280 }, .{ 0, 0, -320 }, 16, 8));
+    try t.expect(arrivedWithin(.{ 0, 0, -316 }, .{ 0, 0, -320 }, 16, 8));
     try t.expect(hostile(.froginator) and !hostile(.companion) and !hostile(.civilian) and !hostile(.seagull));
 }
 test "progress watchdog resets only on real approach" {
@@ -148,4 +166,10 @@ test "progress watchdog resets only on real approach" {
     try std.testing.expect(progress.stalled(5100, 5000));
     progress.update(900, 5200);
     try std.testing.expect(!progress.stalled(5300, 5000));
+}
+test "named hunts ignore default room radius but honor an explicit bound" {
+    try std.testing.expect(!(Action{ .op = .kill, .target = .{ .index = 76 } }).limitedHunt());
+    try std.testing.expect(!(Action{ .op = .kill, .target = .{ .id = 0x0300004c } }).limitedHunt());
+    try std.testing.expect((Action{ .op = .kill, .target = .{ .index = 76 }, .radius = 400 }).limitedHunt());
+    try std.testing.expect((Action{ .op = .kill }).limitedHunt());
 }

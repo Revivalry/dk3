@@ -6,8 +6,42 @@ runtime. The separate preserved installation and its saves remain local and unto
 
 **dk3 is a playable development build. The complete game is not accepted.**
 The source covers campaign systems and multiplayer, with substantial focused scenario
-evidence. No complete episode or full four-episode campaign has passed end-to-end
-acceptance. There is no defensible overall completion percentage.
+evidence. Sequence 579 (5 November 2026) now records a complete Episode 2 headless
+scripted pass from fresh Lemnos through every rune revisit, both bosses and the
+ten-enemy ending into Episode 3, with zero deaths in final run168 (earlier run159
+used two combat checkpoint retries). This is
+authoritative gameplay evidence; full rendered/audio episode acceptance and the
+complete four-episode campaign remain open. There is no defensible overall
+completion percentage. See the [current scenario ledger](native-acceptance.md#sequence-579--episode2-coop--authored-progression-and-repair-pass)
+for later repair replays and final-build status; the assessment below retains
+its original 20 October scope.
+
+Sequence583 (6 November 2026) adds a complete fresh resident Episode1 headless
+pass: New Game/intro, all17 maps, ending and Greece/Lemnos A into B. Run148 uses
+two normal combat checkpoint recoveries within unchanged limits and loses no
+companions. The tested ReleaseSafe generation is installed for `zig build play`,
+with all107 owner profile/save/cache files unchanged. See the
+[Episode1 acceptance](native-acceptance.md#sequence-583--episode1-pass--resume-complete-episode-1-verification)
+for frozen inputs and scope. Cinematic character rendering, audio, prediction
+and hardware FPS are not exercised by this dedicated-server pass.
+
+Sequence584 adds recorded bot walkthroughs across all17 Episode1 maps and19
+Episode2 maps, including endings and next-episode arrivals. They are edited
+failed attempts and labelled ordinary checkpoint continuations, not fresh
+uninterrupted passes. Episode1's91-minute and Episode2's70-minute chaptered MP4s
+pass full video/audio decoding and sampled-frame inspection. See the
+[video evidence](native-acceptance.md#sequence-584--coop-video--record-episode-1-and-episode-2).
+This does not establish cinematic artistic parity or full campaign acceptance.
+
+Owner review found teleport-like movement in the sequence584 recordings.
+Sequence585 adds player-camera interpolation, a campaign turn cap that also covers
+local corridor corrections, full-cadence snapshot capture and required-media replay
+admission. The88-minute Episode1 replacement passes measured movement gates,
+uniform packet timing, full decoding and sampled-frame inspection. Episode2's
+73m41s replacement passes the same gates through its ending and Episode3
+arrival. Both retain labelled checkpoint continuations and source failures;
+owner saves/settings remain unchanged. File decoding alone did not
+establish movement quality in the earlier videos.
 
 ## Assessment basis
 
@@ -77,9 +111,9 @@ These identities describe different interfaces and must not be conflated. See
 
 ## Next acceptance work
 
-1. Reconfirm a continuous current-build New Game/intro route, then continue authored
-   progression beyond e1m3b through Episode 1 and Episodes 2–4. Preserve encounter,
-   death, save/reload and transition evidence along that route.
+1. Continue current-candidate campaign verification after Episode1/Lemnos B
+   acceptance148: repeat Episode2 on the current pilot as needed, author
+   Episodes3–4 and preserve encounter, death, save/reload and transition evidence.
 2. Close class/companion and cinematic visual gaps with scoped scenarios and owner
    review. Keep failed/rejected candidates and unrun cases visible.
 3. Complete native multiplayer, retail/fresh-install, independence and release matrices.

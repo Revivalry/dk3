@@ -44,6 +44,7 @@
 //! | Scripts | `pausesScript(*const Actor) bool` | false |
 //! | Probe | `diagnose(View, *std.Io.Writer) !void` | none |
 //! | Mirroring | `linkedIdentity(*const Actor) ?u32` | its projection names no other entity |
+//! | Weapons | `weaponMotion(*World, Entity) !?Player` | no player-style weapon posture |
 const std = @import("std");
 const catalog = @import("actor_catalog");
 const data = @import("../../../game/domain/components.zig");
@@ -92,6 +93,7 @@ const owner: [kind_count]u8 = blk: {
 /// its default, so every public function of an adapter must be one of these or be listed in the
 /// adapter's `helpers`.
 const hooks = .{
+    .{ "weaponMotion", &.{ *data.World, @import("../../../core/ecs/world.zig").Entity }, ?data.Player },
     .{ "attackLoad", &.{ catalog.Kind, usize }, AttackLoad },
     .{ "loadAnimations", &.{Load}, void },
     .{ "spawn", &.{*Spawn}, void },
@@ -384,6 +386,9 @@ pub fn use(kind: catalog.Kind, using: *context.Use) !bool {
 /// The entity an actor's projection names (`otherEntityNum`), for resident-world mirroring.
 pub fn linkedIdentity(kind: catalog.Kind, actor: *const data.Actor) ?u32 {
     return dispatch(kind, "linkedIdentity", .{actor}, @as(?u32, null));
+}
+pub fn weaponMotion(kind: catalog.Kind, world: *data.World, entity: @import("../../../core/ecs/world.zig").Entity) !?data.Player {
+    return dispatch(kind, "weaponMotion", .{ world, entity }, @as(?data.Player, null));
 }
 pub fn pausesScript(kind: catalog.Kind, actor: *const data.Actor) bool {
     return dispatch(kind, "pausesScript", .{actor}, false);

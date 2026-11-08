@@ -21,6 +21,7 @@ pub const State = struct {
     invisible_until: i64 = 0,
     environment_until: i64 = 0,
     environment_charge_ms: i64 = 0,
+    item_protection: @import("../../game/domain/item_protections.zig").State = .{},
     liquid: @import("environment.zig").State = .{},
     rings: u32 = 0,
     save_gems: i32 = 0,

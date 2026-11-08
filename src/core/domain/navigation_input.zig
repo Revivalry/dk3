@@ -24,9 +24,13 @@ pub fn supportedPoint(service: collision.Collision, request: collision.Request) 
     return .{ .floor = hit };
 }
 pub fn crouch(service: collision.Collision, position: v.Vec3, destination: v.Vec3, mins: v.Vec3, standing: v.Vec3, slot: u16, mask: u32) !bool {
+    return crouchReach(service, position, destination, mins, standing, slot, mask, 32);
+}
+/// Match the clearance horizon to the obstruction query that requested it.
+pub fn crouchReach(service: collision.Collision, position: v.Vec3, destination: v.Vec3, mins: v.Vec3, standing: v.Vec3, slot: u16, mask: u32, reach: f32) !bool {
     const delta = v.subtract(destination, position);
     const flat: v.Vec3 = .{ delta[0], delta[1], 0 };
-    const end = v.add(position, v.scale(v.normalize(flat), @min(32, v.length(flat))));
+    const end = v.add(position, v.scale(v.normalize(flat), @min(reach, v.length(flat))));
     const upright = try service.trace(.{ .start = position, .end = end, .mins = mins, .maxs = standing, .slot = slot, .mask = mask });
     if (!upright.start_solid and !upright.all_solid and upright.fraction == 1) return false;
     var low = standing;
@@ -49,7 +53,32 @@ pub fn crouch(service: collision.Collision, position: v.Vec3, destination: v.Vec
 /// Qualify a short ordinary walk through an AAS gap. Every hull sweep and
 /// support interval must work; a clear endpoint alone cannot authorize a route.
 pub const Bounds = struct { mins: v.Vec3, maxs: v.Vec3 };
+/// Keep vertical and lateral travel while removing the stride into a climbable
+/// wall. Adding a negative projection doubles that inward stride instead.
+pub fn climbHeading(movement: v.Vec3, normal: v.Vec3) v.Vec3 {
+    var flat: v.Vec3 = .{ movement[0], movement[1], 0 };
+    const into = v.dot(flat, normal);
+    if (into < 0) flat = v.subtract(flat, v.scale(normal, into));
+    return .{ flat[0], flat[1], movement[2] };
+}
+test "climb heading removes inward pressure on either wall and preserves escape and ascent" {
+    const t = @import("std").testing;
+    try t.expectEqual(v.Vec3{ 5, 0, 80 }, climbHeading(.{ 5, -3, 80 }, .{ 0, 1, 0 }));
+    try t.expectEqual(v.Vec3{ 5, 3, 80 }, climbHeading(.{ 5, 3, 80 }, .{ 0, 1, 0 }));
+    try t.expectEqual(v.Vec3{ 0, 7, 20 }, climbHeading(.{ 3, 7, 20 }, .{ -1, 0, 0 }));
+    try t.expectEqual(v.Vec3{ 0, 7, -80 }, climbHeading(.{ 3, 7, -80 }, .{ -1, 0, 0 }));
+}
 pub fn walkPath(service: collision.Collision, request: collision.Request, forbidden: u32, hazards: []const Bounds) !?v.Vec3 {
+    return walkPathDrop(service, request, forbidden, hazards, 18);
+}
+/// A caller may admit a bounded drop while escaping raised temporary footing.
+/// Upward steps and every intervening collision/hazard check stay unchanged.
+pub fn walkPathDrop(service: collision.Collision, request: collision.Request, forbidden: u32, hazards: []const Bounds, drop: f32) !?v.Vec3 {
+    return walkPathSupported(service, request, forbidden, hazards, drop, request.mask);
+}
+/// A moving obstacle may block travel without being reliable footing. The
+/// caller supplies the collision layers that can support the walking body.
+pub fn walkPathSupported(service: collision.Collision, request: collision.Request, forbidden: u32, hazards: []const Bounds, drop: f32, support_mask: u32) !?v.Vec3 {
     const delta = v.subtract(request.end, request.start);
     const distance = @sqrt(delta[0] * delta[0] + delta[1] * delta[1]);
     if (distance > 640) return null;
@@ -74,9 +103,10 @@ pub fn walkPath(service: collision.Collision, request: collision.Request, forbid
             if (raised.start_solid or raised.all_solid or raised.fraction < 1) return null;
         }
         segment.start = across;
-        segment.end = .{ across[0], across[1], position[2] - 18 };
+        segment.end = .{ across[0], across[1], position[2] - drop };
+        segment.mask = support_mask;
         const support = (try supportedPoint(service, segment)).floor orelse return null;
-        if (@abs(support.end[2] - position[2]) > 18) return null;
+        if (support.end[2] - position[2] > 18 or position[2] - support.end[2] > drop) return null;
         for (hazards) |hazard| {
             // Conservatively reject a hurt brush touching this short swept
             // interval, including the step clearance above the support plane.
@@ -97,6 +127,7 @@ test "local walking recovery requires supported intermediate steps and rejects w
     const Fixture = struct {
         wall: bool = false,
         gap: bool = false,
+        body_bridge: bool = false,
         hazard: bool = false,
         fn trace(raw: *anyopaque, request: collision.Request) !collision.Trace {
             const self: *@This() = @ptrCast(@alignCast(raw));
@@ -105,7 +136,7 @@ test "local walking recovery requires supported intermediate steps and rejects w
                 return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
             }
             if (request.end[2] < request.start[2]) {
-                if (self.gap and request.start[0] >= 32 and request.start[0] <= 48) return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+                if (self.gap and request.start[0] >= 32 and request.start[0] <= 48 and !(self.body_bridge and request.mask & 2 != 0)) return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
                 const height: f32 = if (request.start[0] >= 32) 40 else 24;
                 return .{ .fraction = 0.5, .end = .{ request.end[0], request.end[1], height }, .normal = .{ 0, 0, 1 } };
             }
@@ -120,12 +151,21 @@ test "local walking recovery requires supported intermediate steps and rejects w
     const service: collision.Collision = .{ .context = &fixture, .trace_fn = Fixture.trace, .contents_fn = Fixture.contents };
     const request: collision.Request = .{ .start = .{ 0, 0, 24 }, .end = .{ 64, 0, 40 }, .mins = .{ -16, -16, -24 }, .maxs = .{ 16, 16, 32 }, .slot = 0, .mask = 1 };
     try t.expectEqual(@as(?v.Vec3, .{ 64, 0, 40 }), try walkPath(service, request, 4, &.{}));
+    var elevated = request;
+    elevated.start[2] = 80;
+    try t.expectEqual(@as(?v.Vec3, null), try walkPath(service, elevated, 4, &.{}));
+    try t.expectEqual(@as(?v.Vec3, .{ 64, 0, 40 }), try walkPathDrop(service, elevated, 4, &.{}, 64));
     try t.expectEqual(@as(?v.Vec3, null), try walkPath(service, request, 4, &.{.{ .mins = .{ 30, -8, 0 }, .maxs = .{ 34, 8, 80 } }}));
     fixture.wall = true;
     try t.expectEqual(@as(?v.Vec3, null), try walkPath(service, request, 4, &.{}));
     fixture.wall = false;
     fixture.gap = true;
     try t.expectEqual(@as(?v.Vec3, null), try walkPath(service, request, 4, &.{}));
+    fixture.body_bridge = true;
+    var bodies = request;
+    bodies.mask = 3;
+    try t.expect((try walkPath(service, bodies, 4, &.{})) != null);
+    try t.expectEqual(@as(?v.Vec3, null), try walkPathSupported(service, bodies, 4, &.{}, 18, 1));
     fixture.gap = false;
     fixture.hazard = true;
     try t.expectEqual(@as(?v.Vec3, null), try walkPath(service, request, 4, &.{}));

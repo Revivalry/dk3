@@ -11,6 +11,12 @@ const c = abi.c;
 pub const Move = @import("attachments.zig").Move;
 const Backup = struct { slot: u16, origin: v.Vec3, angles: v.Vec3, ground: i32, yaw_delta: i32 = 0 };
 fn riderGround(world: *data.World, entity: ecs.Entity) ?i32 {
+    // Nonblocking corpses do not obstruct a solid mover. Trying to
+    // push a corpse trapped against the world can otherwise hold a train
+    // forever: further crush damage cannot kill it a second time.
+    if (world.get(entity, data.Body)) |body| {
+        if (body.contents & c.CONTENTS_CORPSE != 0 and body.contents & c.MASK_PLAYERSOLID == 0) return null;
+    } else |_| {}
     if (world.get(entity, data.Player)) |player| {
         if (player.mode == .noclip or player.mode == .spectator) return null;
         return player.ground_entity;
@@ -19,10 +25,88 @@ fn riderGround(world: *data.World, entity: ecs.Entity) ?i32 {
     if (world.get(entity, data.Actor)) |actor| return actor.ground_entity else |_| {}
     return null;
 }
+const Transaction = struct {
+    world: *data.World,
+    slots: *const Slots,
+    projections: []abi.EntityProjection,
+    saved: *[ecs.max_entities]Backup,
+    count: *usize,
+    seen: *[ecs.max_entities]bool,
+    fn pushBody(self: *Transaction, slot: u16, wanted: v.Vec3, riding: bool, yaw_delta: i32, depth: usize, mover_slot: u16) anyerror!?ecs.Entity {
+        const entity = self.slots.occupants[slot].?;
+        if (self.seen[slot] or depth >= 32) return entity;
+        const other = &self.projections[slot];
+        const old = other.shared.currentOrigin;
+        const mask = (try self.world.get(entity, data.Body)).collision_mask;
+        const record = self.count.*;
+        self.saved[record] = .{ .slot = slot, .origin = old, .angles = other.shared.currentAngles, .ground = other.state.groundEntityNum, .yaw_delta = yaw_delta };
+        self.count.* += 1;
+        self.seen[slot] = true;
+        // A body staged by this transaction must not block the next body in
+        // its own contact chain. All participants are restored on refusal.
+        engine.unlink(other);
+        var linked = false;
+        defer if (!linked) engine.link(other);
+        const collision = engine.collisionService();
+        var destination = wanted;
+        var hit = try collision.trace(.{ .start = destination, .end = destination, .mins = other.shared.mins, .maxs = other.shared.maxs, .slot = slot, .mask = mask });
+        for (0..32) |_| {
+            if (!hit.start_solid) break;
+            // The leaf rotates while the pushed hull remains axis-aligned.
+            // Resolve only a small real contact overlap, without an impulse.
+            // Find the brush plane independently of neighbouring bodies.
+            // Their overlap is resolved by the same transaction below; a
+            // touching crowd must not hide a shallow wall contact's normal.
+            const request: @import("../../core/domain/collision.zig").Request = .{ .start = destination, .end = destination, .mins = other.shared.mins, .maxs = other.shared.maxs, .slot = slot, .mask = mask };
+            var brushes = request;
+            brushes.mask &= ~@as(u32, c.CONTENTS_BODY);
+            if (try collision.separate(request, 2) orelse try collision.separate(brushes, 2)) |contact| {
+                destination = contact.end;
+                hit = try collision.trace(.{ .start = destination, .end = destination, .mins = other.shared.mins, .maxs = other.shared.maxs, .slot = slot, .mask = mask });
+                if (!hit.start_solid) break;
+            }
+            if (depth == 0) {
+                const remains = try collision.trace(.{ .start = old, .end = old, .mins = other.shared.mins, .maxs = other.shared.maxs, .slot = slot, .mask = mask });
+                if (!remains.start_solid) {
+                    destination = old;
+                    self.saved[record].yaw_delta = 0;
+                    other.state.groundEntityNum = c.ENTITYNUM_NONE;
+                    hit = remains;
+                    break;
+                }
+            }
+            if (hit.entity >= self.slots.occupants.len or self.seen[hit.entity]) break;
+            const neighbour = self.slots.occupants[hit.entity] orelse break;
+            if (riderGround(self.world, neighbour) == null) break;
+            const body = self.world.get(neighbour, data.Body) catch break;
+            if (body.contents & c.CONTENTS_BODY == 0) break;
+            const next = v.add(self.projections[hit.entity].shared.currentOrigin, v.subtract(destination, old));
+            if (try self.pushBody(hit.entity, next, false, 0, depth + 1, mover_slot)) |blocker| return blocker;
+            if (engine.integer("developer") >= 2) {
+                var text: [160]u8 = undefined;
+                engine.print(try std.fmt.bufPrintZ(&text, "zig push chain mover={d} body={d} neighbour={d} depth={d}\n", .{ mover_slot, slot, hit.entity, depth + 1 }));
+            }
+            hit = try collision.trace(.{ .start = destination, .end = destination, .mins = other.shared.mins, .maxs = other.shared.maxs, .slot = slot, .mask = mask });
+        }
+        if (hit.start_solid) {
+            if (engine.integer("developer") > 1) {
+                var message: [256]u8 = undefined;
+                engine.print(try std.fmt.bufPrintZ(&message, "zig push blocked mover={d} rider={d} grounded={any} hit={d} old={d:.2},{d:.2},{d:.2} new={d:.2},{d:.2},{d:.2}\n", .{ mover_slot, slot, riding, hit.entity, old[0], old[1], old[2], destination[0], destination[1], destination[2] }));
+            }
+            return entity;
+        }
+        other.shared.currentOrigin = destination;
+        if (!riding) other.state.groundEntityNum = c.ENTITYNUM_NONE;
+        engine.link(other);
+        linked = true;
+        return null;
+    }
+};
 fn pushProjected(world: *data.World, slots: *const Slots, projections: []abi.EntityProjection, moves: []const Move) !?ecs.Entity {
     var saved: [ecs.max_entities]Backup = undefined;
     var count: usize = 0;
     var seen: [ecs.max_entities]bool = @splat(false);
+    var transaction: Transaction = .{ .world = world, .slots = slots, .projections = projections, .saved = &saved, .count = &count, .seen = &seen };
     var committed = false;
     defer if (!committed) {
         for (saved[0..count]) |before| {
@@ -58,13 +142,9 @@ fn pushProjected(world: *data.World, slots: *const Slots, projections: []abi.Ent
             const entity = occupant orelse continue;
             if (seen[index]) continue;
             const ground = riderGround(world, entity) orelse continue;
-            // Rider motion and pushing must agree on collision policy. A
-            // cinematic performer must not acquire player-only clip walls
-            // merely because its floor is a moving brush.
-            const mask = if (world.get(entity, data.Performer) catch null != null)
-                (try world.get(entity, data.Body)).collision_mask
-            else
-                c.MASK_PLAYERSOLID;
+            // Every rider keeps its own clip policy. Applying player-only
+            // clip walls to a creature or NPC can hold an otherwise legal
+            // physical push indefinitely.
             const other = &projections[index];
             const riding = ground == before.slot;
             if (!riding) {
@@ -74,35 +154,16 @@ fn pushProjected(world: *data.World, slots: *const Slots, projections: []abi.Ent
                     break;
                 };
                 if (!intersects) continue;
-                const occupied = try engine.collisionService().trace(.{ .start = other.shared.currentOrigin, .end = other.shared.currentOrigin, .mins = other.shared.mins, .maxs = other.shared.maxs, .slot = @intCast(index), .mask = mask });
-                if (!occupied.start_solid) continue;
+                // Rotating brushes have conservative spherical world bounds.
+                // An overlap with another actor inside those bounds is not
+                // evidence of contact with this moving leaf.
+                if (!engine.entityContact(projection, v.add(other.shared.currentOrigin, other.shared.mins), v.add(other.shared.currentOrigin, other.shared.maxs))) continue;
             }
             const old = other.shared.currentOrigin;
             const offset = v.add(old, v.scale(before.origin, -1));
             const rotated = v.add(v.add(v.scale(axes.forward, offset[0]), v.scale(axes.right, -offset[1])), v.scale(up, offset[2]));
             const destination = v.add(v.add(old, translation), v.add(rotated, v.scale(offset, -1)));
-            const hit = try engine.collisionService().trace(.{ .start = destination, .end = destination, .mins = other.shared.mins, .maxs = other.shared.maxs, .slot = @intCast(index), .mask = mask });
-            if (hit.start_solid) {
-                if (engine.integer("developer") > 1) {
-                    var message: [256]u8 = undefined;
-                    engine.print(try std.fmt.bufPrintZ(&message, "zig push blocked mover={d} rider={d} grounded={any} hit={d} old={d:.2},{d:.2},{d:.2} new={d:.2},{d:.2},{d:.2}\n", .{ before.slot, index, riding, hit.entity, old[0], old[1], old[2], destination[0], destination[1], destination[2] }));
-                }
-                const remains = try engine.collisionService().trace(.{ .start = old, .end = old, .mins = other.shared.mins, .maxs = other.shared.maxs, .slot = @intCast(index), .mask = mask });
-                if (!remains.start_solid) {
-                    saved[count] = .{ .slot = @intCast(index), .origin = old, .angles = other.shared.currentAngles, .ground = other.state.groundEntityNum };
-                    count += 1;
-                    seen[index] = true;
-                    other.state.groundEntityNum = c.ENTITYNUM_NONE;
-                    continue;
-                }
-                return entity;
-            }
-            saved[count] = .{ .slot = @intCast(index), .origin = old, .angles = other.shared.currentAngles, .ground = other.state.groundEntityNum, .yaw_delta = @intFromFloat(rotation[1] * 65536 / 360) };
-            count += 1;
-            seen[index] = true;
-            other.shared.currentOrigin = destination;
-            if (!riding) other.state.groundEntityNum = c.ENTITYNUM_NONE;
-            engine.link(other);
+            if (try transaction.pushBody(@intCast(index), destination, riding, @intFromFloat(rotation[1] * 65536 / 360), 0, before.slot)) |blocker| return blocker;
         }
     }
     for (saved[0..count]) |before| {
@@ -126,10 +187,18 @@ test "spawned and borrowed cinematic performers participate in mover riding" {
     var world = data.World.init(std.testing.allocator, 4);
     defer world.deinit();
     const performer: data.Performer = .{ .unique = "charonferry", .classname = "cine_charon", .model = "models/cinematic/c_char_e2m2.dkm", .ground_entity = 17 };
-    const spawned = try world.create(1, .{performer});
-    const borrowed = try world.create(2, .{ performer, data.Actor{ .definition = 0, .ground_entity = 2047 } });
+    const spawned = try world.create(1, .{ performer, data.Body{ .contents = 0 } });
+    const borrowed = try world.create(2, .{ performer, data.Body{ .contents = 0 }, data.Actor{ .definition = 0, .ground_entity = 2047 } });
     try std.testing.expectEqual(@as(?i32, 17), riderGround(&world, spawned));
     try std.testing.expectEqual(@as(?i32, 17), riderGround(&world, borrowed));
+}
+test "nonblocking remains cannot stall solid movers" {
+    var world = data.World.init(std.testing.allocator, 4);
+    defer world.deinit();
+    const entity = try world.create(1, .{ data.Actor{ .definition = 0, .ground_entity = 17 }, data.Body{ .contents = c.CONTENTS_CORPSE } });
+    try std.testing.expectEqual(@as(?i32, null), riderGround(&world, entity));
+    (try world.get(entity, data.Body)).contents = c.CONTENTS_BODY;
+    try std.testing.expectEqual(@as(?i32, 17), riderGround(&world, entity));
 }
 
 pub fn publishAssembly(world: *data.World, projections: []abi.EntityProjection, assembly: *const @import("attachments.zig").Assembly) anyerror!void {
@@ -149,7 +218,74 @@ pub fn publishAssembly(world: *data.World, projections: []abi.EntityProjection, 
         }
     }
 }
-pub fn push(world: *data.World, slots: *const Slots, projections: []abi.EntityProjection, moves: []const Move, now: i64, elapsed: u32) anyerror!?ecs.Entity {
+/// What a refused commit does to the assembly's own travel clock, chosen by the class
+/// whose parts are moving. Held travel resumes from where the brush stopped once the way
+/// clears, which is what a door owes an actor standing in its sweep. Running travel keeps
+/// the authored timing anyway, so a mover whose travel cannot complete still arrives when
+/// its motion says it does and delivers its arrival - a press does not have to reach the
+/// bottom of its travel to have been pressed.
+pub const Travel = enum { held, running };
+/// An idle mobile flyer must not remain indefinitely in a moving brush's
+/// pinch point. Select a clear local stroke; its class still owns locomotion.
+fn requestYield(world: *data.World, projections: []abi.EntityProjection, blocker: ecs.Entity, moves: []const Move, now: i64) !void {
+    const actor = world.get(blocker, data.Actor) catch return;
+    if (actor.mode == .dead or actor.threat != 0 or now < actor.yield_until_ms) return;
+    const object = world.get(blocker, data.MapObject) catch return;
+    if (!@import("actor_catalog").spawnflags.moves(object.flags)) return;
+    const kind = @import("actor_catalog").entries[actor.definition].kind;
+    if (!@import("actor_classes/registry.zig").routes(kind).air) return;
+    if (world.get(blocker, data.Script) catch null) |script| if (script.active) return;
+    const body = (try world.get(blocker, data.Body)).*;
+    if (body.motion_owner != null) return;
+    const pose = (try world.get(blocker, data.Transform)).position;
+    const slot = (try world.get(blocker, data.Binding)).slot;
+    const service = engine.collisionService();
+    var start = pose;
+    if (try service.separate(.{ .start = pose, .end = pose, .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = body.collision_mask }, 1)) |contact| start = contact.end;
+    var source: v.Vec3 = @splat(0);
+    var nearest = std.math.inf(f32);
+    for (moves) |move| {
+        const brush = &projections[(try world.get(move.entity, data.Binding)).slot];
+        const centre = v.scale(v.add(brush.shared.absmin, brush.shared.absmax), 0.5);
+        const distance = v.length(v.subtract(centre, pose));
+        if (distance < nearest) {
+            source = centre;
+            nearest = distance;
+        }
+    }
+    var best: ?v.Vec3 = null;
+    var clearance: f32 = nearest + 16;
+    for ([_]f32{ 64, 128 }) |radius| for (0..10) |heading| {
+        const angle = @as(f32, @floatFromInt(heading)) * std.math.pi / 4;
+        const point = v.add(start, if (heading < 8) v.Vec3{ @cos(angle) * radius, @sin(angle) * radius, 0 } else v.Vec3{ 0, 0, if (heading == 8) radius else -radius });
+        const trace = try service.trace(.{ .start = start, .end = point, .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = body.collision_mask });
+        if (engine.integer("developer") >= 3 and @mod(now, 500) == 0) {
+            var text: [192]u8 = undefined;
+            engine.print(try std.fmt.bufPrintZ(&text, "zig yield probe actor={d} heading={d} radius={d} start={d} all={d} fraction={d:.2} hit={d}\n", .{ try world.persistentId(blocker), heading, radius, @intFromBool(trace.start_solid), @intFromBool(trace.all_solid), trace.fraction, trace.entity }));
+        }
+        if (trace.start_solid or trace.all_solid or v.length(v.subtract(trace.end, pose)) < 24) continue;
+        // Stop inside the clear corridor, rather than asking the route graph
+        // to reach an endpoint exactly on the obstruction's clipping plane.
+        const safe = v.add(trace.end, v.scale(v.normalize(v.subtract(start, trace.end)), 1));
+        const lane = try service.trace(.{ .start = start, .end = safe, .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = body.collision_mask });
+        if (lane.start_solid or lane.all_solid or lane.fraction < 1) continue;
+        if (try service.contents(safe, slot) & (c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_WATER) != 0) continue;
+        const distance = v.length(v.subtract(safe, source));
+        if (distance > clearance) {
+            best = safe;
+            clearance = distance;
+        }
+    };
+    if (best) |point| {
+        actor.yield_point = point;
+        actor.yield_until_ms = now + 2000;
+        if (engine.integer("developer") >= 2) {
+            var text: [192]u8 = undefined;
+            engine.print(try std.fmt.bufPrintZ(&text, "zig mover yield actor={d} point={d:.2},{d:.2},{d:.2}\n", .{ try world.persistentId(blocker), point[0], point[1], point[2] }));
+        }
+    }
+}
+pub fn push(world: *data.World, slots: *const Slots, projections: []abi.EntityProjection, moves: []const Move, now: i64, elapsed: u32, travel: Travel) anyerror!?ecs.Entity {
     var assembly = try @import("attachments.zig").prepare(world, moves, now, true);
     var projected: [ecs.max_entities]Move = undefined;
     var count: usize = 0;
@@ -159,7 +295,8 @@ pub fn push(world: *data.World, slots: *const Slots, projections: []abi.EntityPr
         count += 1;
     }
     if (try pushProjected(world, slots, projections, projected[0..count])) |blocker| {
-        try assembly.delay(world, elapsed);
+        try requestYield(world, projections, blocker, moves, now);
+        if (travel == .held) try assembly.delay(world, elapsed);
         try publishAssembly(world, projections, &assembly);
         return blocker;
     }
@@ -195,7 +332,7 @@ pub fn staticRoots(world: *data.World, slots: *const Slots, projections: []abi.E
     for (roots, 0..) |enabled, slot| if (enabled) {
         const entity = slots.occupants[slot].?;
         const destination = (try world.get(entity, data.Transform)).*;
-        _ = try push(world, slots, projections, &.{.{ .entity = entity, .destination = destination }}, now, elapsed);
+        _ = try push(world, slots, projections, &.{.{ .entity = entity, .destination = destination }}, now, elapsed, .held);
     };
 }
 /// Publishes a part through the brush mover class owning it; false when none does.

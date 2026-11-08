@@ -124,6 +124,8 @@ pub fn rebase(comptime id: data.ComponentId, value: *data.types[@intFromEnum(id)
             try active(&value.jump_ready_ms, delta);
             // Routing caches are derived from the current collision/nav world.
             value.route = .{};
+            value.yield_point = null;
+            value.yield_until_ms = 0;
         },
         .hurt => {
             if (value.at_ms != -1) try shift(&value.at_ms, delta);

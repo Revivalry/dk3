@@ -14,6 +14,9 @@ pub const Exposure = struct {
     cold_water: bool = false,
     /// The subject swims when submerged (traits `amphibious`): water never drowns it.
     amphibious: bool = false,
+    pub fn needsAir(self: Exposure) bool {
+        return if (self.subject == .aquatic_actor) self.level == 0 else self.kind == .water and self.level == 3 and !self.protected_air and !self.amphibious;
+    }
 };
 pub const Tick = struct { damage: i32 = 0, bypass_armor: bool = false, freeze: f32 = 0, drowning: bool = false, surfaced: bool = false };
 pub const State = struct {
@@ -71,7 +74,7 @@ pub const State = struct {
             if (at >= deadline) result.damage = 32000;
         }
         if (result.damage > 0) return result;
-        const drowning = if (exposure.subject == .aquatic_actor) exposure.level == 0 else exposure.kind == .water and exposure.level == 3 and !exposure.protected_air and !exposure.amphibious;
+        const drowning = exposure.needsAir();
         if (!drowning) {
             if (breathes_like_player or exposure.level == 0 or exposure.subject == .aquatic_actor or exposure.protected_air or exposure.amphibious) self.air_until_ms = at + air;
             if (prior_level == 3 and exposure.level < 3) result.surfaced = true;
@@ -105,6 +108,9 @@ test "air recovery liquid cadence and party-member nitro use distinct contracts"
     var state: State = .{};
     state.initialize(0, .player);
     const water: Exposure = .{ .kind = .water, .level = 3 };
+    try t.expect(water.needsAir());
+    try t.expect(!(Exposure{ .kind = .slime, .level = 3 }).needsAir());
+    try t.expect(!(Exposure{ .kind = .water, .level = 3, .protected_air = true }).needsAir());
     try t.expectEqual(@as(i32, 0), state.sample(11900, water).damage);
     try t.expectEqual(@as(i32, 0), state.sample(12000, water).damage);
     _ = state.sample(13000, water);

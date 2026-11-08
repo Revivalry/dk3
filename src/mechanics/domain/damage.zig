@@ -36,7 +36,7 @@ pub const Receipt = struct {
     impulse_revision: ?u32 = null,
     revision_impulse: @import("../../core/domain/vector.zig").Vec3 = @splat(0),
 };
-pub const Options = struct { source: u32 = 0, weapon: u5 = 0, bypass_armor: bool = false, bypass_protection: bool = false, environmental: bool = false, self_hazard: bool = false, suppress_flash: bool = false, attacker_class: []const u8 = "" };
+pub const Options = struct { toxic: bool = false, source: u32 = 0, weapon: u5 = 0, bypass_armor: bool = false, bypass_protection: bool = false, environmental: bool = false, self_hazard: bool = false, suppress_flash: bool = false, attacker_class: []const u8 = "", minimum_health: i32 = 0, cancelled: bool = false };
 pub const Result = struct { blood: i32 = 0, armor: i32 = 0, killed: bool = false };
 /// A held ring quarters (rounding up) the hits of the boss class it wards off.
 fn warded(mask: u32, attacker_class: []const u8, amount: i32) i32 {
@@ -46,7 +46,7 @@ fn warded(mask: u32, attacker_class: []const u8, amount: i32) i32 {
     return amount;
 }
 pub fn apply(health: *Health, character: ?Character, amount: i32, now: i64, options: Options) Result {
-    if (amount <= 0 or health.current <= 0) return .{};
+    if (options.cancelled or amount <= 0 or health.current <= 0) return .{};
     var damage = amount;
     if (character) |state| {
         if (!options.bypass_protection and (state.invincible_until > now or (options.environmental and state.environment_until > now))) return .{};
@@ -59,7 +59,8 @@ pub fn apply(health: *Health, character: ?Character, amount: i32, now: i64, opti
         saved = @intCast(@min(health.armor, absorb));
     }
     health.armor -= saved;
-    const blood = damage - saved;
+    const floor = @min(health.current, @max(0, options.minimum_health));
+    const blood = if (options.minimum_health > 0) @min(damage - saved, health.current - floor) else damage - saved;
     health.current -= blood;
     return .{ .blood = blood, .armor = saved, .killed = health.current <= 0 };
 }

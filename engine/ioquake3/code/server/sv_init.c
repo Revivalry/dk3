@@ -729,7 +729,9 @@ void SV_FinalMessage( char *message ) {
 	// send it twice, ignoring rate
 	for ( j = 0 ; j < 2 ; j++ ) {
 		for (i=0, cl = svs.clients ; i < sv_maxclients->integer ; i++, cl++) {
-			if (cl->state >= CS_CONNECTED) {
+			// Bot transports have no UDP channel, including a scripted human
+			// whose game entity is no longer marked SVF_BOT during shutdown.
+			if (cl->state >= CS_CONNECTED && cl->netchan.remoteAddress.type != NA_BOT) {
 				// don't send a disconnect to a local client
 				if ( cl->netchan.remoteAddress.type != NA_LOOPBACK ) {
 					SV_SendServerCommand( cl, "print \"%s\n\"\n", message );

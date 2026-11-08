@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """Authored cinematic admission/playback diagnostics; execute under dkguard --headless."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -13,7 +14,7 @@ import time
 import zipfile
 
 import entities
-from runtime_input import NativeInput, cinematic_shots, engine_failure, record_identity
+from runtime_input import NativeInput, cinematic_shots, engine_failure, jpeg_complete, record_identity
 from runtime_probe import client_settings, stage_client_modules, wait
 
 
@@ -44,12 +45,29 @@ def run(args):
             target_path = f'dk3/cinematics/{destination_program}.cfg'
             destination_expected = int(archive.read(target_path).split()[2]) if target_path in archive.namelist() else 0
     result = dict(identity=identity, map=args.map, destination=destination, program=program, expected_shots=expected,
+                  trigger=getattr(args, 'trigger', None),
                   capture_delay_ms=getattr(args, 'capture_delay_ms', 0),
                   scope='Explicit map admission and optional diagnostic trigger activation. Authored playback and restoration only; not connected campaign acceptance.')
     inputs, shots = [], set()
     with tempfile.TemporaryDirectory(prefix='dk3-native-cinematic-') as temporary:
         home = Path(temporary)
         stage_client_modules(args.engine, home, installation=args.engine)
+        overlays = getattr(args, 'overlay', [])
+        if overlays:
+            result['diagnostic_overlays'] = []
+            result['scope'] += ' Synthetic asset overrides: diagnosis only, never visual acceptance.'
+            for index, overlay in enumerate(overlays):
+                payload = overlay.read_bytes()
+                target = home / f'dk3/zzz-cinematic-diagnostic-{index}.pk3'
+                shutil.copy2(overlay, target)
+                result['diagnostic_overlays'].append(dict(path=str(overlay.resolve()), sha256=hashlib.sha256(payload).hexdigest()))
+        source_save = getattr(args, 'load', None)
+        if source_save:
+            source_save = source_save.resolve()
+            saves = home / 'state/dk3/saves'
+            saves.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_save, saves / 'cinematic_start.sav')
+            result['source_save'] = dict(path=str(source_save), sha256=hashlib.sha256(source_save.read_bytes()).hexdigest())
         settings = client_settings(args.engine, home, getattr(args, 'renderer', 'opengl2'))
         settings.update(dk3_cinematics='1', g_spSkill='3', developer='1')
         command = [str(args.engine / 'bin/dk3')]
@@ -65,13 +83,21 @@ def run(args):
                 state = driver.observe()
                 if state['map'] != args.map or state['skill'] != 3:
                     raise RuntimeError(f'Incorrect cinematic setup: {state}')
+                if source_save:
+                    state = driver.load('cinematic_start')
+                    if state['map'] != args.map:
+                        raise RuntimeError(f'Saved cinematic source has a different map: {state}')
                 if args.program:
                     driver.until(lambda s: s['mode'] == 'normal' and not s['cinematic'], seconds=args.seconds,
                                  description='arrival playback released before diagnostic activation')
-                    matches = [i for i, obj in enumerate(authored, 1) if obj.get('cinescript') == program]
+                    matches = [i for i, obj in enumerate(authored, 1)
+                               if obj.get('cinescript') == program or obj.get('cinematic') == program]
                     if len(matches) != 1 or expected == 0:
                         raise RuntimeError(f'Expected one authored trigger and an available program: {matches}')
-                    driver.issue(f'dk3_runtime_activate {matches[0]} player')
+                    trigger = getattr(args, 'trigger', None) or matches[0]
+                    if not 1 <= trigger <= len(authored):
+                        raise RuntimeError('Diagnostic trigger is outside this map')
+                    driver.issue(f'dk3_runtime_activate {trigger} player')
                     driver.until(lambda s: s['cinematic'] and s['mode'] == 'frozen', description='actual cinematic start')
                 elif expected:
                     driver.until(lambda s: s['cinematic'] and s['mode'] == 'frozen', seconds=90,
@@ -95,10 +121,12 @@ def run(args):
                         if (state['shot'] in args.capture_shots and state['shot'] not in captured
                                 and state['now'] - capture_starts[state['shot']] >= getattr(args, 'capture_delay_ms', 0)):
                             driver.diagnostics('dk3_runtime_performers', 'dk3 performers:')
+                            driver.diagnostics('dk3_runtime_presentation', 'dk3 presentation:')
                             name = f'cinematic-shot-{state["shot"]:03}'
-                            driver.issue(f'screenshotJPEG {name}')
                             screenshot = home / f'dk3/screenshots/{name}.jpg'
-                            wait(process, log, lambda _: screenshot.is_file() and screenshot.stat().st_size > 0, 5)
+                            screenshot.unlink(missing_ok=True)
+                            driver.issue(f'screenshotJPEG {name}')
+                            wait(process, log, lambda _: jpeg_complete(screenshot), 5)
                             shutil.copy2(screenshot, args.report / screenshot.name)
                             captured.add(state['shot'])
                         if destination != args.map and state['shot'] == expected - 1 and 'last_shot_save' not in result:
@@ -133,9 +161,10 @@ def run(args):
                 if restored['map'] != destination or restored['mode'] != 'normal' or restored['cinematic']:
                     raise RuntimeError('Completed cinematic restarted or trapped control after restoration')
                 shutil.copy2(save, args.report / save.name)
-                driver.issue('screenshotJPEG cinematic-finished')
                 screenshot = home / 'dk3/screenshots/cinematic-finished.jpg'
-                wait(process, log, lambda _: screenshot.is_file() and screenshot.stat().st_size > 0, 5)
+                screenshot.unlink(missing_ok=True)
+                driver.issue('screenshotJPEG cinematic-finished')
+                wait(process, log, lambda _: jpeg_complete(screenshot), 5)
                 shutil.copy2(screenshot, args.report / screenshot.name)
                 result.update(status='passed', observed_shots=sorted(shots), final_state=state, restored=restored,
                               diagnostics=[line for line in driver.text().splitlines() if line.startswith('dk3 cinematic: unavailable') or 'absent recipient' in line or 'control carrier has no media' in line])
@@ -159,9 +188,13 @@ if __name__ == '__main__':
     parser.add_argument('--report', type=Path, required=True)
     parser.add_argument('--map', required=True)
     parser.add_argument('--program', help='Activate this map-authored cinematic trigger as an isolated diagnostic')
+    parser.add_argument('--trigger', type=int, help='Activate an authored prerequisite trigger, preserving its removals and target chain')
+    parser.add_argument('--load', type=Path, help='Copied legitimate prerequisite save; the source remains untouched')
     parser.add_argument('--destination', help='Expected authored handoff map after every shot has entered')
     parser.add_argument('--seconds', type=int, default=240)
     parser.add_argument('--renderer', default='opengl2')
+    parser.add_argument('--overlay', type=Path, action='append', default=[],
+                        help='Synthetic PK3 override for diagnosis only; excludes visual acceptance')
     parser.add_argument('--capture-shots', type=lambda text: set(map(int, text.split(','))), default=set())
     parser.add_argument('--capture-delay-ms', type=int, default=0,
                         help='Wait this far into an observed shot before its diagnostic capture')

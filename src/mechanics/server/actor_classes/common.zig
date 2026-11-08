@@ -26,8 +26,13 @@ pub fn groundPath(frame: *Frame, point: ?v.Vec3, speed: f32) !void {
 /// `pathMove` for fliers: fly the air route graph toward the point, facing the next waypoint.
 pub fn airPath(frame: *Frame, point: ?v.Vec3, speed: f32) !void {
     const pose = frame.pose;
+    const service = @import("../actor_collision.zig").service();
+    const at = try service.trace(.{ .start = pose.position, .end = pose.position, .mins = frame.body.mins, .maxs = frame.body.maxs, .slot = frame.slot, .mask = frame.body.collision_mask });
+    if (at.start_solid) if (try service.separate(.{ .start = pose.position, .end = pose.position, .mins = frame.body.mins, .maxs = frame.body.maxs, .slot = frame.slot, .mask = frame.body.collision_mask }, 1)) |contact| {
+        pose.position = contact.end;
+    };
     frame.velocity.linear = @splat(0);
-    if (point) |destination| if (try frame.actors.air_routes.next(pose.position, destination, frame.body.*, frame.slot)) |waypoint| {
+    if (point) |destination| if (if (frame.direct_path) @as(?v.Vec3, destination) else try frame.actors.air_routes.next(pose.position, destination, frame.body.*, frame.slot)) |waypoint| {
         const delta = v.subtract(waypoint, pose.position);
         frame.velocity.linear = v.scale(v.normalize(delta), @min(speed, v.length(delta) * 10));
         pose.angles[1] = std.math.atan2(delta[1], delta[0]) * 180 / std.math.pi;

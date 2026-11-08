@@ -47,6 +47,8 @@ const Shared = struct {
     route: @import("../../core/domain/navigation.zig").State = .{},
     escape_until: i64 = 0,
     jump_ready_ms: i64 = 0,
+    yield_point: ?v.Vec3 = null,
+    yield_until_ms: i64 = 0,
 };
 /// An actor's state: the shared fields, then one slot per class policy that declares a `State`,
 /// named by its `state_field` (the saved key, so saves keep their layout). Classes own their

@@ -62,8 +62,7 @@ pub fn activate(world: *data.World, slots: *Slots, projections: []abi.EntityProj
         // The reference admits a use by flags alone: a dying monster's deathtarget starts a
         // monster-allowed generator (e1m7b's end_count -> end_events frees the Daikatana).
         // Dead bodies are already excluded where the volume is touched.
-        const owner = world.find(activator) orelse return true;
-        if ((world.get(owner, data.Player) catch null) == null and (!sequence.actor_allowed or (world.get(owner, data.Actor) catch null) == null)) return true;
+        if (!@import("entity_classes/registry.zig").allowsSequence(world, entity, activator)) return true;
         if (sequence.start(activator, now)) {
             const sound = sequence.sound;
             if (sound.len > 0) {

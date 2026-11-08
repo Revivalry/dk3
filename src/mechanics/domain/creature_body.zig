@@ -101,9 +101,16 @@ pub const Body = struct {
                 for (0..self.count) |i| {
                     if (self.weight(i) == 0) continue;
                     const hit = try service.trace(.{ .brushes_only = true, .start = before[i], .end = self.points[i], .mins = @splat(-self.radius[i]), .maxs = @splat(self.radius[i]), .slot = slot, .mask = mask });
-                    if (hit.all_solid) {
-                        self.points[i] = before[i];
-                        self.previous[i] = before[i];
+                    if (hit.all_solid or hit.start_solid) {
+                        if (try service.separate(.{ .brushes_only = true, .start = before[i], .end = before[i], .mins = @splat(-self.radius[i]), .maxs = @splat(self.radius[i]), .slot = slot, .mask = mask }, self.radius[i] * 2)) |contact| {
+                            self.points[i] = contact.end;
+                            self.previous[i] = v.add(self.previous[i], v.subtract(contact.end, before[i]));
+                            normals[i] = contact.normal;
+                            self.contacts +|= 1;
+                        } else {
+                            self.points[i] = before[i];
+                            self.previous[i] = before[i];
+                        }
                     } else if (hit.fraction < 1) {
                         self.points[i] = v.add(hit.end, v.scale(hit.normal, 0.03));
                         normals[i] = hit.normal;

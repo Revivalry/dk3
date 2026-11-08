@@ -3,6 +3,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+import tempfile
+from unittest.mock import patch
 
 import runtime_coop_bot as runner
 
@@ -20,6 +22,24 @@ dk3 coop: t=620000 event=fail map=e1m1a reason="coop/episode1.lua:9: exit: no pr
 
 
 class CoopBotRunnerTest(unittest.TestCase):
+    def test_cleanup_reaps_only_the_reported_job_with_its_unique_profile(self):
+        with tempfile.TemporaryDirectory() as folder:
+            proc = Path(folder)
+            leader = proc / '123'
+            leader.mkdir()
+            command = leader / 'cmdline'
+            log = 'dkguard: started pid=123 pgid=123\n'
+            with patch.object(runner.os, 'killpg') as kill:
+                command.write_bytes(b'dk3ded\0+set\0fs_homepath\0/tmp/this-replay\0')
+                runner.reap_isolated_job(log, Path('/tmp/this-replay'), proc)
+                kill.assert_called_once_with(123, runner.signal.SIGKILL)
+                kill.reset_mock()
+                command.write_bytes(b'dk3ded\0+set\0fs_homepath\0/tmp/another-game\0')
+                runner.reap_isolated_job(log, Path('/tmp/this-replay'), proc)
+                command.unlink()
+                runner.reap_isolated_job(log, Path('/tmp/this-replay'), proc)
+                kill.assert_not_called()
+
     def test_events_parse_quoted_fields_and_tolerate_console_prefixes(self):
         events = [event for event in map(runner.parse_event, LOG.splitlines()) if event]
         self.assertEqual(len(events), 9)
@@ -50,21 +70,42 @@ class CoopBotRunnerTest(unittest.TestCase):
     def test_settings_run_the_real_campaign_fast_and_isolated(self):
         home = Path('/tmp/profile')
         args = SimpleNamespace(assets=Path('/assets'), skill=3, cinematics=1, jobs=4, script='campaign.lua',
-                               bot_skill=10, developer=0, realtime=False, load=None, stage=None, map='intro', status_ms=1000)
+                               bot_skill=10, developer=0, realtime=False, load=None, stage=None, map='intro', status_ms=1000,
+                               resident_worlds=False)
         values = runner.settings(args, home)
         self.assertEqual(values['g_gametype'], '2')
         self.assertEqual(values['dk3_runtime_probe'], '2')
         self.assertEqual((values['fixedtime'], values['timedemo'], values['sv_fps']), ('50', '1', '20'))
         self.assertEqual(values['fs_homepath'], str(home))
         self.assertEqual(values['dk3_coop_script'], 'coop/campaign.lua')
+        self.assertEqual(values['g_residentWorlds'], '0')
         self.assertNotIn('dk3_coop_load', values)
         args.realtime, args.load, args.stage, args.map = True, Path('/saves/x.sav'), 5, 'e1m1b'
+        args.resident_worlds = True
         values = runner.settings(args, home)
         self.assertNotIn('fixedtime', values)
         self.assertEqual(values['dk3_coop_load'], 'coop-resume')
         self.assertEqual(values['dk3_coop_checkpoint'], 'e1m1b 5')
-        # The engine accepts at most 31 startup commands.
-        self.assertLess(len(values) + 1, 31)
+        self.assertEqual(values['g_residentWorlds'], '1')
+
+    def test_resumed_tracing_cannot_drop_the_startup_map(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            (home / 'dk3').mkdir()
+            args = SimpleNamespace(assets=Path('/assets'), skill=1, cinematics=1, jobs=4,
+                script='campaign.lua', bot_skill=10, developer=2, realtime=False,
+                load=Path('/save.sav'), stage=1, map='e2m5e', status_ms=1000,
+                resident_worlds=True, motion_trace=True, guard=Path('/dkguard'),
+                mem='8G', timeout=300, engine=Path('/engine'))
+            values = runner.settings(args, home)
+            values.update({f'future_option_{i}': str(i) for i in range(64)})
+            command = runner.launch_command(args, home, values)
+            self.assertEqual(command[-2:], ['+map', 'e2m5e'])
+            self.assertLess(command.count('+set') + 2, 31)
+            config = (home / 'dk3/autoexec.cfg').read_text()
+            self.assertIn('set dk3_coop_resume_checkpoint "e2m5e 1"\n', config)
+            self.assertIn('set dk3_coop_motion_trace "1"\n', config)
+            self.assertIn('set future_option_63 "63"\n', config)
 
 
 if __name__ == '__main__':

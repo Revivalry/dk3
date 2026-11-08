@@ -84,7 +84,7 @@ pub fn describe(frame: Frame, entity: ecs.Entity) !Resolved {
         if (shared.linked != 0 and (shared.bmodel != 0 or shared.contents & c.CONTENTS_TRIGGER != 0)) {
             result.mins = shared.absmin;
             result.maxs = shared.absmax;
-            result.point = v.scale(v.add(shared.absmin, shared.absmax), 0.5);
+            result.point = try @import("bot_routes.zig").center(world, entity);
             result.brush = true;
         }
     };

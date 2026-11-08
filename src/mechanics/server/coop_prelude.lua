@@ -11,7 +11,8 @@ local options = { deaths = 0, level_deaths = 3, level_saves = true }
 -- Health worth a checkpoint counts armor too (it soaks up much of a hit).
 local function sturdy(fraction)
   local health, maximum, armor = dk3.health()
-  return health + math.min(armor or 0, maximum) * 0.5 >= fraction * maximum, health, maximum
+  return health >= maximum * 0.25 and
+    health + math.min(armor or 0, maximum) * 0.5 >= fraction * maximum, health, maximum
 end
 
 local function seconds(value, default)
@@ -20,22 +21,14 @@ local function seconds(value, default)
   return value
 end
 
--- Actions of a restored stage that the saved world already reflects.
-local skip = 0
-
 local function act(spec, opts)
-  -- Saves are not among the actions a restored world reflects: never skipped.
-  if skip > 0 and spec.op ~= "save" then
-    skip = skip - 1
-    dk3.skipped()
-    return "skipped (restored past it)"
-  end
   opts = opts or {}
   spec.timeout = seconds(opts.timeout, spec.timeout or 60)
   if opts.fight ~= nil then spec.fight = opts.fight end
-  for _, key in ipairs({ "radius", "around", "class", "map", "count", "hold", "direct", "crouch", "arena", "weapon", "cautious", "blast", "pace" }) do
+  for _, key in ipairs({ "radius", "vertical_radius", "around", "class", "map", "count", "hold", "direct", "settle", "crouch", "arena", "weapon", "cautious", "blast", "pace", "on_floor" }) do
     if opts[key] ~= nil and spec[key] == nil then spec[key] = opts[key] end
   end
+  if spec.on_floor and spec.target and spec.target.point then spec.target.point = on_floor(spec.target.point) end
   local ok, detail = yield(spec)
   if not ok then error(dk3.where() .. ": " .. spec.op .. ": " .. tostring(detail), 0) end
   return detail
@@ -50,6 +43,18 @@ local function target(value)
   return value
 end
 
+-- The player's own position, one axis at a time: a route states where it
+-- expects to stand after a move (`expect(x() < 1350, "through the doors")`)
+-- rather than trusting that the move returned.
+function x() return (dk3.position()) end
+function y() local _, east = dk3.position() return east end
+function z() local _, _, height = dk3.position() return height end
+
+local function in_liquid()
+  local px, py, pz = dk3.position()
+  return dk3.contents({px, py, pz - 20}) & (8 | 16 | 32) ~= 0
+end
+
 function level(name, body)
   assert(type(name) == "string", "level name must be a map name")
   local function register(fn)
@@ -61,8 +66,13 @@ function level(name, body)
     -- (say, into a guard post) keeps the previous map's checkpoint instead.
     levels[name] = function(visit, resumed)
       if options.level_saves and not resumed then
-        cinematic()
-        recover(0.6)
+        local wet = in_liquid()
+        if not wet or dk3.cinematic() then cinematic() end
+        if not wet then recover(0.6) end
+        -- Into a new map with an empty arsenal: take what the arrival room can
+        -- safely reach before the fight the map opens on (and before the save
+        -- a retry comes back to).
+        if not wet then try(arm, 30, 900) end
         local healthy, health, maximum = sturdy(0.6)
         if healthy then
           save("coop-" .. name)
@@ -70,6 +80,7 @@ function level(name, body)
           dk3.log(string.format("arrival save skipped: health %d of %d", health, maximum))
         end
       end
+      if options.finish_map == name then return finish() end
       return fn(visit, resumed)
     end
   end
@@ -78,17 +89,17 @@ function level(name, body)
 end
 
 -- A level body may be a list of named stages: `stages { {"river", fn}, ... }`.
--- Every game save (autosave or explicit) records the running stage, and a
--- restoration from that save resumes at the start of that stage. A stage
+-- Explicit stage saves record the running stage; periodic autosaves remain on
+-- disk without replacing the script's recovery point. A restoration resumes
+-- at the start of its saved stage. A stage
 -- marked `checkpoint = true` saves as it begins (slot coop-<map>-<index>), so
 -- a death later in a long level resumes there rather than at its arrival.
 function stages(list)
   return function(visit, resumed)
-    local first, done = 1, 0
+    local first = 1
     if resumed then
-      first, done = dk3.checkpoint_stage()
-      -- A save taken before the first stage (arrival) has nothing to skip.
-      if first < 1 then first, done = 1, 0 end
+      first = dk3.checkpoint_stage()
+      if first < 1 then first = 1 end
     end
     for index = first, #list do
       local resuming = resumed and index == first
@@ -96,16 +107,19 @@ function stages(list)
       -- A checkpoint is only worth having in good health: restoring a badly
       -- hurt player again and again cannot succeed. Heal from what is near;
       -- if still hurt, keep the older checkpoint.
-      if list[index].checkpoint and not resuming then tend() recover(0.6) resupply(30, 900) end
+      if list[index].checkpoint and list[index].supplies ~= false and not resuming and not in_liquid() then
+        tend() recover(0.6) try(arm, 30, 900)
+      end
       if list[index].checkpoint and not resuming and sturdy(0.5) then
         -- The save records the stage with none of its body's actions done
         -- (healing on the way here is not replayed on restoration).
         dk3.stage(index, list[index][1], true)
         save("coop-" .. dk3.map() .. "-" .. index)
       end
-      skip = resuming and done or 0
+      -- Replan from the restored world. Generated node paths and conditional
+      -- pickups have different action counts here; skipping an old ordinal
+      -- can silently skip the remainder of this stage, including objectives.
       list[index][2](visit, resuming)
-      skip = 0
     end
   end
 end
@@ -145,22 +159,28 @@ function clear(opts) return kill(nil, opts) end
 function exit(map, opts)
   -- Up to the exit first: the health about it (a station by the door) is
   -- what the next map's arrival is fought with.
-  local id = map and dk3.exit_to(map)
+  local selector = type(map) == "table" and target(map) or nil
+  local chosen = selector and dk3.entity(selector)
+  local id = chosen and chosen.id or (type(map) == "string" and dk3.exit_to(map))
   local door = id and dk3.entity({ id = id })
-  if door then try(move, { door.x, door.y, door.z }, { radius = 320, timeout = 60 }) end
+  if door then try(move, { id = id }, { radius = 320, timeout = 60 }) end
   tend()
   recover(0.8)
-  resupply()
-  return act({ op = "exit", map = map, timeout = 180 }, opts)
+  try(arm, 30, 700)
+  dk3.sidekick("all", "follow")
+  return act({ op = "exit", map = type(map) == "string" and map or nil, target = selector, timeout = 180 }, opts)
 end
 function cinematic(opts) return act({ op = "cinematic", timeout = 900 }, opts) end
 function look(yaw, pitch) return act({ op = "look", yaw = yaw, pitch = pitch or 0, timeout = 5 }) end
-function weapon(id) return act({ op = "weapon", weapon = id, timeout = 10 }) end
-function jump() return act({ op = "jump", timeout = 5 }) end
+function weapon(id, opts) return act({ op = "weapon", weapon = id, timeout = 10 }, opts) end
+function jump(opts) return act({ op = "jump", timeout = 5 }, opts) end
 -- Running jump: walk precisely to `takeoff`, then run and jump toward
 -- `landing`; succeeds only when the player lands there.
 function leap(takeoff, landing, opts)
-  return act({ op = "leap", target = target(takeoff), around = landing, timeout = 20 }, opts)
+  if type(landing) == "table" and type(landing[1]) ~= "number" then
+    return act({op = "leap", target = target(takeoff), landing = target(landing), fight = false, timeout = 20}, opts)
+  end
+  return act({ op = "leap", target = target(takeoff), around = landing, fight = false, timeout = 20 }, opts)
 end
 -- Shotcycler jump: from `takeoff`, fired at the floor as the player jumps
 -- (again near the top of each rise) toward `landing`, over a fence a jump
@@ -206,6 +226,32 @@ function pickup_near(item)
   if not found then return end
   try(move, { found.x, found.y, found.z }, { radius = 160, timeout = 30 })
 end
+-- A `move` is judged in three dimensions: within `radius` across and 56 units
+-- up or down. A point whose height the author did not measure is therefore a
+-- point the bot stands exactly under and never arrives at (and one sunk into
+-- the plank is a wall). `on_floor` returns a point at the height its own floor
+-- is walked at, found by the same hull the bot is moved with; where the trace
+-- finds no walkable floor - a void, a mover not in place yet - the point is
+-- returned as written, so an authored height still stands.
+function on_floor(point, depth)
+  assert(type(point) == "table" and type(point[1]) == "number", "on_floor needs a point")
+  depth = depth or 220
+  -- A hull started inside the structure above - a catwalk's underside, the roof
+  -- of a pit under a floor - stops at that structure and reports no floor,
+  -- though a player walks the level below it all the same. Start the sweep
+  -- under the overhang when the sweep from above is stopped by one, and accept
+  -- only a surface near the authored height: a floor found far below is a void
+  -- the author meant to cross, not a floor to walk.
+  for _, start in ipairs({ point[3] + depth, point[3] + 64, point[3] + 20 }) do
+    local hit = dk3.trace({ point[1], point[2], start }, { point[1], point[2], point[3] - depth }, true)
+    if hit and hit.fraction < 1 and not hit.start_solid and (hit.normal_z or 0) > 0.5
+        and math.abs(hit.z - point[3]) <= 96 then
+      return { point[1], point[2], hit.z }
+    end
+  end
+  return point
+end
+
 function wait(duration) return act({ op = "wait", duration = duration, timeout = duration + 1 }) end
 
 -- Walks the points in order, starting at the one nearest the player: a game
@@ -339,26 +385,33 @@ end
 -- costs three times as much, so routes come up for air where they can. Logs,
 -- per goal, the cheapest route's turning points (`a` marks air) and its
 -- longest stretch under water, in cells.
-function flood(goals, box, step)
+function flood(goals, box, step, from, hull)
   step = step or 24
-  local nx, ny, nz = math.floor((box[4] - box[1]) / step) + 1, math.floor((box[5] - box[2]) / step) + 1, math.floor((box[6] - box[3]) / step) + 1
+  hull = hull or true
+  local eye_height = hull == "crouch" and -2 or 26
+  local px, py, pz = dk3.position()
+  if from then px, py, pz = from[1], from[2], from[3] end
+  local start
+  local floor_z = box[3] + (pz - box[3]) % step
+  local nx, ny, nz = math.floor((box[4] - box[1]) / step) + 1, math.floor((box[5] - box[2]) / step) + 1, math.floor((box[6] - floor_z) / step) + 1
   local function key(i, j, k) return (k * ny + j) * nx + i end
   local function centre(at)
+    if at == start then return px, py, pz end
     local k = at // (nx * ny)
     local j = (at % (nx * ny)) // nx
-    return box[1] + (at % nx) * step, box[2] + j * step, box[3] + k * step
+    return box[1] + (at % nx) * step, box[2] + j * step, floor_z + k * step
   end
   local function cell(x, y, z)
-    return math.floor((x - box[1]) / step + 0.5), math.floor((y - box[2]) / step + 0.5), math.floor((z - box[3]) / step + 0.5)
+    return math.floor((x - box[1]) / step + 0.5), math.floor((y - box[2]) / step + 0.5), math.floor((z - floor_z) / step + 0.5)
   end
   local fits, air, wet = {}, {}, {}
   for k = 0, nz - 1 do for j = 0, ny - 1 do for i = 0, nx - 1 do
     local at = key(i, j, k)
     local x, y, z = centre(at)
-    if not dk3.trace({ x, y, z }, { x, y, z }, true).start_solid then
+    if not dk3.trace({ x, y, z }, { x, y, z }, hull).start_solid then
       fits[at] = true
       wet[at] = dk3.contents({ x, y, z }) & 32 ~= 0
-      air[at] = dk3.contents({ x, y, z + 26 }) & 32 == 0
+      air[at] = dk3.contents({ x, y, z + eye_height }) & 32 == 0
     end
   end end end
   -- Dijkstra with a binary heap of {cost, cell}.
@@ -383,8 +436,12 @@ function flood(goals, box, step)
     end
     return top
   end
-  local px, py, pz = dk3.position()
-  local start = key(cell(px, py, pz))
+  start = key(cell(px, py, pz))
+  -- The rounded cell may be buried in the floor or an overhang. This vertex
+  -- represents the actual player pose; every outgoing edge is still swept.
+  fits[start] = true
+  wet[start] = dk3.contents({px, py, pz}) & 32 ~= 0
+  air[start] = dk3.contents({px, py, pz + eye_height}) & 32 == 0
   local cost, previous = { [start] = 0 }, {}
   push(0, start)
   local moves = { { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 } }
@@ -394,14 +451,17 @@ function flood(goals, box, step)
     if item[1] == cost[at] then
       local x1, y1, z1 = centre(at)
       local i, j, k = cell(x1, y1, z1)
+      local supported_here = dk3.trace({x1,y1,z1}, {x1,y1,z1-20}, hull).fraction < 1
       for _, m in ipairs(moves) do
         local a, b, c = i + m[1], j + m[2], k + m[3]
         local next = key(a, b, c)
         if a >= 0 and b >= 0 and c >= 0 and a < nx and b < ny and c < nz and fits[next] then
           local x2, y2, z2 = centre(next)
-          local grounded = dk3.trace({ x2, y2, z2 }, { x2, y2, z2 - 20 }, true).fraction < 1
-          local allowed = wet[next] or (m[3] <= 0 and (grounded or m[3] < 0 or wet[at]))
-          if allowed and dk3.trace({ x1, y1, z1 }, { x2, y2, z2 }, true).fraction >= 1 then
+          local grounded = dk3.trace({ x2, y2, z2 }, { x2, y2, z2 - 20 }, hull).fraction < 1
+          -- A supported body can step off a bank, then fall. An unsupported
+          -- dry vertex cannot continue across empty air at the same height.
+          local allowed = wet[next] or (m[3] <= 0 and (grounded or m[3] < 0 or wet[at] or (m[3] == 0 and supported_here)))
+          if allowed and dk3.trace({ x1, y1, z1 }, { x2, y2, z2 }, hull).fraction >= 1 then
             local total = item[1] + (air[next] and 1 or 3)
             if not cost[next] or total < cost[next] then
               cost[next], previous[next] = total, at
@@ -412,6 +472,9 @@ function flood(goals, box, step)
       end
     end
   end
+  local reachable = 0
+  for _ in pairs(cost) do reachable = reachable + 1 end
+  dk3.log("flood reachable cells " .. reachable)
   for _, goal in ipairs(goals) do
     local gi, gj, gk = cell(goal[1], goal[2], goal[3])
     local found
@@ -424,6 +487,16 @@ function flood(goals, box, step)
     local label = string.format("%d,%d,%d", goal[1], goal[2], goal[3])
     if not found then
       dk3.log("flood " .. label .. ": no route")
+      local closest, distance
+      for at in pairs(cost) do
+        local cx, cy, cz = centre(at)
+        local d = (cx-goal[1])^2 + (cy-goal[2])^2 + (cz-goal[3])^2
+        if not distance or d < distance then closest, distance = at, d end
+      end
+      if closest then
+        local cx, cy, cz = centre(closest)
+        dk3.log(string.format("flood nearest %.1f %.1f %.1f distance %.1f",cx,cy,cz,math.sqrt(distance)))
+      end
     else
       local cells, at = {}, found
       while at do table.insert(cells, 1, at) at = previous[at] end
@@ -434,7 +507,7 @@ function flood(goals, box, step)
         local direction = cells[n + 1] and cells[n + 1] - at
         if direction ~= last then
           local x, y, z = centre(at)
-          turns[#turns + 1] = string.format("{%d,%d,%d}%s", x, y, z, air[at] and "a" or "")
+          turns[#turns + 1] = string.format("{%.1f,%.1f,%.1f}%s", x, y, z, air[at] and "a" or "")
         end
         last = direction
       end
@@ -459,6 +532,7 @@ function walkflood(goals, box, step, opts)
   step = step or 32
   if type(opts) ~= "table" then opts = { crouch = opts } end
   local px, py, pz = dk3.position()
+  if opts.from then px, py, pz = opts.from[1], opts.from[2], opts.from[3] end
   local function column(i, j) return box[1] + i * step, box[2] + j * step end
   local nodes, previous, queue, head = {}, {}, {}, 1
   local function add(k, node, from)
@@ -475,26 +549,30 @@ function walkflood(goals, box, step, opts)
   add("start", { x = px, y = py, z = pz, i = math.floor((px - box[1]) / step + 0.5), j = math.floor((py - box[2]) / step + 0.5), start = true, mark = "" })
   local ni = math.floor((box[3] - box[1]) / step)
   local nj = math.floor((box[4] - box[2]) / step)
+  local span = opts.jump_span or 1
+  assert(span >= 1 and span <= 8 and span % 1 == 0, "walkflood: jump_span must be 1..8 cells")
   while head <= #queue do
     local k = queue[head]
     head = head + 1
     local node = nodes[k]
     local standing = not dk3.trace({ node.x, node.y, node.z }, { node.x, node.y, node.z }, true).start_solid
-    for dj = -1, 1 do for di = -1, 1 do
+    for dj = -span, span do for di = -span, span do
       local a, b = node.i + di, node.j + dj
-      if (node.start or di ~= 0 or dj ~= 0) and a >= 0 and b >= 0 and a <= ni and b <= nj then
+      local stride = math.max(math.abs(di), math.abs(dj))
+      local heading = stride <= 1 or di == 0 or dj == 0 or math.abs(di) == math.abs(dj)
+      if heading and (node.start or stride > 0) and a >= 0 and b >= 0 and a <= ni and b <= nj then
         local tx, ty = column(a, b)
         for _, move in ipairs(moves) do
           local hull, rise, mark = move[1], move[2], move[3]
           -- A jump needs room to stand and to rise its full height.
-          local up = (hull ~= true or standing) and (rise <= 18 or dk3.trace({ node.x, node.y, node.z }, { node.x, node.y, node.z + rise }, true).fraction >= 1)
+          local up = (stride <= 1 or mark == "j") and (hull ~= true or standing) and (rise <= 18 or dk3.trace({ node.x, node.y, node.z }, { node.x, node.y, node.z + rise }, true).fraction >= 1)
           local sweep = up and dk3.trace({ node.x, node.y, node.z + rise }, { tx, ty, node.z + rise }, hull)
           if sweep and not sweep.start_solid and sweep.fraction >= 1 then
             local down = dk3.trace({ tx, ty, node.z + rise }, { tx, ty, node.z - 600 }, hull)
             if down.fraction < 1 and down.normal_z >= 0.7 then
               add(string.format("%d:%d:%d", a, b, math.floor(down.z / 8 + 0.5)), { x = tx, y = ty, z = down.z, i = a, j = b, mark = mark }, k)
+              break
             end
-            break
           end
         end
       end
@@ -517,7 +595,8 @@ function walkflood(goals, box, step, opts)
   for band, b in pairs(bands) do
     dk3.log(string.format("walkflood   band z %d..%d: %d floors in %.0f,%.0f..%.0f,%.0f", band * 32, band * 32 + 32, b.n, b.x0, b.y0, b.x1, b.y1))
   end
-  for _, goal in ipairs(goals) do
+  local routes = {}
+  for goal_index, goal in ipairs(goals) do
     local found, best, nearest, nearest_d
     for k, node in pairs(nodes) do
       local across = math.sqrt((node.x - goal[1]) ^ 2 + (node.y - goal[2]) ^ 2)
@@ -530,16 +609,19 @@ function walkflood(goals, box, step, opts)
       local node = nodes[nearest]
       dk3.log(string.format("walkflood %s: unreached; nearest floor %.0f,%.0f,%.0f", label, node.x, node.y, node.z))
     else
-      local points, at = {}, found
+      local points, route, at = {}, {}, found
       while at do
         local node = nodes[at]
         table.insert(points, 1, string.format("%s{%.0f,%.0f,%.0f}", node.mark, node.x, node.y, node.z))
+        table.insert(route, 1, { node.x, node.y, node.z, mark = node.mark })
         at = previous[at]
       end
+      routes[goal_index] = route
       dk3.log(string.format("walkflood %s: %d steps", label, #points))
       for n = 1, #points, 12 do dk3.log("walkflood   " .. table.concat(points, " ", n, math.min(#points, n + 11))) end
     end
   end
+  return routes
 end
 
 -- Heads for the forward exit to `map`, operating controls on the way when the
@@ -549,6 +631,106 @@ function progress(map, opts)
   if not destination then error(dk3.where() .. ": progress: no exit to " .. map, 0) end
   advance({ id = destination }, opts)
   return exit(map, opts)
+end
+
+-- Follow the supplied ground-node corridor through normal player movement.
+-- The graph may stop short of a disconnected water section or a jump: return
+-- its actual endpoint to the route author, without claiming the goal reached.
+function nodepath(goal, opts)
+  local points = dk3.ground_route(target(goal))
+  assert(#points > 0, "no authored ground-node route")
+  local move_opts = { direct = true, radius = 28, vertical_radius = 24, timeout = 30, cautious = true }
+  for key, value in pairs(opts or {}) do move_opts[key] = value end
+  local climb_landing = false
+  for index, point in ipairs(points) do
+    if opts and opts.standoff then
+      local endpoint = dk3.entity(target(goal))
+      local px, py, pz = dk3.position()
+      if endpoint and ((endpoint.x - px)^2 + (endpoint.y - py)^2 + (endpoint.z - pz)^2 <= opts.standoff^2 or
+         (endpoint.x - point[1])^2 + (endpoint.y - point[2])^2 + (endpoint.z - point[3])^2 <= opts.standoff^2) then break end
+    end
+    local px, py, pz = dk3.position()
+    local onward = points[index + 1]
+    local vertical = point[3] - pz > 24 and (point[1] - px)^2 + (point[2] - py)^2 < 96^2
+    local landing = onward and math.abs(onward[3] - point[3]) <= 32 and
+                    (onward[1] - point[1])^2 + (onward[2] - point[2])^2 > 16^2
+    -- A vertical node names the top of the climb; the following node is
+    -- where to step off. Aim at that landing throughout the climb instead
+    -- of stopping short of its lip on the intermediate vertical node.
+    local skip_rung = not climb_landing and vertical and landing
+    climb_landing = skip_rung
+    if not skip_rung then
+      local px, py, pz = dk3.position()
+      local block = dk3.trace({px, py, pz + 2}, {point[1], point[2], point[3] + 2}, true)
+      local step = dk3.plan(target(point))
+      -- The authored corridor owns this segment. A disconnected area graph
+      -- can propose a gate far behind us even when these steps are clear.
+      -- Only the gate physically in this segment authorizes its control.
+      if step and not step.wait and (step.gate & 0xffffff) ~= block.index then
+        local gate = dk3.entity {id = step.gate}
+        local near = gate and math.min((gate.x-px)^2 + (gate.y-py)^2 + (gate.z-pz)^2,
+          (gate.x-point[1])^2 + (gate.y-point[2])^2 + (gate.z-point[3])^2) <= 192^2
+        if not near then step = nil end
+      end
+      if step and not step.wait then
+        local control = { id = step.id }
+        if step.action == "shoot" then shoot(control)
+        elseif step.action == "touch" then touch(control)
+        else use(control) end
+      elseif step and step.wait then
+        wait(1)
+      end
+      -- A thin manual door need not separate two AAS areas. Its live hull is
+      -- still in the corridor: approach and use that actual blocking mover,
+      -- rather than trying to walk through it until the movement times out.
+      px, py, pz = dk3.position()
+      -- Authored nodes can sit exactly on the expanded floor boundary. Lift
+      -- this query slightly so a rounding contact with that floor cannot hide
+      -- the door ahead; actual walking still uses the normal player hull.
+      block = dk3.trace({px, py, pz + 2}, {point[1], point[2], point[3] + 2}, true)
+      if block.index > 0 then
+        local mover = { index = block.index }
+        if dk3.mover(mover) == "closed" then
+          local operable = false
+          for _, control in ipairs(dk3.controls()) do
+            if control.index == block.index and control.kind == "use" and control.ready then operable = true break end
+          end
+          assert(operable, "ground corridor blocked by mover " .. block.index .. "; operate its authored control first")
+          use(mover)
+        end
+        local state = dk3.mover(mover)
+        if state == "opening" or state == "closing" then
+          px, py, pz = dk3.position()
+          -- Opening a leaf can sweep across the spot used to press it. Step
+          -- back along the corridor before waiting, as a player would; standing
+          -- in the arc makes the mover stall and repeatedly crush its user.
+          local dx, dy = point[1] - px, point[2] - py
+          local length = math.sqrt(dx*dx + dy*dy)
+          if length > 1 then
+            local away = {px - dx/length*40, py - dy/length*40, pz}
+            local lane = dk3.trace({px, py, pz + 2}, {away[1], away[2], away[3] + 2}, true)
+            local floor = dk3.trace({away[1], away[2], pz + 18}, {away[1], away[2], pz - 18}, true)
+            if not lane.start_solid and lane.fraction >= 1 and floor.fraction < 1 and floor.normal_z >= 0.7 then
+              away[3] = floor.z
+              move(away, {direct = true, radius = 8, timeout = 4, fight = false})
+            end
+          end
+          wait_until(function()
+            local phase = dk3.mover(mover)
+            return phase ~= "opening" and phase ~= "closing"
+          end, { timeout = 30, fight = false, reason = "blocking mover settles before crossing" })
+        end
+      end
+      local segment_opts = move_opts
+      if opts and opts.segment_options then
+        segment_opts = {}
+        for key, value in pairs(move_opts) do segment_opts[key] = value end
+        for key, value in pairs(opts.segment_options(point, index) or {}) do segment_opts[key] = value end
+      end
+      move(point, segment_opts)
+    end
+  end
+  return points[#points]
 end
 
 -- Collects reachable health items on this floor within `radius` (nearest
@@ -636,7 +818,7 @@ function resupply(low, radius)
     local best, nearest
     for _, item in ipairs(dk3.pickups(radius or 640)) do
       local distance = (item.x - x) ^ 2 + (item.y - y) ^ 2
-      if item.ammo > 0 and dk3.has_weapon(item.ammo) and dk3.ammo(item.ammo) < (low or 30) and not tried[item.id]
+      if item.wanted ~= false and item.ammo > 0 and dk3.has_weapon(item.ammo) and dk3.ammo(item.ammo) < (low or 30) and not tried[item.id]
           and math.abs(item.z - z) <= 96 and (not nearest or distance < nearest)
           and dk3.reachable({ id = item.id }) and handy(item, x, y, z) then
         best, nearest = item, distance
@@ -646,6 +828,52 @@ function resupply(low, radius)
     tried[best.id] = true
     fetch(best, 30)
   end
+end
+
+-- Fetches reachable weapon pickups on this floor within `radius` (nearest
+-- first) for every weapon not yet carried, then resupplies for the whole
+-- arsenal. A level entered with one weapon and no ammunition meets its guards
+-- with fists -- no route survives that -- and the campaign carries the loadout
+-- onward, so an weapon taken here is paid back in the next map. Only while the
+-- neighbourhood is quiet: arming under fire trades the weapon for a death.
+function arm(low, radius)
+  local tried = {}
+  local taken, seen, reasons = 0, 0, {}
+  local function why(reason) reasons[reason] = (reasons[reason] or 0) + 1 end
+  for _ = 1, 4 do
+    local x, y, z = dk3.position()
+    if dk3.hostiles(600, { x, y, z }) > 0 then
+      why("hostiles")
+      break
+    end
+    local best, nearest
+    for _, item in ipairs(dk3.pickups(radius or 900)) do
+      local distance = (item.x - x) ^ 2 + (item.y - y) ^ 2
+      seen = seen + 1
+      -- The same tests in the same order, named: an arsenal that stays armed
+      -- with one weapon says nothing about why the rest were left, and the
+      -- answer is usually one of the last two (nothing walks to the pickup, or
+      -- nothing walks back).
+      if item.ammo <= 0 then why("not-a-weapon")
+      elseif item.wanted == false then why("not-needed")
+      elseif dk3.has_weapon(item.ammo) then why("carried")
+      elseif tried[item.id] then why("tried")
+      elseif math.abs(item.z - z) > 128 then why("other-floor")
+      elseif nearest ~= nil and distance >= nearest then why("farther")
+      elseif not dk3.reachable({ id = item.id }) then why("unreachable")
+      elseif not handy(item, x, y, z) then why("long-way-back")
+      else best, nearest = item, distance end
+    end
+    if not best then break end
+    tried[best.id] = true
+    taken = taken + 1
+    fetch(best, 30)
+  end
+  local parts = {}
+  for reason, count in pairs(reasons) do parts[#parts + 1] = reason .. "=" .. count end
+  table.sort(parts)
+  dk3.log(string.format("arm: %d taken of %d seen: %s", taken, seen, table.concat(parts, " ")))
+  resupply(low or 40, radius or 900)
 end
 
 -- Eats from an authored health tree until healthy or the tree is bare.
@@ -690,7 +918,8 @@ function wait_until(predicate, opts)
     if dk3.time() >= deadline then
       error(dk3.where() .. ": wait_until: " .. (opts.reason or "condition") .. " not reached", 0)
     end
-    local ok, detail = yield({ op = "frame", fight = opts.fight })
+    local ok, detail = yield({ op = "frame", fight = opts.fight, weapon = opts.weapon, crouch = opts.crouch,
+      target = opts.stance and target(opts.stance), around = opts.around })
     if not ok then error(dk3.where() .. ": wait_until: " .. tostring(detail), 0) end
   end
 end

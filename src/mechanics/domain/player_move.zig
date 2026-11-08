@@ -8,6 +8,9 @@ const v = @import("../../core/domain/vector.zig");
 const collision = @import("../../core/domain/collision.zig");
 const slide = @import("../../core/domain/slide.zig");
 pub const Mode = enum { normal, spectator, noclip, dead, frozen };
+pub const water_jump_speed: f32 = 350;
+/// Controllers must not declare attachment before the motor can touch a rung.
+pub const ladder_contact_distance: f32 = 3;
 pub const Timer = enum { none, land, knockback, water_jump };
 pub const Player = struct {
     command_ms: i64 = 0,
@@ -86,6 +89,7 @@ pub const Result = struct {
     touch_count: usize = 0,
     mins: v.Vec3 = .{ -15, -15, -24 },
     maxs: v.Vec3 = .{ 15, 15, 32 },
+    slide_abort: ?slide.Abort = null,
     fn event(self: *Result, value: Event) !void {
         if (self.event_count == self.events.len) return error.MovementEventCapacity;
         self.events[self.event_count] = value;
@@ -206,6 +210,7 @@ const Frame = struct {
     fn slideMove(self: *Frame, gravity: bool, step: bool) !void {
         var context: slide.Context = .{ .service = self.service, .mins = self.result.mins, .maxs = self.result.maxs, .slot = self.parameters.slot, .mask = self.parameters.mask, .delta = self.delta, .gravity = if (gravity) self.parameters.gravity else 0, .ground = if (self.ground) |hit| hit.normal else null, .preserve_velocity = self.player.timer_ms > 0 };
         if (step) try context.step(self.motion) else _ = try context.move(self.motion);
+        if (context.abort) |aborted| self.result.slide_abort = aborted;
         self.result.touch_count = context.touch_count;
         @memcpy(self.result.touches[0..context.touch_count], context.touches[0..context.touch_count]);
         if (context.step_height > 2) try self.result.event(.{ .step = context.step_height });
@@ -217,7 +222,7 @@ const Frame = struct {
         for (0..4) |axis| {
             var direction: v.Vec3 = @splat(0);
             direction[axis / 2] = if (axis & 1 == 0) 1 else -1;
-            const hit = try self.trace(self.motion.position, v.add(self.motion.position, v.scale(direction, 3)));
+            const hit = try self.trace(self.motion.position, v.add(self.motion.position, v.scale(direction, ladder_contact_distance)));
             if (hit.fraction == 1 or !hit.ladder or @abs(hit.normal[2]) >= 0.5) continue;
             const facing = v.dot(horizontal, hit.normal);
             if (self.cmd.forward != 0 and (if (self.cmd.forward < 0) facing < -0.1 else facing > 0.1)) return false;
@@ -241,12 +246,11 @@ const Frame = struct {
             spot[2] += 4;
             if (try self.service.contents(spot, self.parameters.slot) & self.parameters.solid_mask != 0) {
                 spot[2] += 16;
-                // Water and trigger/area volumes do not obstruct the ledge.
-                // Requiring entirely empty contents rejects otherwise clear
-                // exits covered by a nonblocking brush volume.
+                // Detail, trigger and monster-only clip contents above a
+                // ledge do not obstruct this mover's collision mask.
                 if (try self.service.contents(spot, self.parameters.slot) & self.parameters.mask == 0) {
                     self.motion.velocity = v.scale(self.forward, 200);
-                    self.motion.velocity[2] = 350;
+                    self.motion.velocity[2] = water_jump_speed;
                     self.player.timer = .water_jump;
                     self.player.timer_ms = 2000;
                     try self.waterJump();
@@ -264,7 +268,9 @@ const Frame = struct {
         if (self.ground) |hit| if (v.dot(self.motion.velocity, hit.normal) < 0) {
             self.motion.velocity = v.scale(v.normalize(v.clip(self.motion.velocity, hit.normal)), v.length(self.motion.velocity));
         };
-        try self.slideMove(false, false);
+        // Submerged steps still admit the ordinary stair height. A flat
+        // slide alone traps swimmers against even an eight-unit tunnel sill.
+        try self.slideMove(false, true);
     }
     fn waterJump(self: *Frame) !void {
         try self.slideMove(true, true);

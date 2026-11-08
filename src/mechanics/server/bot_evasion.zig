@@ -11,20 +11,54 @@ const v = @import("../../core/domain/vector.zig");
 const nav = @import("../../core/domain/navigation.zig");
 const Frame = @import("bot_pilot.zig").Frame;
 /// A predicted hit: where and when it lands, and how far its damage reaches.
-pub const Threat = struct { point: v.Vec3, eta: f32, radius: f32 = 96 };
+pub const Threat = struct { point: v.Vec3, eta: f32, radius: f32 = 96, field: bool = false, transient: bool = false, bounds: ?@import("../../core/domain/navigation_input.zig").Bounds = null, contact: ?@import("../../core/domain/navigation_input.zig").Bounds = null };
 pub const Threats = struct {
     items: [16]Threat = undefined,
     len: usize = 0,
+    overflow: bool = false,
     fn add(self: *Threats, threat: Threat) void {
         if (self.len < self.items.len) {
             self.items[self.len] = threat;
             self.len += 1;
-        }
+        } else self.overflow = true;
     }
     pub fn slice(self: *const Threats) []const Threat {
         return self.items[0..self.len];
     }
+    pub fn keepFields(self: *Threats) void {
+        var count: usize = 0;
+        for (self.slice()) |threat| if (threat.field) {
+            self.items[count] = threat;
+            count += 1;
+        };
+        self.len = count;
+    }
+    pub fn removeFields(self: *Threats) void {
+        var count: usize = 0;
+        for (self.slice()) |threat| if (!threat.field or threat.transient) {
+            self.items[count] = threat;
+            count += 1;
+        };
+        self.len = count;
+    }
 };
+/// A validated physical corridor accounts for persistent contact fields through
+/// the actual motor. Recheck live fields before allowing that route to replace
+/// a straight-velocity evasion forecast; incoming missiles remain independent.
+pub fn corridorClearsFields(frame: Frame, position: v.Vec3, point: v.Vec3, threats: *const Threats) !bool {
+    if (threats.overflow) return false;
+    var parameters = frame.motor orelse return false;
+    parameters.mask &= ~@as(u32, c.CONTENTS_BODY);
+    const forecast = @import("../domain/motion_forecast.zig");
+    var fields: [16]forecast.Field = undefined;
+    var count: usize = 0;
+    for (threats.slice()) |threat| if (threat.field and !threat.transient) {
+        fields[count] = .{ .point = threat.point, .radius = threat.radius, .bounds = threat.bounds, .contact = threat.contact };
+        count += 1;
+    };
+    if (count == 0) return false;
+    return (try forecast.walk(frame.state, .{ .position = position, .velocity = (try frame.world.get(frame.entity, data.Velocity)).linear }, point, parameters, frame.collision, frame.liquid_mask, &.{}, fields[0..count])).safe;
+}
 /// Hostile shots that will pass close to the player within 1.5 s, and spray
 /// that the server forecasts to land near it within 2.5 s.
 pub fn gather(frame: Frame, position: v.Vec3) !Threats {
@@ -35,7 +69,16 @@ pub fn gather(frame: Frame, position: v.Vec3) !Threats {
         var query = world.queryAccess(data.World.mask(.{ data.Projectile, data.Transform, data.Velocity }), 0, 0);
         defer query.deinit();
         while (query.next()) |view| for (view.read(data.Projectile), view.read(data.Transform), view.read(data.Velocity)) |shot, pose, velocity| {
-            if (shot.owner == self_id or shot.stuck or shot.resting) continue;
+            if (shot.stuck) continue;
+            if (shot.resting) {
+                const entry = @import("weapon_catalog").find(shot.weapon) orelse continue;
+                if (entry.spec.projectile.contact_when_resting and nav.horizontalDistance(position, pose.position) < 160)
+                    result.add(.{ .point = pose.position, .eta = 0.4, .radius = 80, .field = true });
+                continue;
+            }
+            // A returned ricochet is dangerous to its shooter too. Initial
+            // outgoing rounds still leave the owner's movement alone.
+            if (shot.owner == self_id and shot.bounces == 0) continue;
             const speed2 = v.dot(velocity.linear, velocity.linear);
             if (speed2 < 1) continue;
             const relative = v.subtract(position, pose.position);
@@ -97,26 +140,83 @@ pub fn gather(frame: Frame, position: v.Vec3) !Threats {
             result.add(.{ .point = closest, .eta = time, .radius = 256 });
         };
     };
-    inline for (hazards) |Class| if (@hasDecl(Class, "hazard")) try forecastHazards(Class, world, frame, position, &result);
+    inline for (hazards) |Class| if (@hasDecl(Class, "contact_hazard") and @hasDecl(Class, "contactForecast")) {
+        const velocity = (try world.get(frame.entity, data.Velocity)).linear;
+        var query = world.queryAccess(data.World.mask(.{Class.contact_hazard}), 0, 0);
+        defer query.deinit();
+        while (query.next()) |view| for (view.entities()) |entity| {
+            if (try Class.contactForecast(world, entity, position, velocity, frame.now)) |prediction| {
+                if (prediction.eta < 0 or prediction.eta > 2.5) continue;
+                result.add(.{ .point = prediction.point, .eta = prediction.eta, .radius = prediction.radius, .field = prediction.field, .transient = true });
+            }
+        };
+    };
+    inline for (hazards) |Class| if (@hasDecl(Class, "hazard") and @hasDecl(Class, "forecast")) try forecastHazards(Class, world, frame, position, &result, false);
     return result;
 }
+pub fn lookAway(frame: Frame) !?v.Vec3 {
+    inline for (hazards) |Class| if (@hasDecl(Class, "avoidLook")) {
+        var query = frame.world.queryAccess(data.World.mask(.{Class.hazard}), 0, 0);
+        defer query.deinit();
+        while (query.next()) |view| for (view.entities()) |entity| {
+            if (try Class.avoidLook(frame.world, entity, frame.entity, frame.now)) |point| return point;
+        };
+    };
+    return null;
+}
 /// Adds the predicted impacts of one hazard class's entities.
-fn forecastHazards(comptime Class: type, world: *data.World, frame: Frame, position: v.Vec3, result: *Threats) !void {
+pub fn persistent(frame: Frame, position: v.Vec3) !Threats {
+    var result: Threats = .{};
+    inline for (hazards) |Class| if (@hasDecl(Class, "hazard") and @hasDecl(Class, "forecast")) try forecastHazards(Class, frame.world, frame, position, &result, true);
+    return result;
+}
+/// The normal arrival disk may straddle a contact field even when its centre
+/// is unsafe. Use a clear supported point inside that same disk; never enlarge
+/// the destination's ordinary sixteen-unit arrival radius.
+pub fn safeArrival(frame: Frame, position: v.Vec3, goal: v.Vec3) !v.Vec3 {
+    if (nav.horizontalDistance(position, goal) > 256) return goal;
+    const fields = try persistent(frame, goal);
+    if (fields.overflow or exposureAtSpeed(goal, goal, fields.slice(), 0) == 0) return goal;
+    var best = goal;
+    var cost = std.math.inf(f32);
+    for (fields.slice()) |field| if (field.bounds) |box| {
+        for (0..2) |axis| for ([_]f32{ box.mins[axis] - 0.125, box.maxs[axis] + 0.125 }) |edge| {
+            var point = goal;
+            point[axis] = edge;
+            if (nav.horizontalDistance(point, goal) > 16 or exposureAtSpeed(point, point, fields.slice(), 0) > 0) continue;
+            const support = try frame.collision.trace(.{ .start = point, .end = v.add(point, .{ 0, 0, -2 }), .mins = frame.hull.mins, .maxs = frame.hull.maxs, .slot = frame.slot, .mask = frame.motionMask() & ~@as(u32, c.CONTENTS_BODY) });
+            if (support.start_solid or support.all_solid or support.fraction == 1 or support.normal[2] < 0.7) continue;
+            const distance = v.length(v.subtract(point, position));
+            if (distance < cost) {
+                best = point;
+                cost = distance;
+            }
+        };
+    };
+    return best;
+}
+fn forecastHazards(comptime Class: type, world: *data.World, frame: Frame, position: v.Vec3, result: *Threats, fields_only: bool) !void {
     var hazards_found = world.queryAccess(data.World.mask(.{Class.hazard}), 0, 0);
     defer hazards_found.deinit();
     while (hazards_found.next()) |view| for (view.entities()) |entity| {
         const prediction = try Class.forecast(world, entity, frame.now);
-        if (engine.integer("developer") > 1) {
-            const pose = (try world.get(entity, data.Transform)).position;
-            var text: [256]u8 = undefined;
-            engine.print(try std.fmt.bufPrintZ(&text, "dk3 {s}: t={d} event=spray id={d} pos={d:.0},{d:.0},{d:.0} forecast={d} eta={d:.2} impact={d:.0},{d:.0},{d:.0}\n", .{ frame.label, frame.now, try world.persistentId(entity), pose[0], pose[1], pose[2], @intFromBool(prediction != null), if (prediction) |value| value.eta else -1, if (prediction) |value| value.point[0] else 0, if (prediction) |value| value.point[1] else 0, if (prediction) |value| value.point[2] else 0 }));
-        }
         const forecast = prediction orelse continue;
+        const field = if (@hasField(@TypeOf(forecast), "field")) forecast.field else false;
+        if (fields_only and !field) continue;
         if (forecast.eta < 0 or forecast.eta > 2.5) continue;
         const dx = forecast.point[0] - position[0];
         const dy = forecast.point[1] - position[1];
         if (dx * dx + dy * dy > 400 * 400 or @abs(forecast.point[2] - position[2]) > 160) continue;
-        result.add(.{ .point = forecast.point, .eta = forecast.eta, .radius = 256 });
+        if (!fields_only and engine.integer("developer") > 1 and @mod(frame.now, 500) == 0) {
+            const pose = (try world.get(entity, data.Transform)).position;
+            var text: [256]u8 = undefined;
+            engine.print(try std.fmt.bufPrintZ(&text, "dk3 {s}: t={d} event=spray id={d} pos={d:.0},{d:.0},{d:.0} forecast={d} eta={d:.2} impact={d:.0},{d:.0},{d:.0}\n", .{ frame.label, frame.now, try world.persistentId(entity), pose[0], pose[1], pose[2], @intFromBool(prediction != null), if (prediction) |value| value.eta else -1, if (prediction) |value| value.point[0] else 0, if (prediction) |value| value.point[1] else 0, if (prediction) |value| value.point[2] else 0 }));
+        }
+        const contact: ?@import("../../core/domain/navigation_input.zig").Bounds = if (@hasField(@TypeOf(forecast), "bounds")) forecast.bounds else null;
+        var maxs = frame.hull.maxs;
+        if (frame.state.ducked) maxs[2] = 4;
+        const bounds: ?@import("../../core/domain/navigation_input.zig").Bounds = if (contact) |box| .{ .mins = v.subtract(v.subtract(box.mins, maxs), @splat(1)), .maxs = v.add(v.subtract(box.maxs, frame.hull.mins), @splat(1)) } else null;
+        result.add(.{ .point = forecast.point, .eta = forecast.eta, .radius = if (@hasField(@TypeOf(forecast), "radius")) forecast.radius else 256, .field = field, .bounds = bounds, .contact = contact });
     };
 }
 /// Walkable step (16 headings, three lengths) with the least expected splash
@@ -128,7 +228,12 @@ pub fn inside(arena: ?[2][2]f32, point: v.Vec3) bool {
 }
 pub fn escape(frame: Frame, position: v.Vec3, velocity: v.Vec3, threats: []const Threat, leash: ?v.Vec3, arena: ?[2][2]f32, attempt: u32, avoid: *const fn (Frame, v.Vec3, v.Vec3) anyerror!bool) !?v.Vec3 {
     var best: ?v.Vec3 = null;
-    var best_exposure = exposure(position, position, threats) - 0.05;
+    // Compare against both staying and continuing the current motion. A
+    // harmless forecast must not cause a turn merely for the tie-break bonus.
+    const speed = if (frame.motor) |parameters| parameters.speed else 280;
+    const risk = @max(exposureAtSpeed(position, position, threats, speed), exposureAtSpeed(position, v.add(position, v.scale(velocity, 1.5)), threats, speed));
+    if (risk <= 0) return null;
+    var best_exposure = risk - 0.05;
     const running = v.normalize(.{ velocity[0], velocity[1], 0 });
     for ([_]f32{ 80, 160, 288, 416 }) |reach| for (0..16) |slot| {
         // Attempt-dependent candidate order changes tie-breaks between retries.
@@ -144,7 +249,7 @@ pub fn escape(frame: Frame, position: v.Vec3, velocity: v.Vec3, threats: []const
         if (nav.horizontalDistance(step, @splat(0)) < 40) continue;
         // Shots are led at the current velocity: favour breaking the line.
         const turning: f32 = if (v.dot(running, v.normalize(step)) < 0.7) 0.08 else 0;
-        const value = exposure(position, point, threats) - turning;
+        const value = exposureAtSpeed(position, point, threats, speed) - turning;
         if (value >= best_exposure) continue;
         if (leash) |anchor| if (@sqrt((point[0] - anchor[0]) * (point[0] - anchor[0]) + (point[1] - anchor[1]) * (point[1] - anchor[1])) > 320) continue;
         if (!inside(arena, point)) continue;
@@ -180,15 +285,65 @@ pub fn cover(frame: Frame, position: v.Vec3, shooter: v.Vec3) !?v.Vec3 {
 /// Sum of quadratic splash fractions at each impact, running toward
 /// `destination` at about player speed from `position`.
 fn exposure(position: v.Vec3, destination: v.Vec3, threats: []const Threat) f32 {
+    return exposureAtSpeed(position, destination, threats, 280);
+}
+fn exposureAtSpeed(position: v.Vec3, destination: v.Vec3, threats: []const Threat, speed: f32) f32 {
     const distance = @max(1, @sqrt((destination[0] - position[0]) * (destination[0] - position[0]) + (destination[1] - position[1]) * (destination[1] - position[1])));
     var total: f32 = 0;
     for (threats) |threat| {
-        const fraction = @min(1, @max(0, threat.eta - 0.1) * 280 / distance);
+        const fraction = @min(1, @max(0, threat.eta - 0.1) * speed / distance);
         const x = position[0] + (destination[0] - position[0]) * fraction - threat.point[0];
         const y = position[1] + (destination[1] - position[1]) * fraction - threat.point[1];
-        total += @max(0, 1 - (x * x + y * y) / (threat.radius * threat.radius));
+        const z = position[2] - threat.point[2];
+        if (threat.bounds) |box| {
+            const point = v.add(threat.point, .{ x, y, z });
+            var inside_box = true;
+            for (0..3) |axis| if (point[axis] <= box.mins[axis] or point[axis] >= box.maxs[axis]) {
+                inside_box = false;
+            };
+            if (inside_box) total += 1;
+        } else total += @max(0, 1 - (x * x + y * y + z * z) / (threat.radius * threat.radius));
     }
     return total;
+}
+/// If no supported escape exists, wait before entering a persistent contact field.
+pub fn fieldBlocks(position: v.Vec3, movement: v.Vec3, threats: []const Threat) bool {
+    return fieldBlocksAtSpeed(position, movement, threats, 280);
+}
+pub fn fieldBlocksAtSpeed(position: v.Vec3, movement: v.Vec3, threats: []const Threat, speed: f32) bool {
+    const destination = v.add(position, v.scale(v.normalize(movement), @min(420, v.length(movement))));
+    for (threats) |threat| if (threat.field) {
+        const one = [_]Threat{threat};
+        if (exposureAtSpeed(position, destination, &one, speed) > exposureAtSpeed(position, position, &one, speed) + 0.05) return true;
+    };
+    return false;
+}
+test "precise routes retain resting contact hazards and wait before walking into them" {
+    var threats: Threats = .{};
+    threats.add(.{ .point = .{ 96, 0, -16 }, .eta = 0.4, .radius = 80, .field = true });
+    threats.add(.{ .point = .{ 0, 96, 0 }, .eta = 0.4 });
+    threats.keepFields();
+    try std.testing.expectEqual(@as(usize, 1), threats.len);
+    try std.testing.expect(fieldBlocks(@splat(0), .{ 96, 0, 0 }, threats.slice()));
+    try std.testing.expect(!fieldBlocks(@splat(0), .{ -96, 0, 0 }, threats.slice()));
+    try std.testing.expect(!fieldBlocks(@splat(0), .{ 8, 0, 0 }, threats.slice()));
+}
+test "a contact field threatens the body rather than another floor" {
+    const t = std.testing;
+    const above = [_]Threat{.{ .point = .{ 0, 0, 128 }, .eta = 0.5, .radius = 32, .field = true }};
+    try t.expectEqual(@as(f32, 0), exposure(@splat(0), @splat(0), &above));
+    const touching = [_]Threat{.{ .point = .{ 0, 0, -16 }, .eta = 0.5, .radius = 32, .field = true }};
+    try t.expectApproxEqAbs(@as(f32, 0.75), exposure(@splat(0), @splat(0), &touching), 0.001);
+    try t.expectEqual(@as(f32, 0), exposure(@splat(0), .{ 80, 0, 0 }, &touching));
+}
+test "a supported corridor does not clear a moving contact forecast" {
+    var threats: Threats = .{};
+    threats.add(.{ .point = @splat(0), .eta = 0.5, .field = true });
+    threats.add(.{ .point = .{ 80, 0, 0 }, .eta = 0.5, .field = true, .transient = true });
+    threats.keepFields();
+    threats.removeFields();
+    try std.testing.expectEqual(@as(usize, 1), threats.len);
+    try std.testing.expect(threats.items[0].transient);
 }
 /// A step is walkable when the hull can move there and every point along it
 /// (each 48 units) has supported floor within a stair's drop, without slime,
@@ -198,12 +353,12 @@ pub fn walkable(frame: Frame, from: v.Vec3, to: v.Vec3) !bool {
     const collision = frame.collision;
     const hull_mins = frame.hull.mins;
     const hull_maxs = frame.hull.maxs;
-    const sweep = try collision.trace(.{ .start = from, .end = to, .mins = hull_mins, .maxs = hull_maxs, .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
+    const sweep = try collision.trace(.{ .start = from, .end = to, .mins = hull_mins, .maxs = hull_maxs, .slot = frame.slot, .mask = frame.motionMask() });
     // Knockback from the very blasts being dodged must not carry the player
     // over an edge: the destination needs floor all around it as well.
     for ([_]v.Vec3{ .{ 40, 0, 0 }, .{ -40, 0, 0 }, .{ 0, 40, 0 }, .{ 0, -40, 0 } }) |offset| {
         const around = v.add(sweep.end, offset);
-        const floor = try collision.trace(.{ .start = around, .end = v.add(around, .{ 0, 0, -48 }), .mins = .{ -4, -4, hull_mins[2] }, .maxs = .{ 4, 4, 8 }, .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
+        const floor = try collision.trace(.{ .start = around, .end = v.add(around, .{ 0, 0, -48 }), .mins = .{ -4, -4, hull_mins[2] }, .maxs = .{ 4, 4, 8 }, .slot = frame.slot, .mask = frame.motionMask() });
         if (!floor.start_solid and floor.fraction == 1) return false;
     }
     return true;
@@ -215,22 +370,43 @@ pub fn supported(frame: Frame, from: v.Vec3, to: v.Vec3) !bool {
 }
 /// `supported` for a hull `head` high (a crouched player: a crawlway).
 pub fn supportedUnder(frame: Frame, from: v.Vec3, to: v.Vec3, head: f32) !bool {
+    return supportedDrop(frame, from, to, head, 36);
+}
+/// Dismounting a body can land one body-height below; liquids stay excluded.
+pub fn supportedDrop(frame: Frame, from: v.Vec3, to: v.Vec3, head: f32, drop: f32) !bool {
     const collision = frame.collision;
     const hull_mins = frame.hull.mins;
     const hull_maxs: v.Vec3 = .{ frame.hull.maxs[0], frame.hull.maxs[1], head };
     // Wading already, the step may stay in the same shallow water; harmful
     // liquids are never stepped into.
-    var avoided: u32 = c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_NITRO | c.CONTENTS_WATER;
+    var avoided: u32 = frame.liquid_mask | c.CONTENTS_WATER;
     if (try collision.contents(v.add(from, .{ 0, 0, hull_mins[2] + 1 }), frame.slot) & c.CONTENTS_WATER != 0) avoided &= ~@as(u32, c.CONTENTS_WATER);
-    const sweep = try collision.trace(.{ .start = from, .end = to, .mins = hull_mins, .maxs = hull_maxs, .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
-    if (sweep.start_solid or sweep.all_solid or sweep.fraction < 0.9) return false;
-    const length = v.length(v.subtract(sweep.end, from));
-    const samples: usize = @max(1, @as(usize, @intFromFloat(@ceil(length / 48))));
-    for (1..samples + 1) |sample| {
-        const point = v.add(from, v.scale(v.subtract(sweep.end, from), @as(f32, @floatFromInt(sample)) / @as(f32, @floatFromInt(samples))));
-        const floor = try collision.trace(.{ .start = point, .end = v.add(point, .{ 0, 0, -36 }), .mins = hull_mins, .maxs = hull_maxs, .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
-        if (floor.fraction == 1 or floor.normal[2] < 0.7) return false;
-        if (try collision.contents(v.add(floor.end, .{ 0, 0, hull_mins[2] + 1 }), frame.slot) & avoided != 0) return false;
+    // Qualify every interval, including a clear stride across a narrow hole.
+    // An actor over that hole blocks the body but cannot stand in for its floor.
+    return try @import("../../core/domain/navigation_input.zig").walkPathSupported(collision, .{ .start = from, .end = to, .mins = hull_mins, .maxs = hull_maxs, .slot = frame.slot, .mask = frame.motionMask() }, avoided, &.{}, drop, frame.motionMask() & ~@as(u32, c.CONTENTS_BODY)) != null;
+}
+/// A hop armed for a stalled stride climbs the lip in the way; it is no
+/// decision to leave the floor. The way ahead must not fall away a long way
+/// below the feet or be a gas that kills on contact (the nitrogen under the
+/// icelab's floors: e1m6a's lab killed the bot on every attempt by a hop off
+/// the ledge beside the button's room). A way ahead that is solid — the lip
+/// itself, a wall — says nothing either way and is left alone.
+/// Where the route itself means to descend, the fall is the way: `drop` is how
+/// far below the feet the route's own step or goal lies (0 when it means to
+/// stay up), and the ground is sought that far down before the hop is refused.
+/// Only a gas still refuses it — e1m7a's corridor comes down over a kerb too
+/// high to step, and a hop is how a player goes over it.
+pub fn hopSafe(frame: Frame, position: v.Vec3, direction: v.Vec3, drop: f32) !bool {
+    const collision = frame.collision;
+    const feet = position[2] + frame.hull.mins[2];
+    const depth: f32 = 256 + @max(drop, 0);
+    for ([_]f32{ 32, 56 }) |step| {
+        const above: v.Vec3 = .{ position[0] + direction[0] * step, position[1] + direction[1] * step, position[2] - 8 };
+        const down = try collision.trace(.{ .start = above, .end = .{ above[0], above[1], above[2] - depth }, .mins = @splat(0), .maxs = @splat(0), .slot = frame.slot, .mask = frame.motionMask() });
+        if (down.start_solid or down.all_solid) continue;
+        if (down.fraction == 1 or down.normal[2] < 0.5) return false;
+        if (drop <= 0 and down.end[2] < feet - 64) return false;
+        if (try collision.contents(.{ down.end[0], down.end[1], down.end[2] + 8 }, frame.slot) & (c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_NITRO) != 0) return false;
     }
     return true;
 }
@@ -250,8 +426,11 @@ pub fn strafe(frame: Frame, position: v.Vec3, enemy: v.Vec3, anchor: v.Vec3, sid
     // (a cryotech's freezing spray reaches about 250).
     const range = v.length(.{ enemy[0] - position[0], enemy[1] - position[1], 0 });
     if (range < 280 and v.length(.{ away[0], away[1], 0 }) < 224) {
-        const back = v.scale(bearing, -96);
-        if (inside(arena, v.add(position, back)) and try walkable(frame, position, v.add(position, back)) and !try avoid(frame, position, back)) return back;
+        const heading = std.math.atan2(-bearing[1], -bearing[0]);
+        for ([_]f32{ 0, side * 0.7853982, -side * 0.7853982, side * 1.5707964, -side * 1.5707964 }) |turn| {
+            const back: v.Vec3 = .{ @cos(heading + turn) * 64, @sin(heading + turn) * 64, 0 };
+            if (inside(arena, v.add(position, back)) and try walkable(frame, position, v.add(position, back)) and !try avoid(frame, position, back)) return back;
+        }
     }
     if (tethered and v.length(.{ away[0], away[1], 0 }) > 112) return v.scale(.{ -away[0], -away[1], 0 }, 1);
     const step = v.scale(.{ -bearing[1] * side, bearing[0] * side, 0 }, 96);

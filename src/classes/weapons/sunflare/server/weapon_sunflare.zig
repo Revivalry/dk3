@@ -5,6 +5,24 @@ const v = @import("../../../../core/domain/vector.zig");
 const context = @import("../../../../mechanics/server/weapon_classes/context.zig");
 const engine = @import("sunflare.zig");
 pub const description = @import("weapon_catalog").classes.sunflare;
+/// The owner can burn in its own oil. Automatic fallback must not throw a
+/// persistent field into a narrow approach; named attacks retain their retreat.
+pub const lingering: context.Lingering = .{ .clear = description.spec.projectile.splash_radius + 64, .hold = description.spec.projectile.splash_radius + 128 };
+pub fn lingersOn(world: *data.World, entity: @import("../../../../core/ecs/world.zig").Entity) bool {
+    const projectile = world.get(entity, data.Projectile) catch return false;
+    return projectile.flight == .sunflare and projectile.flight.sunflare.phase != .cooling;
+}
+test "a thrown or burning pot is lingering while a cooled pot is not" {
+    const t = @import("std").testing;
+    var world = data.World.init(t.allocator, 4);
+    defer world.deinit();
+    const entity = try world.create(1, .{data.Projectile{ .owner = 2, .weapon = description.id, .damage = 10, .born_ms = 0, .stepped_ms = 0, .flight = .{ .sunflare = .{} } }});
+    try t.expect(lingersOn(&world, entity));
+    (try world.get(entity, data.Projectile)).flight.sunflare.phase = .burning;
+    try t.expect(lingersOn(&world, entity));
+    (try world.get(entity, data.Projectile)).flight.sunflare.phase = .cooling;
+    try t.expect(!lingersOn(&world, entity));
+}
 /// The pot tumbles and burns with its own random stream.
 pub const seeded = true;
 pub fn prepareFlight(flight: *context.Flight) void {

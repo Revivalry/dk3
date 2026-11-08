@@ -88,15 +88,14 @@ static dkRenderWorld_t *R_ReserveWorld(const char *name) {
 
 unsigned int RE_RequestWorld(const char *name) {
     dkRenderWorld_t *world;
-    unsigned int i, reading = 0;
+    unsigned int i;
     if (!name || !name[0]) return 0;
     for (i = 0; i < DK3_RENDER_WORLDS; ++i) {
         if (dkRenderWorlds[i].status && !strcmp(dkRenderWorlds[i].name, name)) return R_WorldHandle(&dkRenderWorlds[i]);
-        if (dkRenderWorlds[i].read) ++reading;
     }
-    if (reading >= 4 || !(world = R_ReserveWorld(name))) return 0;
-    world->read = ri.BeginBackgroundRead(name, 128 * 1024 * 1024);
-    if (!world->read) world->status = -1;
+    /* Reserve queued requests too: demo playback can announce more worlds
+     * than the live server's four concurrent admissions in one frame. */
+    if (!(world = R_ReserveWorld(name))) return 0;
     return R_WorldHandle(world);
 }
 
@@ -142,7 +141,13 @@ int RE_PollWorld(unsigned int handle) {
     int length, result;
     if (!world || world->status == -1) return -1;
     if (world->status == 2) return 1;
-    if (!world->read) return -1;
+    if (!world->read) {
+        unsigned int i, reading = 0;
+        for (i = 0; i < DK3_RENDER_WORLDS; ++i) if (dkRenderWorlds[i].read) ++reading;
+        if (reading >= 4) return 0;
+        world->read = ri.BeginBackgroundRead(world->name, 128 * 1024 * 1024);
+        if (!world->read) { world->status = -1; return -1; }
+    }
     result = ri.PollBackgroundRead(world->read, &bytes, &length);
     if (!result) return 0;
     if (result == 1 && (world->admission || R_WorldHeader(bytes, length))) {

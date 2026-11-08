@@ -14,6 +14,12 @@ pub const c = @cImport({
     @cInclude("be_aas.h");
 });
 pub const Syscall = *const fn (isize, ...) callconv(.c) isize;
+/// Native presentation ownership, using two otherwise unused upstream game
+/// bits inside the existing 19-bit entity eFlags transport.
+pub const Presentation = struct {
+    pub const gameplay_body: i32 = c.EF_KAMIKAZE;
+    pub const cinematic_body: i32 = c.EF_MOVER_STOP;
+};
 pub const Gateway = struct {
     callback: ?Syscall = null,
     owner: ?std.Thread.Id = null,

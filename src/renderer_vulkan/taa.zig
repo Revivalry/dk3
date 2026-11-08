@@ -61,7 +61,8 @@ const Params = extern struct {
 };
 
 pub fn create(width: u32, height: u32) void {
-    const usage = c.VK_IMAGE_USAGE_STORAGE_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT;
+    // NGX may clear its output with vkCmdClearColorImage during evaluation.
+    const usage = c.VK_IMAGE_USAGE_STORAGE_BIT | c.VK_IMAGE_USAGE_SAMPLED_BIT | c.VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     const cmd = vk.uploadCommands();
     for (0..2) |index| {
         history[index] = vk.createImage(width, height, 1, window.hdr_format, usage, c.VK_IMAGE_ASPECT_COLOR_BIT);

@@ -42,6 +42,9 @@ pub fn byMap(index: u7) ?*Context {
 }
 pub fn byName(name: []const u8) ?*Context {
     const owners = region orelse return null;
+    // The active initial world also exists in classic/standalone admission,
+    // where no campaign region manifest has been loaded.
+    if (@import("std").mem.eql(u8, name, @import("std").mem.sliceTo(&owners.initial.map_name, 0))) return owners.initial;
     return byMap(owners.manifest.find(name) orelse return null);
 }
 

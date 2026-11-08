@@ -6,7 +6,8 @@ pub const spec: profiles.Spec = .{
     .respects_weapons_stay = false,
     .player_grip = .glove, // sunflare
     .combat = .flown,
-    .projectile = .{ .gravity = true, .mins = .{ -12, -12, -18 }, .maxs = .{ 12, 12, 18 }, .action_delay_ms = 400, .lifetime_ms = 60000 },
+    .splash_hazard = true,
+    .projectile = .{ .gravity = true, .mins = .{ -12, -12, -18 }, .maxs = .{ 12, 12, 18 }, .action_delay_ms = 400, .lifetime_ms = 60000, .splash_radius = 150 },
     .visual = .{ .projectile_model = "models/e2/we_sunprj.dkm", .projectile_scale = 2, .blast_sound = "e2/we_sflareexplodea.wav", .spin = true },
     .world_model = "models/e2/a_sflare.dkm",
     .animation = .{

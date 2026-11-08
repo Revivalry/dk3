@@ -5,7 +5,7 @@ const Effect = @import("weapon_catalog").affliction.Effect;
 /// The render tag of a petrified body (its `generic1`): drawn stone grey and translucent.
 pub const stone_tag = 10025;
 pub const Poison = struct { source: u32, weapon: u5, damage: f32, until_ms: i64, next_ms: i64, interval_ms: u32 };
-pub const Tick = struct { source: u32, weapon: u5, amount: f32, bypass_armor: bool = false };
+pub const Tick = struct { source: u32, weapon: u5, amount: f32, bypass_armor: bool = false, toxic: bool = false };
 pub const State = struct {
     mask: u32 = 0,
     stone: bool = false,
@@ -85,7 +85,7 @@ pub const State = struct {
         if (poison_at <= freeze_at) {
             const value = &self.poison.?;
             value.next_ms += value.interval_ms;
-            return .{ .source = value.source, .weapon = value.weapon, .amount = value.damage };
+            return .{ .source = value.source, .weapon = value.weapon, .amount = value.damage, .toxic = true };
         }
         const amount = self.freeze_level * 5;
         if (self.freeze_next_ms != null) self.freeze_next_ms = at + 2000;

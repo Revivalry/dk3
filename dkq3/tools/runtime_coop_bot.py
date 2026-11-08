@@ -80,6 +80,22 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+def reap_isolated_job(log_text, home, proc_root=Path('/proc')):
+    """A terminated guard may leave its separately grouped engine alive."""
+    for match in re.finditer(r'dkguard: started pid=(\d+) pgid=(\d+)', log_text):
+        pid, pgid = map(int, match.groups())
+        if pid != pgid or pid <= 1:
+            continue
+        try:
+            arguments = (proc_root / str(pid) / 'cmdline').read_bytes().split(b'\0')
+            # The unique temporary profile must still belong to this leader.
+            # A reused pid or another game instance never qualifies.
+            if os.fsencode(home) in arguments:
+                os.killpg(pgid, signal.SIGKILL)
+        except (FileNotFoundError, ProcessLookupError):
+            pass
+
+
 def stage(args, home):
     (home / 'dk3').mkdir(parents=True)
     shutil.copy2(args.modules / 'qagame.so', home / 'dk3/qagame.so')
@@ -101,9 +117,12 @@ def settings(args, home):
                   dk3_runtime_probe='2', g_spSkill=str(args.skill), dk3_cinematics=str(args.cinematics),
                   dk3_jobs=str(args.jobs), dk3_resume='0', dk3_travel_pending='0', sv_fps='20',
                   dk3_coop_script=f'coop/{args.script}', dk3_coop_skill=str(args.bot_skill),
+                  g_residentWorlds='1' if args.resident_worlds else '0',
                   dk3_coop_quit='1', dk3_coop_status_ms=str(args.status_ms), developer=str(args.developer))
     if not args.realtime:
         values.update(fixedtime='50', timedemo='1')
+    if getattr(args, 'motion_trace', False):
+        values['dk3_coop_motion_trace'] = '1'
     if args.load:
         values['dk3_coop_load'] = 'coop-resume'
         if args.stage:
@@ -113,6 +132,19 @@ def settings(args, home):
             # Restored again after a companion loss: the same stage.
             values['dk3_coop_resume_checkpoint'] = f'{args.map} {args.stage}'
     return values
+
+
+def launch_command(args, home, values):
+    # The engine permits only 31 startup commands. A resumed traced run
+    # otherwise silently drops its final +map. Bootstrap the filesystem,
+    # then let ordinary autoexec loading apply the complete private settings.
+    with (home / 'dk3/autoexec.cfg').open('x') as configuration:
+        configuration.write(''.join(f'set {key} "{value}"\n' for key, value in values.items()))
+    command = [str(args.guard), '--mem', args.mem, '--timeout', f'{args.timeout + 30}s', '--', str(args.engine / 'bin/dk3ded')]
+    for key in ('dedicated', 'net_enabled', 'fs_basepath', 'fs_homepath',
+                'fs_homedatapath', 'fs_homestatepath', 'com_basegame', 'com_pipefile'):
+        command += ['+set', key, values[key]]
+    return command + ['+map', args.map]
 
 
 def run(args):
@@ -125,13 +157,11 @@ def run(args):
     home = Path(staging.name)
     stage(args, home)
     values = settings(args, home)
-    command = [str(args.guard), '--mem', args.mem, '--timeout', f'{args.timeout + 30}s', '--', str(args.engine / 'bin/dk3ded')]
-    for key, value in values.items():
-        command += ['+set', key, value]
-    command += ['+map', args.map]
+    command = launch_command(args, home, values)
     inputs = dict(launch=command, settings=values, script=args.script,
                   overlays={str(path): digest(path) for path in args.overlay},
                   identity={'qagame.so': digest(args.modules / 'qagame.so'), 'dk3ded': digest(args.engine / 'bin/dk3ded'),
+                            'autoexec.cfg': digest(home / 'dk3/autoexec.cfg'),
                             **{f'coop/{p.relative_to(args.routes)}': digest(p) for p in sorted(args.routes.rglob('*.lua'))}})
     (args.report / 'inputs.json').write_text(json.dumps(inputs, indent=2) + '\n')
     log = args.report / 'server.log'
@@ -142,6 +172,7 @@ def run(args):
         process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
         try:
             offset = 0
+            mirrored = 0.0
             deadline = started + args.timeout
             while time.monotonic() < deadline:
                 text = log.read_text(errors='replace')
@@ -161,6 +192,14 @@ def run(args):
                     break
                 if process.poll() is not None:
                     break
+                # Checkpoints are the evidence a later run continues from, and a
+                # long fight is watched while it is still happening: mirror the
+                # save directory into the report as the run goes on.
+                if time.monotonic() - mirrored > 10:
+                    mirrored = time.monotonic()
+                    saves = home / 'state/dk3/saves'
+                    if saves.is_dir():
+                        shutil.copytree(saves, args.report / 'saves', dirs_exist_ok=True)
                 time.sleep(0.2)
             else:
                 events.append(dict(event='fail', reason=f'wall-clock timeout after {args.timeout} s'))
@@ -168,6 +207,8 @@ def run(args):
                 exit_code = process.wait(timeout=20)
             except subprocess.TimeoutExpired:
                 pass
+        except KeyboardInterrupt:
+            events.append(dict(event='fail', reason='replay interrupted'))
         finally:
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGTERM)
@@ -176,6 +217,7 @@ def run(args):
                 except subprocess.TimeoutExpired:
                     os.killpg(process.pid, signal.SIGKILL)
                     exit_code = process.wait(timeout=10)
+            reap_isolated_job(log.read_text(errors='replace'), home)
             saves = home / 'state/dk3/saves'
             if saves.is_dir():
                 shutil.copytree(saves, args.report / "saves", dirs_exist_ok=True)
@@ -212,7 +254,9 @@ def main(argv=None):
     parser.add_argument('--jobs', type=int, default=4)
     parser.add_argument('--developer', type=int, default=0)
     parser.add_argument('--status-ms', type=int, default=1000, help='interval of status lines (route authoring traces)')
+    parser.add_argument('--motion-trace', action='store_true', help='retain actual issued pilot views and positions')
     parser.add_argument('--realtime', action='store_true', help='wall-clock pacing instead of fast simulation')
+    parser.add_argument('--resident-worlds', action='store_true', help='exercise resident-world campaign admission and travel')
     parser.add_argument('--timeout', type=int, default=3600, help='wall-clock seconds')
     parser.add_argument('--mem', default='8G')
     parser.add_argument('--verbose', action='store_true', help='also echo 1 Hz status lines')

@@ -12,6 +12,10 @@ pub const components = @import("game/domain/components.zig");
 pub const motion = @import("mechanics/server/motion.zig");
 pub const map = @import("mechanics/server/map.zig");
 test {
+    _ = @import("mechanics/domain/motion_forecast.zig");
+    _ = @import("mechanics/domain/campaign_objectives.zig");
+    _ = @import("mechanics/server/campaign_objectives.zig");
+    _ = @import("mechanics/client/campaign_hud.zig");
     _ = @import("core/domain/sha256_runtime.zig");
     _ = @import("mechanics/client/attachments.zig");
     _ = @import("mechanics/client/skeletal_aim.zig");
@@ -56,6 +60,7 @@ test {
     _ = @import("mechanics/server/resident_worlds.zig");
     _ = @import("classes/actors/companions/server/companion_pilot.zig");
     _ = @import("classes/actors/companions/server/companion_brain.zig");
+    _ = @import("classes/actors/companions/server/companion_puzzles.zig");
     _ = @import("classes/actors/companions/server/companion_catchup.zig");
     _ = @import("classes/actors/companions/server/companion_talk.zig");
     _ = @import("mechanics/server/resources.zig");

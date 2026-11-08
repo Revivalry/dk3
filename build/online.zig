@@ -9,6 +9,11 @@ pub fn declare(b: *std.Build, _: std.Build.ResolvedTarget, optimize: std.builtin
     const coordinator = b.addExecutable(.{ .name = "dk3-coordinator", .root_module = b.createModule(.{ .root_source_file = b.path("src/online/coordinator_main.zig"), .target = target, .optimize = optimize, .link_libc = true }) });
     const sqlite_lib = std.mem.trim(u8, b.run(&.{ "pkg-config", "--variable=libdir", "sqlite3" }), " \r\n");
     const sqlite_include = std.mem.trim(u8, b.run(&.{ "pkg-config", "--variable=includedir", "sqlite3" }), " \r\n");
+    const curl_lib = std.mem.trim(u8, b.run(&.{ "pkg-config", "--variable=libdir", "libcurl" }), " \r\n");
+    // Use only the library directory from pkg-config. Ubuntu's curl CFLAGS add
+    // a multiarch system include directory ahead of Zig's libc headers, mixing
+    // incompatible glibc declarations. The reviewed bundled curl headers
+    // need no host include flags.
     coordinator.root_module.addLibraryPath(.{ .cwd_relative = sqlite_lib });
     coordinator.root_module.addSystemIncludePath(.{ .cwd_relative = sqlite_include });
     coordinator.root_module.linkSystemLibrary("sqlite3", .{ .use_pkg_config = .no });
@@ -16,12 +21,18 @@ pub fn declare(b: *std.Build, _: std.Build.ResolvedTarget, optimize: std.builtin
     step.dependOn(&install.step);
     const worker = b.addExecutable(.{ .name = "dk3-worker", .root_module = b.createModule(.{ .root_source_file = b.path("src/online/worker_main.zig"), .target = target, .optimize = optimize, .link_libc = true }) });
     worker.root_module.addIncludePath(b.path("engine/ioquake3/code/thirdparty/curl-8.15.0/include"));
+    worker.root_module.addLibraryPath(.{ .cwd_relative = curl_lib });
+    worker.root_module.linkSystemLibrary("curl", .{ .use_pkg_config = .no });
     step.dependOn(&b.addInstallArtifact(worker, .{}).step);
     const client = b.addExecutable(.{ .name = "dk3-online", .root_module = b.createModule(.{ .root_source_file = b.path("src/online/client_main.zig"), .target = target, .optimize = optimize, .link_libc = true }) });
     client.root_module.addIncludePath(b.path("engine/ioquake3/code/thirdparty/curl-8.15.0/include"));
+    client.root_module.addLibraryPath(.{ .cwd_relative = curl_lib });
+    client.root_module.linkSystemLibrary("curl", .{ .use_pkg_config = .no });
     step.dependOn(&b.addInstallArtifact(client, .{}).step);
     const operator = b.addExecutable(.{ .name = "dk3-operator", .root_module = b.createModule(.{ .root_source_file = b.path("src/online/operator_main.zig"), .target = target, .optimize = optimize, .link_libc = true }) });
     operator.root_module.addIncludePath(b.path("engine/ioquake3/code/thirdparty/curl-8.15.0/include"));
+    operator.root_module.addLibraryPath(.{ .cwd_relative = curl_lib });
+    operator.root_module.linkSystemLibrary("curl", .{ .use_pkg_config = .no });
     step.dependOn(&b.addInstallArtifact(operator, .{}).step);
     const tests = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("src/online/coordinator.zig"), .target = target, .link_libc = true }) });
     tests.root_module.addLibraryPath(.{ .cwd_relative = sqlite_lib });

@@ -8,17 +8,19 @@ pub const attacks = [_][]const u8{ "ataka", "atakb", "jumpa" };
 pub const State = struct { launched: bool = false };
 /// Of the Episode 2 weapons only the trident harms it (the reference filters that weapon damage
 /// path); every other damage (Zeus, other episodes' weapons, monsters) is admitted.
-pub fn admits(weapon: u5, episode_two: []const u5, trident: u5) bool {
-    if (weapon == trident) return true;
-    for (episode_two) |id| if (weapon == id) return false;
+pub fn admits(weapon: []const u8) bool {
+    const refused = [_][]const u8{ "weapon_discus", "weapon_venomous", "weapon_sunflare", "weapon_hammer", "weapon_daikatana" };
+    for (refused) |name| if (@import("std").mem.eql(u8, weapon, name)) return false;
     return true;
 }
 test "cerberus takes Episode 2 weapon damage only from the trident" {
     const t = @import("std").testing;
-    try t.expect(admits(9, &.{ 7, 8 }, 9));
-    try t.expect(!admits(7, &.{ 7, 8 }, 9));
-    try t.expect(admits(3, &.{ 7, 8 }, 9));
-    try t.expect(admits(0, &.{ 7, 8 }, 9));
+    try t.expect(admits("weapon_trident"));
+    try t.expect(!admits("weapon_discus"));
+    try t.expect(!admits("weapon_daikatana"));
+    try t.expect(admits("weapon_zeus"));
+    try t.expect(admits("weapon_ionblaster"));
+    try t.expect(admits(""));
 }
 pub fn inRange(distance: f32, melee: f32, jump: f32, roll: f32) bool {
     return distance < melee or (distance < jump and roll <= 0.4);

@@ -149,6 +149,18 @@ pub const Spec = struct {
     splash_hazard: bool = false,
     bot_charge_ms: c_int = 0,
     bot_range: ?f32 = null,
+    /// Aim a body-origin melee arc using its own origin.
+    bot_aim_from_body: bool = false,
+    /// Keep ordinary attack input pressed between aim-qualified bursts.
+    /// Some classes advance their attack chain only while it stays held.
+    bot_hold_trigger: bool = false,
+    /// Normal class prediction strikes on close contact, including when empty.
+    bot_contact_melee_range: ?f32 = null,
+    /// Rounds retained for authored shot controls. Recoverable ammunition can
+    /// opt out: a thrown round in flight is not a scarce consumable reserve.
+    bot_ammo_reserve: u16 = 12,
+    /// Wait for recoverable ammunition before abandoning an engagement.
+    bot_rearm_ms: u16 = 0,
     protects_water: bool = false,
     inventory_view_model: bool = false,
     world_model: ?[:0]const u8 = null,

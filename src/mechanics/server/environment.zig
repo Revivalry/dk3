@@ -122,7 +122,11 @@ pub fn step(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
             const tick = state.sample(at, exposure);
             if (tick.freeze > 0) _ = (try world.get(entity, data.Ailments)).apply(.{ .freeze = tick.freeze }, try world.persistentId(entity), 0, at);
             if (tick.damage > 0) {
-                const hit = try @import("damage.zig").apply(world, entity, tick.damage, at, .{ .source = try world.persistentId(entity), .bypass_armor = tick.bypass_armor, .environmental = exposure.kind != .nitro, .self_hazard = exposure.kind != .nitro });
+                if (!@import("builtin").is_test and engine.integer("developer") >= 3 and person) {
+                    var text: [192]u8 = undefined;
+                    engine.print(try std.fmt.bufPrintZ(&text, "dk3 environment: t={d} kind={s} level={d} damage={d} drowning={d}\n", .{ now, @tagName(exposure.kind), exposure.level, tick.damage, @intFromBool(tick.drowning) }));
+                }
+                const hit = try @import("damage.zig").apply(world, entity, tick.damage, at, .{ .source = try world.persistentId(entity), .bypass_armor = tick.bypass_armor, .environmental = exposure.kind != .nitro, .toxic = exposure.kind == .slime, .self_hazard = exposure.kind != .nitro });
                 choking = choking or (tick.drowning and hit.blood > 0);
                 if (hit.killed) exposure.active = false;
             }
@@ -139,6 +143,10 @@ pub fn land(world: *data.World, entity: ecs.Entity, speed: f32, now: i64) !void 
     if (engine.integer("g_gametype") != c.GT_SINGLE_PLAYER and engine.integer("dm_falling_damage") == 0) return;
     const character = (try world.get(entity, data.Character)).*;
     const damage = rules.fall(speed, character.attribute(.acro, now), character.boost_until[@intFromEnum(@import("../domain/character.zig").Attribute.acro)] > now);
+    if (damage > 0 and !@import("builtin").is_test and engine.integer("developer") >= 3) {
+        var text: [160]u8 = undefined;
+        engine.print(try std.fmt.bufPrintZ(&text, "dk3 landing: t={d} speed={d:.1} damage={d}\n", .{ now, speed, damage }));
+    }
     if (damage > 0) _ = try @import("damage.zig").apply(world, entity, damage, now, .{ .source = try world.persistentId(entity), .self_hazard = true });
 }
 

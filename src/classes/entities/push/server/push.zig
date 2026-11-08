@@ -29,7 +29,34 @@ pub fn touches(contact: context.Contact) !bool {
 pub fn touch(control: *Control, other: ecs.Entity) !void {
     const push = control.control.action.push;
     if (!push.enabled or (push.once and control.control.uses > 0)) return;
+    const was = (try control.world.get(other, data.Velocity)).linear;
     (try control.world.get(other, data.Velocity)).linear = push.velocity;
+    if (engine.integer("developer") >= 3) {
+        var text: [256]u8 = undefined;
+        const body = try control.world.get(other, data.Transform);
+        const box = if (control.world.get(control.entity, data.Binding) catch null) |binding|
+            if (binding.slot < control.projections.len) control.projections[binding.slot].shared else null
+        else
+            null;
+        engine.print(std.fmt.bufPrintZ(&text, "dk3 push: id={d} box={d:.0},{d:.0},{d:.0}..{d:.0},{d:.0},{d:.0} body={d:.0},{d:.0},{d:.0} was={d:.0},{d:.0},{d:.0} set={d:.0},{d:.0},{d:.0}\n", .{
+            control.world.persistentId(control.entity) catch 0,
+            if (box) |b| b.absmin[0] else 0,
+            if (box) |b| b.absmin[1] else 0,
+            if (box) |b| b.absmin[2] else 0,
+            if (box) |b| b.absmax[0] else 0,
+            if (box) |b| b.absmax[1] else 0,
+            if (box) |b| b.absmax[2] else 0,
+            body.position[0],
+            body.position[1],
+            body.position[2],
+            was[0],
+            was[1],
+            was[2],
+            push.velocity[0],
+            push.velocity[1],
+            push.velocity[2],
+        }) catch "");
+    }
     if (push.velocity[2] > 0) {
         const player = try control.world.get(other, data.Player);
         player.ground_entity = c.ENTITYNUM_NONE;

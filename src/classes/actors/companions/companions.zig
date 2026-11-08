@@ -14,6 +14,7 @@ pub fn requiredForExit(identity: Identity, flags: u32) bool {
 /// `come` walks to a spot in front of the owner, then follows; `backoff` follows without fighting
 /// until another order.
 pub const Order = enum { follow, stay, attack, collect, move, come, backoff };
+pub const anger = @import("anger.zig");
 pub const Authored = enum { none, stop, teleport };
 pub const pain_chance: u8 = 75;
 pub const Voice = enum { pain, cold, drowning, burning, death, water_death, extreme_death };
@@ -46,10 +47,11 @@ test "companion voices stay within each sidekick's recorded set" {
 }
 /// The classnames this policy defines (order is the catalog's save order, not this list's).
 pub const definitions = [_]@import("../../../mechanics/policy/actors/definition.zig").Definition{
-    .{ .classname = "mikiko", .kind = .companion, .idle = "aamba" },
-    .{ .classname = "superfly", .kind = .companion, .idle = "aamba" },
-    .{ .classname = "mikikofly", .kind = .companion },
+    .{ .classname = "mikiko", .kind = .companion, .idle = "aamba", .clips = follower_clips },
+    .{ .classname = "superfly", .kind = .companion, .idle = "aamba", .clips = follower_clips },
+    .{ .classname = "mikikofly", .kind = .companion, .clips = follower_clips },
 };
+const follower_clips: @import("../../../mechanics/policy/actors/definition.zig").Clips = .{ .player = true, .monster = false, .npc = true };
 
 /// The owner's command window (reference cl_scrn.cpp/cl_selector.cpp): five orders in the window's
 /// order, each with its client command and the sidekick's spoken acknowledgement.

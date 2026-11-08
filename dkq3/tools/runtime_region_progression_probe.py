@@ -23,7 +23,7 @@ def event(driver, marker, start=0, seconds=120):
     return text[start:]
 
 
-def progression(driver, report, capture):
+def progression(driver, report, capture, *, expected_kind='identity'):
     event(driver, 'dk3 region: initial admission committed')
     before = driver.until(lambda s: s['map'] == 'e1m1a' and s['mode'] == 'normal')
     for name in ('e1m1b', 'e1m1c'):
@@ -62,14 +62,15 @@ def progression(driver, report, capture):
     driver.until(lambda s: s['forward'] == 0)
     assert returned['player_id'] == before['player_id'] and returned['health'] > 0
     text = driver.text()[start:]
-    assert text.count('kind=identity connection=retained') == 2, text[-5000:]
+    assert text.count(f'kind={expected_kind} connection=retained') == 2, text[-5000:]
     assert 'Server Initialization' not in text and 'ClientBegin' not in text
     assert 'initial admission committed' not in text and 'restoration committed' not in text
     assert not any('dk3_runtime_enter_world' in row.get('command', '') for row in driver.inputs)
     capture('a-after-authored-return')
     saved = driver.save('automatic_region')
     (report / saved.name).write_bytes(saved.read_bytes())
-    return dict(scope='Controlled approach followed by ordinary movement through both authored reciprocal brushes. Automatic region admission, stable identity/input/health, no connection restart. Not fresh campaign or portal combat acceptance.',
+    return dict(transition_kind=expected_kind,
+                scope='Controlled approach followed by ordinary movement through both authored reciprocal brushes. Automatic region admission, stable identity/input/health, no connection restart. Not fresh campaign or portal combat acceptance.',
                 initial=before, approach=source, entered=entered, continued=moved, returned=returned)
 
 

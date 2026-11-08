@@ -5,7 +5,11 @@ pub const id: u5 = 8;
 pub const spec: profiles.Spec = .{
     .player_grip = .pistol,
     .combat = .melee,
+    .bot_range = 56,
+    .bot_aim_from_body = true,
+    .bot_hold_trigger = true,
     .campaign_equipment = true,
+    .start_episode = 2,
     .world_model = "models/global/a_daikatana.dkm",
     // Frame 4's hilt runs from (1.6,-8.2,2.4) to (6.4,-6.3,9.9).
     .skeletal_grip_origin = .{ 4, -7.2, 6 },

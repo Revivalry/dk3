@@ -14,7 +14,13 @@ pub fn apply(world: *data.World, entity: ecs.Entity, amount: i32, now: i64, opti
     inline for (@import("../../game/server/destructible_classes.zig").classes) |Class| if (@hasDecl(Class, "destructibleRecipient")) {
         recipient = try Class.destructibleRecipient(world, recipient, amount);
     };
-    return applyResolved(world, recipient, if (try partyHit(world, recipient, options.source)) @divTrunc(amount + 1, 2) else amount, now, options);
+    var admitted = options;
+    inline for (@import("../../game/server/damage_classes.zig").modifiers) |Class| {
+        const prepare: *const fn (*data.World, ecs.Entity, i32, i64, *rules.Options) anyerror!void = Class.prepareDamage;
+        try prepare(world, recipient, amount, now, &admitted);
+    }
+    if (admitted.cancelled) return .{};
+    return applyResolved(world, recipient, if (try partyHit(world, recipient, admitted.source)) @divTrunc(amount + 1, 2) else amount, now, admitted);
 }
 /// The reference halves damage between a player and a companion either way,
 /// and between companions (com_Damage's client/sidekick discount).
@@ -41,6 +47,10 @@ fn applyResolved(world: *data.World, entity: ecs.Entity, amount: i32, now: i64, 
     if (world.get(entity, data.ActorAttack) catch null) |attack| if (!@import("actor_attacks.zig").admitsDamage(attack)) return .{};
     inline for (@import("../../game/server/damage_classes.zig").classes) |Class| if (!Class.admitsDamage(world, entity)) return .{};
     const health = world.get(entity, data.Health) catch return .{};
+    if (!@import("builtin").is_test and @import("../../engine/server.zig").integer("developer") >= 3 and health.current > 0 and options.source == try world.persistentId(entity)) {
+        var text: [256]u8 = undefined;
+        @import("../../engine/server.zig").print(try @import("std").fmt.bufPrintZ(&text, "dk3 self damage: t={d} raw={d} weapon={d} environment={d} hazard={d} toxic={d} bypass={d} health={d} armor={d}\n", .{ now, amount, options.weapon, @intFromBool(options.environmental), @intFromBool(options.self_hazard), @intFromBool(options.toxic), @intFromBool(options.bypass_armor), health.current, health.armor }));
+    }
     // A solid corpse can still break apart. Do not dispatch a second kill,
     // award experience again, or run living pain/resurrection controllers.
     if (health.current <= 0) {
@@ -78,6 +88,9 @@ fn applyResolved(world: *data.World, entity: ecs.Entity, amount: i32, now: i64, 
         };
     }
     const character: ?data.Character = if (world.get(entity, data.Character)) |value| value.* else |_| null;
+    if (!options.bypass_protection) inline for (@import("../../game/server/damage_classes.zig").absorbers) |Class| {
+        if (try Class.absorb(world, entity, amount, now, options)) return .{};
+    };
     var result = rules.apply(health, character, amount, now, options);
     if (result.blood > 0 or result.killed) if (world.get(entity, data.Actor) catch null) |actor| {
         const lethal = result.killed;

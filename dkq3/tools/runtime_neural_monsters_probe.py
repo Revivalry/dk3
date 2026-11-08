@@ -14,7 +14,7 @@ from runtime_probe import wait
 
 
 def scene(driver,report,capture):
-    wait(driver.process,driver.log,lambda t:'dk3 region: initial admission committed' in t,90)
+    wait(driver.process,driver.log,lambda t:'first snapshot applied' in t,90)
     driver.until(lambda s:s['mode']=='normal')
     driver.issue('dk3_runtime_probe_health 10000')
     driver.until(lambda s:s['health']==10000)
@@ -80,18 +80,19 @@ def scene(driver,report,capture):
             if identity not in current or current[identity]['health']<=0: break
             aim_actor(driver,current[identity]);driver.fire()
         else: raise TimeoutError('Ordinary Glock fire did not kill the monster')
-        for frame in range(24):
+        for frame in range(100):
             text=driver.diagnostics('dk3_runtime_presentation','dk3 presentation:')
             for line in text.splitlines():
                 if line.startswith('dk3 ragdoll: ') and f'identity={identity} ' in line:
                     samples.append(dict(re.findall(r'(\w+)=([^ ]+)',line)))
-            if frame in (0,4,12,23): capture(f'monster-dead-{frame:03}')
+            if frame in (0,4,12,23,60,99): capture(f'monster-dead-{frame:03}')
             driver.elapsed(70)
         if args.expect_gibs:
             assert f'id={identity} reason=gibbed' in driver.text() or f'dk3 actor gibs: id={identity}' in driver.text(), 'No authored gib evidence'
         else:
             assert samples and max(int(r['contacts']) for r in samples)>0,samples
             assert all(int(r['bones'])>=2 for r in samples),samples
+            assert all(r['sleep']=='1' for r in samples[-10:]), ('Body did not settle', samples[-10:])
         driver.load('neural_monster_alive')
         assert actors(driver)[identity]['health']>0
         text=driver.diagnostics('dk3_runtime_presentation','dk3 presentation:')
@@ -105,7 +106,7 @@ def scene(driver,report,capture):
 
 def batch(driver,report,capture):
     """Render each installed roster actor from the same clean saved world."""
-    wait(driver.process,driver.log,lambda t:'dk3 region: initial admission committed' in t,90)
+    wait(driver.process,driver.log,lambda t:'first snapshot applied' in t,90)
     driver.until(lambda s:s['mode']=='normal')
     driver.save('neural_roster_base')
     rows=[]

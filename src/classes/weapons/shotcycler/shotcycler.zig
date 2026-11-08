@@ -3,6 +3,9 @@
 const profiles = @import("../../../mechanics/policy/weapons/profiles.zig");
 pub const id: u5 = 4;
 pub const spec: profiles.Spec = .{
+    // A spread can technically reach distant targets while landing too few
+    // pellets to justify its six-round burst. Keep bot engagements close.
+    .bot_range = 384,
     .companion = .{ .slot = 2, .safety = .spread },
     .player_grip = .rifle,
     .combat = .{ .pellets = .{ .count = 10, .spread = 0.09, .single_player_scale = 0.75, .aim_reach = true, .max_victims = 2, .inertial = true, .recoil = 140 } },
@@ -41,7 +44,6 @@ pub const identity = .{ .classname = "weapon_shotcycler", .label = "Shotcycler-6
 
 const shot_rules = @import("../../../mechanics/policy/weapons/shot.zig");
 const state = @import("../../../mechanics/policy/weapons/weapon_state.zig");
-const sword = @import("../sword/sword_rules.zig");
 pub fn predictionShot(controller: anytype) shot_rules.Shot {
     return shot_rules.standard(controller);
 }

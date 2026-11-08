@@ -11,7 +11,7 @@ const Slots = @import("../../../../engine/slots.zig").Slots;
 const std = @import("std");
 pub fn prepare(world: *data.World, slots: *Slots, projections: []abi.EntityProjection, entity: ecs.Entity, actor: *data.Actor, pose: data.Transform, body: data.Body, now: i64) !void {
     const companion = try world.get(entity, data.Companion);
-    if (!companion.enabled or companion.stopped or companion.authored != .none or body.motion_owner != null or actor.scripted_pose != null or actor.reaction != null) return;
+    if (!companion.enabled or companion.stopped or companion.authored != .none or companion.puzzle != null or body.motion_owner != null or actor.scripted_pose != null or actor.reaction != null) return;
     const slot = (try world.get(entity, data.Binding)).slot;
     if (now < companion.yielding_until_ms) {
         actor.mode = .chase;
@@ -25,7 +25,18 @@ pub fn prepare(world: *data.World, slots: *Slots, projections: []abi.EntityProje
         const motion = (try owner.get(data.Velocity)).linear;
         const delta = v.subtract(pose.position, leader.position);
         // Yield only when occupying the leader's movement lane, even on Stay.
-        if (v.length(delta) < 96 and v.length(motion) > 20 and v.dot(v.normalize(motion), v.normalize(delta)) > 0.5) yielding_to = owner;
+        const facing = v.basis(.{ 0, leader.angles[1], 0 }).forward;
+        const close_ahead = @import("../../../../core/domain/navigation.zig").horizontalDistance(pose.position, leader.position) < 56 and v.dot(v.normalize(.{ delta[0], delta[1], 0 }), facing) > 0.5;
+        var blocks_hull = false;
+        if (owner.world == world and v.length(delta) < 96) {
+            const leader_body = (try owner.get(data.Body)).*;
+            const leader_slot = (try owner.get(data.Binding)).slot;
+            const contact = try @import("../../../../mechanics/server/actor_collision.zig").service().trace(.{ .start = leader.position, .end = v.add(leader.position, v.scale(facing, 56)), .mins = leader_body.mins, .maxs = leader_body.maxs, .slot = leader_slot, .mask = leader_body.collision_mask });
+            // A peripheral corner of the hull can block motion even when
+            // the companion's centre is outside the view-direction cone.
+            blocks_hull = contact.entity == slot and contact.fraction < 1;
+        }
+        if (v.length(delta) < 96 and (blocks_hull or close_ahead or (v.length(motion) > 20 and v.dot(v.normalize(motion), v.normalize(delta)) > 0.5))) yielding_to = owner;
     }
     if (actor.mode == .chase) {
         const toward = if (actor.route.waypoint) |point| point.point else actor.threat_position;
@@ -54,11 +65,8 @@ pub fn prepare(world: *data.World, slots: *Slots, projections: []abi.EntityProje
     }
     if (yielding_to) |other| {
         const other_pose = (try other.get(data.Transform)).*;
-        var heading = pose;
-        heading.angles[1] = other_pose.angles[1];
         const roll: f32 = if (companion.identity == .mikiko) 0 else 1;
-        if (try @import("../../../../mechanics/server/actor_motion.zig").sidestepDistance(heading, body, slot, roll, 64)) |point| {
-            if (try @import("../../../../mechanics/server/actor_collision.zig").service().contents(v.add(point, .{ 0, 0, body.mins[2] + 1 }), slot) & (c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_NITRO) != 0) return;
+        if (try passingSpot(@import("../../../../mechanics/server/actor_collision.zig").service(), pose.position, body, slot, other_pose, (try other.get(data.Body)).*, roll)) |point| {
             companion.yield_position = point;
             companion.yielding_until_ms = now + 1000;
             actor.route = .{};
@@ -67,6 +75,69 @@ pub fn prepare(world: *data.World, slots: *Slots, projections: []abi.EntityProje
             try yieldTo(world, entity, point, now);
         }
     }
+}
+/// Reserve actual passing room, rather than a combat sidestep's reduced
+/// distance. If the passage is too narrow for that, back away along it.
+fn passingSpot(collision: @import("../../../../core/domain/collision.zig").Collision, position: v.Vec3, body: data.Body, slot: u16, other: data.Transform, other_body: data.Body, roll: f32) !?v.Vec3 {
+    const side = v.basis(.{ 0, other.angles[1], 0 }).right;
+    const sign: f32 = if (roll < 0.5) -1 else 1;
+    const away = v.normalize(.{ position[0] - other.position[0], position[1] - other.position[1], 0 });
+    const forward = v.basis(.{ 0, other.angles[1], 0 }).forward;
+    const along = v.scale(forward, if (v.dot(away, forward) >= 0) @as(f32, 1) else -1);
+    const clearance = @max(@abs(body.mins[0]), body.maxs[0]) + @max(@abs(other_body.mins[0]), other_body.maxs[0]) + 4;
+    const candidates = [_]v.Vec3{ v.scale(side, sign * 64), v.scale(side, -sign * 64), v.scale(away, 64), v.scale(along, 64), v.scale(away, 96), v.scale(along, 96) };
+    const wet = try collision.contents(v.add(position, .{ 0, 0, body.mins[2] + 1 }), slot) & c.CONTENTS_WATER != 0;
+    const forbidden: u32 = @as(u32, c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_NITRO) | (if (wet) 0 else @as(u32, c.CONTENTS_WATER));
+    for (candidates, 0..) |offset, index| {
+        if (v.length(offset) < 1) continue;
+        const candidate = v.add(position, offset);
+        if (index < 2 and @abs(v.dot(v.subtract(candidate, other.position), side)) < clearance) continue;
+        // The supported rollout already checks every swept hull and stair.
+        // A level sweep here would reject a legal retreat up a single tread,
+        // leaving both bodies locked face to face in a narrow passage.
+        const supported = try @import("../../../../core/domain/navigation_input.zig").walkPathSupported(collision, .{ .start = position, .end = candidate, .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = body.collision_mask }, forbidden, &.{}, 22, body.collision_mask & ~@as(u32, c.CONTENTS_BODY)) orelse continue;
+        return supported;
+    }
+    return null;
+}
+test "a follower backs out of a narrow lane and rejects an unsupported retreat" {
+    const col = @import("../../../../core/domain/collision.zig");
+    const Fixture = struct {
+        gap: bool = false,
+        step: bool = false,
+        fn trace(raw: *anyopaque, request: col.Request) !col.Trace {
+            const self: *@This() = @ptrCast(@alignCast(raw));
+            if (request.end[0] + request.maxs[0] > 20 or request.end[0] + request.mins[0] < -20)
+                return .{ .fraction = 0, .end = request.start, .normal = .{ -1, 0, 0 } };
+            if (self.step and request.end[1] > request.start[1] and request.end[1] >= 40 and request.start[2] < 40)
+                return .{ .fraction = 0.5, .end = request.start, .normal = .{ 0, -1, 0 } };
+            if (request.end[2] < request.start[2] and !(self.gap and request.start[1] > 40)) {
+                const height = -request.mins[2] + (if (self.step and request.start[1] >= 40) @as(f32, 16) else 0);
+                if (request.start[2] >= height and request.end[2] <= height) {
+                    const fraction = (request.start[2] - height) / (request.start[2] - request.end[2]);
+                    return .{ .fraction = fraction, .end = .{ request.end[0], request.end[1], height }, .normal = .{ 0, 0, 1 } };
+                }
+            }
+            return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+        }
+        fn contents(_: *anyopaque, _: v.Vec3, _: u16) !u32 {
+            return 0;
+        }
+    };
+    var fixture: Fixture = .{};
+    const collision: col.Collision = .{ .context = &fixture, .trace_fn = Fixture.trace, .contents_fn = Fixture.contents };
+    const body: data.Body = .{ .mins = .{ -12, -12, -24 }, .maxs = .{ 12, 12, 30 }, .collision_mask = c.MASK_PLAYERSOLID };
+    const leader: data.Transform = .{ .position = .{ 0, 0, 24 }, .angles = .{ 0, 90, 0 } };
+    const other: data.Body = .{ .mins = .{ -15, -15, -24 }, .maxs = .{ 15, 15, 32 } };
+    const chosen = (try passingSpot(collision, .{ 0, 27, 24 }, body, 1, leader, other, 0)).?;
+    try std.testing.expect(chosen[1] >= 91 and @abs(chosen[0]) < 1);
+    const off_center = (try passingSpot(collision, .{ -6, 27, 24 }, body, 1, leader, other, 0)).?;
+    try std.testing.expect(off_center[1] >= 91 and @abs(off_center[0] + 6) < 1);
+    fixture.step = true;
+    const upstairs = (try passingSpot(collision, .{ 0, 27, 24 }, body, 1, leader, other, 0)).?;
+    try std.testing.expect(upstairs[1] >= 91 and upstairs[2] == 40);
+    fixture.gap = true;
+    try std.testing.expectEqual(null, try passingSpot(collision, .{ 0, 27, 24 }, body, 1, leader, other, 0));
 }
 /// Step aside along a straight, braked line; fighting goes on meanwhile.
 fn yieldTo(world: *data.World, entity: ecs.Entity, point: v.Vec3, now: i64) !void {

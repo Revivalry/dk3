@@ -61,10 +61,10 @@ pub fn create() void {
         volume.* = vk.createVolume(@intCast(dims[0]), @intCast(dims[1]), @intCast(dims[2]), c.VK_FORMAT_R16G16B16A16_SFLOAT, usage);
         storage[index] = vk.bindStorageVolume(volume.view);
         sampled[index] = vk.bindVolumeLayout(volume.view, c.VK_IMAGE_LAYOUT_GENERAL);
-        vk.barrier(cmd, volume.image, c.VK_IMAGE_ASPECT_COLOR_BIT, c.VK_IMAGE_LAYOUT_UNDEFINED, c.VK_IMAGE_LAYOUT_GENERAL, vk.stage_all, 0, vk.stage_copy, vk.access_transfer_write);
+        vk.barrier(cmd, volume.image, c.VK_IMAGE_ASPECT_COLOR_BIT, c.VK_IMAGE_LAYOUT_UNDEFINED, c.VK_IMAGE_LAYOUT_GENERAL, vk.stage_all, 0, c.VK_PIPELINE_STAGE_2_CLEAR_BIT, vk.access_transfer_write);
         // Tag 0 everywhere with validity 0: nothing reads as a probe until it is traced.
         vk.d.CmdClearColorImage.?(cmd, volume.image, c.VK_IMAGE_LAYOUT_GENERAL, &zero, 1, &range);
-        vk.barrier(cmd, volume.image, c.VK_IMAGE_ASPECT_COLOR_BIT, c.VK_IMAGE_LAYOUT_GENERAL, c.VK_IMAGE_LAYOUT_GENERAL, vk.stage_copy, vk.access_transfer_write, vk.stage_all, vk.access_memory_read | vk.access_memory_write);
+        vk.barrier(cmd, volume.image, c.VK_IMAGE_ASPECT_COLOR_BIT, c.VK_IMAGE_LAYOUT_GENERAL, c.VK_IMAGE_LAYOUT_GENERAL, c.VK_PIPELINE_STAGE_2_CLEAR_BIT, vk.access_transfer_write, vk.stage_all, vk.access_memory_read | vk.access_memory_write);
     }
     created = true;
 }

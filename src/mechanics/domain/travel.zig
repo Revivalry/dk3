@@ -70,39 +70,7 @@ pub const Traveler = struct {
         self.character.sound_environment = 0;
         try @import("snapshot_time.zig").rebase(.weapons, &self.weapons, delta);
         for (&self.companions) |*maybe| if (maybe.*) |*follower| {
-            try @import("snapshot_time.zig").rebase(.character, &follower.character, delta);
-            follower.character.liquid = .{};
-            try @import("snapshot_time.zig").rebase(.weapons, &follower.weapons, delta);
-            follower.state.motor = .{ .command_ms = now };
-            follower.state.jump_started_ms = 0;
-            follower.state.target = 0;
-            follower.state.collecting = 0;
-            follower.state.collect_forced = false;
-            follower.state.collect_scan_ms = now;
-            follower.state.collect_until_ms = 0;
-            follower.state.avoided_item = 0;
-            follower.state.avoid_until_ms = 0;
-            follower.state.yielding_until_ms = 0;
-            follower.state.selected_weapon = 0;
-            follower.state.owner = 0;
-            follower.state.order = .follow;
-            follower.state.authored = .none;
-            follower.state.animation_until = null;
-            follower.state.stopped = false;
-            follower.state.next_ms = now;
-            follower.state.last_ms = now;
-            follower.ailments.cure();
-            follower.weapons.weaponTime = 0;
-            follower.weapons.weaponstate = 0;
-            follower.weapons.dk3AttackHeld = 0;
-            if (episode != self.episode) {
-                follower.keys = .{};
-                follower.weapons = .{};
-                if (episode == 1 and !follower.state.carrying) {
-                    const initial = catalog.starting(episode);
-                    _ = follower.weapons.acquire(table, initial, table.entries[initial].initialAmmo);
-                }
-            }
+            try party.arriveFollower(follower, now, delta, episode, self.episode, table);
         };
         self.at_ms = now;
         self.ailments.mask &= 120;

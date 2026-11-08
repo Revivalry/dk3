@@ -6,17 +6,9 @@ const catalog = @import("item_catalog");
 const weapon_catalog = @import("weapon_catalog");
 const character = @import("../../mechanics/domain/character.zig");
 const Kind = @import("../../mechanics/domain/items.zig").Kind;
-/// Default authored pickup rotation. Ammunition, health packs and quest parts
-/// retain their placed orientation; world weapons rotate only in multiplayer.
-pub fn rotates(kind: Kind, classname: []const u8, single_player: bool) bool {
-    return switch (kind) {
-        .weapon => !single_player,
-        .armor => std.mem.endsWith(u8, classname, "_armor"),
-        .soul, .save_gem, .invisibility => true,
-        .key => std.mem.eql(u8, classname, "item_bottle"),
-        else => false,
-    };
-}
+pub const acquisition_hooks = .{catalog.antidote};
+pub const rotating_kinds = [_]std.meta.Tag(Kind){ .armor, .soul, .save_gem, .invisibility };
+pub const rotating_keys = catalog.key_policy.rotating_names;
 pub fn canonicalName(name: []const u8) []const u8 {
     return if (std.mem.eql(u8, name, "item_vitality_boost")) "item_vita_boost" else name;
 }

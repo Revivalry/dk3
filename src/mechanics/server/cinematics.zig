@@ -7,6 +7,9 @@ const ecs = @import("../../core/ecs/world.zig");
 const abi = @import("../../engine/abi.zig");
 const engine = @import("../../engine/server.zig");
 const c = abi.c;
+// Authored cinematic stages include invisible monster-clip floors. Performers
+// ignore gameplay bodies, but must stand on those floors like their source hulls.
+const performer_mask: u32 = c.MASK_SOLID | c.CONTENTS_MONSTERCLIP;
 const v = @import("../../core/domain/vector.zig");
 const Slots = @import("../../engine/slots.zig").Slots;
 const Router = @import("targets.zig").Router;
@@ -86,12 +89,12 @@ pub const State = struct {
     pub fn trigger(self: *State, world: *data.World, entity: ecs.Entity, name: []const u8, activator: u32) !bool {
         if (!self.available(name)) return false;
         if (active(world)) return false;
-        const player = world.find(activator) orelse return false;
+        const player = triggerViewer(world, activator) orelse return false;
         if ((world.get(player, data.Player) catch return false).mode != .normal) return false;
         if ((try world.get(player, data.Body)).motion_owner != null) return false;
         try self.select(name);
         const controller = findController(world) orelse entity;
-        try world.put(controller, data.Cinematic{ .name = self.name, .trigger = try world.persistentId(entity), .viewer = activator });
+        try world.put(controller, data.Cinematic{ .name = self.name, .trigger = try world.persistentId(entity), .viewer = try world.persistentId(player) });
         return true;
     }
     fn load(self: *State, allocator: std.mem.Allocator, name: []const u8) !void {
@@ -251,7 +254,7 @@ pub const State = struct {
                         const definition_value = self.definition(track.classname) orelse return error.UnknownCinematicClass;
                         const idle: @import("../../core/domain/animation.zig").Sequence = try definition_value.sequence("amba") orelse .{};
                         const movement = try definition_value.sequence("walka") orelse idle;
-                        const entity = try world.create(null, .{ data.Transform{ .position = task.destination, .angles = task.angles }, data.Performer{ .unique = unique, .classname = track.classname, .model = definition_value.model, .scale = definition_value.scale, .walk_speed = definition_value.walk, .run_speed = definition_value.run, .yaw_speed = definition_value.yaw, .animation = idle, .idle = idle, .movement = movement, .animation_ms = now, .next_ms = now }, data.Body{ .mins = .{ -12, -12, -24 }, .maxs = .{ 12, 12, 30 }, .contents = 0, .collision_mask = c.MASK_SOLID } });
+                        const entity = try world.create(null, .{ data.Transform{ .position = task.destination, .angles = task.angles }, data.Performer{ .unique = unique, .classname = track.classname, .model = definition_value.model, .scale = definition_value.scale, .walk_speed = definition_value.walk, .run_speed = definition_value.run, .yaw_speed = definition_value.yaw, .animation = idle, .idle = idle, .movement = movement, .animation_ms = now, .next_ms = now }, data.Body{ .mins = .{ -12, -12, -24 }, .maxs = .{ 12, 12, 30 }, .contents = 0, .collision_mask = performer_mask } });
                         const slot = try slots.acquire(entity, null);
                         projections[slot] = std.mem.zeroes(abi.EntityProjection);
                         try world.put(entity, data.Binding{ .slot = slot, .model = try @import("resources.zig").model(definition_value.model) });
@@ -359,12 +362,12 @@ pub const State = struct {
                             const speed = if (performer.running) performer.run_speed else performer.walk_speed;
                             const delta = v.scale(.{ offset[0], offset[1], 0 }, @min(distance, speed * dt) / distance);
                             pose.angles[1] = std.math.atan2(offset[1], offset[0]) * 180 / std.math.pi;
-                            var collision = try engine.collisionService().trace(.{ .start = pose.position, .end = v.add(pose.position, delta), .mins = .{ -12, -12, -24 }, .maxs = .{ 12, 12, 30 }, .slot = (try world.get(entity, data.Binding)).slot, .mask = c.MASK_SOLID });
+                            var collision = try engine.collisionService().trace(.{ .start = pose.position, .end = v.add(pose.position, delta), .mins = .{ -12, -12, -24 }, .maxs = .{ 12, 12, 30 }, .slot = (try world.get(entity, data.Binding)).slot, .mask = performer_mask });
                             if (collision.fraction < 1) {
                                 // Reuse the game's step-height contract for authored walking.
                                 const elevated = v.add(pose.position, .{ 0, 0, 18 });
-                                const clearance = try engine.collisionService().trace(.{ .start = pose.position, .end = elevated, .mins = .{ -12, -12, -24 }, .maxs = .{ 12, 12, 30 }, .slot = (try world.get(entity, data.Binding)).slot, .mask = c.MASK_SOLID });
-                                if (clearance.fraction == 1) collision = try engine.collisionService().trace(.{ .start = elevated, .end = v.add(elevated, delta), .mins = .{ -12, -12, -24 }, .maxs = .{ 12, 12, 30 }, .slot = (try world.get(entity, data.Binding)).slot, .mask = c.MASK_SOLID });
+                                const clearance = try engine.collisionService().trace(.{ .start = pose.position, .end = elevated, .mins = .{ -12, -12, -24 }, .maxs = .{ 12, 12, 30 }, .slot = (try world.get(entity, data.Binding)).slot, .mask = performer_mask });
+                                if (clearance.fraction == 1) collision = try engine.collisionService().trace(.{ .start = elevated, .end = v.add(elevated, delta), .mins = .{ -12, -12, -24 }, .maxs = .{ 12, 12, 30 }, .slot = (try world.get(entity, data.Binding)).slot, .mask = performer_mask });
                             }
                             pose.position = collision.end;
                         } else if (task.kind == .move_turn) pose.angles[1] = task.angles[1];
@@ -436,7 +439,7 @@ pub const State = struct {
             }
             // Cinematic performers are independent, non-damageable actors, but still meet floors.
             performer.velocity[2] -= 800 * dt;
-            const floor = try engine.collisionService().trace(.{ .start = pose.position, .end = v.add(pose.position, v.scale(performer.velocity, dt)), .mins = .{ -12, -12, -24 }, .maxs = .{ 12, 12, 30 }, .slot = (try world.get(entity, data.Binding)).slot, .mask = c.MASK_SOLID });
+            const floor = try engine.collisionService().trace(.{ .start = pose.position, .end = v.add(pose.position, v.scale(performer.velocity, dt)), .mins = .{ -12, -12, -24 }, .maxs = .{ 12, 12, 30 }, .slot = (try world.get(entity, data.Binding)).slot, .mask = performer_mask });
             pose.position = floor.end;
             if (floor.fraction < 1) performer.velocity = @splat(0);
             performer.ground_entity = if (floor.fraction < 1 and floor.normal[2] > 0.7) floor.entity else c.ENTITYNUM_NONE;
@@ -463,6 +466,34 @@ pub const State = struct {
         for (&ps.dk3CameraBlend, view.blend) |*value, color| value.* = std.math.clamp(color / 255, 0, 1);
     }
 };
+/// Authored death targets and counters are activated by world actors. Their
+/// campaign scene still belongs to the living local player, not to that source.
+fn triggerViewer(world: *data.World, activator: u32) ?ecs.Entity {
+    if (world.find(activator)) |entity| if ((world.get(entity, data.Player) catch null) != null) return entity;
+    var players = world.queryAccess(data.World.mask(.{ data.Player, data.Health, data.Body }), 0, 0);
+    defer players.deinit();
+    while (players.next()) |view| for (view.entities(), view.read(data.Player), view.read(data.Health), view.read(data.Body)) |entity, player, health, body| {
+        if (player.mode == .normal and health.current > 0 and body.motion_owner == null) return entity;
+    };
+    return null;
+}
+
+test "a non-player death target starts its scene for the local campaign player" {
+    var world = data.World.init(std.testing.allocator, 8);
+    defer world.deinit();
+    _ = try world.create(1, .{ data.Player{}, data.Health{ .current = 100, .maximum = 100 }, data.Body{} });
+    _ = try world.create(2, .{data.Health{ .current = 0, .maximum = 100 }});
+    const trigger = try world.create(3, .{data.Transform{}});
+    var state: State = .{};
+    state.programs[0] = .{ .name = "death_scene", .value = .{ .shots = &.{}, .tasks = &.{} } };
+    state.program_count = 1;
+    try std.testing.expect(try state.trigger(&world, trigger, "death_scene", 2));
+    const playback = (try world.get(trigger, data.Cinematic)).*;
+    try std.testing.expectEqual(@as(u32, 1), playback.viewer);
+    try std.testing.expectEqual(@as(u32, 3), playback.trigger);
+    try std.testing.expectEqual(@as(i32, 0), (try world.get(world.find(2).?, data.Health)).current);
+}
+
 pub fn findController(world: *data.World) ?ecs.Entity {
     var query = world.queryAccess(data.World.mask(.{data.Cinematic}), 0, 0);
     defer query.deinit();
@@ -585,7 +616,7 @@ pub fn publish(world: *data.World, entity: ecs.Entity, projections: []abi.Entity
     projection.* = std.mem.zeroes(abi.EntityProjection);
     projection.state.number = binding.slot;
     projection.state.eType = c.ET_GENERAL;
-    projection.state.eFlags = teleport_flag;
+    projection.state.eFlags = teleport_flag | abi.Presentation.cinematic_body;
     projection.state.modelindex = binding.model;
     projection.state.groundEntityNum = performer.ground_entity;
     @import("../../engine/animation.zig").publish(&projection.state, .{ .sequence = performer.animation, .started = performer.animation_ms, .looping = performer.count == 0 or (performer.started and now >= performer.due_ms) }, now);

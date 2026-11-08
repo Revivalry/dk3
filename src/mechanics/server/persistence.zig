@@ -39,8 +39,12 @@ pub fn save(world: *data.World, clients: *const @import("clients.zig").Clients, 
     const saved = try format.captureRegion(allocator, bytes, world, mapName(&map), @intCast(std.math.clamp(engine.integer("g_spSkill"), 1, 5)), header, visited, residents);
     const captured_ms = engine.gateway.call(c.G_MILLISECONDS, .{});
     // This also catches semantic schema omissions before replacing a prior save.
-    var admitted = try format.decode(allocator, saved);
-    defer admitted.deinit(allocator);
+    // Resident records decode independently through the same bounded pool as
+    // restoration. Their allocator must be thread-safe, unlike the capture
+    // arena above. Graph validation and metadata admission still finish before
+    // the atomic save replaces the previous slot.
+    var admitted = try format.decodeWithPool(std.heap.c_allocator, saved, restore_pool);
+    defer admitted.deinit(std.heap.c_allocator);
     try admit(&admitted, systems);
     const validated_ms = engine.gateway.call(c.G_MILLISECONDS, .{});
     try storage.write(slot, saved, false);

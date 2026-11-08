@@ -57,9 +57,13 @@ pub fn consume(game: *const c.gameState_t, entities: []const c.entityState_t) !v
             engine.print("dk3 zig: snapshot sound unavailable\n");
             continue;
         }
-        try configure(entity.otherEntityNum, if (entity.frame == @import("../../core/domain/audio.zig").parameter_tag) try parameters(entity) else null);
+        const settings = if (entity.frame == @import("../../core/domain/audio.zig").parameter_tag) try parameters(entity) else null;
+        try configure(entity.otherEntityNum, settings);
         _ = engine.gateway.call(c.CG_S_STARTSOUND, .{ &entity.pos.trBase, @as(isize, entity.otherEntityNum), @as(isize, entity.generic1), @as(isize, handle) });
-        if (engine.integer("developer") > 0) engine.print("dk3 zig: snapshot sound dispatched\n");
+        if (engine.integer("developer") >= 2) {
+            var text: [192]u8 = undefined;
+            engine.print(try std.fmt.bufPrintZ(&text, "dk3 sound event: name={s} channel={d} volume={d:.2} entity={d}\n", .{ std.mem.sliceTo(&names[@intCast(entity.eventParm)], 0), entity.generic1, if (settings) |value| value.volume else @as(f32, 1), entity.otherEntityNum }));
+        } else if (engine.integer("developer") > 0) engine.print("dk3 zig: snapshot sound dispatched\n");
     }
 }
 

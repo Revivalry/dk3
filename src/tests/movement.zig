@@ -47,8 +47,57 @@ const WaterLedge = struct {
         return .{ .fraction = 1, .end = request.end, .normal = .{ 0, 0, 1 } };
     }
 };
-test "water ledge clearance ignores nonblocking volumes but rejects solid clip and bodies" {
-    for ([_]u32{ 0, c.CONTENTS_WATER, c.CONTENTS_TRIGGER, c.CONTENTS_AREAPORTAL, c.CONTENTS_SOLID, c.CONTENTS_PLAYERCLIP, c.CONTENTS_BODY }) |upper| {
+const SubmergedStep = struct {
+    height: f32,
+    fn traceStep(raw: *anyopaque, request: collision.Request) !collision.Trace {
+        const self: *@This() = @ptrCast(@alignCast(raw));
+        var hit = plane(request.start, request.mins, request.end);
+        // A raised half-floor: x >= 64, z <= height, expanded by the hull.
+        const starts = [2]f32{ 64 - request.maxs[0] - request.start[0], request.start[2] + request.mins[2] - self.height };
+        const ends = [2]f32{ 64 - request.maxs[0] - request.end[0], request.end[2] + request.mins[2] - self.height };
+        var enter: f32 = 0;
+        var leave: f32 = 1;
+        var normal: v.Vec3 = @splat(0);
+        var inside = true;
+        for (starts, ends, 0..) |a, b, axis| {
+            if (a > 0) inside = false;
+            if (a > 0 and b >= a) return hit;
+            if (a <= 0 and b <= 0) continue;
+            if (a > b) {
+                const fraction = @max(0, (a - 0.001) / (a - b));
+                if (fraction >= enter) {
+                    enter = fraction;
+                    normal = if (axis == 0) .{ -1, 0, 0 } else .{ 0, 0, 1 };
+                }
+            } else leave = @min(leave, (a + 0.001) / (a - b));
+        }
+        if (inside) return .{ .fraction = 0, .end = request.start, .normal = @splat(0), .start_solid = true, .all_solid = ends[0] <= 0 and ends[1] <= 0, .entity = 2046 };
+        if (enter <= leave and enter < hit.fraction) hit = .{ .fraction = enter, .end = v.add(request.start, v.scale(v.subtract(request.end, request.start), enter)), .normal = normal, .entity = 2046 };
+        return hit;
+    }
+    fn water(_: *anyopaque, _: v.Vec3, _: u16) !u32 {
+        return c.CONTENTS_WATER;
+    }
+};
+test "a crouched swimmer crosses a submerged sill but cannot climb a high wall" {
+    for ([_]f32{ 8, 24 }) |height| {
+        var fixture: SubmergedStep = .{ .height = height };
+        var player: move.Player = .{};
+        var motion: @import("../core/domain/slide.zig").State = .{ .position = .{ 0, 0, 24.125 }, .velocity = @splat(0) };
+        var parameters = bridge.parameters(0);
+        parameters.fixed_ms = 16;
+        parameters.snap_velocity = false;
+        const service: collision.Collision = .{ .context = &fixture, .trace_fn = SubmergedStep.traceStep, .contents_fn = SubmergedStep.water };
+        for (1..126) |frame| _ = try move.run(&player, &motion, .{ .time_ms = @intCast(frame * 16), .angles = @splat(0), .forward = 127, .up = -127 }, parameters, service);
+        try std.testing.expectEqual(@as(u2, 3), player.water_level);
+        if (height == 8) {
+            try std.testing.expect(motion.position[0] > 100);
+            try std.testing.expect(motion.position[2] + parameters.mins[2] >= height);
+        } else try std.testing.expect(motion.position[0] < 50);
+    }
+}
+test "water exit accepts detail monster clips while solid player clips and bodies block" {
+    for ([_]u32{ 0, c.CONTENTS_DETAIL | c.CONTENTS_MONSTERCLIP, c.CONTENTS_WATER, c.CONTENTS_TRIGGER, c.CONTENTS_AREAPORTAL, c.CONTENTS_SOLID, c.CONTENTS_PLAYERCLIP, c.CONTENTS_BODY }) |upper| {
         var ledge: WaterLedge = .{ .upper_contents = upper };
         var player: move.Player = .{};
         var motion: @import("../core/domain/slide.zig").State = .{ .position = @splat(0), .velocity = @splat(0) };

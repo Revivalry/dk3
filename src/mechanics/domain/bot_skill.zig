@@ -44,6 +44,20 @@ pub const Profile = struct {
     /// its aim shoots anyway, and misses.
     discipline: f32 = 0.995,
 };
+pub fn turnLimit(policy: Profile, maximum_rate: ?f32, elapsed_ms: i64) f32 {
+    const rate = if (maximum_rate) |cap| @min(policy.turn_rate, @max(0, cap)) else policy.turn_rate;
+    return rate * @as(f32, @floatFromInt(std.math.clamp(elapsed_ms, 1, 250))) / 1000;
+}
+
+test "owner view cap keeps high-skill turns continuous without speeding up lower skill" {
+    const t = std.testing;
+    const limit = turnLimit(profile(10), 360, 50);
+    try t.expectEqual(@as(f32, 18), limit);
+    try t.expectEqual(@as(f32, 342), turn(0, 180, limit));
+    try t.expectEqual(@as(f32, 1), turn(359, 1, limit));
+    try t.expectEqual(turnLimit(profile(1), null, 50), turnLimit(profile(1), 360, 50));
+    try t.expectEqual(@as(f32, 90), turnLimit(profile(10), 360, 5000));
+}
 /// skill 1 is the least dangerous and skill 10 keeps the previous perfect-play behaviour.
 const profiles = [_]Profile{
     .{ .field_of_view = 80, .peripheral_range = 128, .sight_range = 512, .memory_ms = 400, .reaction_ms = 700, .turn_rate = 140, .aim_error = 9, .settle_ms = 1400, .wobble_ms = 420, .burst_ms = 500, .scan_period_ms = 1100, .alert_error = 60, .alert_ms = 4000, .evasion = false, .lead = 0, .discipline = 0.96 },

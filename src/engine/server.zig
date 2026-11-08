@@ -7,6 +7,10 @@ pub var gateway: abi.Gateway = .{};
 pub fn print(text: [:0]const u8) void {
     _ = gateway.call(c.G_PRINT, .{text.ptr});
 }
+/// Exact contact against one linked engine entity, without unrelated bodies.
+pub fn entityContact(projection: *const abi.EntityProjection, mins: [3]f32, maxs: [3]f32) bool {
+    return gateway.call(c.G_ENTITY_CONTACT, .{ &mins, &maxs, projection }) != 0;
+}
 /// Diagnostic lines that recur during play: shown only with `developer 1`.
 pub fn developerPrint(text: [:0]const u8) void {
     if (integer("developer") != 0) print(text);
@@ -54,10 +58,19 @@ pub fn argv(index: i32, out: []u8) []const u8 {
 pub fn collisionService() @import("../core/domain/collision.zig").Collision {
     return .{ .context = &gateway, .trace_fn = trace, .contents_fn = contents };
 }
+/// Diagnostic counter so a start-solid storm cannot flood the console log.
+var solid_reports: u32 = 0;
 fn trace(raw: *anyopaque, request: @import("../core/domain/collision.zig").Request) !@import("../core/domain/collision.zig").Trace {
     const engine: *abi.Gateway = @ptrCast(@alignCast(raw));
     var result: c.trace_t = undefined;
     _ = engine.call(c.G_TRACE, .{ &result, &request.start, &request.mins, &request.maxs, &request.end, @as(isize, request.slot), @as(isize, @as(i32, @bitCast(request.mask))) });
+    if (result.allsolid != 0 and integer("developer") >= 2) {
+        solid_reports += 1;
+        if (solid_reports % 4 == 0) {
+            var text: [320]u8 = undefined;
+            print(std.fmt.bufPrintZ(&text, "dk3 zig: event=solid slot={d} mask=0x{x} mins={d:.0},{d:.0},{d:.0} maxs={d:.0},{d:.0},{d:.0} from={d:.1},{d:.1},{d:.1} to={d:.1},{d:.1},{d:.1} contents=0x{x} surface=0x{x} entity={d} start={d} n={d:.1},{d:.1},{d:.1}\n", .{ request.slot, request.mask, request.mins[0], request.mins[1], request.mins[2], request.maxs[0], request.maxs[1], request.maxs[2], request.start[0], request.start[1], request.start[2], request.end[0], request.end[1], request.end[2], result.contents, result.surfaceFlags, result.entityNum, result.startsolid, result.plane.normal[0], result.plane.normal[1], result.plane.normal[2] }) catch "");
+        }
+    }
     return .{ .fraction = result.fraction, .contents = @bitCast(result.contents), .sky = result.surfaceFlags & c.SURF_SKY != 0, .end = result.endpos, .normal = result.plane.normal, .start_solid = result.startsolid != 0, .all_solid = result.allsolid != 0, .entity = @intCast(result.entityNum), .holy = result.surfaceFlags & c.SURF_DK_HOLY != 0, .slick = result.surfaceFlags & c.SURF_SLICK != 0, .ladder = result.surfaceFlags & c.SURF_LADDER != 0, .no_impact = result.surfaceFlags & c.SURF_NOIMPACT != 0, .material = if (result.surfaceFlags & c.SURF_DK_WOOD != 0) .wood else if (result.surfaceFlags & c.SURF_METALSTEPS != 0) .metal else .ordinary };
 }
 

@@ -9,19 +9,22 @@ const v = @import("../../../../core/domain/vector.zig");
 const c = @import("../../../../engine/abi.zig").c;
 const engine = @import("../../../../engine/server.zig");
 const weapons = @import("../../../../mechanics/domain/weapons.zig");
-pub const Situation = struct { episode: u8, choices: [3]u2 = .{ 0, 1, 2 }, owner_distance: f32 = std.math.inf(f32), owner_enemy_distance: f32 = std.math.inf(f32), enemy_distance: ?f32 = null };
+pub const Situation = struct { episode: u8, choices: [3]u2 = .{ 0, 1, 2 }, owner_distance: f32 = std.math.inf(f32), owner_enemy_distance: f32 = std.math.inf(f32), enemy_distance: ?f32 = null, hostile_owner: bool = false };
+fn unsafeWeapon(safety: anytype, situation: Situation, distance: f32) bool {
+    return switch (safety) {
+        .none => false,
+        .spread => (!situation.hostile_owner and situation.owner_distance < 96) or distance > 400,
+        .owner => !situation.hostile_owner and situation.owner_enemy_distance < 156,
+        .both => (!situation.hostile_owner and situation.owner_enemy_distance < 156) or distance < 156,
+    };
+}
 pub fn select(loadout: data.Weapons, table: *const weapons.Table, situation: Situation) u5 {
     var available: [3]u5 = @splat(0);
     for (catalog.entries) |entry| {
         const policy = entry.spec.companion orelse continue;
         if (entry.episode != situation.episode or loadout.dk3Inventory & (@as(i32, 1) << entry.id) == 0) continue;
         if (!policy.empty_melee and loadout.ammo[entry.id] < table.entries[entry.id].ammoCost) continue;
-        if (situation.enemy_distance) |distance| switch (policy.safety) {
-            .none => {},
-            .spread => if (situation.owner_distance < 96 or distance > 400) continue,
-            .owner => if (situation.owner_enemy_distance < 156) continue,
-            .both => if (situation.owner_enemy_distance < 156 or distance < 156) continue,
-        };
+        if (situation.enemy_distance) |distance| if (unsafeWeapon(policy.safety, situation, distance)) continue;
         std.debug.assert(policy.slot < available.len);
         available[policy.slot] = entry.id;
     }
@@ -46,9 +49,12 @@ pub fn excluded(world: *data.World, entity: ecs.Entity, episode: u8, enemy: ?v.V
         owner_distance = v.length(v.subtract(pose, point));
         if (enemy) |target| owner_enemy_distance = v.length(v.subtract(target, point));
     }
-    return excludedFor(episode, owner_distance, owner_enemy_distance, if (enemy) |target| v.length(v.subtract(target, pose)) else null);
+    return excludedSituation(.{ .episode = episode, .owner_distance = owner_distance, .owner_enemy_distance = owner_enemy_distance, .enemy_distance = if (enemy) |target| v.length(v.subtract(target, pose)) else null, .hostile_owner = companion.anger.retaliating });
 }
 fn excludedFor(episode: u8, owner_distance: f32, owner_enemy_distance: f32, enemy_distance: ?f32) i32 {
+    return excludedSituation(.{ .episode = episode, .owner_distance = owner_distance, .owner_enemy_distance = owner_enemy_distance, .enemy_distance = enemy_distance });
+}
+fn excludedSituation(situation: Situation) i32 {
     var mask: i32 = 0;
     for (catalog.entries) |entry| {
         const bit = @as(i32, 1) << entry.id;
@@ -56,37 +62,20 @@ fn excludedFor(episode: u8, owner_distance: f32, owner_enemy_distance: f32, enem
             mask |= bit;
             continue;
         };
-        if (entry.episode != episode) {
+        if (entry.episode != situation.episode) {
             mask |= bit;
             continue;
         }
-        const distance = enemy_distance orelse continue;
-        const unsafe = switch (policy.safety) {
-            .none => false,
-            .spread => owner_distance < 96 or distance > 400,
-            .owner => owner_enemy_distance < 156,
-            .both => owner_enemy_distance < 156 or distance < 156,
-        };
-        if (unsafe) mask |= bit;
+        const distance = situation.enemy_distance orelse continue;
+        if (unsafeWeapon(policy.safety, situation, distance)) mask |= bit;
     }
     return mask;
-}
-/// The authored fallback with no bot choice left: a thrown weapon emptied of
-/// ammunition still strikes up close (discus, venom).
-pub fn emptyMelee(loadout: data.Weapons, table: *const weapons.Table, episode: u8) ?u5 {
-    for (catalog.entries) |entry| {
-        const policy = entry.spec.companion orelse continue;
-        if (entry.episode != episode or !policy.empty_melee or loadout.dk3Inventory & (@as(i32, 1) << entry.id) == 0) continue;
-        if (loadout.ammo[entry.id] >= table.entries[entry.id].ammoCost) continue;
-        return entry.id;
-    }
-    return null;
 }
 pub fn choose(world: *data.World, entity: ecs.Entity, enemy: ?Ref, table: *const weapons.Table, episode: u8) !u5 {
     const companion = (try world.get(entity, data.Companion)).*;
     if (companion.carrying) return 0;
     const pose = (try world.get(entity, data.Transform)).position;
-    var situation: Situation = .{ .episode = episode };
+    var situation: Situation = .{ .episode = episode, .hostile_owner = companion.anger.retaliating };
     if (@import("../../../../mechanics/server/region_access.zig").find(world, companion.owner)) |owner| {
         const point = (try owner.get(data.Transform)).position;
         situation.owner_distance = v.length(v.subtract(pose, point));

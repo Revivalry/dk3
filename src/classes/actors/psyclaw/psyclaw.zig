@@ -7,6 +7,8 @@ const class_traits = @import("../../../mechanics/policy/actors/traits.zig");
 pub const classes = [_]class_traits.Class{.{ .kind = .psyclaw, .traits = .{ .sidekicks = .refuse_melee, .attack = .ground } }};
 /// The actor field holding this class's `State` (its saved key).
 pub const state_field = "psyclaw";
+/// Leave supported arena plinths while retaining bounded, hazard-checked drops.
+pub const maximum_drop: f32 = 128;
 /// Aidata: the psychic blast is weapon 2.
 pub const ClassTuning = struct { blast: @import("../../../mechanics/policy/actors/weapon.zig").Tuning = .{} };
 pub fn parseTuning(row: anytype, _: class_traits.Kind, _: anytype) !ClassTuning {

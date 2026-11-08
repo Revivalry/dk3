@@ -3,6 +3,7 @@
 //! frame of scripted intent; this adapter encodes it as an ordinary user
 //! command (and a "use" when pressed) for the single-player client. Nothing
 //! here moves entities or changes inventory; the shared player motor does that.
+const std = @import("std");
 const data = @import("../../game/domain/components.zig");
 const ecs = @import("../../core/ecs/world.zig");
 const abi = @import("../../engine/abi.zig");
@@ -41,12 +42,28 @@ pub fn pilotFrame(frame: Frame) !pilot.Frame {
         .slot = frame.index,
         .entity = frame.entity,
         .state = (try frame.world.get(frame.entity, data.Player)).*,
+        .motor = @import("../player_state.zig").characterParametersForMode(frame.index, (try frame.world.get(frame.entity, data.Character)).*, (try frame.world.get(frame.entity, data.Ailments)).*, frame.now, engine.integer("g_gametype") != abi.c.GT_SINGLE_PLAYER),
         .now = frame.now,
+        .liquid_mask = pilot.liquidMask(frame.world, frame.entity, frame.clients.episode),
         .gates = frame.gates,
+        .turn_rate_limit = 360,
     };
 }
 pub fn drive(motor: *Motor, frame: Frame, intent: Intent) !Report {
     const steering = try motor.steer(try pilotFrame(frame), intent);
     @import("bot_input.zig").submit(frame.index, steering.command, (try frame.world.get(frame.entity, data.Player)).delta_angles, frame.now);
-    return steering.report;
+    if (engine.integer("dk3_coop_motion_trace") != 0) {
+        const pose = (try frame.world.get(frame.entity, data.Transform)).*;
+        var message: [192]u8 = undefined;
+        engine.print(try std.fmt.bufPrintZ(&message, "dk3 coop motion: now={d} pos={d:.4},{d:.4},{d:.4} angles={d:.4},{d:.4}\n", .{ frame.now, pose.position[0], pose.position[1], pose.position[2], steering.command.angles[0], steering.command.angles[1] }));
+    }
+    if (engine.integer("developer") >= 2 and steering.command.up != 0) {
+        var echoed: [192]u8 = undefined;
+        var heard: abi.c.usercmd_t = undefined;
+        engine.usercmd(frame.index, &heard);
+        engine.print(std.fmt.bufPrintZ(&echoed, "dk3 coop: t={d} event=sent slot={d} up={d} fw={d} echo_up={d} echo_st={d}\n", .{ frame.now, frame.index, steering.command.up, steering.command.forward, heard.upmove, heard.serverTime }) catch "");
+    }
+    var report = steering.report;
+    report.input = .{ steering.command.forward, steering.command.right, steering.command.up };
+    return report;
 }
