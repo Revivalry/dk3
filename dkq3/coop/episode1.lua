@@ -1339,9 +1339,9 @@ level("e1m4b", function(visit, resumed)
       move({ 1528, -700, -134 }, {radius = 8, timeout = 90}) -- clear the conveyor jamb
       try(regroup, 200, 30)
       dk3.sidekick("all", "stay")
-      move({1528,-480,-134}, {direct = true, radius = 8, timeout = 20})
-      move({ 1453, -420, -137 }, { timeout = 60 })
-      move({ 1592, 700, -510 }, { timeout = 60 })      -- down the conveyor
+      -- The conveyor descends below the jamb. Route to its actual lower
+      -- landing rather than holding an upper point after stepping off it.
+      move({ 1592, 700, -510 }, { timeout = 120 })     -- down the conveyor
       try(function() clear { radius = 300, timeout = 40 } end)
       -- The keypad room is reached the long way: the casket lift, the vent
       -- and the hall under the floor, the beams over the pit.
@@ -3033,12 +3033,15 @@ level("e1m7a", function(visit, resumed)
       dk3.sidekick("all", "follow")
       -- Leave the two civilian workers alone: pursuing their flight carries
       -- the body off this deck into the keypad's lower recess.
-      path({ { -1648, -484, 368 }, { -1655, -592, 368 } },
+      path({ { -1648, -484, 368 } },
         {direct = true, radius = 8, fight = false, timeout = 150})
       -- Clear the southern cryotech before turning away toward the keypad;
       -- its spray otherwise holds that precise crossing under continuous fire.
       kill({ index = 678 }, {hold = true, timeout = 25,
-        weapon = 2})
+        -- An empty ion pack otherwise falls back to a six-shot recoil burst
+        -- on the narrow southern corner. Use the stocked rocket launcher
+        -- from this wider northern landing before entering that corner.
+        weapon = dk3.ammo(2)>0 and 2 or (dk3.ammo(5)>0 and 5 or 2)})
       -- Restore the supported deck corner after combat before taking the
       -- southern leg; a diagonal from an evasion point crosses open floor.
       move({-1655,-592,368}, {direct = true, radius = 8, fight = false, timeout = 20})

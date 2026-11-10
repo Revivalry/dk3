@@ -15594,3 +15594,136 @@ partial results remain preserved. Build and consolidated checks are running.
 The recording-only repair builds successfully; consolidated `zig build test
 -Dpython=/usr/bin/python3 -j4` exits zero (414 Python checks plus native/component
 checks). Ownership update remains zero for R1–R11. Diff whitespace is clean.
+
+The repair is committed and pushed as `b2b4444`. Fresh `episodeN-03` recordings
+use immutable installation
+`zig-out/walkthrough-videos-588/play/9c1e906e48712ec7e897d570a1b139427ebcc79b14421a0940f168cfab7d1508`.
+Read-only console queries after admission verify `r_norefresh=1`; the client
+and its normal command/snapshot processing remain active. The PR records the
+repair and pending full-video acceptance. These are new fresh captures, not
+continuations of the stopped software/GPU comparisons.
+
+Early playback qualification exports E3's closed first demo through natural EOF:
+175.588s, H.264 1280x720 at30fps with AAC48kHz stereo. A sampled cinematic frame
+renders the expected snowy scene and characters. Closed-demo provisional result
+files are explicitly marked and replaced by the final capture result before any
+full-episode acceptance. E1's short closed retry demo also exports through natural
+EOF using the engine's existing uncompressed AVI path; `--raw-video` now exposes
+that optional intermediate format while leaving Motion JPEG the default.
+
+E3-03 stops in Dungeon B stage3 after an optional medicine71 detour crosses the
+timed prison gate and cannot return: the actual failure save/log/demos are retained.
+The stage3 checkpoint has85health and is on the correct western side. The route
+now limits optional refill candidates to that side instead of attempting remote
+eastern cells without reopening their gate. E3-04 loads the ordinary admitted
+`coop-e3m3b-3.sav` at stage3 and continues with the same immutable native modules.
+The final E3 video must label the failed attempt and checkpoint continuation;
+it cannot be claimed as a fresh uninterrupted pass. Other episodes remain running.
+
+E3-04 verifies avoiding the remote refill, then exposes a carrier that yielded
+back east through gate742 during the preceding combat. Its failed rally is
+retained as a diagnostic attempt. The route now admits the carrier farther west
+of that gate, and stage3 reopens the ordinary west lever752 when restoring an
+older checkpoint with the carrier on the wrong side. E3-05 reuses the proper
+E3-03 stage3 checkpoint; it qualifies the real gate opening/crossing and proceeds
+into the cell encounter. No companion relocation or direct target activation is
+used. E3-04 adds no campaign progress and is not selected for the walkthrough.
+
+E2-03 reaches Aegis B but times out using fountain86 with `hold=true`, standing
+81 units from its origin outside the station's56-unit qualified approach. The
+route now allows normal use to approach instead of holding that broad arrival
+radius. E2-04 restores the ordinary map-entry checkpoint at stage1, passes the
+fountain/pressure-plate sequence and reaches Aegis E. Its remaining episode scope
+is running. E2's final video must likewise identify the checkpoint continuation.
+
+Further client capture repairs and evidence:
+
+- E1-03 stops at Crematorium B's upper conveyor point after landing on the lower
+  belt. The route now plans to the actual lower landing instead. E1-04 restores
+  its admitted stage4 checkpoint and passes Crematorium C into Solitude A/B.
+- E2-04 stops returning through Aegis E's gold door when the area route sends Hiro
+  backward toward its closed leaf. E2-05/06 retain read-only floor searches: the
+  north stair loop extends beyond the first search box, and the reachable exit
+  landing is `-1728,1184,908`. E2-07 walks the qualified floor corridor from beyond
+  the open gold door, passes the ordinary exit and proceeds through G Temple.
+- E3-05/06 retain failed combat continuations under unchanged four-death limits.
+  The cell's axe throwers are now targeted before a Lycanthir's required melee
+  finish; stage4 reopens both ordinary gate levers to collect remaining eastern
+  medicines before its upper ambush. E3-07 passes that encounter with no deaths
+  and95health, then fails the next aimed carrier gate. E3-08 holds the aimed view
+  for300ms after queuing the ordinary client order before turning toward a lever
+  or defensive target. That affected replay is running.
+- E4-03 stops at Training Center C on `MissingGunnerMuzzleTag`, then enters the
+  menu. The engine log and incomplete result remain retained, with explicit
+  `observed-failure.json`. Converted seal models contain their required muzzle
+  tags; dead/gibbed actor projections can instead remove the parent model while
+  a burst remains in a snapshot. The shared attachment mechanism now rejects
+  dead/removed/foreign-world parents, with a focused regression. Real missing
+  tags on live owners remain errors. The recorder now detects engine ERROR lines
+  and stops instead of waiting indefinitely in the menu.
+
+The client repair builds and consolidated checks pass (414 Python tests plus
+native/component checks, including the attachment regression); ownership R1–R11
+remains zero. The rules identity remains
+`26f4b11061756063b89c58603bfaa8578cdbe73cda585665cea9a36b6de67b4c`.
+Rebuilding after a commit also changes binary build metadata, so a separate
+replay prefix deliberately stages the byte-identical recorded qagame/UI with
+the repaired cgame and the unchanged rules. Its immutable installation is
+`zig-out/walkthrough-videos-588/replay-prefix/play/0d09e28c45264ef36927998d1845c1f3161c42f23865f911b0ef87568d231a3a`.
+E4-04 records its ordinary map-entry checkpoint continuation there. E4-03 exports
+with explicit `--update-presentation`, which checks recorded game/UI hashes.
+Earlier installations and all failed diagnostic attempts remain preserved.
+
+The first presentation-only installation is rejected by `RuntimeMismatch`:
+adding an import to the top-level native test root changes the conservative
+source fingerprint. That root change was reverted; the regression is registered
+through the already tested presentation attachment module instead. Native checks
+pass after that registration. A full install (rather than `game` alone) also
+refreshes `rules.json`: the actual recorded runtime identity is
+`3f7b76cdc336e3558d53ad91b0e504d2e0d5b373587378e12b79cfa168fcc1af`;
+the earlier manifest's26f4 identity was stale and is not the running module's ID.
+The compatible repaired client installation is
+`play/f1486a7739f3d10616ca01ed04d22f624019c1aeec01e86543cdcbcadfcfbad7`
+under the recording prefix, with byte-identical recorded qagame/UI. Its completed
+manifest/module hashes were checked after a transient current-symlink publication
+failure. Original immutable generations remain preserved. Byte-identical PK3s
+across these new recording installations were hash-checked and hardlinked, saving
+18.81GiB of duplicate local package storage without changing their contents.
+
+E4-05 passes the original muzzle-flash crash and reaches a later door-retreat
+timeout: a sealgirl steps into the qualified retreat, leaving Hiro16 units short.
+That optional bounded retreat is now best-effort; the required mover-settled
+check still must pass before crossing. E3-10 reveals another capture setup issue:
+its copied continuation has no admitted recovery save in its fresh profile, so
+the first death cannot recover. Its log and read-only debugger evidence remain
+retained. Loaded captures now explicitly opt into an ordinary healthy resume save
+at the existing checkpoint stage, without recovery supplies or changed limits.
+Bundled Lua checks qualify healthy/disabled/injured cases and exact stage retention.
+The server module builds; both changes affect pilot input handling only and retain
+the3f7 runtime identity. The resulting immutable installation is
+`play/bd4e2827006c69673241d7b05259b2baf81a8aec0673bcb26bb3c59032efd809`.
+
+E1-05 resumes the proper Ice A stage8 checkpoint. Its west-deck fight now uses the
+stocked Sidewinder from the wider northern landing when the ion pack is empty,
+avoiding the six-shot recoil fallback at the narrow corner. It passes that deck
+into the crate vent. E3-11 resumes the proper Dungeon B stage3 checkpoint with
+normal recovery now working; E4-06 resumes the admitted Training Center C stage2
+checkpoint and passes the blocked-retreat location. These captures remain running.
+
+E3's earlier continuations also qualify the aimed-order hold and ordinary medicine
+gate return. An optional upper medicine approach then selected the crusher floor
+below; the route now walks a measured supported upper corridor before collecting.
+E2-07's I-rune return cuts off a narrow stair with its broad node radius; E2-08
+uses precise walking segments there, then completes Cerberus, the Medusa maps,
+ending/timestream23 and the E3 boundary. Full E2 recording scope is therefore
+complete across labelled E2-03/04/07/08 parts; video export/inspection is pending.
+
+An export trace measures Motion JPEG processing at25–85ms per frame. Remaining
+exports use the existing uncompressed AVI mode. The exporter verifies the private
+replay PID, suspends that offline replay while encoding each closed chunk, then
+resumes it; fixed AVI frame steps preserve playback independently of wall time.
+This bounds temporary raw storage while keeping720p/30fps and game audio. Earlier
+completed clips are reused. Interrupted unfinished JPEG exports are retained in
+per-report `mjpeg-interrupted-*` folders and are not selected as complete clips.
+The first raw continuation has encoded multiple chunks with bounded storage;
+natural EOF and complete-media acceptance remain pending.

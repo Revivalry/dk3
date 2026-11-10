@@ -811,7 +811,9 @@ level("e2m4b", function(visit, resumed)
       -- detour can pin its return inside the pool after climbing its rim.
       move({index = 86}, {radius = 64, vertical_radius = 32,
         cautious = false, weapon = 13, timeout = 90})
-      recharge({index = 86}, {hold = true, weapon = 13})
+      -- The broad arrival radius can stop outside the fountain's drinking
+      -- reach. Let normal use approach its qualified stand before holding it.
+      recharge({index = 86}, {weapon = 13})
     end },
     { "pressure-plate", checkpoint = true, function()
       nodepath { 520, -3488, 304 }
@@ -966,7 +968,16 @@ level("e2m4d", function(visit, resumed)
       end})
       take(73)
     end },
-    { "aegis-hall", checkpoint = true, function() crossing(151) end },
+    { "aegis-hall", checkpoint = true, function()
+      crossing(151,{segment_options=function(point)
+        if point[1]>=1700 and point[1]<=2050 and point[2]>=0 and
+            point[2]<=640 and point[3]>=288 and point[3]<=500 then
+          -- Finish each narrow return-stair tread before turning toward
+          -- the next one; the broad node radius cuts across its outer edge.
+          return {direct=true,cautious=false,radius=4,vertical_radius=8,pace=0.4,fight=false}
+        end
+      end})
+    end },
   }(visit, resumed)
 end)
 level("e2m4e", function(visit, resumed)
@@ -1025,6 +1036,13 @@ level("e2m4e", function(visit, resumed)
           {timeout = 10, fight = false, reason = "gold return door clears its centre"})
         move({416,960,1560}, {direct = true, radius = 8,
           vertical_radius = 16, fight = false, timeout = 15})
+        move({416,1104,1560},{direct=true,radius=8,vertical_radius=16,fight=false})
+        local back=walkflood({{-1728,1184,908}}, {-2304,896,640,2304},32,{crouch=true})[1]
+        assert(back,"no supported lower return corridor from the gold door")
+        for _,point in ipairs(back) do
+          move(point,{direct=true,crouch=point.mark=="c",radius=8,
+            vertical_radius=16,pace=0.5,weapon=13})
+        end
         return crossing(192, {areas = true})
       end
     end

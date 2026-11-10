@@ -4,6 +4,15 @@
 -- Implementation is not traversal acceptance: see docs/native-acceptance.md.
 include "coop/campaign_steps.lua"
 local P = campaign_steps
+local function aimed_order(who,order)
+  dk3.sidekick(who,order)
+  -- A visible client delivers this reliable command on a later frame.
+  -- Keep the aimed view until it arrives before turning toward a lever
+  -- or an attacker; the Move command samples that ordinary player view.
+  local issued=dk3.time()
+  wait_until(function() return dk3.time()>=issued+300 end,
+    {timeout=2,fight=false,reason="aimed companion order reaches the client"})
+end
 local function hop_from_here(landing,options)
   local px,py,pz=dk3.position()
   leap({px,py,pz},landing,options)
@@ -53,7 +62,7 @@ local function rally_carrier(face, defend, vertical_radius, radius, admitted, su
     assert(aim~=face,"no floor on the carrier's requested tread")
   end
   point_at(aim, {fight = false})
-  dk3.sidekick("superfly", aimed_move and "move" or "come")
+  aimed_order("superfly", aimed_move and "move" or "come")
   if defend then point_at({2*x-face[1],2*y-face[2],z}, {fight = false}) end
   local arrived=try(wait_until,function()
     local buddy = dk3.entity {class = "mikikofly"}
@@ -108,7 +117,7 @@ end
 local function carry_through(control, gate, face, crossed, approach, waiting_area, toggle_control, landing, defense_weapon)
   local x,y,z = dk3.position()
   point_at(landing or face, {fight = false})
-  dk3.sidekick("superfly", landing and "move" or "come")
+  aimed_order("superfly", landing and "move" or "come")
   local deadline = dk3.time() + 30000
   while not crossed() and dk3.time() < deadline do
     local state = dk3.mover {index = control}
@@ -133,7 +142,7 @@ local function carry_through(control, gate, face, crossed, approach, waiting_are
         {timeout = 10, fight = defense_weapon~=nil, weapon=defense_weapon, stance = {x,y,z}, around = {0,0,0},
           reason = "timed gate opens for the carrying companion"})
       point_at(landing or face, {fight = false})
-      dk3.sidekick("superfly", landing and "move" or "come")
+      aimed_order("superfly", landing and "move" or "come")
     end
     -- An open lever only renews its own hold; it does not fire the gate
     -- again. Let it release before asking for another actual opening.
@@ -823,9 +832,9 @@ level("e3m3b", function(visit, resumed)
       P.once(45, {areas = true})
       if dk3.health() < 75 then P.take(63, nil, {areas = true, weapon = 16}) end
       if dk3.health() < 90 then P.take(64, nil, {areas = true, weapon = 16}) end
-      escort_gate(751, 752, 742, {-912,456,-680}, {-1136,456,-680}, {-720,456,-680}, function()
+      escort_gate(751, 752, 742, {-912,456,-680}, {-1240,456,-680}, {-720,456,-680}, function()
         local buddy = dk3.entity {class = "mikikofly"}
-        return buddy and buddy.x < -1104 and math.abs(buddy.z + 680) < 24
+        return buddy and buddy.x < -1208 and math.abs(buddy.z + 680) < 24
       end, nil, {-1300,456,-680}, nil, function()
         -- Fight the guards in this opened corridor, without following a
         -- roaming enemy back through the rest of the prison.
@@ -836,25 +845,43 @@ level("e3m3b", function(visit, resumed)
         -- body to return to a held melee stand behind the timed door.
         clear({weapon=15,radius=256,vertical_radius=48,
           arena={{-1300,328},{-1056,584}},timeout=90})
-      end, {-1136,488,-704}, 15)
+      end, {-1240,488,-704}, 15)
       P.stay()
       -- Clear the open corridor before committing to the barred cell.
       -- The worm's poison otherwise keeps draining health during the duel.
       kill({index = 140}, {weapon = 16, timeout = 60})
     end},
     {"barred-purifier-shard", checkpoint = true, function()
+      -- A restored checkpoint can retain the carrier yielding back through
+      -- the preceding timed gate during combat. Reopen its western lever
+      -- normally and bring him fully into this corridor before the rally.
+      local carrier=dk3.entity{class="mikikofly"}
+      if carrier and carrier.x > -1208 then
+        move({-1240,456,-680},{weapon=16,radius=8,vertical_radius=16})
+        carry_through(752,742,{-1300,456,-680},function()
+          local buddy=dk3.entity{class="mikikofly"}
+          return buddy and buddy.x < -1208 and math.abs(buddy.z+680)<24
+        end,{-1080,488,-680},nil,nil,{-1240,488,-704},16)
+        P.stay()
+      end
       -- Refill before opening the Purifier cell. A Lycanthir can absorb
       -- the barred firing lane and require a melee finish at one health;
       -- keeping the bars shut then prevents the necessary contact.
       local function refill_corridor()
-        local available=false
+        local available={}
         for _,index in ipairs({63,64,71,72}) do
           local medicine=dk3.entity{index=index}
-          if medicine and medicine.visible and medicine.wanted~=false then available=true end
+          -- The carrier has crossed the timed prison gate. Optional supplies
+          -- in the eastern cells require reopening that gate; a plain pickup
+          -- route can enter them and then strand Hiro behind its closed return.
+          if medicine and medicine.visible and medicine.wanted~=false and
+             medicine.x < -1040 and medicine.y < 600 and math.abs(medicine.z+680)<96 then
+            available[#available+1]=index
+          end
         end
-        if available and dk3.health()<90 then
+        if #available>0 and dk3.health()<90 then
           move({-1240,384,-680},{direct=true,weapon=16,radius=8,timeout=120})
-          for _,index in ipairs({63,64,71,72}) do
+          for _,index in ipairs(available) do
             if dk3.health()<90 then P.take(index,nil,{areas=true,weapon=16,timeout=120}) end
           end
           move({-1200,384,-680},{weapon=16,radius=8,timeout=120})
@@ -868,6 +895,10 @@ level("e3m3b", function(visit, resumed)
       P.follow()
       move({-1200,-752,-680}, {radius = 8, vertical_radius = 24, weapon = 16})
       P.once(664, {areas = true, weapon = 16})
+      -- Remove the axe throwers before a nearly finished Lycanthir draws
+      -- the pilot into its mandatory melee finish inside their firing lane.
+      kill({class="monster_dwarf"},{radius=480,vertical_radius=48,weapon=16,
+        arena={{-1278,-848},{-784,-560}},timeout=120})
       clear {radius = 480, vertical_radius = 48, weapon = 16,
         arena = {{-1278,-848},{-784,-560}}, timeout = 120}
       kill({index = 105}, {weapon = 16, timeout = 60})
@@ -886,15 +917,29 @@ level("e3m3b", function(visit, resumed)
       kill({index = 534}, {weapon = 16, timeout = 90})
       -- The cell fight can leave Hiro badly hurt. The earlier corridor's
       -- unused medicine is safer than climbing toward the next ambush for it.
-      local corridor_medicine=dk3.entity{index=63}
-      if dk3.health() < 80 and corridor_medicine and corridor_medicine.visible
-          and corridor_medicine.wanted~=false then
+      local corridor_medicine
+      for _,index in ipairs({63,64}) do
+        local item=dk3.entity{index=index}
+        if item and item.visible and item.wanted~=false then corridor_medicine=true end
+      end
+      if dk3.health() < 80 and corridor_medicine then
         P.stay()
         P.press(752, {areas = true, weapon = 16})
-        P.take(63, nil, {areas = true, weapon = 16})
+        wait_until(function() return dk3.mover{index=742}=="open" end,
+          {timeout=10,reason="west lever opens the medicine return"})
+        move({-912,456,-680},{direct=true,weapon=16,radius=8,vertical_radius=24})
+        for _,index in ipairs({63,64}) do
+          if dk3.health()<90 then P.take(index,nil,{areas=true,weapon=16}) end
+        end
         P.press(751, {areas = true, weapon = 16})
+        wait_until(function() return dk3.mover{index=742}=="open" end,
+          {timeout=10,reason="east lever opens the medicine return"})
+        move({-1240,456,-680},{direct=true,weapon=16,radius=8,vertical_radius=24})
       end
       move({-1200,-600,-680}, {radius = 8, vertical_radius = 16, fight = false})
+      -- Fight the upper axe thrower before a medicine approach exposes
+      -- a hurt player to his lane while concentrating on the pickup.
+      kill({index = 134}, {weapon = 16, timeout = 90})
       if dk3.health() < 60 then
         P.take(60, nil, {areas = true, weapon = 16})
         P.take(61, nil, {areas = true, weapon = 16})
@@ -966,7 +1011,15 @@ level("e3m3b", function(visit, resumed)
       clear {radius = 400, vertical_radius = 96, weapon = 16, hold = true,
         arena = {{128,-888},{336,-768}}, timeout = 90}
       rally_carrier({32,-936,-224}, true, 48, 128)
-      P.approach(93, {areas = true}) P.take(93, nil, {areas = true})
+      -- The area's item approach can choose the crusher floor far below
+      -- this landing. Walk the supported upper corridor before collecting.
+      local upper=walkflood({{352,-728,-168}}, {-32,-1088,512,-480},16,{crouch=true})[1]
+      assert(upper,"no supported upper corridor to the blade-stair landing")
+      for _,point in ipairs(upper) do
+        move(point,{direct=true,crouch=point.mark=="c",fight=false,pace=0.5,
+          radius=4,vertical_radius=16})
+      end
+      P.take(93,nil,{direct=true,weapon=16})
     end},
     {"moving-blade-staircase", checkpoint = true, supplies = false, function()
       if dk3.health() < 60 then P.take(95, nil, {areas = true}) end

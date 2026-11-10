@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Shared mechanism: Attached models sample the same parent trajectory as their brush carrier.
 const std = @import("std");
+test {
+    _ = @import("gunner_bursts.zig");
+}
 const c = @import("../../engine/abi.zig").c;
 const wire = @import("../../engine/trajectory.zig");
 const poses = @import("../domain/poses.zig");

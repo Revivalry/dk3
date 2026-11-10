@@ -65,6 +65,12 @@ function level(name, body, entry)
     -- Like a stage checkpoint, only in good health: a badly hurt arrival
     -- (say, into a guard post) keeps the previous map's checkpoint instead.
     levels[name] = function(visit, resumed)
+      if resumed and options.resume_saves and sturdy(0.5) then
+        -- A copied continuation lives in a new profile. Admit the restored
+        -- healthy state as an ordinary recovery save at its existing stage.
+        dk3.stage(dk3.checkpoint_stage(), "recording-resume", true)
+        save("coop-" .. name .. "-resume")
+      end
       if options.level_saves and not resumed and not (entry and entry.arrival == false) then
         local wet = in_liquid()
         if not wet or dk3.cinematic() then cinematic() end
@@ -716,7 +722,10 @@ function nodepath(goal, opts)
             local floor = dk3.trace({away[1], away[2], pz + 18}, {away[1], away[2], pz - 18}, true)
             if not lane.start_solid and lane.fraction >= 1 and floor.fraction < 1 and floor.normal_z >= 0.7 then
               away[3] = floor.z
-              move(away, {direct = true, radius = 8, timeout = 4, fight = false})
+              -- A traveller can occupy the retreat after its trace was clear.
+              -- Keep the attempted backstep bounded; the subsequent settled
+              -- mover check still requires the leaf to finish before crossing.
+              try(move, away, {direct = true, radius = 8, timeout = 4, fight = false})
             end
           end
           wait_until(function()

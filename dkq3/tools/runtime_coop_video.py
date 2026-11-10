@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import time
 
@@ -85,6 +86,11 @@ def record(args):
     home = (args.report / 'profile').resolve()
     stage_client_modules(args.engine, home, installation=args.engine)
     shutil.copytree(ROOT / 'dkq3/coop', home / 'dk3/coop')
+    if args.load:
+        route = home / 'dk3/coop' / args.script
+        assert route.is_file()
+        with route.open('a') as stream:
+            stream.write('\n-- Admit this copied healthy checkpoint for ordinary death recovery.\nsettings {resume_saves = true}\n')
     values = base(args, home)
     values.update(g_spSkill='1', dk3_coop_script=f'coop/{args.script}', dk3_coop_skill='10',
                   dk3_coop_quit='1', dk3_coop_status_ms='1000', cl_autoRecordDemo='1',
@@ -107,17 +113,21 @@ def record(args):
                 sorted((home / 'dk3').rglob('*')) if path.is_file()}
     identity['bin/dk3'] = digest(args.engine / 'bin/dk3')
     (args.report / 'inputs.json').write_text(json.dumps(dict(settings=values, identity=identity,
-        continuation=dict(save=str(args.load), sha256=digest(args.load), stage=args.stage) if args.load else None), indent=2) + '\n')
+        continuation=dict(save=str(args.load), sha256=digest(args.load), stage=args.stage,
+                          admit_resume_checkpoint=True) if args.load else None), indent=2) + '\n')
     log = args.report / 'record.log'
     started = time.monotonic()
     process = launch(args, home, values, ['+map', args.map], log)
-    offset, events, stopped = 0, [], None
+    offset, events, stopped, engine_error = 0, [], None, None
     try:
         while process.poll() is None:
             text = log.read_text(errors='replace')
             complete, _, _ = text[offset:].rpartition('\n')
             offset += len(complete) + (1 if complete else 0)
             for line in complete.splitlines():
+                if line.startswith('ERROR:'):
+                    engine_error = line
+                    break
                 event = parse_event(line)
                 if event:
                     events.append(event)
@@ -127,7 +137,7 @@ def record(args):
                         stopped = 'episode boundary'
                     if args.seconds and int(event.get('t', '0')) >= args.seconds * 1000:
                         stopped = 'sample'
-            if stopped:
+            if stopped or engine_error:
                 break
             time.sleep(0.25)
     finally:
@@ -136,6 +146,8 @@ def record(args):
     result = summarise(events, wall_seconds=time.monotonic() - started, exit_code=process.returncode)
     if stopped:
         result['outcome'] = stopped
+    if engine_error:
+        result.update(outcome='failed', engine_error=engine_error)
     demos = sorted((home / 'dk3/demos').glob('*.dm_*'), key=lambda p: (p.stat().st_mtime_ns, p.name))
     result['demos'] = [dict(path=str(p.relative_to(args.report.resolve())), bytes=p.stat().st_size,
                             sha256=digest(p)) for p in demos]
@@ -173,6 +185,7 @@ def render(args):
         shutil.copy2(candidate, home / 'dk3/cgame.so')
     (args.report / 'render-inputs.json').write_text(json.dumps(dict(
         engine=str(args.engine), presentation_update=args.update_presentation, selected_demo_indices=indices,
+        raw_video=args.raw_video,
         modules={p.name: digest(p) for p in sorted((home / 'dk3').glob('*.so'))},
         recorded_modules={p.name: digest(p) for p in sorted((args.report / 'profile/dk3').glob('*.so'))}), indent=2) + '\n')
     output = args.report / 'clips'
@@ -191,7 +204,7 @@ def render(args):
             os.link(source, demo)
         values = base(args, home)
         values.update(dk3_coop_script='', cl_autoRecordDemo='0', fixedtime='0', timedemo='0',
-                      cl_aviFrameRate='30', cl_aviMotionJpeg='1', nextdemo='echo dk3-video-complete; quit')
+                      cl_aviFrameRate='30', cl_aviMotionJpeg='0' if args.raw_video else '1', nextdemo='echo dk3-video-complete; quit')
         log = args.report / f'render-{number:03d}.log'
         process = launch(args, home, values, ['+demo', demo.stem, '+video', f'clip-{number:03d}'], log)
         parts, handled = [], set()
@@ -208,7 +221,30 @@ def render(args):
                     raise RuntimeError(f'Unexpected capture name: {name}')
                 video = home / 'dk3/videos' / name
                 encoded = output / f'{number:03d}-part-{len(parts):03d}.mp4'
-                encode_video(video, encoded)
+                paused = None
+                if args.raw_video and process.poll() is None:
+                    # Raw chunks can be produced faster than they are encoded.
+                    # Pause only this private offline replay while encoding;
+                    # AVI advances at fixed frame steps, independently of wall time.
+                    pid_file = home / 'state/dk3/dk3.pid'
+                    try:
+                        pid = int(pid_file.read_text())
+                        argv = Path(f'/proc/{pid}/cmdline').read_bytes().split(b'\0')
+                        if os.fsencode(home) not in argv:
+                            raise RuntimeError('Replay PID does not own this private profile')
+                        os.kill(pid, signal.SIGSTOP)
+                        paused = pid
+                    except (FileNotFoundError, ProcessLookupError):
+                        if process.poll() is None and 'dk3-video-complete' not in log.read_text(errors='replace'):
+                            raise RuntimeError('Live raw replay has no owned PID for bounded encoding')
+                try:
+                    encode_video(video, encoded)
+                finally:
+                    if paused is not None:
+                        try:
+                            os.kill(paused, signal.SIGCONT)
+                        except ProcessLookupError:
+                            pass
                 parts.append(encoded)
                 handled.add(name)
                 video.unlink()  # Only our successfully encoded intermediates.
@@ -235,7 +271,7 @@ def render(args):
 def encode_video(video, encoded):
     subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y', '-i', str(video),
                     '-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1',
-                    '-c:v', 'libx264', '-preset', 'fast', '-crf', '21', '-pix_fmt', 'yuv420p',
+                    '-c:v', 'libx264', '-threads', '4', '-preset', 'fast', '-crf', '21', '-pix_fmt', 'yuv420p',
                     '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', str(encoded)], check=True)
     probe = subprocess.check_output(['ffprobe', '-v', 'error', '-show_streams', '-show_format',
                                      '-of', 'json', str(encoded)], text=True)
@@ -266,6 +302,7 @@ def main():
     parser.add_argument('--load', type=Path, help='continue from an ordinary recorded checkpoint')
     parser.add_argument('--stage', type=int, help='resume this checkpoint stage')
     parser.add_argument('--include-failed', action='store_true', help='explicitly render a failed attempt; its outcome is retained')
+    parser.add_argument('--raw-video', action='store_true', help='render through uncompressed AVI chunks instead of Motion JPEG; requires more temporary disk bandwidth')
     parser.add_argument('--software-record', action='store_true', help='capture demos without live scene rasterization; replay renders full video')
     parser.add_argument('--seconds', type=int, help='explicit short sample, not episode acceptance')
     parser.add_argument('--motion-trace', action='store_true', help='retain per-frame replay poses and authoritative bot turns for movement evaluation')
