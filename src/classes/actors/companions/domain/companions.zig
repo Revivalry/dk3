@@ -14,6 +14,8 @@ pub const State = struct {
     animation_until: ?i64 = null,
     after_teleport: policy.Order = .follow,
     stopped: bool = false,
+    /// Authored STAY staging outside the playable floor; released by a supported placement.
+    parked: bool = false,
     next_ms: i64 = 0,
     last_ms: i64 = 0,
     death_reported: bool = false,
@@ -115,6 +117,7 @@ pub fn arriveFollower(follower: anytype, now: i64, delta: i64, episode: u8, prev
     follower.state.authored = .none;
     follower.state.animation_until = null;
     follower.state.stopped = false;
+    follower.state.parked = false;
     follower.state.next_ms = now;
     follower.state.last_ms = now;
     follower.ailments.cure();

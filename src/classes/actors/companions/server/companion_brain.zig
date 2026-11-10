@@ -51,7 +51,10 @@ const cornered_range: f32 = 192;
 
 pub const State = struct {
     /// The leader's recent footing (newest at `crumb_cursor - 1`).
-    crumbs: [16]v.Vec3 = @splat(@splat(0)),
+    // Preserve a complete staircase or moving-platform approach while the
+    // companion waits below. Sixteen footholds expired before a spiral's
+    // upper landing, leaving only points on another floor.
+    crumbs: [128]v.Vec3 = @splat(@splat(0)),
     crumb_count: usize = 0,
     crumb_cursor: usize = 0,
     crumb_ms: i64 = 0,
@@ -92,6 +95,12 @@ pub const State = struct {
     /// Stuck far behind, or in trouble it cannot get out of: when to warp
     /// to the leader unseen.
     catchup: @import("companion_catchup.zig").State = .{},
+
+    /// Oldest first, including after the bounded ring wraps.
+    pub fn footing(self: *const State, index: usize) v.Vec3 {
+        std.debug.assert(index < self.crumb_count);
+        return self.crumbs[(self.crumb_cursor + self.crumbs.len - self.crumb_count + index) % self.crumbs.len];
+    }
 };
 
 const stranded_first_ms: i64 = 1000;
@@ -186,18 +195,30 @@ pub fn think(actors: *const Actors, navigation: nav.Service, world: *data.World,
         return;
     }
     if (companion.order == .move) {
-        if (v.length(v.subtract(companion.destination, pose.position)) > 24) {
+        // Passing through the goal in the air is not completion. Keep the
+        // destination until the pilot settles its qualified landing; Stay
+        // would otherwise cancel the flight while braking over the bank.
+        // A nearby raised tread or corpse is not the requested floor.
+        const supported = frame.state.ground_entity != c.ENTITYNUM_NONE or frame.state.water_level >= 2;
+        const velocity = (try world.get(entity, data.Velocity)).linear;
+        const braking = nav.horizontalDistance(velocity, @splat(0)) > 48;
+        if (v.length(v.subtract(companion.destination, pose.position)) > 24 or
+            @abs(companion.destination[2] - pose.position[2]) > 8 or
+            !supported or braking or flown.pilot.flight != null)
+        {
             intent.destination = companion.destination;
+            intent.leave_mover = true;
             intent.close_in = false;
             brain.why = "move";
             return;
         }
         companion.order = .stay;
     }
-    // Come here: walk to the spot in front of the owner, then follow again.
+    // Come here: walk to the clear spot selected near the owner, then follow.
     if (companion.order == .come) {
         if (v.length(v.subtract(companion.destination, pose.position)) > 32) {
             intent.destination = companion.destination;
+            intent.leave_mover = true;
             intent.close_in = false;
             brain.why = "come";
             return;
@@ -465,7 +486,9 @@ fn remember(brain: *State, leader: v.Vec3, grounded: bool, now: i64) void {
     if (!grounded or now - brain.crumb_ms < 200) return;
     if (brain.crumb_count > 0) {
         const newest = brain.crumbs[(brain.crumb_cursor + brain.crumbs.len - 1) % brain.crumbs.len];
-        if (v.length(v.subtract(newest, leader)) < 48) return;
+        // Retain short turns on narrow stairs. A48-unit chord can leave a
+        // curved walkway even though both recorded endpoints are supported.
+        if (v.length(v.subtract(newest, leader)) < 16) return;
     }
     brain.crumbs[brain.crumb_cursor] = leader;
     brain.crumb_cursor = (brain.crumb_cursor + 1) % brain.crumbs.len;
@@ -590,7 +613,7 @@ fn passesNear(from: v.Vec3, to: v.Vec3, point: v.Vec3, radius: f32) bool {
 pub fn standable(frame: pilot.Frame, point: v.Vec3, leader: v.Vec3, leader_wet: bool, position: v.Vec3) !?v.Vec3 {
     const hull = frame.hull;
     const raised = v.add(point, .{ 0, 0, 18 });
-    const floor = try frame.collision.trace(.{ .start = raised, .end = v.add(raised, .{ 0, 0, -82 }), .mins = hull.mins, .maxs = hull.maxs, .slot = frame.slot, .mask = c.MASK_PLAYERSOLID });
+    const floor = try frame.collision.trace(.{ .start = raised, .end = v.add(raised, .{ 0, 0, -82 }), .mins = hull.mins, .maxs = hull.maxs, .slot = frame.slot, .mask = frame.motionMask() & ~@as(u32, c.CONTENTS_BODY | c.CONTENTS_CORPSE) });
     if (floor.start_solid or floor.all_solid or floor.fraction == 1 or floor.normal[2] < 0.7) return null;
     const spot = floor.end;
     if (@abs(spot[2] - leader[2]) > 48) return null;
@@ -639,7 +662,7 @@ fn testFrame(world: *data.World, slots: *Slots) pilot.Frame {
         .collision = .{ .context = &static.ground, .trace_fn = Ground.trace, .contents_fn = Ground.contents },
         .table = undefined,
         .slot = 0,
-        .entity = undefined,
+        .entity = .{ .index = std.math.maxInt(u32), .generation = 0 },
         .state = .{},
         .now = 0,
         .region = true,
@@ -682,6 +705,30 @@ test "the leader's trail resets on a teleport" {
     try testing.expectEqual(@as(usize, 2), brain.crumb_count);
     remember(&brain, .{ 2000, 0, 0 }, true, 1600);
     try testing.expectEqual(@as(usize, 1), brain.crumb_count);
+}
+test "a narrow corner retains its supported turn instead of a diagonal chord" {
+    var brain: State = .{};
+    remember(&brain, .{ 0, 0, 24 }, true, 1000);
+    remember(&brain, .{ 16, 0, 24 }, true, 1200);
+    remember(&brain, .{ 16, 16, 24 }, true, 1400);
+    try testing.expectEqual(@as(usize, 3), brain.crumb_count);
+    try testing.expectEqual(v.Vec3{ 16, 0, 24 }, brain.footing(1));
+    remember(&brain, .{ 16, 16, 24 }, true, 10000);
+    try testing.expectEqual(@as(usize, 3), brain.crumb_count);
+}
+test "a waiting companion retains the supported spiral approach in chronological order" {
+    var brain: State = .{};
+    for (0..150) |index| remember(&brain, .{ @as(f32, @floatFromInt(index)) * 50, 0, 24 }, true, @as(i64, @intCast(index)) * 250 + 1000);
+    try testing.expectEqual(@as(usize, 128), brain.crumb_count);
+    try testing.expectEqual(v.Vec3{ 1100, 0, 24 }, brain.footing(0));
+    try testing.expectEqual(v.Vec3{ 7450, 0, 24 }, brain.footing(127));
+    // Airborne motion supplies no footing and a stationary wait expires none.
+    remember(&brain, .{ 7500, 0, 80 }, false, 39000);
+    remember(&brain, .{ 7450, 0, 24 }, true, 100000);
+    try testing.expectEqual(v.Vec3{ 1100, 0, 24 }, brain.footing(0));
+    remember(&brain, .{ 9000, 0, 24 }, true, 100250);
+    try testing.expectEqual(@as(usize, 1), brain.crumb_count);
+    try testing.expectEqual(v.Vec3{ 9000, 0, 24 }, brain.footing(0));
 }
 test "a companion off the area graph walks back to where a route last existed" {
     var brain: State = .{};

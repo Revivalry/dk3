@@ -29,3 +29,18 @@ The E2 replay exposed fatal self-hits with weapon 13 in
 all ten awakened monsters die, the real ending counter fires, both ending films
 play and the party reaches Episode 3 with zero deaths. This is a scoped replay
 from a normal post-boss checkpoint, not complete Episode 2 acceptance.
+
+Sequence587 native297 adds a class-declared close-shot budget before the360ms
+tip merge: at most three ordinary tips, including a conservative water bonus,
+with the existing0.325 self-damage scale and an additional40HP reserve. The
+shared pilot checks the supplied damage/speed and actual muzzle lane, retains
+ally safety, and uses ordinary attack input when the budget permits it. The
+weapon's actual self damage is unchanged; its existing scale now lives once
+in the class spec. Low health, too-close origins and long-flight shots retain
+the original veto. Debug178 passes those cases. Native298 also retains the
+nearby-ally query for this allowance.
+
+`cerberus-reviewed-close-splash194-343` records actual lethal Trident damage to
+the boss during the approach, followed by travel through all five Medusa maps
+without a death until the Medusa gaze. It uses the legitimate temple soul40,
+not granted health or ammunition. Complete fresh Episode2 remains open.

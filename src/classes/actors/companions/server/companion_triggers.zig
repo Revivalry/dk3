@@ -204,9 +204,14 @@ pub fn advance(world: *data.World, entity: ecs.Entity, actor: *data.Actor, pose:
             if (now < state.next_ms) return true;
             state.next_ms = now + 100;
             const point = try clearSpot(world, entity, state.destination) orelse return true;
+            const body = (try world.get(entity, data.Body)).*;
+            const support = try engine.collisionService().trace(.{ .start = point, .end = v.add(point, .{ 0, 0, -64 }), .mins = body.mins, .maxs = body.maxs, .slot = (try world.get(entity, data.Binding)).slot, .mask = body.collision_mask & ~@as(u32, c.CONTENTS_BODY) });
+            const supported = !support.start_solid and !support.all_solid and support.fraction < 1 and support.normal[2] >= 0.7;
+            if (!supported and state.after_teleport != .stay) return true;
             state.order = state.after_teleport;
             state.authored = .none;
             try place(world, entity, actor, pose, point, now);
+            state.parked = !supported;
         },
     }
     return true;
@@ -215,6 +220,7 @@ pub fn advance(world: *data.World, entity: ecs.Entity, actor: *data.Actor, pose:
 /// and nothing planned on the far side of the jump still holds.
 pub fn place(world: *data.World, entity: ecs.Entity, actor: *data.Actor, pose: *data.Transform, point: v.Vec3, now: i64) !void {
     const state = try world.get(entity, data.Companion);
+    state.parked = false;
     pose.position = point;
     state.motor = .{ .command_ms = now, .ducked = state.motor.ducked };
     state.jump_started_ms = 0;

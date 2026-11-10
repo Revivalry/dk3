@@ -18,7 +18,7 @@ const Backend = struct {
         const scope = try context.select();
         defer scope.deinit();
         var selected = request;
-        selected.slot = if (context.world.?.find(self.skip)) |entity| context.slots.find(entity) orelse c.ENTITYNUM_NONE else c.ENTITYNUM_NONE;
+        selected.slot = skipSlot(&context.world.?, &context.slots, self.skip);
         return engine.collisionService().trace(selected);
     }
     pub fn crossing(_: Backend, owner: u32, request: collision.Request, visited: *const [256]bool) !?walk.Crossing {
@@ -43,6 +43,36 @@ const Backend = struct {
         return nearest;
     }
 };
+
+/// Binding is an O(1) hint, checked against the authoritative transport owner.
+/// Transitional entities with no binding, or a stale hint, retain the scan.
+fn skipSlot(world: *data.World, slots: *const @import("../../engine/slots.zig").Slots, identity: u32) u16 {
+    const entity = world.find(identity) orelse return c.ENTITYNUM_NONE;
+    if (world.get(entity, data.Binding) catch null) |binding| if (binding.slot < slots.occupants.len) {
+        if (slots.occupants[binding.slot]) |occupant| if (occupant.index == entity.index and occupant.generation == entity.generation) return binding.slot;
+    };
+    return slots.find(entity) orelse c.ENTITYNUM_NONE;
+}
+
+test "collision skip binding hints preserve authoritative slot lookup across stale bindings" {
+    var world = data.World.init(std.testing.allocator, 4);
+    defer world.deinit();
+    var slots: @import("../../engine/slots.zig").Slots = .{};
+    const entity = try world.create(17, .{data.Transform{}});
+    const other = try world.create(18, .{data.Transform{}});
+    const slot = try slots.acquire(entity, null);
+    const other_slot = try slots.acquire(other, null);
+    try std.testing.expectEqual(slot, skipSlot(&world, &slots, 17));
+    try world.put(entity, data.Binding{ .slot = slot });
+    try std.testing.expectEqual(slot, skipSlot(&world, &slots, 17));
+    (try world.get(entity, data.Binding)).slot = other_slot;
+    try std.testing.expectEqual(slot, skipSlot(&world, &slots, 17));
+    (try world.get(entity, data.Binding)).slot = 65535;
+    try std.testing.expectEqual(slot, skipSlot(&world, &slots, 17));
+    try slots.release(slot, entity);
+    try std.testing.expectEqual(@as(u16, c.ENTITYNUM_NONE), skipSlot(&world, &slots, 17));
+    try std.testing.expectEqual(@as(u16, c.ENTITYNUM_NONE), skipSlot(&world, &slots, 99));
+}
 
 pub fn trace(request: collision.Request) !collision.Trace {
     if (access.region == null) return engine.collisionService().trace(request);

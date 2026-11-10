@@ -10,6 +10,13 @@ const v = @import("../../core/domain/vector.zig");
 const c = abi.c;
 pub const Move = @import("attachments.zig").Move;
 const Backup = struct { slot: u16, origin: v.Vec3, angles: v.Vec3, ground: i32, yaw_delta: i32 = 0 };
+const Contact = struct { riding: bool, depth: usize, initial_overlap: bool, hit: @import("../../core/domain/collision.zig").Trace };
+fn recoverContact(service: @import("../../core/domain/collision.zig").Collision, request: @import("../../core/domain/collision.zig").Request, destination: v.Vec3, contact: Contact) !?@import("../../core/domain/collision.zig").Trace {
+    if (contact.riding or contact.depth != 0 or !contact.hit.start_solid) return null;
+    const floor_refused = destination[2] < request.start[2] and contact.hit.entity == c.ENTITYNUM_WORLD;
+    if (!contact.initial_overlap and !floor_refused) return null;
+    return service.separate(request, 18);
+}
 fn riderGround(world: *data.World, entity: ecs.Entity) ?i32 {
     // Nonblocking corpses do not obstruct a solid mover. Trying to
     // push a corpse trapped against the world can otherwise hold a train
@@ -32,7 +39,7 @@ const Transaction = struct {
     saved: *[ecs.max_entities]Backup,
     count: *usize,
     seen: *[ecs.max_entities]bool,
-    fn pushBody(self: *Transaction, slot: u16, wanted: v.Vec3, riding: bool, yaw_delta: i32, depth: usize, mover_slot: u16) anyerror!?ecs.Entity {
+    fn pushBody(self: *Transaction, slot: u16, wanted: v.Vec3, riding: bool, yaw_delta: i32, depth: usize, mover_slot: u16, initial_overlap: bool) anyerror!?ecs.Entity {
         const entity = self.slots.occupants[slot].?;
         if (self.seen[slot] or depth >= 32) return entity;
         const other = &self.projections[slot];
@@ -50,6 +57,17 @@ const Transaction = struct {
         const collision = engine.collisionService();
         var destination = wanted;
         var hit = try collision.trace(.{ .start = destination, .end = destination, .mins = other.shared.mins, .maxs = other.shared.maxs, .slot = slot, .mask = mask });
+        // An authored non-rider can already straddle a retracted brush.
+        // Translating it with a descending leaf pushes its feet into the
+        // stationary floor and prevents either body from ever escaping.
+        // A new descending contact can meet the same floor constraint. Give
+        // that non-rider a bounded side escape too, checked against every live
+        // collider. Riders and new horizontal pushes keep their swept refusal.
+        if (try recoverContact(collision, .{ .start = old, .end = old, .mins = other.shared.mins, .maxs = other.shared.maxs, .slot = slot, .mask = mask }, destination, .{ .riding = riding, .depth = depth, .initial_overlap = initial_overlap, .hit = hit })) |contact| {
+            destination = contact.end;
+            self.saved[record].yaw_delta = 0;
+            hit = try collision.trace(.{ .start = destination, .end = destination, .mins = other.shared.mins, .maxs = other.shared.maxs, .slot = slot, .mask = mask });
+        }
         for (0..32) |_| {
             if (!hit.start_solid) break;
             // The leaf rotates while the pushed hull remains axis-aligned.
@@ -81,7 +99,7 @@ const Transaction = struct {
             const body = self.world.get(neighbour, data.Body) catch break;
             if (body.contents & c.CONTENTS_BODY == 0) break;
             const next = v.add(self.projections[hit.entity].shared.currentOrigin, v.subtract(destination, old));
-            if (try self.pushBody(hit.entity, next, false, 0, depth + 1, mover_slot)) |blocker| return blocker;
+            if (try self.pushBody(hit.entity, next, false, 0, depth + 1, mover_slot, false)) |blocker| return blocker;
             if (engine.integer("developer") >= 2) {
                 var text: [160]u8 = undefined;
                 engine.print(try std.fmt.bufPrintZ(&text, "zig push chain mover={d} body={d} neighbour={d} depth={d}\n", .{ mover_slot, slot, hit.entity, depth + 1 }));
@@ -147,6 +165,7 @@ fn pushProjected(world: *data.World, slots: *const Slots, projections: []abi.Ent
             // physical push indefinitely.
             const other = &projections[index];
             const riding = ground == before.slot;
+            var initial_overlap = false;
             if (!riding) {
                 var intersects = true;
                 for (0..3) |axis| if (other.shared.absmin[axis] >= projection.shared.absmax[axis] or other.shared.absmax[axis] <= projection.shared.absmin[axis]) {
@@ -158,12 +177,16 @@ fn pushProjected(world: *data.World, slots: *const Slots, projections: []abi.Ent
                 // An overlap with another actor inside those bounds is not
                 // evidence of contact with this moving leaf.
                 if (!engine.entityContact(projection, v.add(other.shared.currentOrigin, other.shared.mins), v.add(other.shared.currentOrigin, other.shared.maxs))) continue;
+                var previous = projection.*;
+                previous.shared.currentOrigin = before.origin;
+                previous.shared.currentAngles = before.angles;
+                initial_overlap = engine.entityContact(&previous, v.add(other.shared.currentOrigin, other.shared.mins), v.add(other.shared.currentOrigin, other.shared.maxs));
             }
             const old = other.shared.currentOrigin;
             const offset = v.add(old, v.scale(before.origin, -1));
             const rotated = v.add(v.add(v.scale(axes.forward, offset[0]), v.scale(axes.right, -offset[1])), v.scale(up, offset[2]));
             const destination = v.add(v.add(old, translation), v.add(rotated, v.scale(offset, -1)));
-            if (try transaction.pushBody(@intCast(index), destination, riding, @intFromFloat(rotation[1] * 65536 / 360), 0, before.slot)) |blocker| return blocker;
+            if (try transaction.pushBody(@intCast(index), destination, riding, @intFromFloat(rotation[1] * 65536 / 360), 0, before.slot, initial_overlap)) |blocker| return blocker;
         }
     }
     for (saved[0..count]) |before| {
@@ -182,6 +205,33 @@ fn pushProjected(world: *data.World, slots: *const Slots, projections: []abi.Ent
     }
     committed = true;
     return null;
+}
+test "a new descending non-rider contact escapes sideways when the floor refuses its push" {
+    const collision = @import("../../core/domain/collision.zig");
+    const Corner = struct {
+        fn trace(_: *anyopaque, request: collision.Request) !collision.Trace {
+            if (request.start[0] < 9 or request.start[2] < 10) return .{ .fraction = 0, .end = request.start, .normal = @splat(0), .start_solid = true, .all_solid = true };
+            if (request.end[0] >= 9) return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+            const fraction = (request.start[0] - 9) / (request.start[0] - request.end[0]);
+            return .{ .fraction = fraction, .end = v.add(request.start, v.scale(v.subtract(request.end, request.start), fraction)), .normal = .{ 1, 0, 0 } };
+        }
+    };
+    var raw: u8 = 0;
+    const service: collision.Collision = .{ .context = &raw, .trace_fn = Corner.trace };
+    var request: collision.Request = .{ .start = .{ 0, 0, 10 }, .end = .{ 0, 0, 10 }, .mins = @splat(0), .maxs = @splat(0), .slot = 0, .mask = 1 };
+    const refused: collision.Trace = .{ .fraction = 0, .end = .{ 0, 0, -1 }, .normal = @splat(0), .entity = c.ENTITYNUM_WORLD, .start_solid = true };
+    const context: Contact = .{ .riding = false, .depth = 0, .initial_overlap = false, .hit = refused };
+    const escaped = (try recoverContact(service, request, .{ 0, 0, -1 }, context)).?;
+    try std.testing.expect(escaped.end[0] >= 9);
+    try std.testing.expectApproxEqAbs(@as(f32, 10), escaped.end[2], 0.001);
+    try std.testing.expect(v.length(v.subtract(escaped.end, request.start)) <= 18);
+    var rider = context;
+    rider.riding = true;
+    try std.testing.expectEqual(@as(?collision.Trace, null), try recoverContact(service, request, .{ 0, 0, -1 }, rider));
+    try std.testing.expectEqual(@as(?collision.Trace, null), try recoverContact(service, request, .{ -1, 0, 10 }, context));
+    request.start[0] = -30;
+    request.end = request.start;
+    try std.testing.expectEqual(@as(?collision.Trace, null), try recoverContact(service, request, .{ -30, 0, -1 }, context));
 }
 test "spawned and borrowed cinematic performers participate in mover riding" {
     var world = data.World.init(std.testing.allocator, 4);
@@ -294,6 +344,7 @@ pub fn push(world: *data.World, slots: *const Slots, projections: []abi.EntityPr
         projected[count] = .{ .entity = part.entity, .destination = part.after };
         count += 1;
     }
+    try @import("item_support.zig").bind(world, projections, projected[0..count]);
     if (try pushProjected(world, slots, projections, projected[0..count])) |blocker| {
         try requestYield(world, projections, blocker, moves, now);
         if (travel == .held) try assembly.delay(world, elapsed);

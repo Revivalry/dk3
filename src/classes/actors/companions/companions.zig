@@ -4,6 +4,29 @@ const class_traits = @import("../../../mechanics/policy/actors/traits.zig");
 pub const classes = [_]class_traits.Class{.{ .kind = .companion, .traits = .{ .party = true, .remains = .{ .never = true } } }};
 pub const render_tag = 10029;
 pub const Identity = enum { mikiko, superfly };
+/// Easier combat must not make an ally's required physical jumps shorter.
+/// Preserve the authored running pace, including ordinary freeze slowing.
+pub fn locomotionSpeed(scaled: f32, difficulty: f32) f32 {
+    return if (difficulty > 0 and difficulty < 1) scaled / difficulty else scaled;
+}
+test "easy combat retains the party's authored running reach" {
+    const t = @import("std").testing;
+    try t.expectEqual(@as(f32, 300), locomotionSpeed(225, 0.75));
+    try t.expectEqual(@as(f32, 300), locomotionSpeed(300, 1));
+    try t.expectEqual(@as(f32, 375), locomotionSpeed(375, 1.25));
+}
+/// Sidekick initialization replaces the model's AIDATA bounds with the
+/// standing traveller hull, including the carrying companion.
+pub fn parseTuning(_: anytype, _: anytype, definition: anytype) !void {
+    definition.mins = .{ -16, -16, -24 };
+    definition.maxs = .{ 16, 16, 32 };
+}
+test "party hull overrides smaller model table bounds" {
+    var definition: struct { mins: [3]f32, maxs: [3]f32 } = .{ .mins = .{ -12, -12, -24 }, .maxs = .{ 12, 12, 30 } };
+    try parseTuning({}, {}, &definition);
+    try @import("std").testing.expectEqual([3]f32{ -16, -16, -24 }, definition.mins);
+    try @import("std").testing.expectEqual([3]f32{ 16, 16, 32 }, definition.maxs);
+}
 /// Authored departure requirements for this class's two identities.
 pub fn requiredForExit(identity: Identity, flags: u32) bool {
     return flags & @as(u32, switch (identity) {
@@ -47,11 +70,16 @@ test "companion voices stay within each sidekick's recorded set" {
 }
 /// The classnames this policy defines (order is the catalog's save order, not this list's).
 pub const definitions = [_]@import("../../../mechanics/policy/actors/definition.zig").Definition{
-    .{ .classname = "mikiko", .kind = .companion, .idle = "aamba", .clips = follower_clips },
-    .{ .classname = "superfly", .kind = .companion, .idle = "aamba", .clips = follower_clips },
-    .{ .classname = "mikikofly", .kind = .companion, .clips = follower_clips },
+    .{ .classname = "mikiko", .kind = .companion, .idle = "aamba" },
+    .{ .classname = "superfly", .kind = .companion, .idle = "aamba" },
+    .{ .classname = "mikikofly", .kind = .companion },
 };
-const follower_clips: @import("../../../mechanics/policy/actors/definition.zig").Clips = .{ .player = true, .monster = false, .npc = true };
+test "party collision uses the live monster policy selected by sidekick initialization" {
+    for (definitions) |definition| {
+        try @import("std").testing.expect(definition.clips.monster);
+        try @import("std").testing.expect(!definition.clips.npc and !definition.clips.player);
+    }
+}
 
 /// The owner's command window (reference cl_scrn.cpp/cl_selector.cpp): five orders in the window's
 /// order, each with its client command and the sidekick's spoken acknowledgement.

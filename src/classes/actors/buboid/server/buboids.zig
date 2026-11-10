@@ -178,9 +178,11 @@ fn emerge(actors: *@import("../../../../mechanics/server/actors.zig").Actors, wo
     const slot = (try world.get(entity, data.Binding)).slot;
     const mins = v.scale(definition.mins, 1.35);
     const maxs = v.scale(definition.maxs, 1.35);
+    const probe_origin = resurfaceProbeOrigin(enemy, enemy_body.mins, mins);
     for (0..8) |i| {
         const direction = v.basis(.{ 0, @as(f32, @floatFromInt(i)) * 45, 0 }).forward;
-        const ray = try @import("../../../../mechanics/server/actor_collision.zig").service().trace(.{ .start = v.add(enemy, v.scale(direction, 32)), .end = v.add(enemy, v.scale(direction, 64)), .mins = mins, .maxs = maxs, .slot = slot, .mask = c.MASK_SOLID | c.CONTENTS_BODY });
+        const near = resurfaceProbeDistance(direction, enemy_body.mins, enemy_body.maxs, mins, maxs);
+        const ray = try @import("../../../../mechanics/server/actor_collision.zig").service().trace(.{ .start = v.add(probe_origin, v.scale(direction, near)), .end = v.add(probe_origin, v.scale(direction, @max(64, near + 16))), .mins = mins, .maxs = maxs, .slot = slot, .mask = c.MASK_SOLID | c.CONTENTS_BODY });
         if (ray.fraction < 1 or ray.start_solid) continue;
         const node = actors.ground_routes.nearest(ray.end) orelse continue;
         const above = v.add(node, .{ 0, 0, 32 });
@@ -195,4 +197,37 @@ fn emerge(actors: *@import("../../../../mechanics/server/actors.zig").Actors, wo
         return true;
     }
     return false;
+}
+fn resurfaceProbeOrigin(enemy: v.Vec3, enemy_mins: v.Vec3, probe_mins: v.Vec3) v.Vec3 {
+    // Clearance grows around the body, but its feet must stay above the
+    // supporting floor. Scaling around a grounded origin buries the probe.
+    return v.add(enemy, .{ 0, 0, enemy_mins[2] - probe_mins[2] });
+}
+fn resurfaceProbeDistance(direction: v.Vec3, enemy_mins: v.Vec3, enemy_maxs: v.Vec3, mins: v.Vec3, maxs: v.Vec3) f32 {
+    var separation = std.math.inf(f32);
+    for (0..2) |axis| {
+        const heading = direction[axis];
+        if (heading > 0.001) separation = @min(separation, (enemy_maxs[axis] - mins[axis]) / heading);
+        if (heading < -0.001) separation = @min(separation, (maxs[axis] - enemy_mins[axis]) / -heading);
+    }
+    return @max(32, separation + 1);
+}
+test "resurfacing clearance preserves grounded feet when its hull grows" {
+    const feet: v.Vec3 = .{ -16, -16, -24 };
+    const enlarged = v.scale(feet, 1.35);
+    const enemy: v.Vec3 = .{ -230, -1369, -455.875 };
+    try std.testing.expect(enemy[2] + enlarged[2] < -480);
+    const probe = resurfaceProbeOrigin(enemy, feet, enlarged);
+    try std.testing.expectApproxEqAbs(@as(f32, -479.875), probe[2] + enlarged[2], 0.001);
+    try std.testing.expectEqual(enemy[0], probe[0]);
+    try std.testing.expectEqual(enemy[1], probe[1]);
+    const enemy_maxs: v.Vec3 = .{ 15, 15, 32 };
+    const maxs = v.scale(v.Vec3{ 16, 16, 32 }, 1.35);
+    for (0..8) |i| {
+        const direction = v.basis(.{ 0, @as(f32, @floatFromInt(i)) * 45, 0 }).forward;
+        const position = v.scale(direction, resurfaceProbeDistance(direction, .{ -15, -15, -24 }, enemy_maxs, enlarged, maxs));
+        var separated = false;
+        for (0..2) |axis| separated = separated or position[axis] + enlarged[axis] > enemy_maxs[axis] or position[axis] + maxs[axis] < -15;
+        try std.testing.expect(separated);
+    }
 }

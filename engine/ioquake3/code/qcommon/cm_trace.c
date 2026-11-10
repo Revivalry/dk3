@@ -1369,6 +1369,118 @@ void CM_BoxTrace( trace_t *results, const vec3_t start, const vec3_t end,
 	CM_Trace( results, start, end, mins, maxs, model, vec3_origin, brushmask, capsule, NULL );
 }
 
+/* dk3: exact moving box against rectangular rotated inline brushes. Rotating
+ * just the trace endpoints leaves the actor hull in the wrong frame. The
+ * ordinary brush bevels cannot fix that: use all 15 separating axes instead.
+ * Nonrectangular models and capsules retain their existing collision path.
+ * This tests translation against the model's current pose, like CM_Trace; it
+ * does not approximate a rotating door's motion between simulation ticks. */
+static qboolean CM_RectangularModel(cmodel_t *model, int mask) {
+	int i, j;
+	if (!model->leaf.numLeafBrushes) return qfalse;
+	for (i = 0; i < model->leaf.numLeafSurfaces; ++i) {
+		cPatch_t *patch = cm.surfaces[cm.leafsurfaces[model->leaf.firstLeafSurface + i]];
+		if (patch && (patch->contents & mask)) return qfalse;
+	}
+	for (i = 0; i < model->leaf.numLeafBrushes; ++i) {
+		cbrush_t *brush = &cm.brushes[cm.leafbrushes[model->leaf.firstLeafBrush + i]];
+		unsigned int faces = 0;
+		if (!(brush->contents & mask)) continue;
+		if (brush->numsides != 6) return qfalse;
+		for (j = 0; j < 6; ++j) {
+			cplane_t *p = brush->sides[j].plane;
+			int k, axis = -1;
+			for (k = 0; k < 3; ++k) {
+				if (p->normal[k] == 1 || p->normal[k] == -1) {
+					if (axis >= 0) return qfalse;
+					axis = k;
+				}
+				else if (p->normal[k] != 0) return qfalse;
+			}
+			if (axis < 0) return qfalse;
+			faces |= 1u << (axis * 2 + (p->normal[axis] > 0));
+		}
+		if (faces != 63) return qfalse;
+	}
+	return qtrue;
+}
+
+static void CM_TraceRectangularModel(trace_t *trace, const vec3_t start,
+		const vec3_t end, const vec3_t half, vec3_t matrix[3],
+		cmodel_t *model, int mask) {
+	vec3_t axes[15], boxAxes[3];
+	int i, j, count = 6, b;
+	Com_Memset(trace, 0, sizeof(*trace));
+	trace->fraction = 1;
+	c_traces++;
+	for (i = 0; i < 3; ++i) {
+		VectorClear(axes[i]);
+		axes[i][i] = 1;
+		for (j = 0; j < 3; ++j) boxAxes[i][j] = matrix[j][i];
+		VectorCopy(boxAxes[i], axes[3 + i]);
+	}
+	for (i = 0; i < 3; ++i) for (j = 0; j < 3; ++j) {
+		CrossProduct(axes[i], boxAxes[j], axes[count]);
+		if (VectorNormalize(axes[count]) > 0.00001f) ++count;
+	}
+	for (b = 0; b < model->leaf.numLeafBrushes; ++b) {
+		cbrush_t *brush = &cm.brushes[cm.leafbrushes[model->leaf.firstLeafBrush + b]];
+		vec3_t center, extent, relativeStart, relativeEnd, normal = {0};
+		float enter = -1, leave = 1;
+		qboolean startout = qfalse, endout = qfalse, missed = qfalse;
+		if (!(brush->contents & mask)) continue;
+		c_brush_traces++;
+		for (i = 0; i < 3; ++i) {
+			center[i] = (brush->bounds[0][i] + brush->bounds[1][i]) * 0.5f;
+			extent[i] = (brush->bounds[1][i] - brush->bounds[0][i]) * 0.5f;
+		}
+		VectorSubtract(start, center, relativeStart);
+		VectorSubtract(end, center, relativeEnd);
+		for (i = 0; i < count && !missed; ++i) {
+			float radius = 0, d1, d2;
+			int sign;
+			for (j = 0; j < 3; ++j)
+				radius += extent[j] * fabs(axes[i][j]) + half[j] * fabs(DotProduct(axes[i], boxAxes[j]));
+			d1 = DotProduct(relativeStart, axes[i]);
+			d2 = DotProduct(relativeEnd, axes[i]);
+			for (sign = -1; sign <= 1; sign += 2) {
+				float a = sign * d1 - radius, z = sign * d2 - radius, f;
+				if (a > 0) startout = qtrue;
+				if (z > 0) endout = qtrue;
+				if (a > 0 && (z >= SURFACE_CLIP_EPSILON || z >= a)) { missed = qtrue; break; }
+				if (a <= 0 && z <= 0) continue;
+				if (a > z) {
+					f = (a - SURFACE_CLIP_EPSILON) / (a - z);
+					if (f < 0) f = 0;
+					if (f > enter) { enter = f; VectorScale(axes[i], sign, normal); }
+				} else {
+					f = (a + SURFACE_CLIP_EPSILON) / (a - z);
+					if (f > 1) f = 1;
+					if (f < leave) leave = f;
+				}
+			}
+		}
+		if (missed) continue;
+		if (!startout) {
+			trace->startsolid = qtrue;
+			if (!endout) { trace->allsolid = qtrue; trace->fraction = 0; trace->contents = brush->contents; }
+		} else if (enter < leave && enter > -1 && enter < trace->fraction) {
+			float alignment = -2;
+			trace->fraction = enter;
+			VectorCopy(normal, trace->plane.normal);
+			trace->plane.dist = DotProduct(center, normal);
+			for (j = 0; j < 3; ++j) trace->plane.dist += extent[j] * fabs(normal[j]);
+			trace->plane.type = 3;
+			SetPlaneSignbits(&trace->plane);
+			trace->contents = brush->contents;
+			for (j = 0; j < brush->numsides; ++j) {
+				float dot = DotProduct(normal, brush->sides[j].plane->normal);
+				if (dot > alignment) { alignment = dot; trace->surfaceFlags = brush->sides[j].surfaceFlags; }
+			}
+		}
+	}
+}
+
 /*
 ==================
 CM_TransformedBoxTrace
@@ -1451,7 +1563,14 @@ void CM_TransformedBoxTrace( trace_t *results, const vec3_t start, const vec3_t 
 	}
 
 	// sweep the box through the model
-	CM_Trace( &trace, start_l, end_l, symetricSize[0], symetricSize[1], model, origin, brushmask, capsule, &sphere );
+	if (rotated && !capsule && model > 0 && model < cm.numSubModels &&
+		(symetricSize[1][0] || symetricSize[1][1] || symetricSize[1][2]) &&
+		CM_RectangularModel(CM_ClipHandleToModel(model), brushmask)) {
+		CM_TraceRectangularModel(&trace, start_l, end_l, symetricSize[1], matrix,
+			CM_ClipHandleToModel(model), brushmask);
+	} else {
+		CM_Trace( &trace, start_l, end_l, symetricSize[0], symetricSize[1], model, origin, brushmask, capsule, &sphere );
+	}
 
 	// if the bmodel was rotated and there was a collision
 	if ( rotated && trace.fraction != 1.0 ) {

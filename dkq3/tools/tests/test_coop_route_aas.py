@@ -19,6 +19,22 @@ def graph(areas, links):
 
 
 class CoopRouteAasTest(unittest.TestCase):
+    def test_invalid_area_links_cannot_join_disconnected_floors(self):
+        boxes = [((0, 0, z), (64, 64, z + 8)) for z in (0, 100, 200)]
+        g = graph(boxes, [(1, 0, 6, 1), (1, 99, 6, 1), (2, 3, 2, 10)])
+        # Placeholder settings can point into the ordinary reachability list;
+        # they must never be entered through an invalid ladder destination.
+        g.settings[0] = (0, 0, 0, 0, 0, 1, 2)
+        self.assertEqual(set(g.search(1)), {1})
+        self.assertEqual(set(g.search(3, reverse=True)), {2, 3})
+
+    def test_standing_keeps_a_thin_upper_floor_above_a_connected_lower_room(self):
+        g = graph([((0, 0, 528), (64, 64, 531)),
+                   ((0, 0, 344), (64, 64, 376))],
+                  [(1, 1, 2, 1), (2, 2, 2, 1)])
+        g.area = lambda p: 1 if 528 < p[2] <= 531 else 2 if 344 <= p[2] < 528 else 0
+        self.assertEqual(g.standing((32, 32, 528)), 1)
+
     def test_search_follows_player_travel_and_avoids_closed_doors(self):
         boxes = [((0, 0, 0), (64, 64, 8)), ((64, 0, 0), (128, 64, 8)), ((128, 0, 0), (192, 64, 8)), ((0, 64, 0), (192, 128, 8))]
         # 1 -> 2 -> 3 directly, or the long way round through 4; 1 -> 3 by rocket jump is not for players.

@@ -10,6 +10,37 @@ const Slots = @import("../../engine/slots.zig").Slots;
 const weapons = @import("../domain/weapons.zig");
 const v = @import("../../core/domain/vector.zig");
 const c = abi.c;
+/// A straight strike starts at its class's hand height, independently of the
+/// camera. Compensate the sight point so its direction reaches the fixture.
+/// Arc families retain their own qualification; one nominal swing is not proof.
+pub fn linearAim(plan: catalog.melee.Plan, point: v.Vec3, muzzle: v.Vec3, view_height: f32, ducked: bool) ?v.Vec3 {
+    const origin = linearOrigin(plan, @splat(0), muzzle, ducked) orelse return null;
+    return v.add(v.subtract(point, origin), .{ 0, 0, view_height });
+}
+pub fn linearOrigin(plan: catalog.melee.Plan, position: v.Vec3, muzzle: v.Vec3, ducked: bool) ?v.Vec3 {
+    if (plan.hits != 1 or v.length(plan.from[0]) > 0.01) return null;
+    const offset: v.Vec3 = if (plan.world_muzzle) muzzle else @splat(0);
+    return v.add(v.add(position, offset), .{ 0, 0, if (ducked) plan.crouching_height else plan.height });
+}
+test "straight fixture aim compensates standing and crouched hand height without treating an arc as a ray" {
+    const plan: catalog.melee.Plan = .{ .height = 12, .crouching_height = -13 };
+    try std.testing.expectEqual(v.Vec3{ 64, 0, 14 }, linearAim(plan, .{ 64, 0, 0 }, @splat(0), 26, false).?);
+    try std.testing.expectEqual(v.Vec3{ 64, 0, 25 }, linearAim(plan, .{ 64, 0, 0 }, @splat(0), 12, true).?);
+    try std.testing.expect(linearAim(.{ .from = .{ .{ 1, 1, 0 }, @splat(0) } }, .{ 64, 0, 0 }, @splat(0), 26, false) == null);
+}
+test "a crouched straight strike aims from the hand at a small low target" {
+    const plan: catalog.melee.Plan = .{ .height = 12, .crouching_height = -13 };
+    const position: v.Vec3 = .{ 0, 0, 24 };
+    const eye: v.Vec3 = .{ 0, 0, 22 };
+    const point: v.Vec3 = .{ 21, 0, 7 };
+    const hand = linearOrigin(plan, position, @splat(0), true).?;
+    const legacy_at_target = v.add(hand, v.subtract(point, eye));
+    try std.testing.expect(legacy_at_target[2] < 5);
+    const aimed_at_target = v.add(hand, v.subtract(point, hand));
+    try std.testing.expect(aimed_at_target[2] >= 5 and aimed_at_target[2] <= 9);
+    try std.testing.expectEqual(v.Vec3{ 0, 0, 36 }, linearOrigin(plan, position, @splat(0), false).?);
+    try std.testing.expect(linearOrigin(.{ .hits = 2 }, position, @splat(0), true) == null);
+}
 pub fn launch(world: *data.World, owner: ecs.Entity, shot: weapons.Fired, table: *const weapons.Table, now: i64) !void {
     const action: data.Melee = .{ .owner = try world.persistentId(owner), .weapon = shot.weapon, .sequence = shot.sequence, .experience = (try world.get(owner, data.Weapons)).dk3SwordExperience, .damage = table.entries[shot.weapon].damage, .started_ms = now, .timing_factor = catalog.transitions.attackFactor((try world.get(owner, data.Character)).attribute(.attack, now)) };
     _ = try action.plan();

@@ -64,7 +64,10 @@ class Graph:
         """Area of a player standing at `point`, searching a little below it."""
         # A standing origin lies on the boundary of its thin grounded area.
         x, y, z = point
-        for drop in (-4, *range(4, 164, 8)):
+        # Grounded AAS slabs can be only three units high. Starting four
+        # units above/below an exact stance skipped them and selected the
+        # downstairs room instead (Alcatraz's kitchen and Dungeon stairs).
+        for drop in (0, -1, 1, -2, 2, -4, *range(4, 164, 8)):
             area = self.area((x, y, z - drop))
             if area and self.settings[area][5]:
                 return area
@@ -74,6 +77,11 @@ class Graph:
         contents, flags, presence, cluster, cluster_area, count, first = self.settings[area]
         for index in range(first, first + count):
             to, face, edge, *rest = self.reach[index]
+            # Zero is solid/outside, never a navigable area. Following a
+            # malformed ladder link into its placeholder settings can join
+            # unrelated floors and invent a path through the map.
+            if not 0 < to < len(self.areas):
+                continue
             start, end, kind, time = rest[0:3], rest[3:6], rest[6], rest[7]
             yield to, start, end, kind & 0xffffff, time
 

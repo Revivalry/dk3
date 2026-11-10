@@ -4,6 +4,18 @@ The reference files are `dlls/world/nharre.cpp`, the summon weapons in `ai_weapo
 
 The native code is `src/classes/actors/nharre/` (`nharre.zig`: teleport and reaper state; `server/nharres.zig`: chooser, summons, teleport; `server/nharre_retreat.zig`: repositioning; `server/nharre_reaper.zig` and `client/`: the reaper).
 
+Sequence587, native146 repairs shallow floor overlap at an authored teleport
+marker. The observed destination `(-728,1224,8)` left the standing hull below
+its floor, holding the boss indefinitely in invulnerable fade-out. The class
+now tries the original position first, then fits its hull to live support
+within one18-unit step and checks the full player-solid mask again. Occupied,
+deep and unsupported placements still wait. Marker selection and the original
+fade sequence remain intact. Debug69 tests shallow recovery, idempotence,
+occupied refusal and a deep invalid marker. `nharre-teleport-recovery-02`
+restores that stuck fight, defeats Nharre and collects Nightmare with zero
+deaths through the encounter; the later fragment-pit exit fails. The native
+build and ownership15 pass; complete Crypt traversal remains open.
+
 | Section | Reference behaviour | Native status |
 |---|---|---|
 | Identity | `monster_nharre` (one, e3m5a), model `m_nharre`, aidata 1000 HP, run 125; drops `weapon_nightmare`; deathtarget opens the exit | Implemented |

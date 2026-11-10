@@ -432,13 +432,16 @@ typedef struct {
 
 static botDeferredCommand_t botDeferredCommands[MAX_BOT_DEFERRED_COMMANDS];
 static int botDeferredCount;
+static int botDeferredServerId;
 
 static void BotDeferClientCommand( int client, const char *command ) {
 	int i;
 
-	// Anything left from a level that never finished loading is stale.
-	if ( sv.state == SS_LOADING ) {
+	// Discard an older level once. Further commands during this load must
+	// preserve earlier ones (in particular a requested saved-game load).
+	if ( botDeferredServerId != sv.serverId ) {
 		botDeferredCount = 0;
+		botDeferredServerId = sv.serverId;
 	}
 	for ( i = 0; i < botDeferredCount; i++ ) {
 		if ( botDeferredCommands[i].client == client && !Q_stricmp( botDeferredCommands[i].text, command ) ) {
@@ -471,10 +474,20 @@ void SV_BotFlushClientCommands( void ) {
 	if ( botDeferredCount == 0 ) {
 		return;
 	}
+	if ( botDeferredServerId != sv.serverId ) {
+		botDeferredCount = 0;
+		return;
+	}
 	if ( sv.state != SS_GAME || !gvm ) {
 		return;
 	}
 	next = botDeferredCommands[0];
+	if ( next.client >= 0 && next.client < sv_maxclients->integer ) {
+		cl = &svs.clients[next.client];
+		if ( cl->state == CS_CONNECTED ) {
+			return; // Keep the command until this client's gamestate is ready.
+		}
+	}
 	for ( i = 1; i < botDeferredCount; i++ ) {
 		botDeferredCommands[i - 1] = botDeferredCommands[i];
 	}
@@ -483,7 +496,7 @@ void SV_BotFlushClientCommands( void ) {
 		return;
 	}
 	cl = &svs.clients[next.client];
-	if ( cl->state == CS_ACTIVE ) {
+	if ( cl->state == CS_ACTIVE || cl->state == CS_PRIMED ) {
 		SV_ExecuteClientCommand( cl, next.text, qtrue );
 	}
 }
@@ -494,7 +507,10 @@ SV_BotClientCommand
 ==================
 */
 static void BotClientCommand( int client, char *command ) {
-	if ( sv.state != SS_GAME ) {
+	if ( client < 0 || client >= sv_maxclients->integer ) {
+		return;
+	}
+	if ( sv.state != SS_GAME || svs.clients[client].state == CS_CONNECTED ) {
 		BotDeferClientCommand( client, command );
 		return;
 	}

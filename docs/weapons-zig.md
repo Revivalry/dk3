@@ -27,6 +27,30 @@ references use stable IDs. The Metamaser decodes its existing save fields into a
 named Cube/Lock representation; restoring an entity rebinds its owning type's
 callbacks. Retaining the wire layout does not require retaining C execution.
 
+Sequence587 repairs the stave's missing splash-hazard declaration. Gold
+`dlls/weapons/stavros.cpp`, `meteor_touch` and its fragment touch, establish
+radial explosions; the existing native class already implements that damage.
+Its weapon description now admits the same close-impact and party safety
+checks as other explosive weapons, with a200-unit declared planning radius.
+The actual impact damage/radius still uses the class's existing runtime tuning.
+Debug51 passes546/546 after this metadata and the proximity-door query repair.
+Later Dungeon combat and the complete weapon presentation matrix remain open.
+
+The later Dungeon replay also exposes the stave table's range200 as a blast
+radius rather than its flight reach. Applying that number to bot firing range
+while rejecting splash inside200 leaves no useful firing interval. The stave
+class now declares bot reach2000; its shot still passes actual projectile-hull,
+impact and ally checks. A class-owned regression admits a shot at600, rejects
+one inside199 and keeps the stand-off outside the blast. The repaired221 build
+and Debug120 checks pass; `dungeon-stavros-flight-reach-01` kills the three
+upper-room guards that previously remained undamaged.
+
+Sequence587 native226 connects generic projectile, C4 and cube launch direction
+to the existing ballistics convergence policy. A close crosshair hit can lie
+behind the offset muzzle; substituting the view direction misses it. Ion
+already used this policy. All-module226 and Debug126 pass; the connected
+crypt return replay is still required to establish the observed encounter fix.
+
 The connected implementation pass is complete. Integrated native builds, the shared
 prediction/inventory contracts, all 28 authoritative firing paths, representative
 restoration and liquid-contact scenarios, and the broad suite have been exercised.
@@ -49,6 +73,21 @@ Weapon controller links must use `weaponParentId`; `parentId` is exclusively a
 mover attachment and is validated as such. Ballista, Wyndrax and Metamaser launch
 delays are ordinary saved controllers, and reconstruct current player aim when
 the authored fire frame arrives.
+
+Sequence587 repairs the Ballista's class-supplied bot safety metadata. Its
+existing authoritative removal applies half-damage splash within128 units;
+Gold `ballista.cpp` also supplies physical launch recoil through `weapon_kick`.
+The class now declares `splash_hazard`, so shared weapon selection and muzzle
+clearance apply their existing close-range and party safeguards. No damage,
+radius, recoil, timing, animation or save representation changes. Dungeon B
+exit continuation02 survives the encounter that killed01, but then stalls on
+a separate switch-priority defect; this is not complete encounter acceptance.
+The authored weapon preference can use a smaller, checked firing margin than
+autonomous selection, while actual muzzle-impact, self and ally blast checks
+remain mandatory. Injury alone no longer discards an explicitly selected safe
+shot. `cell-fight-02` clears the barred Dungeon cell with the Ballista from the
+back edge of its corridor, then collects the fragment after the Silverclaw duel;
+zero deaths. The released-guard retreat remains under repair.
 
 Metamaser packs lock deadlines relative to the entity birth time, which the save
 codec already rebases. Slot 31 distinguishes that representation from legacy

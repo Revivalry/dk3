@@ -25,3 +25,17 @@ The native code is `src/classes/actors/kage/` (`kage.zig`: skill tables, recharg
 
 - `--scenario kage`: attacks, summons protector ghosts below his threshold, refunds damage while recharging (100 → 265 on a 40 hit).
 - Smoke escape and the post-recharge shield: implemented, not yet verified in game.
+
+## Occupied reappearance node (sequence 587)
+
+`submarine-hidden-diagnostic-03` preserves a real combat save with Kage hidden
+at88HP and the player standing on his nearest ground node. Clear surrounding
+reappearance candidates all snap to that occupied node; the fight then stalls.
+The repair retains a clear candidate when an actual full-hull downward trace
+finds walkable support, instead of requiring the occupied node. Damage
+immunity and the ordinary fade-in remain unchanged.
+`submarine-occupied-return-node-01` on216 restores that exact hidden state,
+allows normal reappearance and defeats Kage with51HP remaining. The subsequent
+betrayal cinematic completes; the unaided Mikiko fight then kills the player.
+This is reappearance/Kage acceptance, not complete ending acceptance. Native216
+server build and Debug116 runtime checks pass; ownership38 remains R1–R11=0.

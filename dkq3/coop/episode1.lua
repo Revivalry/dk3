@@ -84,6 +84,7 @@ level("e1m1b", function(visit, resumed)
                                                  arena = plateau })
     end },
     { "north", checkpoint = true, function()
+      save("marsh-boss-arrival")
       wait(3)                              -- sprays still falling after the kill
       -- The swim across the pool is fought with neither weapon: an ion bolt
       -- discharges where it meets water and the glove reaches no further than a
@@ -92,7 +93,8 @@ level("e1m1b", function(visit, resumed)
       try(recover, 0.85, 600)
       try(resupply, 20, 600)
       for _ = 1, 3 do
-        if not try(function() clear { radius = 700, timeout = 45 } end) then break end
+        if not try(function() clear { radius = 700, vertical_radius=128,
+          hold=true,arena=plateau,timeout = 45 } end) then break end
       end
       -- The boss drops a Megashield where it dies; fetch it only if it landed on
       -- the plateau (elsewhere it strands the bot beyond the broken span).
@@ -104,14 +106,33 @@ level("e1m1b", function(visit, resumed)
       -- the area graph routes a long climb with repeated fall damage instead.
       -- North-west corner, steered straight: after the collapse the plateau's
       -- area graph routes even short hops over the south cliff.
-      move({ -880, 744, 984 }, { direct = true, radius = 48 })
+      -- Optional recovery can already have taken the surviving player down
+      -- into the pool. Continue the exit from there instead of asking for
+      -- an impossible climb back onto the collapsed plateau.
+      local _, _, exit_height = dk3.position()
+      if exit_height > 900 then
+        move({ -880, 744, 984 }, { direct = true, radius = 48 })
+      end
       move({ -1283, 908, 520 }, { direct = true, radius = 192 })
+      -- A boss killed beyond the plateau can drop its shield into this
+      -- pool. It becomes a useful nearby pickup once Hiro is down here;
+      -- the earlier plateau-only check must not discard that recovery.
+      shield=dk3.entity{class="item_megashield"}
+      if shield and shield.visible and shield.z<700 then
+        local px,py,pz=dk3.position()
+        if (shield.x-px)^2+(shield.y-py)^2+(shield.z-pz)^2<400^2 then
+          try(pickup,{id=shield.id},{direct=true,crouch=true,fight=false,weapon=1,timeout=10})
+        end
+      end
       -- In the pool, swim the area graph's water route to the north bank; a
       -- straight line loses to the westward current.
       move({ -1322, 1242, 520 }, { radius = 64 })
       move({ -1333, 1347, 509 }, { direct = true, radius = 32 })
-      path { {-1331, 1415, 543},
-             {-1314, 1510, 591}, {-1314, 1578, 625}, {-1270, 1700, 661} }
+      -- Keep the bank's rising footing through the submerged pursuit.
+      -- Hunting a Crox from here steps back off the bank into the pool.
+      path({ {-1331, 1415, 543},
+             {-1314, 1510, 591}, {-1314, 1578, 625}, {-1270, 1700, 661} },
+        {direct=true,fight=false})
       try(heal, { index = 106 })           -- north tree, opened by the boss's death
       path({ {-1047, 1676, 664}, {-900, 1600, 664} }, { direct = true, radius = 24 })
       exit "e1m1c"
@@ -135,12 +156,15 @@ level("e1m1c", function(visit, resumed)
       path { {46, 1863, 412}, {128, 1800, 408} }
       heal { index = 195 }
       path { {46, 1863, 412}, {-48, 1971, 445}, {121, 2101, 408}, {194, 2173, 408},
-             {414, 2256, 408}, {425, 2469, 376}, {461, 2510, 403}, {480, 2576, 408} }
+             {414, 2256, 408} }
     end },
     { "pipe", function()
       -- The gate's switch is on the upper pipe; climb the sloping pipe, crouch
       -- under the low joint, then make the running jump to the upper run.
-      path { {461, 2510, 403}, {425, 2469, 376}, {406, 2256, 408}, {406, 2184, 444} }
+      -- Start from the pipe's southern foot. The northern ground detour
+      -- serves no control and can leave Hiro below its raised endpoint.
+      path({ {406, 2256, 408}, {406, 2184, 444} },
+        {direct=true,fight=false,radius=16})
       path({ {406, 2144, 464}, {480, 2144, 456} }, { crouch = true, radius = 12, direct = true })
       move({ 494, 2136, 456 }, { radius = 12, direct = true })
       path({ {530, 2144, 528}, {530, 2281, 529} }, { radius = 20, direct = true })
@@ -308,7 +332,7 @@ level("e1m2a", function(visit, resumed)
       nodepath({index = 267}, {standoff = 96})
       move({-704,1088,-40}, {direct = true, radius = 8,
         vertical_radius = 16, fight = false, timeout = 10})
-      use({index = 267}, {hold = true, timeout = 8})
+      use({index = 267}, {timeout = 30})
       if dk3.mover { index = 268 } == "closed" then use { index = 268 } end
       -- The sludgeminion by the west ramp would catch the dash: hunt it first.
       kill({ index = 6 }, { radius = 2000, timeout = 90 })
@@ -317,13 +341,13 @@ level("e1m2a", function(visit, resumed)
       -- run over the walkway above the waterfall shaft and up the ramp.
       for attempt = 1, 3 do
         nodepath({index = 48}, {standoff = 96, settle = false})
-        use { index = 48 }                 -- its monitor shows the doors open
+        use({index = 48}, {fight = false}) -- its monitor shows the doors open
         if try(function()
           path({ {-760, 1290, -208}, {-865, 1295, -208}, {-900, 1240, -216}, {-960, 1250, -200}, {-1050, 1290, -200},
                  {-1150, 1290, -190}, {-1206, 1260, -168}, {-1225, 1220, -150}, {-1233, 1150, -120}, {-1233, 1073, -89},
                  {-1233, 860, 24}, {-1265, 796, 48}, {-1310, 796, 56}, {-1348, 817, 56}, {-1348, 860, 80},
                  {-1348, 900, 88}, {-1398, 1024, 88}, {-1530, 1024, 88} },
-               { direct = true, radius = 24, timeout = 6 })
+               { direct = true, settle = false, fight = false, radius = 24, timeout = 6 })
         end) then break end
       end
       expect(x() <= -1490, "through the timed double door")
@@ -453,7 +477,8 @@ level("e1m2b", function(visit, resumed)
       -- window and over the drum, under the low gap's ceiling, before the
       -- water falls (about seven seconds), then wait on the floor by the door.
       path({ {3500, 560, -636}, {3600, 560, -636}, {3664, 640, -640} }, { direct = true, radius = 24, vertical_radius = 12, fight = false })
-      use { index = dk3.entity { index = 199 } and 199 or 402 }  -- one button per skill
+      use({index = dk3.entity {index = 199} and 199 or 402},
+        {hold = true, fight = false}) -- one button per skill; use from the control room
       path({ {3600, 560, -636}, {3500, 580, -648}, {3200, 600, -648}, {3130, 600, -616}, {3060, 600, -608},
              {2990, 580, -605}, {2900, 420, -605} }, { direct = true, radius = 24, vertical_radius = 12, fight = false })
       wait_until(function() return dk3.mover { index = 31 } == "open" end, { timeout = 40, reason = "hugedoor" })
@@ -712,9 +737,12 @@ level("e1m2b", function(visit, resumed)
       -- it engages. The first wades by the pool with the health pack and sees
       -- the doors: fight it from inside them (they close behind the player),
       -- then take the pack.
+      move({1360,1112,40}, {direct = true, fight = false,
+        radius = 12, vertical_radius = 24, timeout = 15})
       local pool_guard = dk3.entity {index = 106}
       if pool_guard and (pool_guard.health or 0) > 0 then
-        shoot({index = 106}, {weapon = 2, fight = false, timeout = 12})
+        shoot({index = 106}, {weapon = 2, fight = false, hold = true,
+          arena = {{1280,1088},{1416,1136}}, timeout = 12})
       end
       -- The low pool has no AAS link through its overhang. Stay on the west
       -- side of the valve instead of routing back around the eastern pit.
@@ -855,10 +883,11 @@ level("e1m3a", function(visit, resumed)
       -- The jammed door to Cell Block 2 sparks and shoves back anyone at it:
       -- blast the short-circuiting wires above the big lift's top landing.
       -- Its halves then stop apart, leaving a gap a crouching player fits.
-      shoot { index = 122 }
-      wait(3)
-      -- Ion cells about the landing for the fights ahead.
+      -- A fresh run can arrive without ranged ammunition. These cells are
+      -- on the accessible lift landing, before the wires need to be shot.
       for _, item in ipairs({ 193, 155 }) do try(function() pickup({ index = item }, { timeout = 30 }) end) end
+      shoot({index = 122}, {weapon = 2})
+      wait(3)
     end },
     { "hidden door", function()
       -- The block's main door is a dummy. The hidden door right of the green
@@ -1071,6 +1100,11 @@ level("e1m3b", function(visit, resumed)
       -- cells by the west wall, the cycler's last refill before the lift.
       for _, pack in ipairs({ 409, 68, 67, 156, 212, 158 }) do try(pickup, { index = pack }, { timeout = 20 }) end
       wait(2)
+      -- The last cells sit above a crate. Step back onto the console landing
+      -- before asking the area graph for the lower door; its nearest node
+      -- from the pickup lies inside the crate beneath the player's feet.
+      move({-1792,2012,-248}, {direct = true, radius = 8,
+        vertical_radius = 16, fight = false, timeout = 15})
       -- Under the jammed door it raised part way, crawling.
       move({ -1680, 1824, -296 }, { radius = 24, timeout = 30 })
       move({ -1632, 1824, -296 }, { direct = true, crouch = true, radius = 16, timeout = 15 })
@@ -1172,6 +1206,9 @@ level("e1m4a", function(visit, resumed)
     end },
     { "console", checkpoint = true, function()
       nodepath({index = 285}, {standoff = 64})
+      -- Open the security-room entrance explicitly before selecting its
+      -- keypad trigger; the trigger's approach can choose the sealed face.
+      use({index = 33}, {timeout = 60})
       touch { index = 285 }                  -- the left keypad lights up
       use { index = 283 }                    -- loading dock door
       touch { index = 115 }
@@ -1183,7 +1220,13 @@ level("e1m4a", function(visit, resumed)
       -- a cambot): Superfly waits while it is cleared, takes the health by
       -- the stairs, and comes along to the door.
       dk3.sidekick("all", "stay")
-      move({ -3, -719, -36 }, { timeout = 120 })
+      -- Return through the control room's western security door and along
+      -- the catwalk. The loading dock is beyond the room's solid east wall.
+      move({-1040,-616,24}, {direct = true, radius = 8})
+      use({index = 33}, {timeout = 20})
+      move({-1160,-636,24}, {direct = true, radius = 8})
+      nodepath({ -3, -719, -36 })
+      move({ -3, -719, -36 }, { radius = 48, timeout = 40 })
       try(function() clear { radius = 700, timeout = 60 } end)
       move({ 300, -928, -100 }, { timeout = 60 })
       try(function() clear { radius = 700, timeout = 60 } end)
@@ -1386,7 +1429,8 @@ level("e1m4b", function(visit, resumed)
       dk3.sidekick("all", "follow")
       try(regroup, 250, 60)
       move({ 1312, 95, 120 }, { timeout = 60 })
-      try(sic, { index = 111 }, "superfly", 40)
+      kill({index = 111}, {weapon = 2, timeout = 90,
+        arena = {{1152,-192},{1392,160}}})
       move({ 1312, -1300, 120 }, { timeout = 180 })
       try(function() clear { radius = 500, timeout = 45 } end)
     end },
@@ -1396,6 +1440,12 @@ level("e1m4b", function(visit, resumed)
       recover(0.8, 700)
       move({ 1312, -1440, 120 }, { timeout = 60 })
       move({ 1226, -1616, 192 }, { timeout = 60 })
+      -- Enter the actual stair trigger before turning toward the grate.
+      -- A broad movement tolerance can turn north before crossing it and
+      -- leave both blockers closed in the lower shaft.
+      touch({index = 82}, {direct = true, fight = false})
+      wait_until(function() return opened(84)() and opened(404)() end,
+        {timeout = 10, fight = false, reason = "stair trigger opens the lower shaft blockers"})
       move({ 1092, -1559, 192 }, { timeout = 60 })
       -- This grate is beside the player and the follower. A distant-combat
       -- blast weapon cannot safely fire here; use a direct ion bolt instead.
@@ -1449,7 +1499,6 @@ level("e1m4c", function(visit, resumed)
       -- round by the doors the drop opens.
       try(function() clear { radius = 500, timeout = 45 } end)
       dk3.sidekick("all", "stay")
-      try(shoot, { index = 69 }, { timeout = 30 })
       -- Table, sign, lamp, bookcase: the last two are narrow ledges a
       -- running jump carries the player past, so those are short hops.
       -- A fall puts the player back on the floor: climb again.
@@ -1463,6 +1512,10 @@ level("e1m4c", function(visit, resumed)
         if z > 140 then break end
       end
       move({ -858, 2060, 152 }, { direct = true, radius = 24, timeout = 10 })
+      -- The grate is now within glove reach. Break it from the bookcase
+      -- before entering: an optional shot from below can leave it intact,
+      -- and the final walk then stops against its solid face.
+      shoot({index = 69}, {weapon = 1, hold = true, fight = false, timeout = 20})
       move({ -915, 2080, 168 }, { direct = true, radius = 24, timeout = 10 })
     end },
     { "vent", function()
@@ -1504,7 +1557,7 @@ level("e1m5a", function(visit, resumed)
       recover(0.9, 900)
       -- The hall up the stairs is held by a deathsphere, a venomvermin and
       -- two laser turrets: stop and fight each as it shows.
-      move({ -1192, 2270, -816 }, { timeout = 240, cautious = true })
+      move({ -1192, 2270, -816 }, { timeout = 240, cautious = true, weapon = 2 })
       tend(800, 0.8)
     end },
     { "pool", checkpoint = true, function()
@@ -1524,13 +1577,24 @@ level("e1m5a", function(visit, resumed)
       local shield = dk3.entity {index = 57}
       local _, _, armour = dk3.health()
       if shield and shield.visible and (armour or 0) < 200 then
+        -- Park the escort in the cleared eastern hall, away from the shot
+        -- into this tiny panel. Regrouping beside the panel blocks its lane.
+        move({-1192,2270,-816},{weapon=2,radius=8,vertical_radius=16})
+        point_at({-1000,2270,-816},{fight=false})
+        dk3.sidekick("all", "come")
+        wait_until(function()
+          local buddy=dk3.entity{class="superfly"}
+          return not buddy or buddy.x > -1260
+        end,{timeout=45,fight=true,stance={-1192,2270,-816},around={0,0,0},
+          reason="Superfly clears the secret panel's western firing lane"})
+        dk3.sidekick("all", "stay")
         -- Face the narrow niche squarely from the lower hall; a diagonal
         -- from the window corner meets the raised step beside its opening.
-        move({-1440,2240,-816}, {direct = true, radius = 8, vertical_radius = 16,
+        move({-1440,2240,-816}, {direct = true, crouch = true, radius = 1, vertical_radius = 16,
           fight = false, timeout = 15})
-        try(regroup, 96, 15)
-        dk3.sidekick("all", "stay")
-        shoot({index = 59}, {weapon = 2, hold = true, fight = false, timeout = 12})
+        -- A reflected ion bolt from this low panel returns into the shooter.
+        shoot({index = 59}, {weapon = 4, crouch = true, hold = true, fight = false,
+          around = {-1440,2290,-832}, timeout = 12})
         wait_until(function() return opened(58)() and opened(324)() end,
           {timeout = 10, reason = "both secret floor panels open"})
         move({-1352,2228,-912}, {direct = true, radius = 12,
@@ -1576,8 +1640,10 @@ level("e1m5a", function(visit, resumed)
       -- end into the pipe's mouth across a narrow channel. A miss lands in
       -- the water, whence the only way back is round the rocks again.
       local function across()
+        -- Full swimming pace is needed against the pool's current; the
+        -- following precise stroke owns braking onto the rock.
         move({ -700, 2930, -1020 }, {radius = 8, vertical_radius = 16,
-          timeout = 120, cautious = false, pace = 0.5, weapon = dk3.ammo(4) > 0 and 4 or 0})
+          timeout = 120, cautious = false, pace = 1, weapon = dk3.ammo(4) > 0 and 4 or 0})
         move({ -700, 2930, -1020 }, {direct = true, radius = 8, vertical_radius = 16,
           timeout = 15, fight = false, pace = 0.35})
         try(clear, {radius = 500, timeout = 10, hold = true,
@@ -1845,6 +1911,10 @@ level("e1m5b", function(visit, resumed)
       -- below the exit's corridor is left: the way back up from it is a
       -- ladder).
       dk3.sidekick("all", "follow")
+      -- The freezer and guard room have their own use doors. Operate them
+      -- in order so the route cannot plan through the closed lower passage.
+      use({index = 24}, {weapon = 2, timeout = 90})
+      use({index = 23}, {weapon = 2, timeout = 90})
       move({ 2368, -560, -496 }, { timeout = 180, cautious = true })
       use({index = 22}, {hold = true, fight = false, timeout = 8})
       wait_until(opened(22), {timeout = 5, reason = "the hall door fully opens"})
@@ -2019,6 +2089,19 @@ level("e1m6a", function(visit, resumed)
       move({ 2035, -228, 24 }, { timeout = 90 })
     end },
     { "departure", checkpoint = true, function()
+      -- The short west-button pulse can shut behind Hiro before Superfly
+      -- crosses. The return button on this side reopens that same passage.
+      local buddy=dk3.entity{class="superfly"}
+      if buddy and buddy.x<1990 then
+        use({index=338},{fight=false})
+        move({2016,-176,24},{direct=true,fight=false,radius=8,vertical_radius=16})
+        dk3.sidekick("all","come")
+        wait_until(function()
+          local follower=dk3.entity{class="superfly"}
+          return not follower or follower.x>=1990
+        end,{timeout=20,fight=false,stance={2016,-176,24},around={0,0,0},
+          reason="Superfly crosses the reopened inner passage"})
+      end
       use { index = 75 }
       wait_until(function() return dk3.mover { index = 129 } == "open" and dk3.mover { index = 130 } == "open" end,
                  { timeout = 45, reason = "both corridor leaves finish sliding back" })
@@ -2054,13 +2137,16 @@ level("e1m6b", function(visit, resumed)
       -- megashield pipe. Descend its rungs instead of dropping into nitrogen.
       move({1650,-1040,40}, {cautious = true, radius = 12, timeout = 60})
       path({{1650,-1320,104},{1450,-1320,104}},
-        {direct = true, radius = 12, weapon = 4, timeout = 20})
+        {direct = true, radius = 12, weapon = 2, timeout = 20})
       for _, foe in ipairs({16,315}) do
-        try(shoot, {index = foe}, {hold = true, weapon = 4, fight = false, timeout = 10})
+        try(shoot, {index = foe}, {hold = true, weapon = 2, fight = false, timeout = 10})
       end
-      for _, pack in ipairs({20,314}) do try(pickup, {index = pack}, {direct = true, timeout = 10}) end
-      path({{1360,-1464,104},{1439,-1464,104},{1439,-1500,112}},
-        {direct = true, settle = false, radius = 1, vertical_radius = 16, fight = false, timeout = 12})
+      -- The packs sit on raised recesses. Reach their edges rather than
+      -- driving into the solid lip beneath their centers.
+      path({{1360,-1452,104},{1296,-1452,104},{1296,-1532,104},{1360,-1464,104}},
+        {direct = true, radius = 4, vertical_radius = 16, fight = false, timeout = 12})
+      -- Aim down the shaft from its supported bank. An upper waypoint over
+      -- the opening makes the pilot try to stop in midair while descending.
       move({1439,-1500,-208}, {direct = true, settle = false, radius = 1,
         vertical_radius = 8, fight = false, timeout = 15})
       move({1460,-1496,-216}, {direct = true, radius = 8, fight = false, timeout = 10})
@@ -2113,8 +2199,10 @@ level("e1m6b", function(visit, resumed)
       -- The rungs end at feet height 64. Step onto the near rim as they
       -- end; waiting for origin 120 here means climbing into empty air.
       move({1920,-1149,88}, {direct = true, settle = false, radius = 1,
-        vertical_radius = 4, timeout = 20, weapon = 2})
-      move({1920,-1104,104}, {direct = true, radius = 8,
+        vertical_radius = 1, timeout = 20, weapon = 2})
+      -- Keep climbing while moving off the rungs. A held crouch is a
+      -- downward ladder command and pulls Hiro back below the open hatch.
+      move({1920,-1104,104}, {direct = true, fight = false, radius = 8,
         vertical_radius = 16, timeout = 45, weapon = 2})
       -- Clear the hatch room before turning away to operate its console.
       -- A surviving guard gets a free volley while the player faces it.
@@ -2281,6 +2369,10 @@ level("e1m6c", function(visit, resumed)
       weapon(2, {fight = false})
       move({352,-176,200}, {direct = true, radius = 16,
         weapon = 2, timeout = 15, fight = false})
+      -- Its overhead fire reaches this entrance while the ground guards
+      -- advance. Remove that crossfire before holding aim on the catwalk.
+      kill({index=31},{hold=true,weapon=2,timeout=60,
+        arena={{320,-224},{384,-176}}})
       -- They keep to their beat on the catwalk: hunted one by one, met at
       -- range (the brutes hit hard up close) with Superfly kept back.
       for _ = 1, 2 do
@@ -2416,11 +2508,23 @@ level("e1m7a", function(visit, resumed)
       end
       expect(opened(122)(), "the ladder's rungs did not come out")
       wait(3)
+      -- This drone makes the unarmed companion retreat onto the corner
+      -- lift, holding it upstairs while Hiro waits below. Resolve that
+      -- visible threat from the ladder alcove before asking the party to wait.
+      local drone=dk3.entity{index=109}
+      if drone and (drone.health or 0)>0 then
+        kill({index=109},{weapon=2,hold=true,arena={{-64,-2144},{16,-2064}},timeout=60})
+      end
       -- The corner lift up to the narrow walkway along the walls (the area
       -- graph has no way along it), round to the ladder's foot.
-      dk3.sidekick("all", "follow")
-      move({-192,-2304,216}, {direct = true, radius = 16, fight = false})
-      try(move, {-144,-2304,216}, {direct = true, radius = 12, fight = false, timeout = 4})
+      -- This is the solo route to the cage lift. Bringing the party onto
+      -- the corner lift obstructs its narrow dismount and pushes the pilot
+      -- off the walkway while passing a waiting companion.
+      dk3.sidekick("all", "stay")
+      -- Let the ride action own boarding from outside the platform's edge.
+      -- An earlier walk can briefly touch its top and send it upward before
+      -- the ride action has entered the supported centre of the dock.
+      move({-224,-2304,216}, {direct = true, radius = 1, pace = 0.4, fight = false})
       ride { index = 7 }
       dk3.sidekick("all", "stay")
       -- Extended rungs block a standing centre before x=-268. Finish the
@@ -2431,7 +2535,7 @@ level("e1m7a", function(visit, resumed)
       -- arrival radius can stop short and let route recovery leave this ledge.
       move({-252,-2012,344}, {direct = true, radius = 1, fight = false, timeout = 15})
       move({ -272, -2012, 480 }, { direct = true, settle = false,
-        radius = 16, vertical_radius = 8, fight = false, timeout = 15 })
+        radius = 16, vertical_radius = 8, pace = 0.35, fight = false, timeout = 15 })
       move({-272,-2072,496}, {direct = true, settle = false, radius = 12,
         vertical_radius = 16, fight = false, timeout = 10})
       move({ -240, -2100, 486 }, { direct = true, radius = 24, fight = false, timeout = 10 })
@@ -2502,16 +2606,16 @@ level("e1m7a", function(visit, resumed)
       -- whole of the ten the wire doors stand wide — hence `fight = false`,
       -- the same as the hop over the ledge that starts the errand.
       for _, item in ipairs({ 11, 10 }) do
-        try(pickup, { index = item }, { radius = 96, timeout = 20, fight = false })
+        if dk3.ammo(4)<10 then
+          try(pickup, { index = item }, { radius = 96, timeout = 2, fight = false })
+        end
       end
-      -- North, then through the wire doors while they stand. Should their ten
-      -- seconds be spent after all, the panel itself is leaned on: a mover
-      -- answers a use at its own face, and the only control authored for these
-      -- doors on this side of them stands two hundred and seventy units up on
-      -- the catwalk the body dropped off.
+      -- Keep the timed crossing ahead of optional ammunition errands. These
+      -- named doors require the upper keypad; pressing their surface cannot
+      -- reopen them after spending its ten-second window on a pickup.
       try(move, { -605, -1960, 216 }, { direct = true, radius = 40, timeout = 15, fight = false })
-      if not opened(141)() then try(use, { index = 141 }, { timeout = 15 }) end
-      path({ { -605, -1960, 216 }, { -605, -1880, 216 } }, { direct = true, radius = 24, timeout = 10 })
+      expect(opened(141)(), "the cage keypad's timed wire doors remain open")
+      path({ { -605, -1960, 216 }, { -605, -1880, 216 } }, { direct = true, radius = 24, timeout = 10, fight=false })
       -- The keypad next, while the way to it is the one just walked: the
       -- guards here keep retiring south, and a body that spends its time
       -- clearing them out comes back to a corridor closed by the timed door
@@ -2740,6 +2844,9 @@ level("e1m7a", function(visit, resumed)
       expect(z() > 180, "not up the ladder in the hall's west corner")
     end },
     { "gallery", checkpoint = true, function()
+      -- Keep the party off the touch-operated platform before the approach;
+      -- a member held on its raised deck prevents Hiro boarding from below.
+      dk3.sidekick("all", "stay")
       -- West, north and east along the gallery at floor 192 to the pair of
       -- doors the graph names t2 (ctl 180 and 181): neither is named, and each
       -- carries the node's own `nodetargetname`, so both are party doors and
@@ -2869,8 +2976,13 @@ level("e1m7a", function(visit, resumed)
       -- Pass east of the clipboard worker on the fixed landing. The inner
       -- line meets his body and sidesteps back onto the moving platform.
       move({-1040,8,304}, {direct = true, radius = 12, fight = false})
-      move({-1040,-136,304}, {direct = true, radius = 12, fight = false})
-      leap({-1120,-136,304}, {-1257,-137,368}, {fight = false, weapon = 2})
+      -- The clipboard worker occupies the middle of the sloping landing.
+      -- Its north edge is a continuous supported ramp to the upper deck.
+      for _,point in ipairs({{-1040,-100,304},{-1120,-100,304},
+          {-1152,-100,320},{-1184,-100,338},{-1220,-100,356},{-1257,-100,368}}) do
+        move(point,{direct=true,fight=false,weapon=2,pace=0.6,
+          radius=8,vertical_radius=16,on_floor=true})
+      end
       expect(z() > 340, "not up off the platform's deck")
     end },
     { "decks", checkpoint = true, function()
@@ -2879,6 +2991,9 @@ level("e1m7a", function(visit, resumed)
       -- this run (ctl 674 and 675 at -1208,-604; ctl 679 at -1648,-484; ctl
       -- 676, 677, 678 and 607 about -1656,-800), so it is fought as it is
       -- reached rather than run through.
+      -- The earlier gallery shot can leave this guard alive; he can occupy
+      -- the first narrow deck corner after a save restore.
+      kill({index = 25}, {hold = true, weapon = 2, timeout = 45})
       path({ { -1321, -137, 368 }, { -1320, -251, 368 }, { -1322, -334, 368 },
              { -1464, -344, 368 }, { -1470, -482, 368 } },
            {direct = true, radius = 8, fight = false, weapon = 2, timeout = 30})
@@ -2923,7 +3038,10 @@ level("e1m7a", function(visit, resumed)
       -- Clear the southern cryotech before turning away toward the keypad;
       -- its spray otherwise holds that precise crossing under continuous fire.
       kill({ index = 678 }, {hold = true, timeout = 25,
-        weapon = dk3.ammo(4) > 0 and 4 or 2})
+        weapon = 2})
+      -- Restore the supported deck corner after combat before taking the
+      -- southern leg; a diagonal from an evasion point crosses open floor.
+      move({-1655,-592,368}, {direct = true, radius = 8, fight = false, timeout = 20})
       move({-1656,-696,344}, {direct = true, fight = false, radius = 8})
       -- The second cryotech is met from the wall north of it, before the deck
       -- is walked past its feet: the stage's own last point stands fifty
@@ -2939,7 +3057,9 @@ level("e1m7a", function(visit, resumed)
       -- graph's links carry the forty- and fifty-six-unit rises, and a
       -- cryotech (ctl 26) stands on the ramp's shoulder. East along the high
       -- walk to the ladder's head at -1264,-936.
-      path({ { -1655, -1010, 384 }, { -1616, -1040, 384 } }, { timeout = 150 })
+      -- Let the motor choose the continuous ramp approach. Ending an earlier
+      -- combat move at the foot leaves lateral momentum toward the open side.
+      dk3.sidekick("all", "stay")
       -- Only the cryotech on the ramp's shoulder (ctl 26, -1376,-1032, at the
       -- high walk's 496) is met here, and it is met from the ramp's bend, a
       -- hundred and thirty below it and in the open. What the stage used to
@@ -2954,10 +3074,17 @@ level("e1m7a", function(visit, resumed)
       -- same reason of the way back: the compiled graph's only leg from its
       -- floor runs north through the low level toward the gallery, thirty-odd
       -- reachabilities and no stair up to this ramp from anywhere near it.
-      kill({ index = 26 }, {hold = true, timeout = 40,
-        weapon = dk3.ammo(4) > 0 and 4 or 2})
+      -- Reach the ramp's supported bend before opening the firing lane.
+      -- Shooting from its foot sends the area planner down to the lower
+      -- gallery when the cryotech is hidden behind the shoulder.
       move({-1504,-1036,440}, {fight = false, timeout = 30})
+      move({-1504,-1036,440},{direct=true,on_floor=true,fight=false,
+        pace=0.35,radius=4,vertical_radius=8,timeout=15})
+      kill({ index = 26 }, {hold = true, timeout = 90,
+        arena = {{-1648,-1064},{-1408,-1000}},
+        weapon = dk3.ammo(2) > 0 and 2 or 4})
       move({ -1396, -1036, 488 }, { timeout = 90 })
+      dk3.sidekick("all", "follow")
       -- East to the ladder's head without stopping to trade: what is left of
       -- the run's ammunition is the corridor garrison's, and the walk is
       -- theirs rather than a fight's.
@@ -3335,17 +3462,21 @@ level("e1m7a", function(visit, resumed)
       climb_from_pool()
       -- The platform frame hides the sphere from the ladder landing. The
       -- supported takeoff lip has a clear lane before boarding any deck.
-      move({-736,-16,344}, {direct = true, radius = 4, fight = false})
+      -- Keep the muzzle clear of the frame as well as the crosshair. The
+      -- edge at y=-19 admits a sight ray but clips the offset Ion round.
+      move({-752,0,344}, {direct = true, radius = 2, fight = false})
       weapon(2, {fight = false})
-      try(shoot, {index = 99}, {hold = true, weapon = 2, fight = false, timeout = 0.2})
+      try(shoot, {index = 99}, {hold = true, weapon = 2, fight = false, timeout = 8})
       -- The frame clips low shots. A short stationary hop clears it without
       -- switching to a recoil weapon on this narrow ledge.
       for _ = 1, 8 do
         local sphere = dk3.entity {index = 99}
         if not sphere or sphere.health <= 0 then break end
-        jump({fight = false, weapon = 2})
+        -- Hand the shot to the pilot during ascent, rather than after the
+        -- default 450ms jump action has already passed its clear apex.
+        jump({duration = 0.1, fight = false, weapon = 2})
         try(shoot, {index = 99}, {hold = true, weapon = 2,
-          fight = false, timeout = 0.3})
+          fight = false, timeout = 0.6})
       end
       local sphere = dk3.entity {index = 99}
       expect(not sphere or sphere.health <= 0, "the platform sphere is cleared before boarding")
@@ -3353,6 +3484,7 @@ level("e1m7a", function(visit, resumed)
         try(kill, {index = foe}, {hold = true, weapon = 2, timeout = 15,
           arena = {{-752,-100},{-720,-64}}})
       end
+      local defer_first_boarding = false
       local function board(index, from, takeoff, current, offset, launch_below, descending_landing)
         -- XY belongs to the moving deck; its height keeps changing during
         -- the run-up. Ground support, not the old sampled height, settles it.
@@ -3365,6 +3497,7 @@ level("e1m7a", function(visit, resumed)
         local previous_target_height = (dk3.entity {index = index}).z + 320
         local next_phase_log = 0
         local unsafe_wait = false
+        local saw_boarding_window, skipped_boarding_window = false, false
         wait_until(function()
           local deck = dk3.entity {index = index}
           local height = z()
@@ -3379,7 +3512,7 @@ level("e1m7a", function(visit, resumed)
               index, height, deck.z + 320, tostring(target_descending)))
           end
           local rising_allowance = target_descending and (current and 96 or 16) or -120
-          if index == 173 then rising_allowance = 32 end
+          if index == 173 then rising_allowance = target_descending and 32 or -80 end
           if index == 170 then rising_allowance = target_descending and 32 or -80 end
           if index == 171 then rising_allowance = -32 end
           if index == 172 and not target_descending then rising_allowance = -8 end
@@ -3396,6 +3529,14 @@ level("e1m7a", function(visit, resumed)
             -- Walking onto a descending deck adds a long, damaging fall.
             and (index ~= 171 or (target_rising and deck.z + 320 >= 280
               and deck.z + 320 <= 320))
+          if index == 175 and defer_first_boarding then
+            -- A pool/ladder retry can return to the same unsafe pairing of
+            -- the two deck cycles. Let this boarding window pass once.
+            if saw_boarding_window and not ready then skipped_boarding_window = true end
+            if ready and not skipped_boarding_window then
+              saw_boarding_window, ready = true, false
+            end
+          end
           if ready then return true end
           -- These two decks rise into a low fixed frame. A missed phase is
           -- retried from the pool, rather than waiting to be crushed above it.
@@ -3406,9 +3547,12 @@ level("e1m7a", function(visit, resumed)
           stance = current and {index = current} or from,
           around = offset or {0,0,0}, reason = "the next moving deck reaches jumping height"})
         if unsafe_wait then
+          if current == 175 then defer_first_boarding = true end
           log(string.format("deck %d has no safe departure phase; returning to the pool", index))
           return false
         end
+        if index == 175 then defer_first_boarding = false end
+        if current then takeoff = {takeoff[1],takeoff[2],z()} end
         local deck = dk3.entity {index = index}
         log(string.format("jump to deck %d: player %.0f,%.0f,%.0f; deck %.0f,%.0f,%.0f",
           index,x(),y(),z(),deck.x,deck.y,deck.z + 320))
@@ -3505,6 +3649,16 @@ level("e1m7a", function(visit, resumed)
         {direct = true, radius = 12, fight = false, timeout = 20})
       use {index = 646}
       wait_until(opened(647), {timeout = 20, reason = "the return panel admits the companions"})
+      -- Mikiko only has her close weapon here and deliberately keeps away
+      -- from the ceiling laser turret. Clear it before waiting for her to
+      -- cross its firing lane through the opened return passage.
+      -- The opening is west of the console. A direct hunt from x88 tries
+      -- to climb the solid wall. The west lane stays on the floor; the
+      -- raised console edge at x20 blocks the approach farther south.
+      path({{0,-20,344},{0,-96,344},{0,-224,344}},
+        {direct = true, radius = 8, fight = false, timeout = 20})
+      kill({index = 13}, {weapon = 2, timeout = 90})
+      move({20,-96,344}, {direct = true, radius = 12, fight = false, timeout = 30})
       dk3.sidekick("all", "follow")
       regroup(250, 120)
       -- Past the panel at last, and the wall's opening is the only way through:
@@ -3606,7 +3760,10 @@ level("e1m7b", function(visit, resumed)
       take(239)
       move({368,1900,168}, {direct = true, radius = 16, vertical_radius = 24, fight = false})
       move({368,1984,200}, {direct = true, radius = 12, fight = false})
-      breakable(145)
+      -- Use the close-range glove in this flooded mouth. The Ion cannot
+      -- discharge safely in water and a ranged firing-position search keeps
+      -- bobbing below the vent until the player runs out of air.
+      shoot({index = 145}, {weapon = 1, hold = true, fight = false, timeout = 20})
       move({288,1984,216}, {direct = true, crouch = true, fight = false, radius = 8})
       move({160,1984,208}, {direct = true, crouch = true, fight = false, radius = 8})
       move({160,1852,144}, {direct = true, crouch = true, fight = false, radius = 8})

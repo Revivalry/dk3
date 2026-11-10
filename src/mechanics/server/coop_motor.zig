@@ -51,7 +51,8 @@ pub fn pilotFrame(frame: Frame) !pilot.Frame {
 }
 pub fn drive(motor: *Motor, frame: Frame, intent: Intent) !Report {
     const steering = try motor.steer(try pilotFrame(frame), intent);
-    @import("bot_input.zig").submit(frame.index, steering.command, (try frame.world.get(frame.entity, data.Player)).delta_angles, frame.now);
+    const used = try @import("bot_input.zig").submit(frame.world, frame.entity, frame.index, steering.command, steering.report.used_slot, (try frame.world.get(frame.entity, data.Player)).delta_angles, frame.now);
+    if (steering.report.used and !used) motor.use_ready = frame.now + 50;
     if (engine.integer("dk3_coop_motion_trace") != 0) {
         const pose = (try frame.world.get(frame.entity, data.Transform)).*;
         var message: [192]u8 = undefined;
@@ -64,6 +65,7 @@ pub fn drive(motor: *Motor, frame: Frame, intent: Intent) !Report {
         engine.print(std.fmt.bufPrintZ(&echoed, "dk3 coop: t={d} event=sent slot={d} up={d} fw={d} echo_up={d} echo_st={d}\n", .{ frame.now, frame.index, steering.command.up, steering.command.forward, heard.upmove, heard.serverTime }) catch "");
     }
     var report = steering.report;
+    report.used = used;
     report.input = .{ steering.command.forward, steering.command.right, steering.command.up };
     return report;
 }

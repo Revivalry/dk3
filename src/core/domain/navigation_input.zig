@@ -2,6 +2,36 @@
 //! Shared mechanism: Body-space navigation goals and collision-qualified locomotion steering.
 const v = @import("vector.zig");
 const collision = @import("collision.zig");
+/// Leave an expanded volume along the approach direction. A long lateral
+/// dimension must not push a body far back through the doorway behind it.
+pub fn outsidePoint(mins: v.Vec3, maxs: v.Vec3, position: v.Vec3, fallback: v.Vec3, hull_mins: v.Vec3, hull_maxs: v.Vec3, margin: f32) v.Vec3 {
+    const centre = v.scale(v.add(mins, maxs), 0.5);
+    var direction = v.subtract(position, centre);
+    direction[2] = 0;
+    if (v.length(direction) < 0.01) direction = .{ fallback[0] - centre[0], fallback[1] - centre[1], 0 };
+    if (v.length(direction) < 0.01) direction = .{ -1, 0, 0 };
+    direction = v.normalize(direction);
+    var reach = @import("std").math.inf(f32);
+    for (0..2) |axis| {
+        if (@abs(direction[axis]) < 0.0001) continue;
+        const edge = if (direction[axis] > 0) maxs[axis] - hull_mins[axis] + margin else mins[axis] - hull_maxs[axis] - margin;
+        reach = @min(reach, (edge - centre[axis]) / direction[axis]);
+    }
+    var result = v.add(centre, v.scale(direction, reach));
+    result[2] = position[2];
+    return result;
+}
+test "thin trigger retreat follows its crossing axis rather than its long lateral span" {
+    const testing = @import("std").testing;
+    const mins: v.Vec3 = .{ 759, -1121, 943 };
+    const maxs: v.Vec3 = .{ 777, -735, 1161 };
+    const hull_mins: v.Vec3 = .{ -15, -15, -24 };
+    const hull_maxs: v.Vec3 = .{ 15, 15, 32 };
+    const west = outsidePoint(mins, maxs, .{ 768, -928, 980 }, .{ 632, -928, 952 }, hull_mins, hull_maxs, 16);
+    try testing.expectEqual(v.Vec3{ 728, -928, 980 }, west);
+    const east = outsidePoint(mins, maxs, .{ 780, -928, 980 }, .{ 900, -928, 952 }, hull_mins, hull_maxs, 16);
+    try testing.expectEqual(v.Vec3{ 808, -928, 980 }, east);
+}
 /// A pickup's render/physics origin is not the collector's navigation origin.
 /// Put the collector's feet on the pickup's support plane without moving the item.
 pub fn pickupPoint(position: v.Vec3, pickup_mins: v.Vec3, collector_mins: v.Vec3) v.Vec3 {
@@ -15,6 +45,16 @@ pub fn supportedPoint(service: collision.Collision, request: collision.Request) 
     if (hit.all_solid) return .{ .obstruction = hit.entity };
     if (hit.fraction == 1 or hit.normal[2] < 0.7) return .{};
     if (hit.start_solid) {
+        // Leaving an overhang is valid; projecting feet through a floor slab
+        // onto the storey below is not. The caller can retry from a raised
+        // origin when authored coordinates round into their support plane.
+        if (request.maxs[2] - request.mins[2] > 1) {
+            var feet = request;
+            feet.end = feet.start;
+            feet.maxs[2] = feet.mins[2] + 1;
+            const contact = try service.trace(feet);
+            if (contact.start_solid or contact.all_solid) return .{ .obstruction = contact.entity };
+        }
         var stationary = request;
         stationary.start = hit.end;
         stationary.end = hit.end;
@@ -61,12 +101,37 @@ pub fn climbHeading(movement: v.Vec3, normal: v.Vec3) v.Vec3 {
     if (into < 0) flat = v.subtract(flat, v.scale(normal, into));
     return .{ flat[0], flat[1], movement[2] };
 }
+/// A deliberate step away from the surface releases the climb. Small lateral
+/// corrections may still keep the body on its rungs.
+pub fn leavesClimb(movement: v.Vec3, normal: v.Vec3) bool {
+    return v.dot(.{ movement[0], movement[1], 0 }, normal) > 4;
+}
+/// Small rung alignment errors need small side commands. Normalizing them
+/// into a full strafe throws the body off narrow ladders. While the view is
+/// still turning toward the wall, its side axis may point away from the rungs.
+pub fn climbStrafe(movement: v.Vec3, right: v.Vec3, normal: v.Vec3, magnitude: f32) f32 {
+    if (@abs(v.dot(right, normal)) > 0.05) return 0;
+    return @import("std").math.clamp(v.dot(movement, right) * 6, -magnitude, magnitude);
+}
+test "rung alignment settles small errors and waits for a tangential view axis" {
+    const t = @import("std").testing;
+    const normal: v.Vec3 = .{ -1, 0, 0 };
+    const right: v.Vec3 = .{ 0, -1, 0 };
+    try t.expectEqual(@as(f32, 0), climbStrafe(.{ 0, 0, 180 }, right, normal, 127));
+    try t.expectEqual(@as(f32, 3), climbStrafe(.{ 0, -0.5, 180 }, right, normal, 127));
+    try t.expectEqual(@as(f32, -127), climbStrafe(.{ 0, 100, 180 }, right, normal, 127));
+    try t.expectEqual(@as(f32, 0), climbStrafe(.{ 0, -0.5, 180 }, .{ -0.5, -0.866, 0 }, normal, 127));
+}
 test "climb heading removes inward pressure on either wall and preserves escape and ascent" {
     const t = @import("std").testing;
     try t.expectEqual(v.Vec3{ 5, 0, 80 }, climbHeading(.{ 5, -3, 80 }, .{ 0, 1, 0 }));
     try t.expectEqual(v.Vec3{ 5, 3, 80 }, climbHeading(.{ 5, 3, 80 }, .{ 0, 1, 0 }));
     try t.expectEqual(v.Vec3{ 0, 7, 20 }, climbHeading(.{ 3, 7, 20 }, .{ -1, 0, 0 }));
     try t.expectEqual(v.Vec3{ 0, 7, -80 }, climbHeading(.{ 3, 7, -80 }, .{ -1, 0, 0 }));
+    try t.expect(leavesClimb(.{ 0, 32, -24 }, .{ 0, 1, 0 }));
+    try t.expect(leavesClimb(.{ -32, 0, 24 }, .{ -1, 0, 0 }));
+    try t.expect(!leavesClimb(.{ 0, -32, 80 }, .{ 0, 1, 0 }));
+    try t.expect(!leavesClimb(.{ 3, 7, -80 }, .{ -1, 0, 0 }));
 }
 pub fn walkPath(service: collision.Collision, request: collision.Request, forbidden: u32, hazards: []const Bounds) !?v.Vec3 {
     return walkPathDrop(service, request, forbidden, hazards, 18);
@@ -120,6 +185,218 @@ pub fn walkPathSupported(service: collision.Collision, request: collision.Reques
         if (try service.contents(v.add(position, .{ 0, 0, request.mins[2] + 1 }), request.slot) & forbidden != 0) return null;
     }
     return position;
+}
+
+/// Bounded local floor search for a missing area-graph corridor. Every edge
+/// sweeps the actual hull and retains separate floors at the same grid column.
+/// This proposes walking points only; callers still qualify their live motor.
+pub fn groundDetour(service: collision.Collision, request: collision.Request, forbidden: u32, hazards: []const Bounds, points: []v.Vec3) !usize {
+    return groundDetourMeasured(service, request, forbidden, hazards, points, null);
+}
+pub const FloorSearchStats = struct { nodes: usize = 0, expanded: usize = 0, walked: usize = 0, rejected: usize = 0, closest: f32 = @import("std").math.inf(f32) };
+pub fn groundDetourMeasured(service: collision.Collision, request: collision.Request, forbidden: u32, hazards: []const Bounds, points: []v.Vec3, stats: ?*FloorSearchStats) !usize {
+    return groundDetourStanceMeasured(service, request, forbidden, hazards, null, 12, points, stats);
+}
+/// A lower stance is supplied only by controllers that can execute it. The
+/// returned floor corridor still requires qualification by their live motor.
+pub fn groundDetourStanceMeasured(service: collision.Collision, request: collision.Request, forbidden: u32, hazards: []const Bounds, lowered_maxs: ?v.Vec3, arrival_radius: f32, points: []v.Vec3, stats: ?*FloorSearchStats) !usize {
+    const std = @import("std");
+    const radius = std.math.clamp(arrival_radius, 1, 48);
+    if (v.length(v.subtract(request.end, request.start)) > 320 or points.len == 0) return 0;
+    const Node = struct { point: v.Vec3, x: i16, y: i16, z: i16, previous: u16, cost: f32, closed: bool = false };
+    const empty = std.math.maxInt(u16);
+    var nodes: [1024]Node = undefined;
+    var buckets: [4096]u16 = @splat(empty);
+    const Key = struct {
+        fn hash(x: i16, y: i16, z: i16) usize {
+            return (@as(u32, @bitCast(@as(i32, x))) *% 73856093 ^ @as(u32, @bitCast(@as(i32, y))) *% 19349663 ^ @as(u32, @bitCast(@as(i32, z))) *% 83492791) & 4095;
+        }
+    };
+    nodes[0] = .{ .point = request.start, .x = 0, .y = 0, .z = 0, .previous = empty, .cost = 0 };
+    buckets[Key.hash(0, 0, 0)] = 0;
+    var count: usize = 1;
+    defer {
+        if (stats) |measured| measured.nodes = count;
+    }
+    for (0..nodes.len) |_| {
+        var selected: ?usize = null;
+        var rank = std.math.inf(f32);
+        for (nodes[0..count], 0..) |node, index| {
+            if (node.closed) continue;
+            const score = node.cost + v.length(v.subtract(node.point, request.end));
+            if (score < rank) {
+                selected = index;
+                rank = score;
+            }
+        }
+        const index = selected orelse return 0;
+        const node = nodes[index];
+        if (stats) |measured| {
+            measured.expanded += 1;
+            measured.closest = @min(measured.closest, v.length(v.subtract(node.point, request.end)));
+        }
+        nodes[index].closed = true;
+        const delta = v.subtract(node.point, request.end);
+        var terminal: ?v.Vec3 = null;
+        // A fixed grid can miss the clear edge of a normal arrival disk,
+        // especially beside a round prop. Qualify a short final connection
+        // to the actual goal or a point strictly inside that same disk.
+        if (@sqrt(delta[0] * delta[0] + delta[1] * delta[1]) <= 36 + radius) {
+            const diagonal = radius * 0.70710677;
+            for ([_][2]f32{ .{ 0, 0 }, .{ 12, 0 }, .{ -12, 0 }, .{ 0, 12 }, .{ 0, -12 }, .{ 8, 8 }, .{ 8, -8 }, .{ -8, 8 }, .{ -8, -8 }, .{ radius, 0 }, .{ -radius, 0 }, .{ 0, radius }, .{ 0, -radius }, .{ diagonal, diagonal }, .{ diagonal, -diagonal }, .{ -diagonal, diagonal }, .{ -diagonal, -diagonal } }, 0..) |offset, alternative| {
+                if (alternative >= 9 and radius <= 12) break;
+                var edge = request;
+                edge.start = node.point;
+                edge.end = v.add(request.end, .{ offset[0], offset[1], 0 });
+                const floor = try searchFloorEdge(service, edge, forbidden, hazards, lowered_maxs) orelse continue;
+                if (@abs(floor[2] - request.end[2]) <= 8) {
+                    terminal = floor;
+                    break;
+                }
+            }
+        }
+        if (terminal) |arrival| {
+            var length: usize = 0;
+            var cursor: u16 = @intCast(index);
+            while (cursor != empty) : (cursor = nodes[cursor].previous) length += 1;
+            if (length + 1 > points.len) return 0;
+            points[length] = arrival;
+            cursor = @intCast(index);
+            var left = length;
+            while (left > 0) {
+                left -= 1;
+                points[left] = nodes[cursor].point;
+                cursor = nodes[cursor].previous;
+            }
+            return length + 1;
+        }
+        for ([_][2]i16{ .{ -1, -1 }, .{ 0, -1 }, .{ 1, -1 }, .{ -1, 0 }, .{ 1, 0 }, .{ -1, 1 }, .{ 0, 1 }, .{ 1, 1 } }) |offset| {
+            const x = node.x + offset[0];
+            const y = node.y + offset[1];
+            if (@abs(x) > 12 or @abs(y) > 12) continue;
+            var edge = request;
+            edge.start = node.point;
+            edge.end = .{ request.start[0] + @as(f32, @floatFromInt(x)) * 16, request.start[1] + @as(f32, @floatFromInt(y)) * 16, node.point[2] };
+            const floor = try searchFloorEdge(service, edge, forbidden, hazards, lowered_maxs) orelse {
+                if (stats) |measured| measured.rejected += 1;
+                continue;
+            };
+            if (stats) |measured| measured.walked += 1;
+            if (@abs(floor[2] - request.start[2]) > 256) continue;
+            const z: i16 = @intFromFloat(@round((floor[2] - request.start[2]) / 8));
+            const cost = node.cost + v.length(v.subtract(floor, node.point));
+            var bucket = Key.hash(x, y, z);
+            while (buckets[bucket] != empty) : (bucket = (bucket + 1) & 4095) {
+                const other = &nodes[buckets[bucket]];
+                if (other.x == x and other.y == y and other.z == z) break;
+            }
+            if (buckets[bucket] != empty) {
+                const other = &nodes[buckets[bucket]];
+                if (!other.closed and cost < other.cost) {
+                    other.cost = cost;
+                    other.previous = @intCast(index);
+                }
+            } else if (count < nodes.len) {
+                buckets[bucket] = @intCast(count);
+                nodes[count] = .{ .point = floor, .x = x, .y = y, .z = z, .previous = @intCast(index), .cost = cost };
+                count += 1;
+            }
+        }
+    }
+    return 0;
+}
+
+fn searchFloorEdge(service: collision.Collision, request: collision.Request, forbidden: u32, hazards: []const Bounds, lowered_maxs: ?v.Vec3) !?v.Vec3 {
+    if (try walkPathSupported(service, request, forbidden, hazards, 32, request.mask)) |floor| return floor;
+    var lowered = request;
+    lowered.maxs = lowered_maxs orelse return null;
+    return walkPathSupported(service, lowered, forbidden, hazards, 32, request.mask);
+}
+
+test "floor recovery uses a lower stance only when its controller supplies one" {
+    const Fixture = struct {
+        fn contents(_: *anyopaque, _: v.Vec3, _: u16) !u32 {
+            return 0;
+        }
+        fn trace(_: *anyopaque, request: collision.Request) !collision.Trace {
+            if (request.maxs[2] > 4 and @min(request.start[0], request.end[0]) < 72 and @max(request.start[0], request.end[0]) > 24)
+                return .{ .fraction = 0, .end = request.start, .normal = .{ -1, 0, 0 } };
+            const a = request.start[2] + request.mins[2];
+            const b = request.end[2] + request.mins[2];
+            if (b >= 0) return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+            const fraction = if (a > 0) a / (a - b) else 0;
+            return .{ .fraction = fraction, .end = v.add(request.start, v.scale(v.subtract(request.end, request.start), fraction)), .normal = .{ 0, 0, 1 }, .entity = 2046 };
+        }
+    };
+    var context: u8 = 0;
+    const service: collision.Collision = .{ .context = &context, .trace_fn = Fixture.trace, .contents_fn = Fixture.contents };
+    const request: collision.Request = .{ .start = .{ 0, 0, 24 }, .end = .{ 96, 0, 24 }, .mins = .{ -15, -15, -24 }, .maxs = .{ 15, 15, 32 }, .slot = 0, .mask = 1 };
+    var points: [128]v.Vec3 = undefined;
+    try @import("std").testing.expectEqual(@as(usize, 0), try groundDetour(service, request, 0, &.{}, &points));
+    try @import("std").testing.expect(try groundDetourStanceMeasured(service, request, 0, &.{}, .{ 15, 15, 4 }, 12, &points, null) > 0);
+}
+
+test "a declared wider arrival finds supported floor beside an embedded destination" {
+    const Fixture = struct {
+        fn contents(_: *anyopaque, _: v.Vec3, _: u16) !u32 {
+            return 0;
+        }
+        fn trace(_: *anyopaque, request: collision.Request) !collision.Trace {
+            if (request.start[0] > 64) return .{ .fraction = 0, .end = request.start, .normal = .{ -1, 0, 0 }, .start_solid = true, .all_solid = true };
+            if (request.end[0] > 64) return .{ .fraction = (64 - request.start[0]) / (request.end[0] - request.start[0]), .end = .{ 64, request.start[1], request.start[2] }, .normal = .{ -1, 0, 0 } };
+            const a = request.start[2] + request.mins[2];
+            const b = request.end[2] + request.mins[2];
+            if (b >= 0) return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+            const fraction = if (a > 0) a / (a - b) else 0;
+            return .{ .fraction = fraction, .end = v.add(request.start, v.scale(v.subtract(request.end, request.start), fraction)), .normal = .{ 0, 0, 1 }, .entity = 2046 };
+        }
+    };
+    var context: u8 = 0;
+    const service: collision.Collision = .{ .context = &context, .trace_fn = Fixture.trace, .contents_fn = Fixture.contents };
+    const request: collision.Request = .{ .start = .{ 0, 0, 24 }, .end = .{ 96, 0, 24 }, .mins = .{ -15, -15, -24 }, .maxs = .{ 15, 15, 32 }, .slot = 0, .mask = 1 };
+    var points: [128]v.Vec3 = undefined;
+    try @import("std").testing.expectEqual(@as(usize, 0), try groundDetour(service, request, 0, &.{}, &points));
+    const count = try groundDetourStanceMeasured(service, request, 0, &.{}, null, 48, &points, null);
+    try @import("std").testing.expect(count > 0);
+    try @import("std").testing.expect(points[count - 1][0] <= 64 and v.length(v.subtract(points[count - 1], request.end)) <= 48.001);
+}
+
+test "bounded floor search goes around an obstruction and rejects harmful destination corridors" {
+    const Fixture = struct {
+        fn trace(_: *anyopaque, request: collision.Request) !collision.Trace {
+            const wall: @import("linked_routes.zig").Bounds = .{ .mins = .{ 24, -40, -32 }, .maxs = .{ 72, 40, 128 } };
+            if (wall.intersects(request.start, request.end)) return .{ .fraction = 0, .end = request.start, .normal = .{ -1, 0, 0 } };
+            const a = request.start[2] + request.mins[2];
+            const b = request.end[2] + request.mins[2];
+            if (b >= 0) return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+            const fraction = if (a > 0) a / (a - b) else 0;
+            return .{ .fraction = fraction, .end = v.add(request.start, v.scale(v.subtract(request.end, request.start), fraction)), .normal = .{ 0, 0, 1 } };
+        }
+        fn contents(_: *anyopaque, _: v.Vec3, _: u16) !u32 {
+            return 0;
+        }
+    };
+    var context: u8 = 0;
+    const service: collision.Collision = .{ .context = &context, .trace_fn = Fixture.trace, .contents_fn = Fixture.contents };
+    var request: collision.Request = .{ .start = .{ 0, 0, 24 }, .end = .{ 128, 0, 24 }, .mins = .{ -8, -8, -24 }, .maxs = .{ 8, 8, 32 }, .slot = 0, .mask = 1 };
+    var points: [128]v.Vec3 = undefined;
+    const count = try groundDetour(service, request, 2, &.{}, &points);
+    try @import("std").testing.expect(count > 2);
+    var turned = false;
+    for (points[0..count]) |point| turned = turned or @abs(point[1]) > 40;
+    try @import("std").testing.expect(turned);
+    try @import("std").testing.expect(v.length(v.subtract(points[count - 1], request.end)) <= 24);
+    // The goal overlaps a corner; all nearby clear grid columns miss its
+    // arrival disk. A physically qualified final edge must still reach it.
+    request.end = .{ 67.7, -31.9, 24 };
+    const corner_count = try groundDetour(service, request, 2, &.{}, &points);
+    try @import("std").testing.expect(corner_count > 0);
+    try @import("std").testing.expect(v.length(v.subtract(points[corner_count - 1], request.end)) <= 12.01);
+    request.end = .{ 128, 0, 24 };
+    const hazard: Bounds = .{ .mins = .{ 80, -512, -64 }, .maxs = .{ 512, 512, 128 } };
+    try @import("std").testing.expectEqual(@as(usize, 0), try groundDetour(service, request, 2, &.{hazard}, &points));
+    request.end = .{ 1024, 0, 24 };
+    try @import("std").testing.expectEqual(@as(usize, 0), try groundDetour(service, request, 2, &.{}, &points));
 }
 
 test "local walking recovery requires supported intermediate steps and rejects walls gaps and hazards" {
@@ -211,11 +488,13 @@ test "control floor search can leave an overhang but must validate the final hul
     const Fixture = struct {
         initial_solid: bool = true,
         final_solid: bool = false,
+        feet_solid: bool = false,
         all_solid: bool = false,
         fraction: f32 = 0.156,
         fn trace(raw: *anyopaque, request: collision.Request) !collision.Trace {
             const self: *@This() = @ptrCast(@alignCast(raw));
             const stationary = v.length(v.subtract(request.start, request.end)) == 0;
+            if (stationary and request.maxs[2] - request.mins[2] <= 1) return .{ .fraction = 0, .end = request.start, .normal = .{ 0, 0, 1 }, .start_solid = self.feet_solid };
             return .{ .fraction = if (stationary) 0 else self.fraction, .end = .{ 77, 1872, 152.125 }, .normal = .{ 0, 0, 1 }, .start_solid = if (stationary) self.final_solid else self.initial_solid, .all_solid = self.all_solid };
         }
     };
@@ -223,6 +502,10 @@ test "control floor search can leave an overhang but must validate the final hul
     const service: collision.Collision = .{ .context = &fixture, .trace_fn = Fixture.trace };
     const request: collision.Request = .{ .start = .{ 77, 1872, 192 }, .end = .{ 77, 1872, -64 }, .mins = .{ -15, -15, -24 }, .maxs = .{ 15, 15, 32 }, .slot = 1, .mask = 1 };
     try t.expect((try supportedPoint(service, request)).floor != null);
+    fixture.feet_solid = true;
+    // A clear lower-floor endpoint cannot authorize crossing the upper slab.
+    try t.expect((try supportedPoint(service, request)).floor == null);
+    fixture.feet_solid = false;
     fixture.final_solid = true;
     try t.expect((try supportedPoint(service, request)).floor == null);
     fixture.initial_solid = false;

@@ -23,15 +23,93 @@ pub fn selection(bytes: []const u8, wanted: Mode) ![]const u8 {
 /// `entrance`: where the next reachability starts (for a lift link, beside
 /// or on the lift at its lower stop; `point` is then its far end).
 pub const Waypoint = struct { point: v.Vec3, jump: bool = false, crouch: bool = false, ladder: bool = false, elevator: bool = false, drop: bool = false, entrance: v.Vec3 = @splat(0), from_area: i32 = 0, to_area: i32 = 0 };
+/// Detect a route which repeatedly ends under a stationary traveller while its
+/// real destination remains elsewhere. Special traversal waits retain ownership.
+pub const EndpointHold = struct {
+    since: ?i64 = null,
+    position: v.Vec3 = @splat(0),
+    destination: v.Vec3 = @splat(0),
+    point: v.Vec3 = @splat(0),
+    pub fn update(self: *EndpointHold, position: v.Vec3, destination: ?v.Vec3, waypoint: ?Waypoint, grounded: bool, now: i64) bool {
+        const goal = destination orelse {
+            self.since = null;
+            return false;
+        };
+        const step = waypoint orelse {
+            self.since = null;
+            return false;
+        };
+        if (!grounded or step.jump or step.ladder or step.elevator or step.drop or v.length(v.subtract(position, step.point)) > 64 or v.length(v.subtract(position, goal)) < 96) {
+            self.since = null;
+            return false;
+        }
+        // Avoidance can keep the body circling a partial endpoint. Count
+        // progress out of that local pocket, rather than each sidestep.
+        if (self.since == null or now < self.since.? or v.length(v.subtract(position, self.position)) > 64 or v.length(v.subtract(goal, self.destination)) > 64 or v.length(v.subtract(step.point, self.point)) > 64) {
+            self.* = .{ .since = now, .position = position, .destination = goal, .point = step.point };
+            return false;
+        }
+        return now - self.since.? >= 1500;
+    }
+};
+
+test "a stationary partial endpoint is distinct from progress and special traversal waits" {
+    const t = std.testing;
+    var hold: EndpointHold = .{};
+    const position: v.Vec3 = .{ 0, 0, 24 };
+    const goal: v.Vec3 = .{ 240, 0, 152 };
+    const step: Waypoint = .{ .point = .{ 8, 0, 24 } };
+    try t.expect(!hold.update(position, goal, step, true, 100));
+    try t.expect(!hold.update(position, goal, step, true, 1500));
+    try t.expect(hold.update(position, goal, step, true, 1600));
+    const advanced: v.Vec3 = .{ 80, 0, 24 };
+    const onward: Waypoint = .{ .point = .{ 88, 0, 24 } };
+    try t.expect(!hold.update(advanced, goal, onward, true, 1650));
+    try t.expect(hold.update(advanced, goal, onward, true, 3150));
+    try t.expect(!hold.update(advanced, goal, .{ .point = onward.point, .elevator = true }, true, 3200));
+    try t.expect(!hold.update(position, goal, step, false, 5000));
+    try t.expect(!hold.update(position, position, step, true, 6000));
+    try t.expect(!hold.update(position, goal, step, true, 7000));
+    try t.expect(!hold.update(position, .{ 400, 0, 152 }, step, true, 8500));
+    try t.expect(!hold.update(position, goal, step, true, 100));
+}
+
+test "sidesteps around a partial endpoint do not count as onward progress" {
+    var hold: EndpointHold = .{};
+    const goal: v.Vec3 = .{ -203, -309, -680 };
+    const step: Waypoint = .{ .point = .{ -241, -496, -808 } };
+    try std.testing.expect(!hold.update(.{ -212, -470, -808 }, goal, step, true, 100));
+    try std.testing.expect(!hold.update(.{ -200, -486, -808 }, goal, step, true, 1100));
+    try std.testing.expect(hold.update(.{ -210, -459, -808 }, goal, step, true, 1600));
+    try std.testing.expect(!hold.update(.{ -173, -574, -856 }, goal, .{ .point = .{ -186, -608, -856 } }, true, 1700));
+}
 /// `lifts`: false leaves lift links out (a lift away that the traveller
 /// cannot call, while a way round it exists).
-pub const Request = struct { player: bool = false, allow_slime_escape: bool = false, lifts: bool = true, position: v.Vec3, destination: v.Vec3, slot: u16 };
+pub const Request = struct {
+    /// A recently reached polygon retained for a smaller hull beside the
+    /// baked mesh boundary. Physical movement still qualifies every transfer.
+    start_hint: i32 = 0,
+    player: bool = false,
+    allow_slime_escape: bool = false,
+    lifts: bool = true,
+    position: v.Vec3,
+    destination: v.Vec3,
+    slot: u16,
+    /// Actual recovery hull: a narrow traveller can stand outside the area
+    /// graph's wider expanded solids. Recovery still requires physical clearance.
+    mins: v.Vec3 = .{ -15, -15, -24 },
+    maxs: v.Vec3 = .{ 15, 15, 4 },
+    /// Zero selects the engine's ordinary player collision mask.
+    mask: u32 = 0,
+};
 pub const Service = struct {
     context: *anyopaque,
     next_fn: *const fn (*anyopaque, Request) anyerror!?Waypoint,
     /// Optional whole-route prediction for diagnostics: fills `points` with
     /// successive route positions and returns how many were written.
     predict_fn: ?*const fn (*anyopaque, Request, []v.Vec3) anyerror!usize = null,
+    /// Far endpoints of upcoming jump/drop transfers, preserving their type.
+    jumps_fn: ?*const fn (*anyopaque, Request, []Waypoint) anyerror!usize = null,
     /// Optional remaining route length (in units at running pace) from the
     /// request's position to its destination; null without a route.
     travel_fn: ?*const fn (*anyopaque, Request) anyerror!?f32 = null,
@@ -45,6 +123,10 @@ pub const Service = struct {
     pub fn predict(self: Service, request: Request, points: []v.Vec3) !usize {
         const predict_fn = self.predict_fn orelse return 0;
         return predict_fn(self.context, request, points);
+    }
+    pub fn jumps(self: Service, request: Request, points: []Waypoint) !usize {
+        const jumps_fn = self.jumps_fn orelse return 0;
+        return jumps_fn(self.context, request, points);
     }
 };
 pub const State = struct {

@@ -125,6 +125,35 @@ pub const Companion = struct {
     clearance: f32 = 5,
     safety: enum { none, spread, owner, both } = .none,
 };
+/// Automatic acquisition distinguishes story allies from ordinary actors.
+/// Direct weapon contacts retain their separate damage rules.
+pub const AutomaticTargets = struct {
+    pub const Mode = enum { never, deathmatch, always };
+    pub const Role = enum { actor, player, party, other };
+    actors: bool = true,
+    players: Mode = .deathmatch,
+    party: Mode = .deathmatch,
+    pub fn allows(self: AutomaticTargets, role: Role, deathmatch: bool) bool {
+        const mode: Mode = switch (role) {
+            .actor => return self.actors,
+            .player => self.players,
+            .party => self.party,
+            .other => return false,
+        };
+        return mode == .always or (mode == .deathmatch and deathmatch);
+    }
+};
+test "automatic acquisition admits hostile actors without selecting story allies" {
+    const t = @import("std").testing;
+    const policy: AutomaticTargets = .{};
+    try t.expect(policy.allows(.actor, false));
+    try t.expect(!policy.allows(.party, false));
+    try t.expect(!policy.allows(.player, false));
+    try t.expect(!policy.allows(.other, true));
+    try t.expect(policy.allows(.party, true));
+    try t.expect(policy.allows(.player, true));
+    try t.expect(!(AutomaticTargets{ .party = .never }).allows(.party, true));
+}
 pub const Spec = struct {
     /// The attack is placed where its user stands (a charge): users on the move do not choose it.
     placed: bool = false,
@@ -136,6 +165,7 @@ pub const Spec = struct {
     /// Rounds in one gold ammo pack; 0 falls back to the initial ammunition.
     ammo_pack: c_int = 0,
     auto_select: bool = true,
+    automatic_targets: AutomaticTargets = .{},
     droppable: bool = true,
     /// Authored pickups remain available when the server enables weapons-stay.
     /// Dropped weapons are always consumed, regardless of this policy.
@@ -147,8 +177,18 @@ pub const Spec = struct {
     start_episode: u8 = 0,
     campaign_equipment: bool = false,
     splash_hazard: bool = false,
+    /// Optional class-reviewed bound for a short-flight splash shot. Other
+    /// weapons retain the ordinary blast keep-out unconditionally.
+    bot_close_splash: ?struct {
+        max_damage_scale: f32,
+        max_flight_ms: f32,
+        min_distance: f32 = 32,
+        health_reserve: f32 = 40,
+    } = null,
     bot_charge_ms: c_int = 0,
     bot_range: ?f32 = null,
+    /// A deliberate route request may use this attack; autonomous fallback may not.
+    bot_requires_request: bool = false,
     /// Aim a body-origin melee arc using its own origin.
     bot_aim_from_body: bool = false,
     /// Keep ordinary attack input pressed between aim-qualified bursts.
@@ -177,4 +217,31 @@ pub const Spec = struct {
     burst_shots: u8 = 0,
     burst_recovery_ms: u16 = 0,
     projectile_muzzle: bool = false,
+
+    /// Match the physical attack: pellet rays are points, energy bolts use
+    /// their declared radius, and ballistic rounds use their own hull.
+    pub fn shotBounds(self: Spec) struct { mins: [3]f32, maxs: [3]f32 } {
+        return switch (self.combat) {
+            .bolt => |bolt| .{ .mins = @splat(-bolt.radius), .maxs = @splat(bolt.radius) },
+            .hitscan, .pellets, .melee => .{ .mins = @splat(0), .maxs = @splat(0) },
+            // Class-owned firing can launch physical rounds too. Preserve
+            // their declared hull instead of assuming an unknown attack is
+            // a point ray merely because its class owns the launch adapter.
+            else => .{ .mins = self.projectile.mins, .maxs = self.projectile.maxs },
+        };
+    }
 };
+
+test "muzzle admission uses ray, bolt and ballistic collision bounds" {
+    const t = @import("std").testing;
+    var spec: Spec = .{ .player_grip = .rifle, .combat = .{ .pellets = .{ .count = 10, .spread = 0.1 } } };
+    try t.expectEqual([3]f32{ 0, 0, 0 }, spec.shotBounds().mins);
+    spec.combat = .{ .bolt = .{ .radius = 2, .water_radius = 64, .bounce_retention = 1, .max_bounces = 3, .cleanup_ms = 1000 } };
+    try t.expectEqual([3]f32{ -2, -2, -2 }, spec.shotBounds().mins);
+    try t.expectEqual([3]f32{ 2, 2, 2 }, spec.shotBounds().maxs);
+    spec.combat = .projectile;
+    spec.projectile.mins = .{ -3, -2, -1 };
+    try t.expectEqual(spec.projectile.mins, spec.shotBounds().mins);
+    spec.combat = .owned;
+    try t.expectEqual(spec.projectile.mins, spec.shotBounds().mins);
+}

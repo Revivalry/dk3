@@ -25,7 +25,7 @@ local function act(spec, opts)
   opts = opts or {}
   spec.timeout = seconds(opts.timeout, spec.timeout or 60)
   if opts.fight ~= nil then spec.fight = opts.fight end
-  for _, key in ipairs({ "radius", "vertical_radius", "around", "class", "map", "count", "hold", "direct", "settle", "crouch", "arena", "weapon", "cautious", "blast", "pace", "on_floor" }) do
+  for _, key in ipairs({ "radius", "vertical_radius", "around", "class", "map", "count", "hold", "direct", "settle", "crouch", "arena", "weapon", "cautious", "blast", "pace", "on_floor", "allowed_exit" }) do
     if opts[key] ~= nil and spec[key] == nil then spec[key] = opts[key] end
   end
   if spec.on_floor and spec.target and spec.target.point then spec.target.point = on_floor(spec.target.point) end
@@ -55,7 +55,7 @@ local function in_liquid()
   return dk3.contents({px, py, pz - 20}) & (8 | 16 | 32) ~= 0
 end
 
-function level(name, body)
+function level(name, body, entry)
   assert(type(name) == "string", "level name must be a map name")
   local function register(fn)
     assert(type(fn) == "function", "level body must be a function")
@@ -65,7 +65,7 @@ function level(name, body)
     -- Like a stage checkpoint, only in good health: a badly hurt arrival
     -- (say, into a guard post) keeps the previous map's checkpoint instead.
     levels[name] = function(visit, resumed)
-      if options.level_saves and not resumed then
+      if options.level_saves and not resumed and not (entry and entry.arrival == false) then
         local wet = in_liquid()
         if not wet or dk3.cinematic() then cinematic() end
         if not wet then recover(0.6) end
@@ -171,9 +171,9 @@ function exit(map, opts)
   return act({ op = "exit", map = type(map) == "string" and map or nil, target = selector, timeout = 180 }, opts)
 end
 function cinematic(opts) return act({ op = "cinematic", timeout = 900 }, opts) end
-function look(yaw, pitch) return act({ op = "look", yaw = yaw, pitch = pitch or 0, timeout = 5 }) end
+function look(yaw, pitch, opts) return act({ op = "look", yaw = yaw, pitch = pitch or 0, timeout = 5 }, opts) end
 function weapon(id, opts) return act({ op = "weapon", weapon = id, timeout = 10 }, opts) end
-function jump(opts) return act({ op = "jump", timeout = 5 }, opts) end
+function jump(opts) return act({ op = "jump", duration = opts and opts.duration or 0.45, timeout = 5 }, opts) end
 -- Running jump: walk precisely to `takeoff`, then run and jump toward
 -- `landing`; succeeds only when the player lands there.
 function leap(takeoff, landing, opts)
@@ -192,7 +192,7 @@ function save(slot) return act({ op = "save", slot = slot, timeout = 30 }) end
 
 -- Points the view at a target (a selector or a point), for orders that act
 -- on what the player looks at (a companion's collect or attack order).
-function point_at(to)
+function point_at(to, opts)
   local t = target(to)
   local x, y, z
   if t.point then
@@ -206,7 +206,7 @@ function point_at(to)
   pz = pz + 22
   local yaw = math.deg(math.atan(y - py, x - px))
   local pitch = -math.deg(math.atan(z - pz, math.sqrt((x - px) ^ 2 + (y - py) ^ 2)))
-  look(yaw, pitch)
+  look(yaw, pitch, opts)
   return true
 end
 
@@ -236,14 +236,14 @@ end
 function on_floor(point, depth)
   assert(type(point) == "table" and type(point[1]) == "number", "on_floor needs a point")
   depth = depth or 220
-  -- A hull started inside the structure above - a catwalk's underside, the roof
-  -- of a pit under a floor - stops at that structure and reports no floor,
-  -- though a player walks the level below it all the same. Start the sweep
-  -- under the overhang when the sweep from above is stopped by one, and accept
-  -- only a surface near the authored height: a floor found far below is a void
-  -- the author meant to cross, not a floor to walk.
-  for _, start in ipairs({ point[3] + depth, point[3] + 64, point[3] + 20 }) do
-    local hit = dk3.trace({ point[1], point[2], start }, { point[1], point[2], point[3] - depth }, true)
+  -- Probe the authored floor before raising the hull. Starting above a nearby
+  -- platform can otherwise select that platform instead of the floor below it.
+  -- Higher starts still recover points embedded slightly inside their floor.
+  -- Reject distant floors so a deliberate void crossing retains its height.
+  for _, start in ipairs({ point[3] + 1, point[3] + 4, point[3] + 20, point[3] + 64, point[3] + depth }) do
+    -- A traveller crossing this point is an obstacle, not its authored floor.
+    -- Keep movers and world geometry while excluding live/corpse bodies.
+    local hit = dk3.trace({ point[1], point[2], start }, { point[1], point[2], point[3] - depth }, "floor")
     if hit and hit.fraction < 1 and not hit.start_solid and (hit.normal_z or 0) > 0.5
         and math.abs(hit.z - point[3]) <= 96 then
       return { point[1], point[2], hit.z }
@@ -545,6 +545,7 @@ function walkflood(goals, box, step, opts)
   local moves = { { true, 18, "" } }
   if opts.crouch then moves[#moves + 1] = { "crouch", 18, "c" }; moves[#moves + 1] = { "crouch", 1, "c" } end
   if opts.jump then moves[#moves + 1] = { true, opts.jump, "j" } end
+  if opts.crouch_jump then moves[#moves + 1] = { "crouch", opts.crouch_jump, "cj" } end
   -- The player's own spot first; it steps to the columns around it.
   add("start", { x = px, y = py, z = pz, i = math.floor((px - box[1]) / step + 0.5), j = math.floor((py - box[2]) / step + 0.5), start = true, mark = "" })
   local ni = math.floor((box[3] - box[1]) / step)
@@ -564,8 +565,9 @@ function walkflood(goals, box, step, opts)
         local tx, ty = column(a, b)
         for _, move in ipairs(moves) do
           local hull, rise, mark = move[1], move[2], move[3]
-          -- A jump needs room to stand and to rise its full height.
-          local up = (stride <= 1 or mark == "j") and (hull ~= true or standing) and (rise <= 18 or dk3.trace({ node.x, node.y, node.z }, { node.x, node.y, node.z + rise }, true).fraction >= 1)
+          -- Qualify the requested hull's full rise. A crouched jump is a
+          -- separate geometric candidate, never a completed motor traversal.
+          local up = (stride <= 1 or mark == "j" or mark == "cj") and (hull ~= true or standing) and (rise <= 18 or dk3.trace({ node.x, node.y, node.z }, { node.x, node.y, node.z + rise }, hull).fraction >= 1)
           local sweep = up and dk3.trace({ node.x, node.y, node.z + rise }, { tx, ty, node.z + rise }, hull)
           if sweep and not sweep.start_solid and sweep.fraction >= 1 then
             local down = dk3.trace({ tx, ty, node.z + rise }, { tx, ty, node.z - 600 }, hull)
@@ -666,7 +668,7 @@ function nodepath(goal, opts)
       -- The authored corridor owns this segment. A disconnected area graph
       -- can propose a gate far behind us even when these steps are clear.
       -- Only the gate physically in this segment authorizes its control.
-      if step and not step.wait and (step.gate & 0xffffff) ~= block.index then
+      if step and not step.wait and step.gate ~= block.id then
         local gate = dk3.entity {id = step.gate}
         local near = gate and math.min((gate.x-px)^2 + (gate.y-py)^2 + (gate.z-pz)^2,
           (gate.x-point[1])^2 + (gate.y-point[2])^2 + (gate.z-point[3])^2) <= 192^2
@@ -688,12 +690,14 @@ function nodepath(goal, opts)
       -- this query slightly so a rounding contact with that floor cannot hide
       -- the door ahead; actual walking still uses the normal player hull.
       block = dk3.trace({px, py, pz + 2}, {point[1], point[2], point[3] + 2}, true)
-      if block.index > 0 then
-        local mover = { index = block.index }
+      if (block.id or 0) > 0 then
+        -- A travelling actor can share a low ordinal with this map's door.
+        -- Only the actual traced entity may authorize a mover operation.
+        local mover = { id = block.id }
         if dk3.mover(mover) == "closed" then
           local operable = false
           for _, control in ipairs(dk3.controls()) do
-            if control.index == block.index and control.kind == "use" and control.ready then operable = true break end
+            if control.id == block.id and control.kind == "use" and control.ready then operable = true break end
           end
           assert(operable, "ground corridor blocked by mover " .. block.index .. "; operate its authored control first")
           use(mover)
@@ -919,7 +923,7 @@ function wait_until(predicate, opts)
       error(dk3.where() .. ": wait_until: " .. (opts.reason or "condition") .. " not reached", 0)
     end
     local ok, detail = yield({ op = "frame", fight = opts.fight, weapon = opts.weapon, crouch = opts.crouch,
-      target = opts.stance and target(opts.stance), around = opts.around })
+      target = opts.stance and target(opts.stance), around = opts.around, arena = opts.arena })
     if not ok then error(dk3.where() .. ": wait_until: " .. tostring(detail), 0) end
   end
 end

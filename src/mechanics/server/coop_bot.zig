@@ -39,9 +39,12 @@ const fight_stand_ms: i64 = 5_000;
 const settle_frames = 4;
 
 fn surfaceStance(frame: Frame, found: targets.Resolved, offset: v.Vec3) v.Vec3 {
+    return surfaceStanceAt(frame, found, offset, frame.now);
+}
+fn surfaceStanceAt(frame: Frame, found: targets.Resolved, offset: v.Vec3, now: i64) v.Vec3 {
     if (found.entity) |entity| {
         const body = frame.world.get(entity, data.Body) catch return v.add(found.point, offset);
-        const pose = frame.world.get(entity, data.Transform) catch return v.add(found.point, offset);
+        const pose = if (now == frame.now) (frame.world.get(entity, data.Transform) catch return v.add(found.point, offset)).* else @import("platforms.zig").sample(frame.world, entity, now) catch return v.add(found.point, offset);
         const local: v.Vec3 = .{ (body.mins[0] + body.maxs[0]) / 2 + offset[0], (body.mins[1] + body.maxs[1]) / 2 + offset[1], body.maxs[2] + offset[2] };
         var point = @import("../domain/poses.zig").point(local, .{}, .{ .position = pose.position, .angles = pose.angles });
         point[2] += -hull_mins[2] + 1;
@@ -76,6 +79,7 @@ const Running = struct {
     phase: u8 = 0,
     /// Where the bot stood when the action began; held fights tether here.
     home: v.Vec3 = @splat(0),
+    departure_source: ?struct { id: u32, pose: @import("../domain/poses.zig").Pose } = null,
     /// A precise corridor resumes from its safe footing after a fight or
     /// health detour, rather than cutting directly back through another floor.
     corridor_return: ?v.Vec3 = null,
@@ -91,6 +95,7 @@ const Running = struct {
     tracked_count: usize = 0,
     /// Cautious move: when the enemy was last engaged.
     stand_ms: i64 = 0,
+    landed_ms: ?i64 = null,
     /// The aggressor being dealt with: since when, cover, and firing stand.
     engagement: survival.Engagement = .{},
     /// How much of the action's own allowance a fight has already spent on
@@ -358,11 +363,9 @@ pub const Driver = struct {
         _ = engine.gateway.call(c.G_CVAR_VARIABLE_STRING_BUFFER, .{ @as([*:0]const u8, "dk3_coop_load"), &slot, @as(isize, slot.len) });
         const name = std.mem.sliceTo(&slot, 0);
         if (name.len == 0) return false;
-        const player = (try frame.world.get(frame.entity, data.Player)).*;
-        if (player.mode != .normal or @import("cinematics.zig").active(frame.world)) {
-            self.report = try motor_module.drive(&self.motor, frame, .{});
-            return true;
-        }
+        // An explicit saved-game continuation uses the ordinary load command,
+        // which is also available from the player's menu during a cinematic or
+        // death. Do not replay the bootstrap map's whole arrival scene first.
         var command: [96]u8 = undefined;
         const text = try std.fmt.bufPrintZ(&command, "load {s}", .{name});
         _ = engine.gateway.call(c.G_CVAR_SET, .{ @as([*:0]const u8, "dk3_coop_load"), @as([*:0]const u8, "") });
@@ -425,7 +428,7 @@ pub const Driver = struct {
         }
         // A held position or a precise straight segment is the route's
         // decision; never detour out of it.
-        if (running.action.hold or (running.action.direct and !running.action.cautious) or evaluation.intent.leash != null or (evaluation.intent.direct and !running.action.cautious)) return;
+        if (running.action.hold or (running.action.direct and !running.action.cautious) or (evaluation.intent.leash != null and running.action.op != .kill) or (evaluation.intent.direct and !running.action.cautious)) return;
         const world = frame.world;
         const health = (try world.get(frame.entity, data.Health)).*;
         const position = (try world.get(frame.entity, data.Transform)).position;
@@ -435,6 +438,7 @@ pub const Driver = struct {
         if (try self.detour.current(query, self.report.control != 0)) |point| {
             if (running.action.direct and running.corridor_return == null) running.corridor_return = try corridorPoint(frame, position);
             evaluation.intent.destination = point;
+            evaluation.intent.leash = null;
             evaluation.intent.direct = false;
             return;
         }
@@ -603,14 +607,19 @@ pub const Driver = struct {
     /// stage of which level it captured so a restoration resumes there.
     pub fn checkpointSaved(self: *Driver, slot: []const u8) void {
         if (!self.enabled or self.level.empty()) return;
-        if (self.running) |*running| if (running.action.op == .save and std.mem.eql(u8, running.action.slot.slice(), slot)) {
-            running.phase = 2;
-        };
+        _ = slot;
         var value: [96]u8 = undefined;
         const text = std.fmt.bufPrintZ(&value, "{s} {d} {d}", .{ self.level.slice(), self.stage, self.stage_actions }) catch return;
         _ = engine.gateway.call(c.G_CVAR_SET, .{ @as([*:0]const u8, "dk3_coop_checkpoint"), text.ptr });
         // Kept apart for a later reload of that save after another one.
         _ = engine.gateway.call(c.G_CVAR_SET, .{ @as([*:0]const u8, "dk3_coop_saved_checkpoint"), text.ptr });
+    }
+    /// A completed file write is distinct from admitting it for recovery.
+    pub fn saveCompleted(self: *Driver, slot: []const u8, admitted: bool) void {
+        if (!self.enabled) return;
+        if (self.running) |*running| if (running.action.op == .save and std.mem.eql(u8, running.action.slot.slice(), slot)) {
+            running.phase = if (admitted) 2 else 3;
+        };
     }
     /// A driver defect ends the run with evidence instead of stopping the server.
     pub fn crash(self: *Driver, err: anyerror, now: i64) void {
@@ -714,7 +723,13 @@ pub const Driver = struct {
         } else running.no_route_ms = null;
         const pose = (try world.get(frame.entity, data.Transform)).*;
         const eye = v.add(pose.position, .{ 0, 0, player.view_height });
-        var result: Evaluation = .{ .intent = .{ .fight = action.fight, .weapon = if (action.weapon != 0) action.weapon else null, .crouch = action.crouch } };
+        var result: Evaluation = .{ .intent = .{ .fight = action.fight, .weapon = if (action.weapon != 0) action.weapon else null, .crouch = action.crouch, .arena = action.arena } };
+        if (action.allowed_exit) |selector| {
+            const found = try targets.resolve(frame, selector, .any) orelse return failed(running, "allowed exit not found");
+            if (found.entity == null or (world.get(found.entity.?, data.Exit) catch null) == null)
+                return failed(running, "allowed_exit must name a campaign exit");
+            result.intent.exit = found.id;
+        }
         // Cinematics and other authored holds freeze the player: the action and
         // its deadline wait, exactly as a person's would.
         const holds = player.mode != .normal or @import("cinematics.zig").active(world);
@@ -763,6 +778,9 @@ pub const Driver = struct {
                     result.intent.direct = true;
                     result.intent.brake = true;
                     result.intent.leave_mover = true;
+                    result.intent.leash = point;
+                    result.intent.close_in = false;
+                    result.intent.arena = action.arena orelse .{ .{ point[0], point[1] }, .{ point[0], point[1] } };
                     self.motor.unstick_until = 0;
                     self.motor.jump_until = 0;
                 };
@@ -777,8 +795,10 @@ pub const Driver = struct {
                 // Projecting a ladder's upper point onto the floor below it
                 // falsely completes the climb without moving the player.
                 const moving_stance = action.around != null and found.entity != null and
-                    ((world.get(found.entity.?, data.Mover) catch null) != null or @import("platforms.zig").pathPhase(world, found.entity.?) != null);
-                const goal = if (moving_stance) surfaceStance(frame, found, action.around.?) else if (action.direct or action.target.?.entityless()) found.point else if (found.brush)
+                    @import("platforms.zig").isMoverPart(world, found.entity.?);
+                const goal = if (moving_stance) surfaceStance(frame, found, action.around.?) else if (action.direct or action.target.?.entityless()) found.point else if (try targets.pickupPoint(frame, found)) |point|
+                    point
+                else if (found.brush)
                     (try @import("bot_routes.zig").touchPointFrom(found.mins, found.maxs, frame.index, .{ .position = pose.position, .service = frame.service })) orelse try standing(frame, found.point)
                 else
                     try standing(frame, found.point);
@@ -786,8 +806,13 @@ pub const Driver = struct {
                 result.intent.destination = goal;
                 result.intent.leave_mover = moving_stance or (action.direct and action.target.?.entityless());
                 result.intent.direct = action.direct;
+                result.intent.authored_corridor = action.direct;
+                result.intent.close_in = !action.direct;
                 if (action.direct and action.vertical_radius > 0) result.intent.swim_depth = goal[2];
-                result.intent.brake = action.direct;
+                // A run-through waypoint may be crossed in the air. Braking
+                // into it removes the speed needed to reach its supporting
+                // ledge; only settled direct arrivals ask to spend momentum.
+                result.intent.brake = action.direct and action.settle;
                 result.intent.crouch = action.crouch;
                 // A walk off a narrow ledge drops close under it.
                 result.intent.pace = action.pace orelse 1;
@@ -816,6 +841,10 @@ pub const Driver = struct {
                 const goal = try volumeGoal(frame, found);
                 result.goal = goal;
                 result.intent.destination = goal;
+                result.intent.direct = action.direct;
+                result.intent.authored_corridor = action.direct;
+                result.intent.brake = action.direct and action.settle;
+                result.intent.pace = action.pace orelse 1;
                 result.intent.direct_radius = 400;
                 if (stalled(frame, running, self.report, pose.position, goal, now)) return stuck(running, self.report, pose.position);
             },
@@ -829,8 +858,12 @@ pub const Driver = struct {
                     self.motor.unstick_until = 0;
                     self.motor.jump_until = 0;
                 }
-                if (action.op == .use) if (try self.standGround(frame, running, player, pose, &result)) return result;
                 const found = try held(frame, running, .any) orelse return absent(running, "target removed");
+                // A completed control/shot hands ownership to the next route
+                // action before optional combat can keep this one alive.
+                if (action.op == .use and running.signature != targets.signature(world, found.id)) return done(running, "activated");
+                if (action.op == .shoot and try destroyed(world, found.entity.?)) return done(running, "destroyed");
+                if (try self.standGround(frame, running, player, pose, &result)) return result;
                 // A worker at the console a button is set in holds it back:
                 // move him on as a player would (a shot sends a worker running).
                 // Worth attempting only with a shot to threaten him by, and only
@@ -854,7 +887,6 @@ pub const Driver = struct {
                     return result;
                 };
                 if (action.op == .use) {
-                    if (running.signature != targets.signature(world, found.id)) return done(running, "activated");
                     // A press that changed nothing is retried: the use line can
                     // graze a small button. Movers (buttons, doors) must react;
                     // other usables (an already full health tree) may not.
@@ -867,10 +899,10 @@ pub const Driver = struct {
                     // Only presses of this control count (not a lift button the
                     // planner presses on the way).
                     if (self.report.used and self.report.used_slot == (found.slot orelse c.ENTITYNUM_NONE) and running.pressed_ms == null) running.pressed_ms = now;
-                } else if (try destroyed(world, found.entity.?)) return done(running, "destroyed");
+                }
                 const slot = found.slot orelse return failed(running, "target has no physical presence");
                 const loadout = (try world.get(frame.entity, data.Weapons)).*;
-                var excluded = @import("weapon_classes/registry.zig").lingeringMask();
+                var excluded = @import("weapon_classes/registry.zig").deliberateMask();
                 if (action.op == .shoot and action.weapon == 0) {
                     const pilot_frame = try motor_module.pilotFrame(frame);
                     for (@import("weapon_catalog").entries) |entry| if (entry.spec.splash_hazard) {
@@ -883,7 +915,11 @@ pub const Driver = struct {
                 // This action may move between firing positions. Placed
                 // attacks belong to an explicit route request, rather than
                 // leaving delayed blasts on the route to the next control.
-                const gun: u5 = combat.preferred(loadout, &frame.clients.weapon_table, action.weapon) orelse combat.selectFor(loadout, &frame.clients.weapon_table, v.length(v.subtract(found.point, eye)), .{ .excluded = excluded, .advancing = true });
+                var gun: u5 = combat.preferred(loadout, &frame.clients.weapon_table, action.weapon) orelse combat.selectFor(loadout, &frame.clients.weapon_table, v.length(v.subtract(found.point, eye)), .{ .excluded = excluded, .advancing = true });
+                // This adapter pins its automatic choice for the pilot. Apply
+                // the same actual-muzzle safety before pinning it or planning
+                // a firing position, while preserving explicit route choices.
+                if (action.op == .shoot and action.weapon == 0) gun = try @import("bot_pilot.zig").objectWeapon(try motor_module.pilotFrame(frame), loadout, eye, found.point, slot, gun, player.water_level > 0, excluded);
                 const shot_reach = @min(@as(f32, 2000), if (@import("weapon_catalog").find(gun)) |entry| entry.spec.bot_range orelse frame.clients.weapon_table.entries[gun].range else 2000);
                 const reach: f32 = if (action.op == .use) 88 else shot_reach;
                 // A health station heals only within 64 of its origin: press it
@@ -893,19 +929,29 @@ pub const Driver = struct {
                 // face: a worker standing in front of a wide door hides only
                 // part of it.
                 var aim_at: ?v.Vec3 = null;
-                const spread = v.scale(v.subtract(found.maxs, found.mins), 0.3);
+                const spread = v.scale(v.subtract(found.maxs, found.mins), 0.4);
                 // A blast round leaves from the muzzle below the eye and bursts
                 // on the first thing it meets: a shot is aimed only where its own
                 // round can travel, and a stand that cannot send it there is not
                 // a firing position but an obstacle to walk around.
                 var shot_lane: ?@import("bot_routes.zig").Lane = null;
+                const melee_plan = if (action.op == .shoot and @import("weapon_catalog").find(gun).?.spec.combat == .melee)
+                    @import("weapon_catalog").meleePlan(gun, loadout.dk3WeaponSequence, loadout.dk3SwordExperience) catch null
+                else
+                    null;
                 if (action.op == .shoot) {
                     if (@import("weapon_catalog").find(gun)) |entry| {
                         const flight = entry.spec.projectile;
-                        if (entry.spec.splash_hazard) shot_lane = .{
+                        const shooter = (try world.get(frame.entity, data.Body)).*;
+                        const eye_offset: v.Vec3 = .{ 0, 0, player.view_height };
+                        const bounds = entry.spec.shotBounds();
+                        if (entry.spec.projectile_muzzle or entry.spec.combat == .projectile or entry.spec.splash_hazard) shot_lane = .{
                             .muzzle = @import("weapon_catalog").flightLaunch(@intCast(gun), frame.clients.weapon_table.entries[@intCast(gun)], 0, 0).muzzle,
-                            .reach = flight.splash_radius,
+                            .reach = if (entry.spec.splash_hazard) flight.splash_radius else 0,
                             .direct = flight.direct_scale > 0,
+                            .mins = bounds.mins,
+                            .maxs = bounds.maxs,
+                            .self_bounds = .{ .mins = v.subtract(shooter.mins, eye_offset), .maxs = v.subtract(shooter.maxs, eye_offset) },
                         };
                     }
                 }
@@ -930,14 +976,38 @@ pub const Driver = struct {
                     for (aim_points, 0..) |offset, tried| {
                         if (tried == 0 and !named) continue;
                         const point = v.add(found.point, offset);
-                        if (v.length(v.subtract(point, eye)) > reach) continue;
-                        const bolt: f32 = if (action.op == .shoot) 3 else 0;
+                        // A use ray reaches the panel's surface, even when
+                        // its brush centre lies farther away. Match the
+                        // approach planner and the ordinary operate trace.
+                        if (action.op != .use and v.length(v.subtract(point, eye)) > reach) continue;
+                        if (melee_plan) |plan| if (@import("melee.zig").linearAim(plan, point, frame.clients.weapon_table.entries[gun].muzzle, player.view_height, player.ducked)) |face| {
+                            const delta = v.subtract(face, eye);
+                            if (try @import("melee.zig").canReach(world, frame.entity, gun, loadout.dk3WeaponSequence, &frame.clients.weapon_table, .{ skill.pitch(delta), skill.yaw(delta), 0 }, .{ .world = world, .entity = found.entity.? })) {
+                                aim_at = face;
+                                break;
+                            }
+                            continue;
+                        };
                         // Trigger volumes are seen through (a music trigger across
                         // a doorway, e1m4c), unless the control is one.
                         const own_trigger = frame.projections[slot].shared.contents & c.CONTENTS_TRIGGER != 0;
-                        const sight = try engine.collisionService().trace(.{ .start = eye, .end = point, .mins = @splat(-bolt), .maxs = @splat(bolt), .slot = frame.index, .mask = if (own_trigger) c.MASK_SHOT | c.CONTENTS_TRIGGER else c.MASK_SHOT });
-                        if (sight.entity == slot or sight.fraction == 1) {
+                        // The pilot fires only when its view ray hits this
+                        // object. A clear ray past a slanted brush's bounding
+                        // box, or a thick sweep grazing its edge, cannot be
+                        // used as evidence that the actual shot can hit it.
+                        const sight = try engine.collisionService().trace(.{ .start = eye, .end = point, .mins = @splat(0), .maxs = @splat(0), .slot = frame.index, .mask = if (own_trigger) c.MASK_SHOT | c.CONTENTS_TRIGGER else c.MASK_SHOT });
+                        if (action.op == .use and v.length(v.subtract(sight.end, eye)) > reach) continue;
+                        if (named and tried == 0 and engine.integer("developer") >= 3 and @mod(now, 1000) == 0) {
+                            var text: [640]u8 = undefined;
+                            const projection = frame.projections[slot];
+                            engine.print(try std.fmt.bufPrintZ(&text, "dk3 coop target aim: id={d} point={d:.1},{d:.1},{d:.1} bounds={d:.1},{d:.1},{d:.1}..{d:.1},{d:.1},{d:.1} hit={d} wanted={d} fraction={d:.3} eye={d:.1},{d:.1},{d:.1} model={d} bmodel={d} contents={x} owner={d} linked={d} origin={d:.1},{d:.1},{d:.1}\n", .{ found.id, point[0], point[1], point[2], found.mins[0], found.mins[1], found.mins[2], found.maxs[0], found.maxs[1], found.maxs[2], sight.entity, slot, sight.fraction, eye[0], eye[1], eye[2], projection.state.modelindex, projection.shared.bmodel, projection.shared.contents, projection.shared.ownerNum, projection.shared.linked, projection.shared.currentOrigin[0], projection.shared.currentOrigin[1], projection.shared.currentOrigin[2] }));
+                        }
+                        if (sight.entity == slot) {
                             if (shot_lane) |want| {
+                                if (engine.integer("developer") >= 3 and @mod(now, 1000) == 0) {
+                                    var lane_text: [256]u8 = undefined;
+                                    engine.print(try std.fmt.bufPrintZ(&lane_text, "dk3 coop shot lane: point={d:.1},{d:.1},{d:.1} clear={d} safe={d} tells={d} reach={d:.1}\n", .{ point[0], point[1], point[2], @intFromBool(try routes.laneClear(frame.index, eye, point, want, slot)), @intFromBool(routes.roundSafe(eye, point, want)), @intFromBool(routes.roundTells(point, found.point, want)), want.reach }));
+                                }
                                 if (!(try routes.laneClear(frame.index, eye, point, want, slot))) continue;
                                 if (!routes.roundSafe(eye, point, want)) continue;
                                 if (must_tell and !routes.roundTells(point, found.point, want)) continue;
@@ -980,7 +1050,6 @@ pub const Driver = struct {
                 }
             },
             .pickup => {
-                if (try self.standGround(frame, running, player, pose, &result)) return result;
                 // An already collected item is not a failure: replays after a
                 // checkpoint restoration meet the world as it was saved.
                 const found = try held(frame, running, .pickup) orelse return done(running, if (running.missing) "absent" else "taken");
@@ -988,7 +1057,8 @@ pub const Driver = struct {
                 const pickup = world.get(entity, data.Pickup) catch return done(running, "taken");
                 if (!pickup.visible) return done(running, "taken");
                 if (!try @import("items.zig").wanted(world, frame.entity, pickup.*, &frame.clients.weapon_table, now)) return done(running, "not needed");
-                const goal = @import("../../core/domain/navigation_input.zig").pickupPoint(found.point, (try world.get(entity, data.Body)).mins, hull_mins);
+                if (try self.standGround(frame, running, player, pose, &result)) return result;
+                const goal = (try targets.pickupPoint(frame, found)).?;
                 result.goal = goal;
                 result.intent.destination = goal;
                 result.intent.direct = action.direct;
@@ -1021,7 +1091,7 @@ pub const Driver = struct {
                 // floor, not its top: a floor of it level with the rider's feet
                 // means it is here.
                 var boardable = false;
-                if (running.phase == 0) if (found.slot) |slot| {
+                if (running.phase == 0 and !riding) if (found.slot) |slot| {
                     const feet = pose.position[2] + hull_mins[2];
                     const inset = @min(24.0, (found.maxs[0] - found.mins[0]) / 2, (found.maxs[1] - found.mins[1]) / 2);
                     const xs = [_]f32{ centre[0], std.math.clamp(pose.position[0], found.mins[0] + inset, found.maxs[0] - inset), found.mins[0] + inset, found.maxs[0] - inset };
@@ -1043,6 +1113,22 @@ pub const Driver = struct {
                 };
                 if (running.phase == 0) {
                     if (riding) {
+                        // A first ground contact can be only a sliver of a
+                        // thin deck. Settle the whole hull onto it before
+                        // preserving a riding patch beside the shaft wall.
+                        const inset = deckFooting(pose.position, found.mins, found.maxs);
+                        if (nav.horizontalDistance(pose.position, inset) > 1) {
+                            result.intent.destination = inset;
+                            result.intent.direct = true;
+                            result.intent.brake = true;
+                            result.intent.close_in = false;
+                            result.intent.fight = false;
+                            return result;
+                        }
+                        // Already aboard: retain the rider's actual safe patch.
+                        // Re-probing a cage centre here can walk an established
+                        // rider into its column or a shaft's ceiling.
+                        running.approach = @import("../domain/poses.zig").point(pose.position, lift_pose, .{});
                         running.phase = 1;
                         running.anchor = lift;
                         self.event(now, "ride-board", running.say("id={d} lift={d:.0},{d:.0},{d:.0}", .{ found.id, lift[0], lift[1], lift[2] }));
@@ -1090,11 +1176,14 @@ pub const Driver = struct {
                     result.intent.direct = true;
                     result.intent.direct_radius = 300;
                     result.intent.brake = true;
+                    result.intent.leash = centre;
+                    result.intent.close_in = false;
+                    result.intent.arena = action.arena orelse .{ .{ centre[0], centre[1] }, .{ centre[0], centre[1] } };
                     self.motor.unstick_until = 0;
                     self.motor.jump_until = 0;
                     // Aboard and still: a lift sent from on board (a cage
                     // train's own button) is pressed, as a rider does.
-                    if (running.phase == 1 and !lift_moving and now - running.started_ms > 1500) if (try boardButton(frame, found.entity.?, pose.position)) |button| {
+                    if (running.phase == 1 and !lift_moving and now - running.started_ms > 1500) if (try boardControl(frame, found.entity.?, pose.position)) |button| {
                         result.intent.face = button.point;
                         result.intent.use_slot = button.slot;
                         // Up to it across the floor of the lift.
@@ -1109,7 +1198,14 @@ pub const Driver = struct {
                         // A stationary deck may have a wall or support
                         // between its centre and this panel. Let the normal
                         // supported corridor planner route to its front.
-                        result.intent.direct = false;
+                        if (try routes.canPressFrom(engine.collisionService(), frame.index, eye, button.point, button.slot.?)) {
+                            result.intent.destination = pose.position;
+                            result.intent.direct = true;
+                            // Reaching the panel may have changed the safe
+                            // stand since boarding. Carry this actual patch
+                            // onward instead of returning to the entry edge.
+                            if (riding) running.approach = @import("../domain/poses.zig").point(pose.position, lift_pose, .{});
+                        } else result.intent.direct = false;
                     };
                     // The lift's own travel counts, not the rider's hops; a cart
                     // pausing at a corner of its path has not arrived yet.
@@ -1132,7 +1228,7 @@ pub const Driver = struct {
                             // A stop part-way along the run (the next corner
                             // carries on the same way) is pressed on from.
                             const onward = if (try nextStop(world, found.entity.?)) |stop| @abs(stop.next[2] - stop.at[2]) > 16 and (stop.next[2] > stop.at[2]) == (lift[2] > running.anchor[2]) else false;
-                            if (onward and running.presses < 4 and try boardButton(frame, found.entity.?, pose.position) != null) {
+                            if (onward and running.presses < 4 and try boardControl(frame, found.entity.?, pose.position) != null) {
                                 running.presses += 1;
                                 running.phase = 1;
                                 running.anchor = lift;
@@ -1170,14 +1266,11 @@ pub const Driver = struct {
                 // corridor and also prevents its ordinary catch-up recovery
                 // from ever observing enough separation to run.
                 if ((waiting_for_party or stepping_out) and nav.horizontalDistance(pose.position, goal) < 160) {
-                    const middle = v.scale(v.add(found.mins, found.maxs), 0.5);
-                    var out = v.subtract(pose.position, middle);
-                    out[2] = 0;
-                    if (v.length(out) < 1) out = v.subtract(running.home, middle);
-                    out[2] = 0;
-                    const size = v.subtract(found.maxs, found.mins);
-                    result.intent.destination = v.add(middle, v.scale(v.normalize(out), @max(size[0], size[1]) / 2 + 64));
-                    result.intent.destination.?[2] = pose.position[2];
+                    if (waiting_for_party and !route.overlaps(pose.position, hull_mins, hull_maxs, found.mins, found.maxs)) {
+                        result.intent.destination = pose.position;
+                        result.intent.leash = pose.position;
+                        result.intent.brake = true;
+                    } else result.intent.destination = try standing(frame, @import("../../core/domain/navigation_input.zig").outsidePoint(found.mins, found.maxs, pose.position, running.home, hull_mins, hull_maxs, 16));
                     result.intent.exit = 0;
                     running.contact_ms = null;
                     running.progress = .{};
@@ -1196,9 +1289,10 @@ pub const Driver = struct {
                 } else if (now - running.started_ms > 3000) return done(running, "none started");
             },
             .look => {
-                result.intent.view = .{ action.yaw, action.pitch };
+                const pitch = std.math.clamp(action.pitch, -player_state.pitch_limit, player_state.pitch_limit);
+                result.intent.view = .{ action.yaw, pitch };
                 const yaw_error = @abs(@mod(action.yaw - pose.angles[1] + 180, 360) - 180);
-                if (yaw_error < 2 and @abs(action.pitch - pose.angles[0]) < 2) return done(running, "facing");
+                if (yaw_error < 0.1 and @abs(pitch - pose.angles[0]) < 0.1) return done(running, "facing");
             },
             .weapon => {
                 const loadout = (try world.get(frame.entity, data.Weapons)).*;
@@ -1207,17 +1301,59 @@ pub const Driver = struct {
                 if (loadout.weapon == action.weapon and loadout.weaponstate == 0) return done(running, "selected");
             },
             .leap => {
-                const takeoff = (action.target orelse return failed(running, "leap needs a takeoff")).point orelse return failed(running, "leap takeoff must be a point");
+                result.intent.authored_corridor = true;
+                var takeoff = (action.target orelse return failed(running, "leap needs a takeoff")).point orelse return failed(running, "leap takeoff must be a point");
                 const surface = if (action.landing) |selector| try targets.resolve(frame, selector, .mover) else null;
                 if (action.landing != null and surface == null) return failed(running, "jump landing surface not found");
+                if (running.phase == 0 and running.departure_source == null and player.ground_entity < frame.slots.occupants.len) if (frame.slots.occupants[player.ground_entity]) |source| {
+                    if (@import("platforms.zig").isMoverPart(world, source)) {
+                        const box = frame.projections[player.ground_entity].shared;
+                        if (takeoff[0] >= box.absmin[0] and takeoff[0] <= box.absmax[0] and takeoff[1] >= box.absmin[1] and takeoff[1] <= box.absmax[1]) {
+                            const support = try engine.collisionService().trace(.{ .start = v.add(takeoff, .{ 0, 0, 2 }), .end = v.add(takeoff, .{ 0, 0, -24 }), .mins = hull_mins, .maxs = hull_maxs, .slot = frame.index, .mask = c.MASK_PLAYERSOLID });
+                            if (!support.start_solid and support.entity == player.ground_entity) {
+                                const source_pose = try world.get(source, data.Transform);
+                                running.departure_source = .{ .id = try world.persistentId(source), .pose = .{ .position = source_pose.position, .angles = source_pose.angles } };
+                            }
+                        }
+                    }
+                };
+                var takeoff_home = running.home;
+                if (running.departure_source) |source| if (world.find(source.id)) |entity| {
+                    const source_pose = try world.get(entity, data.Transform);
+                    const current: @import("../domain/poses.zig").Pose = .{ .position = source_pose.position, .angles = source_pose.angles };
+                    takeoff = @import("../domain/poses.zig").point(takeoff, source.pose, current);
+                    takeoff_home = @import("../domain/poses.zig").point(running.home, source.pose, current);
+                };
                 const landing = if (surface) |found| surfaceStance(frame, found, action.around orelse @splat(0)) else action.around orelse return failed(running, "leap needs a landing point");
+                var aim_landing = landing;
+                var air_seconds: ?f32 = null;
+                {
+                    const movement = player_state.characterParameters(frame.index, (try world.get(frame.entity, data.Character)).*, (try world.get(frame.entity, data.Ailments)).*, now);
+                    const vertical = if (player.ground_entity != c.ENTITYNUM_NONE) movement.jump_speed else (try world.get(frame.entity, data.Velocity)).linear[2];
+                    const reach = vertical * vertical + 2 * movement.gravity * (pose.position[2] - landing[2]);
+                    if (reach > 0) {
+                        var remaining = (vertical + @sqrt(reach)) / movement.gravity;
+                        if (running.phase == 0 and player.ground_entity != c.ENTITYNUM_NONE and nav.horizontalDistance(pose.position, takeoff) > 14) remaining += nav.horizontalDistance(pose.position, takeoff) / @max(1, movement.speed) + 0.05;
+                        remaining = std.math.clamp(remaining, 0, 2);
+                        air_seconds = remaining;
+                        if (surface) |found| aim_landing = surfaceStanceAt(frame, found, action.around orelse @splat(0), now + @as(i64, @intFromFloat(remaining * 1000)));
+                    }
+                }
                 result.goal = landing;
                 result.intent.leave_mover = true;
                 const departure = if (surface != null) v.Vec3{ takeoff[0], takeoff[1], pose.position[2] } else takeoff;
-                const steering_landing = if (surface != null) v.Vec3{ landing[0], landing[1], pose.position[2] } else landing;
+                const steering_landing = if (surface != null) v.Vec3{ aim_landing[0], aim_landing[1], pose.position[2] } else landing;
                 const grounded = player.ground_entity != c.ENTITYNUM_NONE;
+                // A crouched landing needs a standing run-up and a prompt
+                // duck after takeoff. Ducking throughout the approach caps
+                // its speed; holding jump for an extra airborne command makes
+                // the standing hull hit a low lintel before the duck arrives.
+                result.intent.crouch = action.crouch and !grounded;
                 result.intent.direct = true;
+                result.intent.air_landing = aim_landing;
+                result.intent.air_seconds = air_seconds;
                 if (action.blast) {
+                    result.intent.pace = action.pace orelse 1;
                     // Shotcycler jump: running through the takeoff looking at
                     // the floor, fire as the jump leaves the ground; the kick
                     // lifts the player, the run carries it over.
@@ -1231,7 +1367,7 @@ pub const Driver = struct {
                             result.intent.destination = takeoff;
                             result.intent.direct = true;
                             result.intent.view = .{ facing_yaw, 89 };
-                            const ready = loadout.weapon == action.weapon and loadout.weaponstate != 1 and loadout.weaponstate != 2 and @abs(@mod(pose.angles[1] - facing_yaw + 180, 360) - 180) < 6 and pose.angles[0] > 80;
+                            const ready = loadout.weapon == action.weapon and loadout.weaponstate != 1 and loadout.weaponstate != 2 and loadout.weaponTime <= 0 and loadout.dk3Burst == 0 and @abs(@mod(pose.angles[1] - facing_yaw + 180, 360) - 180) < 6 and pose.angles[0] > 80;
                             // Hold back short of the takeoff until the gun is up.
                             if (!ready) result.intent.destination = v.add(running.home, .{ 0, 0, 0 });
                             if (loadout.ammo[action.weapon] <= 0) return failed(running, "no shells for the jump");
@@ -1254,11 +1390,16 @@ pub const Driver = struct {
                         else => {
                             result.intent.view = .{ facing_yaw, 89 };
                             result.intent.destination = landing;
-                            _ = velocity;
+                            result.intent.brake = grounded;
                             if (grounded and now - running.started_ms > 300) {
-                                if (nav.horizontalDistance(pose.position, landing) < 48 and @abs(pose.position[2] - landing[2]) < 32) return done(running, running.say("landed {d:.0},{d:.0},{d:.0}", .{ pose.position[0], pose.position[1], pose.position[2] }));
-                                return failed(running, running.say("landed short at {d:.0},{d:.0},{d:.0}", .{ pose.position[0], pose.position[1], pose.position[2] }));
-                            }
+                                const across = nav.horizontalDistance(pose.position, landing);
+                                const height = @abs(pose.position[2] - landing[2]);
+                                if (across >= 48 or height >= 32) return failed(running, running.say("landed short at {d:.0},{d:.0},{d:.0}", .{ pose.position[0], pose.position[1], pose.position[2] }));
+                                if (across <= (if (action.radius > 0) action.radius else @as(f32, 48)) and height <= (if (action.vertical_radius > 0) action.vertical_radius else @as(f32, 32)) and nav.horizontalDistance(velocity, @splat(0)) < 60) {
+                                    if (running.landed_ms == null) running.landed_ms = now;
+                                    if (now - running.landed_ms.? >= 400) return done(running, running.say("landed {d:.0},{d:.0},{d:.0}", .{ pose.position[0], pose.position[1], pose.position[2] }));
+                                } else running.landed_ms = null;
+                            } else running.landed_ms = null;
                         },
                     }
                     return result;
@@ -1266,7 +1407,7 @@ pub const Driver = struct {
                 // A hop goes at the pace its own gap asks for, throughout: the
                 // route may name one (a hop whose arc must not be its own), and
                 // otherwise the ballistic answer is worked out below.
-                result.intent.pace = action.pace orelse try hopPace(frame, takeoff, landing, now);
+                result.intent.pace = action.pace orelse try hopPace(frame, takeoff, aim_landing, now);
                 switch (running.phase) {
                     0 => {
                         // A preceding stair/ledge climb may still hold jump.
@@ -1282,11 +1423,11 @@ pub const Driver = struct {
                         // it, or as soon as the raised joint lifts the player.
                         result.intent.destination = departure;
                         const riding_source = grounded and player.ground_entity < frame.slots.occupants.len and if (frame.slots.occupants[player.ground_entity]) |under| targets.moving(world, under) else false;
-                        const lifted = !riding_source and pose.position[2] >= running.home[2] + 7;
+                        const lifted = !riding_source and pose.position[2] >= takeoff_home[2] + 7 and nav.horizontalDistance(pose.position, takeoff) < 32;
                         // At full speed a frame covers some 16 units: one that
                         // carries the player past the takeoff (close to the
                         // run's line) jumps there rather than running on.
-                        const run: v.Vec3 = .{ takeoff[0] - running.home[0], takeoff[1] - running.home[1], 0 };
+                        const run: v.Vec3 = .{ takeoff[0] - takeoff_home[0], takeoff[1] - takeoff_home[1], 0 };
                         const offset: v.Vec3 = .{ pose.position[0] - takeoff[0], pose.position[1] - takeoff[1], 0 };
                         const passed = v.length(run) > 1 and v.dot(offset, v.normalize(run)) > -4 and v.length(v.subtract(offset, v.scale(v.normalize(run), v.dot(offset, v.normalize(run))))) < 20;
                         if (grounded and (nav.horizontalDistance(pose.position, takeoff) < 14 or lifted or passed)) {
@@ -1305,21 +1446,42 @@ pub const Driver = struct {
                         result.intent.view = .{ skill.yaw(v.subtract(landing, pose.position)), 0 };
                         result.intent.destination = steering_landing;
                         result.intent.jump = true;
-                        if (!grounded) running.phase = 2;
+                        if (!grounded) {
+                            running.phase = 2;
+                            if (action.crouch) result.intent.jump = false;
+                        }
                         if (now - running.started_ms > 6000) return failed(running, "running jump never left the ground");
                     },
                     else => {
+                        if (!grounded) running.contact_ms = null;
                         result.intent.destination = steering_landing;
                         result.intent.view = .{ skill.yaw(v.subtract(landing, pose.position)), 0 };
+                        // A declared handoff can end on actual ladder contact
+                        // while airborne. Ordinary jumps still require a
+                        // supported landing; proximity alone never qualifies.
+                        if (!action.settle and nav.horizontalDistance(pose.position, landing) <= (if (action.radius > 0) action.radius else @as(f32, 16)) and
+                            @abs(pose.position[2] - landing[2]) <= (if (action.vertical_radius > 0) action.vertical_radius else @as(f32, 32)) and
+                            try @import("bot_pilot.zig").onRungs(try motor_module.pilotFrame(frame), pose.position))
+                            return done(running, "caught ladder");
                         if (grounded) {
                             if (surface) |found| {
-                                if (found.slot != null and player.ground_entity == found.slot.?) return done(running, "landed on moving surface");
+                                if (found.slot != null and player.ground_entity == found.slot.?) {
+                                    if (!try settledLanding(frame, running, &result, landing)) return result;
+                                    return done(running, "landed on moving surface");
+                                }
                                 if ((try world.get(frame.entity, data.Velocity)).linear[2] <= 0)
                                     return failed(running, running.say("missed moving landing at {d:.0},{d:.0},{d:.0}", .{ pose.position[0], pose.position[1], pose.position[2] }));
                                 return result;
                             }
+                            // A bevel can report brief support while the jump
+                            // is still rising. It is not a completed landing,
+                            // even when that contact is inside the goal radius.
+                            if ((try world.get(frame.entity, data.Velocity)).linear[2] > 0) return result;
                             const landing_height = if (action.vertical_radius > 0) @abs(pose.position[2] - landing[2]) <= action.vertical_radius else pose.position[2] > landing[2] - 32;
-                            if (nav.horizontalDistance(pose.position, landing) < (if (action.radius > 0) action.radius else @as(f32, 96)) and landing_height) return done(running, running.say("landed {d:.0},{d:.0},{d:.0}", .{ pose.position[0], pose.position[1], pose.position[2] }));
+                            if (nav.horizontalDistance(pose.position, landing) < (if (action.radius > 0) action.radius else @as(f32, 96)) and landing_height) {
+                                if (!try settledLanding(frame, running, &result, landing)) return result;
+                                return done(running, running.say("landed {d:.0},{d:.0},{d:.0}", .{ pose.position[0], pose.position[1], pose.position[2] }));
+                            }
                             // Contact with a rising slope while still climbing
                             // is not a short landing. Keep steering the jump
                             // until the body actually settles or falls.
@@ -1328,7 +1490,7 @@ pub const Driver = struct {
                         }
                     },
                 }
-                if ((surface != null or action.radius > 0) and running.phase >= 1 and !grounded) {
+                if ((action.settle or surface != null or action.radius > 0) and running.phase >= 1 and !grounded) {
                     // Brake in the air before the centre of a small moving
                     // landing. Full run-up speed otherwise carries the body
                     // off its far edge before the next command can settle it.
@@ -1341,8 +1503,19 @@ pub const Driver = struct {
                 }
             },
             .jump => {
-                result.intent.jump = now - running.started_ms < 250;
-                if (now - running.started_ms >= 450) return done(running, "jumped");
+                if (running.phase == 0) {
+                    // A preceding ladder climb can leave jump held. Release
+                    // it before timing the new press, as an ordinary player
+                    // must, rather than spending the entire action on a hold.
+                    self.motor.jump_until = 0;
+                    if (player.jump_held or player.respawned) return result;
+                    running.phase = 1;
+                    running.contact_ms = now;
+                }
+                const duration = if (action.duration_ms > 0) action.duration_ms else 450;
+                const pressed_ms = now - running.contact_ms.?;
+                result.intent.jump = pressed_ms < @min(250, duration);
+                if (pressed_ms >= duration) return done(running, "jumped");
             },
             .save => {
                 if (running.phase == 0) {
@@ -1350,10 +1523,9 @@ pub const Driver = struct {
                     var command: [96]u8 = undefined;
                     link_module.client(frame.index, try std.fmt.bufPrintZ(&command, "save {s}", .{action.slot.slice()}));
                 }
-                if (running.phase == 2) {
-                    const vitality = (try world.get(frame.entity, data.Health)).*;
-                    if (vitality.current * 4 < vitality.maximum)
-                        return done(running, "saved; recovery checkpoint retained because health is low");
+                if (running.phase == 2 or running.phase == 3) {
+                    if (running.phase == 3)
+                        return done(running, "saved; recovery checkpoint retained");
                     self.last_save = @splat(0);
                     @memcpy(self.last_save[0..@min(action.slot.slice().len, 63)], action.slot.slice()[0..@min(action.slot.slice().len, 63)]);
                     _ = engine.gateway.call(c.G_CVAR_SET, .{ @as([*:0]const u8, "dk3_coop_last_save"), @as([*:0]const u8, @ptrCast(&self.last_save)) });
@@ -1428,6 +1600,7 @@ pub const Driver = struct {
             .position = pose.position,
             .health = (try world.get(frame.entity, data.Health)).*,
             .loadout = (try world.get(frame.entity, data.Weapons)).*,
+            .weapon = result.intent.weapon,
             .detouring = self.detour.target != 0,
             .health_rise = if (action.direct) 32 else 128,
         }, aggressor);
@@ -1531,7 +1704,7 @@ pub const Driver = struct {
     }
     /// A button within reach that sends this lift (it targets the lift, or
     /// rides on it): the control a rider presses.
-    fn boardButton(frame: Frame, lift: ecs.Entity, position: v.Vec3) !?targets.Resolved {
+    fn boardControl(frame: Frame, lift: ecs.Entity, position: v.Vec3) !?targets.Resolved {
         const world = frame.world;
         const name = (try world.get(lift, data.MapObject)).targetname;
         if (name.len == 0) return null;
@@ -1540,7 +1713,9 @@ pub const Driver = struct {
         var query = world.queryAccess(data.World.mask(.{ data.MapObject, data.Transform }), 0, 0);
         defer query.deinit();
         while (query.next()) |view| for (view.entities(), view.read(data.MapObject)) |entity, object| {
-            if (!@import("entity_classes/registry.zig").traitsOf(object.classname).button or !std.mem.eql(u8, object.target, name)) continue;
+            // Vehicle levers can be angular movers as well as buttons.
+            // Preserve ordinary player-use eligibility for named controls.
+            if (!@import("bot_routes.zig").canOperate(world, entity, object) or !std.mem.eql(u8, object.target, name)) continue;
             const found = try targets.describe(frame, entity);
             const distance = v.length(v.subtract(found.point, v.add(position, .{ 0, 0, 22 })));
             if (distance >= nearest or found.slot == null) continue;
@@ -1576,7 +1751,12 @@ pub const Driver = struct {
                 if (selector.name.empty() and selector.id == 0 and selector.index == 0 and !route.hostile(catalog.entries[actor.definition].kind)) continue;
             } else if (!route.hostile(catalog.entries[actor.definition].kind)) continue;
             if (action.limitedHunt() and v.length(v.subtract(transform.position, running.anchor)) > action.searchRadius()) continue;
+            if (action.limitedHunt() and action.vertical_radius > 0 and @abs(transform.position[2] - running.anchor[2]) > action.vertical_radius) continue;
             const id = try world.persistentId(entity);
+            if (action.target == null) if (world.get(entity, data.Body) catch null) |body| if (body.contents == 0) {
+                let_be += 1;
+                continue;
+            };
             if (action.target == null and self.hunt_let_be.ignored(id, frame.now)) {
                 let_be += 1;
                 continue;
@@ -1598,12 +1778,19 @@ pub const Driver = struct {
             distance = span;
             nearest = try targets.describe(frame, entity);
         };
-        const killed = running.tracked_count -| living;
-        if (living == 0 or (action.count > 0 and killed >= action.count)) return done(running, if (let_be == 0) running.say("killed {d}", .{killed}) else running.say("killed {d}, {d} left out of reach", .{ killed, let_be }));
+        const killed = huntKills(world, running.tracked[0..running.tracked_count]);
+        if (living == 0 or (action.count > 0 and killed >= action.count)) return done(running, if (let_be == 0) running.say("killed {d}", .{killed}) else running.say("killed {d}, {d} not pursued", .{ killed, let_be }));
         var prey = nearest.?;
         running.target = prey.id;
-        prey.point = try standing(frame, prey.point);
         result.intent.preferred = prey.id;
+        result.goal = prey.point;
+        // A withdrawn target has no shootable body. Wait on the current
+        // footing and defend against visible threats instead of running to
+        // its hidden position and meeting its return at contact range.
+        if (world.get(prey.entity.?, data.Body) catch null) |body| if (body.contents == 0) {
+            return waitForPrey(running, pose.position, prey.point, result);
+        };
+        prey.point = try standing(frame, prey.point);
         result.goal = prey.point;
         // Close in until the prey is in sight and inside the chosen weapon's
         // reach; then hold ground and let the motor aim and fire.
@@ -1611,8 +1798,13 @@ pub const Driver = struct {
         // A route's preferred gun can empty during a long fight. Continue
         // with the admitted loadout rather than holding an empty barrel;
         // weapons with an actual empty-hand strike retain that option.
-        result.intent.weapon = combat.preferred(loadout, &frame.clients.weapon_table, action.weapon);
-        const weapon = result.intent.weapon orelse combat.selectFor(loadout, &frame.clients.weapon_table, distance, .{ .excluded = @import("bot_pilot.zig").damageExclusions(.{ .world = world, .entity = prey.entity.? }, frame.now) });
+        const excluded = @import("bot_pilot.zig").damageExclusions(.{ .world = world, .entity = prey.entity.? }, frame.now);
+        // A visible shield is not a lost firing lane. Closing cannot make
+        // damage possible when the target rejects every owned weapon.
+        if (allOwnedRejected(loadout.dk3Inventory, excluded))
+            return waitForPrey(running, pose.position, prey.point, result);
+        result.intent.weapon = combat.permittedPreference(loadout, &frame.clients.weapon_table, action.weapon, excluded);
+        const weapon = result.intent.weapon orelse combat.selectFor(loadout, &frame.clients.weapon_table, distance, .{ .excluded = excluded });
         const reach = combat.standOffFor(loadout, &frame.clients.weapon_table, weapon);
         // Seen behind cover a shot cannot clear is not yet a firing position.
         const firing_line = self.report.enemy == prey.id and !self.report.lane_blocked;
@@ -1639,8 +1831,12 @@ pub const Driver = struct {
             ));
         }
         const tethered = action.hold and !running.hold_closed;
+        // A held fight lets the prey approach instead of replacing its
+        // firing stance with an autonomous melee pursuit.
+        result.intent.close_in = !tethered;
         const contact_distance = if (reach < 128) v.length(v.subtract(v.closestInBounds(pose.position, prey.mins, prey.maxs), pose.position)) else distance;
-        var engaged = tethered or (firing_line and contact_distance <= reach);
+        const diversion_reach = combat.reachFor(loadout, &frame.clients.weapon_table, @intCast(std.math.clamp(loadout.weapon, 0, 31)));
+        var engaged = huntContact(tethered, prey.id, self.report, contact_distance, reach, diversion_reach);
         var shifted = false;
         if (engaged) result.intent.leash = if (tethered) running.home else pose.position;
         result.intent.arena = action.arena;
@@ -1659,6 +1855,7 @@ pub const Driver = struct {
                 shift[axis] = if (low <= high) std.math.clamp(shift[axis], low, high) else (box[0][axis] + box[1][axis]) / 2;
             };
             result.intent.destination = try standing(frame, shift);
+            result.intent.brake = true;
             engaged = false;
             shifted = true;
         }
@@ -1678,7 +1875,7 @@ pub const Driver = struct {
             // A hunt that left its tether still keeps the arena the route drew
             // about the fight: what lies beyond it may be the drop the player
             // would never take in order to reach one stubborn enemy.
-            if (action.hold) if (action.arena) |box| for (0..2) |axis| {
+            if (action.arena) |box| for (0..2) |axis| {
                 const low = box[0][axis] + 16;
                 const high = box[1][axis] - 16;
                 goal[axis] = if (low <= high) std.math.clamp(goal[axis], low, high) else (box[0][axis] + box[1][axis]) / 2;
@@ -1763,6 +1960,15 @@ fn held(frame: Frame, running: *Running, filter: targets.Filter) !?targets.Resol
 fn absent(running: *Running, gone: []const u8) Evaluation {
     return if (running.missing) failed(running, "target not found") else done(running, gone);
 }
+fn settledLanding(frame: Frame, running: *Running, result: *Evaluation, landing: v.Vec3) !bool {
+    if (!running.action.settle) return true;
+    running.contact_ms = running.contact_ms orelse frame.now;
+    result.intent.jump = false;
+    result.intent.brake = true;
+    result.intent.destination = landing;
+    const motion = (try frame.world.get(frame.entity, data.Velocity)).linear;
+    return frame.now - running.contact_ms.? >= 200 and v.length(.{ motion[0], motion[1], 0 }) <= 48;
+}
 fn done(running: *Running, detail: []const u8) Evaluation {
     _ = running;
     return .{ .result = .{ .done = detail } };
@@ -1770,6 +1976,149 @@ fn done(running: *Running, detail: []const u8) Evaluation {
 fn failed(running: *Running, detail: []const u8) Evaluation {
     _ = running;
     return .{ .result = .{ .failed = detail } };
+}
+fn waitForPrey(running: *Running, position: v.Vec3, point: v.Vec3, base: Evaluation) Evaluation {
+    var result = base;
+    result.intent.leash = position;
+    result.intent.close_in = false;
+    result.intent.arena = running.action.arena;
+    result.intent.look_at = point;
+    running.progress = .{};
+    return result;
+}
+fn allOwnedRejected(owned: i32, excluded: i32) bool {
+    return owned != 0 and owned & ~excluded == 0;
+}
+test "a completely shielded hunt waits while a partially admitted arsenal remains usable" {
+    var owned: i32 = 0;
+    var one: i32 = 0;
+    for (@import("weapon_catalog").entries) |entry| if (entry.spec.auto_select) {
+        const bit = @as(i32, 1) << entry.id;
+        owned |= bit;
+        one = bit;
+    };
+    try std.testing.expect(allOwnedRejected(owned, owned));
+    try std.testing.expect(!allOwnedRejected(owned, owned & ~one));
+    try std.testing.expect(!allOwnedRejected(owned, 0));
+    try std.testing.expect(!allOwnedRejected(0, -1));
+}
+/// The motor can prioritize an immediate attacker over the ordered prey.
+/// That is an engagement to finish here, not evidence that the ordered prey
+/// is unseen and must be approached through the intervening fight.
+fn huntContact(tethered: bool, prey: u32, report: motor_module.Report, distance: f32, reach: f32, diversion_reach: f32) bool {
+    if (tethered) return true;
+    if (report.enemy == 0) return false;
+    // A distraction can select a short or melee-only weapon. Seeing it does
+    // not justify pinning the feet outside that weapon's usable range.
+    if (report.enemy != prey) return report.fired or (!report.lane_blocked and report.enemy_distance <= diversion_reach);
+    // Blast safety asks for room, not a closer firing position. Keep the
+    // visible nearby prey engaged so the motor can retreat along safe floor.
+    if (report.blast_too_close and distance <= reach) return true;
+    return !report.lane_blocked and distance <= reach;
+}
+test "an immediate attacker holds an ordered hunt instead of advancing into its prey" {
+    const t = std.testing;
+    // The ordered target is at range; the motor has turned to another threat.
+    try t.expect(huntContact(false, 41, .{ .enemy = 42, .enemy_distance = 96 }, 320, 512, 128));
+    try t.expect(!huntContact(false, 41, .{ .enemy = 42, .enemy_distance = 280 }, 320, 512, 80));
+    try t.expect(!huntContact(false, 41, .{ .enemy = 42, .enemy_distance = 60, .lane_blocked = true }, 320, 512, 80));
+    try t.expect(huntContact(false, 41, .{ .enemy = 42, .enemy_distance = 90, .fired = true }, 320, 512, 80));
+    // A visible, reachable ordered target is also fought from this stand.
+    try t.expect(huntContact(false, 41, .{ .enemy = 41 }, 320, 512, 80));
+    // No contact, a blocked shot, or an out-of-reach ordered target still
+    // requires an approach. An explicitly held stand remains held.
+    try t.expect(!huntContact(false, 41, .{}, 320, 512, 80));
+    try t.expect(!huntContact(false, 41, .{ .enemy = 41, .lane_blocked = true }, 320, 512, 80));
+    try t.expect(huntContact(false, 41, .{ .enemy = 41, .lane_blocked = true, .blast_too_close = true }, 60, 512, 80));
+    try t.expect(!huntContact(false, 41, .{ .enemy = 42, .enemy_distance = 280, .lane_blocked = true, .blast_too_close = true }, 320, 512, 80));
+    try t.expect(!huntContact(false, 41, .{ .enemy = 41 }, 640, 512, 80));
+    try t.expect(huntContact(true, 41, .{}, 640, 512, 80));
+}
+test "a withdrawn named target waits without pursuit or a false kill" {
+    const t = std.testing;
+    var world = data.World.init(t.allocator, 2);
+    defer world.deinit();
+    const home: data.Transform = .{ .position = .{ 32, 48, 24 } };
+    const player = try world.create(1, .{home});
+    const hidden = try world.create(41, .{ data.Actor{ .definition = 0 }, data.Health{ .current = 93 }, data.Transform{ .position = .{ 320, 48, 24 } }, data.MapObject{ .classname = "" }, data.Body{ .contents = 0 } });
+    var slots: Slots = .{};
+    const frame: Frame = .{ .world = &world, .slots = &slots, .projections = &.{}, .clients = undefined, .service = undefined, .index = 0, .entity = player, .now = 1000 };
+    var driver: Driver = .{};
+    var running: Running = .{ .action = .{ .op = .kill, .target = .{ .id = 41 } }, .started_ms = 1000, .deadline_ms = 2000, .stepped_ms = 1000 };
+    const waiting = try driver.hunt(frame, &running, home, .{});
+    try t.expect(waiting.result == .running);
+    try t.expect(waiting.intent.fight and !waiting.intent.close_in);
+    try t.expectEqual(home.position, waiting.intent.leash.?);
+    try t.expect(waiting.intent.destination == null);
+    try t.expectEqual(@as(u32, 41), waiting.intent.preferred);
+    try t.expectEqual(@as(i32, 93), (try world.get(hidden, data.Health)).current);
+    try t.expectEqual(@as(usize, 0), huntKills(&world, running.tracked[0..running.tracked_count]));
+}
+fn huntKills(world: *data.World, tracked: []const u32) usize {
+    var killed: usize = 0;
+    for (tracked) |id| {
+        const target = @import("region_access.zig").find(world, id) orelse {
+            killed += 1;
+            continue;
+        };
+        if (target.get(data.Health) catch null) |health| if (health.current <= 0) {
+            killed += 1;
+        };
+    }
+    return killed;
+}
+test "an authored waiting stance permits firing without combat leaving its footing" {
+    var world = data.World.init(std.testing.allocator, 2);
+    defer world.deinit();
+    const point: v.Vec3 = .{ 12, 24, 48 };
+    const entity = try world.create(1, .{data.Transform{ .position = point }});
+    var slots: Slots = .{};
+    const frame: Frame = .{ .world = &world, .slots = &slots, .projections = &.{}, .clients = undefined, .service = undefined, .index = 0, .entity = entity, .now = 1000 };
+    var driver: Driver = .{};
+    var running: Running = .{ .action = .{ .op = .frame, .target = .{ .point = point }, .around = @splat(0), .fight = true }, .started_ms = 1000, .deadline_ms = 2000, .stepped_ms = 1000 };
+    const result = try driver.evaluate(frame, &running, .{});
+    try std.testing.expect(result.intent.fight);
+    try std.testing.expect(!result.intent.close_in);
+    try std.testing.expectEqual(point, result.intent.leash.?);
+    try std.testing.expect(result.intent.destination == null);
+    try std.testing.expect(@import("bot_evasion.zig").inside(result.intent.arena, point));
+    try std.testing.expect(!@import("bot_evasion.zig").inside(result.intent.arena, v.add(point, .{ 1, 0, 0 })));
+    running.action.arena = .{ .{ 4, 16 }, .{ 20, 32 } };
+    const bounded = try driver.evaluate(frame, &running, .{});
+    try std.testing.expect(@import("bot_evasion.zig").inside(bounded.intent.arena, v.add(point, .{ 4, 0, 0 })));
+    try std.testing.expect(!@import("bot_evasion.zig").inside(bounded.intent.arena, v.add(point, .{ 16, 0, 0 })));
+}
+
+test "an authored walking corridor permits defense without an autonomous melee pursuit" {
+    var world = data.World.init(std.testing.allocator, 2);
+    defer world.deinit();
+    const point: v.Vec3 = .{ 12, 24, 48 };
+    const entity = try world.create(1, .{ data.Transform{ .position = point }, data.Velocity{} });
+    var slots: Slots = .{};
+    const frame: Frame = .{ .world = &world, .slots = &slots, .projections = &.{}, .clients = undefined, .service = undefined, .index = 0, .entity = entity, .now = 1000 };
+    var driver: Driver = .{};
+    var running: Running = .{ .action = .{ .op = .move, .target = .{ .point = point }, .direct = true, .settle = false, .fight = true }, .started_ms = 1000, .deadline_ms = 2000, .stepped_ms = 1000 };
+    const directed = try driver.evaluate(frame, &running, .{});
+    try std.testing.expect(directed.intent.fight);
+    try std.testing.expect(directed.intent.authored_corridor);
+    try std.testing.expect(!directed.intent.close_in);
+    running.action.direct = false;
+    const routed = try driver.evaluate(frame, &running, .{});
+    try std.testing.expect(routed.intent.close_in);
+    try std.testing.expect(!routed.intent.authored_corridor);
+}
+
+test "hunt counts deaths and removal without claiming live or withdrawn targets" {
+    var world = data.World.init(std.testing.allocator, 2);
+    defer world.deinit();
+    const live = try world.create(null, .{data.Health{ .current = 20 }});
+    const dead = try world.create(null, .{data.Health{ .current = 0 }});
+    const withdrawn = try world.create(null, .{ data.Health{ .current = 20 }, data.Body{ .contents = 0 } });
+    const removed = try world.create(null, .{data.Health{}});
+    const tracked = [_]u32{ try world.persistentId(live), try world.persistentId(dead), try world.persistentId(withdrawn), try world.persistentId(removed) };
+    try world.destroy(removed);
+    try std.testing.expectEqual(@as(usize, 2), huntKills(&world, &tracked));
+    try std.testing.expectEqual(@as(usize, 0), huntKills(&world, tracked[0..1]));
 }
 fn stalled(frame: Frame, running: *Running, report: motor_module.Report, position: v.Vec3, goal: v.Vec3, now: i64) bool {
     // Without any navigation route the goal is unreachable from here; fail
@@ -1790,9 +2139,37 @@ fn stalled(frame: Frame, running: *Running, report: motor_module.Report, positio
 }
 fn stuck(running: *Running, report: motor_module.Report, position: v.Vec3) Evaluation {
     const waypoint = report.waypoint orelse nav.Waypoint{ .point = @splat(0) };
-    return .{ .result = .{ .failed = running.say("no progress for {d} s at {d:.0},{d:.0},{d:.0} waypoint={d:.0},{d:.0},{d:.0} blocked={d} no_route={d} control={d} avoided_exit={d}", .{ @divTrunc(running.hunt_stall_ms, 1000), position[0], position[1], position[2], waypoint.point[0], waypoint.point[1], waypoint.point[2], @intFromBool(report.blocked), @intFromBool(report.no_route), report.control, report.avoided_exit }) } };
+    const no_route_ms = if (running.no_route_ms) |since| running.stepped_ms - since else 0;
+    const route_stalled = no_route_ms > 8000;
+    return .{ .result = .{ .failed = running.say("{s} for {d} s at {d:.0},{d:.0},{d:.0} waypoint={d:.0},{d:.0},{d:.0} blocked={d} no_route={d} control={d} avoided_exit={d}", .{ if (route_stalled) "no navigation route" else "no progress", @divTrunc(if (route_stalled) no_route_ms else running.hunt_stall_ms, 1000), position[0], position[1], position[2], waypoint.point[0], waypoint.point[1], waypoint.point[2], @intFromBool(report.blocked), @intFromBool(report.no_route), report.control, report.avoided_exit }) } };
 }
 /// Horizontally within the box (grown by `margin`) and not below its floor.
+fn deckFooting(position: v.Vec3, mins: v.Vec3, maxs: v.Vec3) v.Vec3 {
+    // Tall mover boxes contain cage roofs and supports; their bounds do
+    // not describe a clear floor. Preserve their established rider patch.
+    if (maxs[2] - mins[2] > 18) return position;
+    var point = position;
+    for (0..2) |axis| {
+        const low = mins[axis] - hull_mins[axis] + 2;
+        const high = maxs[axis] - hull_maxs[axis] - 2;
+        if (low > high) return position;
+        point[axis] = std.math.clamp(position[axis], low, high);
+    }
+    return point;
+}
+
+test "a thin lift requires whole hull footing while a cage preserves its actual rider patch" {
+    const position: v.Vec3 = .{ -1441, 787, -2829 };
+    const mins: v.Vec3 = .{ -1432, 776, -2824 };
+    const maxs: v.Vec3 = .{ -1336, 888, -2816 };
+    const inset = deckFooting(position, mins, maxs);
+    try std.testing.expect(inset[0] + hull_mins[0] > mins[0]);
+    try std.testing.expect(inset[1] + hull_mins[1] > mins[1]);
+    try std.testing.expectEqual(position[2], inset[2]);
+    try std.testing.expectEqual(inset, deckFooting(inset, mins, maxs));
+    try std.testing.expectEqual(position, deckFooting(position, mins, .{ maxs[0], maxs[1], -2700 }));
+}
+
 fn inside(position: v.Vec3, mins: v.Vec3, maxs: v.Vec3, margin: f32) bool {
     return position[0] >= mins[0] - margin and position[0] <= maxs[0] + margin and
         position[1] >= mins[1] - margin and position[1] <= maxs[1] + margin and position[2] >= mins[2];
@@ -1854,6 +2231,23 @@ fn nextStop(world: *data.World, entity: @import("../../core/ecs/world.zig").Enti
         if (try Class.nextStop(world, entity)) |stop| return .{ .at = stop.at, .next = stop.next };
     };
     return null;
+}
+
+test "save completion acknowledges only its write and distinguishes recovery admission" {
+    var driver: Driver = .{ .enabled = true, .running = .{
+        .action = .{ .op = .save, .slot = try route.Name.from("coop-safe") },
+        .started_ms = 0,
+        .deadline_ms = 1000,
+        .stepped_ms = 0,
+        .phase = 1,
+    } };
+    driver.saveCompleted("another-save", false);
+    try std.testing.expectEqual(@as(u8, 1), driver.running.?.phase);
+    driver.saveCompleted("coop-safe", false);
+    try std.testing.expectEqual(@as(u8, 3), driver.running.?.phase);
+    try std.testing.expectEqual(@as(u8, 0), driver.last_save[0]);
+    driver.saveCompleted("coop-safe", true);
+    try std.testing.expectEqual(@as(u8, 2), driver.running.?.phase);
 }
 
 test "visible pilot excludes keyboard input without changing ordinary clients or dedicated bots" {

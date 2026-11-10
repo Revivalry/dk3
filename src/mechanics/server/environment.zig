@@ -41,6 +41,32 @@ fn waterWeapon(world: *data.World, entity: ecs.Entity) bool {
     const weapon = @import("weapon_catalog").find(@intCast(loadout.weapon)) orelse return false;
     return weapon.spec.protects_water;
 }
+/// The planner and exposure ticks share the same air-protection contract.
+pub fn airProtected(world: *data.World, entity: ecs.Entity, now: i64) bool {
+    if ((world.get(entity, data.Player) catch null) == null) return false;
+    if (world.get(entity, data.Character) catch null) |character| if (character.environment_charge_ms > 0 or character.invincible_until > now) return true;
+    return waterWeapon(world, entity);
+}
+test "air protection follows remaining suit charge, invincibility expiry and weapon declarations" {
+    const t = std.testing;
+    var world = data.World.init(t.allocator, 4);
+    defer world.deinit();
+    const entity = try world.create(1, .{ data.Player{}, data.Character{}, data.Weapons{} });
+    try t.expect(!airProtected(&world, entity, 1000));
+    (try world.get(entity, data.Character)).environment_charge_ms = 100;
+    try t.expect(airProtected(&world, entity, 1000));
+    (try world.get(entity, data.Character)).environment_charge_ms = 0;
+    (try world.get(entity, data.Character)).invincible_until = 2000;
+    try t.expect(airProtected(&world, entity, 1000));
+    try t.expect(!airProtected(&world, entity, 2000));
+    var checked = false;
+    for (@import("weapon_catalog").entries) |entry| if (entry.spec.protects_water) {
+        (try world.get(entity, data.Weapons)).weapon = entry.id;
+        try t.expect(airProtected(&world, entity, 2000));
+        checked = true;
+    };
+    try t.expect(checked);
+}
 fn voicePath(world: *data.World, entity: ecs.Entity, drowned: bool, buffer: []u8) ![]const u8 {
     // Campaign Hiro has no multiplayer Session. Skin selection applies only to
     // multiplayer players, as it does for their ordinary pain/death voices.
@@ -113,7 +139,7 @@ pub fn step(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
             if (person) {
                 const character = try world.get(entity, data.Character);
                 exposure.protected_liquid = character.environment_charge_ms > 0;
-                exposure.protected_air = exposure.protected_liquid or protected_weapon or character.invincible_until > at;
+                exposure.protected_air = airProtected(world, entity, at);
                 const draining = exposure.active and (exposure.kind == .lava or exposure.kind == .slime or (exposure.level == 3 and !protected_weapon));
                 if (draining) character.environment_charge_ms = @max(0, character.environment_charge_ms - 100);
                 // Transport retains the existing deadline field; reserve pauses in air.

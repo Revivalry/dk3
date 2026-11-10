@@ -8,6 +8,7 @@ pub const Phase = enum { initializing, paused, moving, dwelling, teleporting };
 pub const Train = struct {
     phase: Phase = .initializing,
     destination: u32 = 0,
+    departure_corner: u32 = 0,
     arrival_pending: bool = false,
     next_target: []const u8 = "",
     owner: u32 = 0,
@@ -35,7 +36,7 @@ pub const Train = struct {
     }
     /// Maps saved entity ids to restored ones (snapshot_ids.zig).
     pub fn remapIds(self: *Train, map: anytype) !void {
-        try map.fields(self, .{ "destination", "owner" });
+        try map.fields(self, .{ "destination", "departure_corner", "owner" });
     }
     /// Moves saved timestamps onto the restoring clock (`clock`: shift, active, deadline).
     pub fn rebase(self: *Train, clock: anytype) !void {
@@ -79,9 +80,11 @@ pub const Leg = struct { duration_ms: i32, angular_end: v.Vec3 };
 pub fn leg(from: v.Vec3, to: v.Vec3, angles: v.Vec3, speed: f32, rotation: v.Vec3, rates: v.Vec3, flags: u32) !Leg {
     if (!std.math.isFinite(speed) or speed <= 0) return error.InvalidTrainSpeed;
     var duration = v.length(v.add(to, v.scale(from, -1))) * 1000 / speed;
+    const stationary = duration == 0;
     for (rotation, rates) |amount, rate| {
         if (!std.math.isFinite(amount) or !std.math.isFinite(rate)) return error.InvalidTrainRotation;
         if (rate != 0) duration = @max(duration, @abs(amount) * 1000 / @abs(rate));
+        if (stationary and rate == 0) duration = @max(duration, @abs(amount) * 1000 / 90);
     }
     if (!std.math.isFinite(duration) or duration >= 2147483648) return error.InvalidTrainDuration;
     const milliseconds = @max(1, @as(i32, @intFromFloat(duration)));

@@ -116,6 +116,7 @@ const hooks = .{
     .{ "attacks", &.{catalog.Kind}, []const []const u8 },
     .{ "idleVaries", &.{*const data.Actor}, bool },
     .{ "admitDamage", &.{ *const data.Actor, context.Damage }, bool },
+    .{ "botDamageable", &.{ *const data.Actor, i64 }, bool },
     .{ "afterDamage", &.{*context.Hit}, void },
     .{ "immovable", &.{*const data.Actor}, bool },
     .{ "use", &.{*context.Use}, bool },
@@ -367,6 +368,10 @@ pub fn frameAttackAudio(kind: catalog.Kind) bool {
 pub fn admitDamage(kind: catalog.Kind, actor: *const data.Actor, damage: context.Damage) bool {
     return dispatch(kind, "admitDamage", .{ actor, damage }, true);
 }
+/// Observable defensive phases in which shooting cannot help the attacker.
+pub fn botDamageable(kind: catalog.Kind, actor: *const data.Actor, now: i64) bool {
+    return dispatch(kind, "botDamageable", .{ actor, now }, true);
+}
 pub fn afterDamage(kind: catalog.Kind, hit: *context.Hit) !void {
     return dispatch(kind, "afterDamage", .{hit}, {});
 }
@@ -414,7 +419,7 @@ inline fn dispatch(kind: catalog.Kind, comptime hook: []const u8, args: anytype,
 }
 /// Hooks that can fail return `anyerror!T`; the others return the fallback's type.
 fn ReturnOf(comptime hook: []const u8, comptime T: type) type {
-    return if (listed(hook, &.{ "mustGib", "scriptable", "follows", "attackLoad", "settle", "idleVaries", "admitDamage", "immovable", "pausesScript", "linkedIdentity" })) T else anyerror!T;
+    return if (listed(hook, &.{ "mustGib", "scriptable", "follows", "attackLoad", "settle", "idleVaries", "admitDamage", "botDamageable", "immovable", "pausesScript", "linkedIdentity" })) T else anyerror!T;
 }
 /// A declared value, or `fallback` when the adapter leaves it out.
 fn value(kind: catalog.Kind, comptime name: []const u8, fallback: anytype) @TypeOf(fallback) {

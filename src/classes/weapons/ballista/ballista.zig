@@ -6,6 +6,7 @@ pub const spec: profiles.Spec = .{
     .companion = .{ .slot = 2, .safety = .both },
     .player_grip = .rifle,
     .combat = .flown,
+    .splash_hazard = true,
     .ammo_class = "ammo_ballista", // ballista
     .projectile = .{ .mins = .{ -4, -4, -2 }, .maxs = .{ 4, 4, 2 }, .splash_scale = 0.5, .splash_radius = 128, .action_delay_ms = 150, .recoil = 400, .recoil_on_launch = true, .loop_sound = "e3/we_ballistaflybya.wav" },
     .visual = .{ .projectile_model = "models/e3/we_balprj.dkm", .projectile_scale = 6, .fade_stuck = false, .color = .{ 0.4, 0.2, 0.1 } },

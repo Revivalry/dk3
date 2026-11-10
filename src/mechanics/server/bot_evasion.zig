@@ -184,8 +184,12 @@ pub fn safeArrival(frame: Frame, position: v.Vec3, goal: v.Vec3) !v.Vec3 {
             var point = goal;
             point[axis] = edge;
             if (nav.horizontalDistance(point, goal) > 16 or exposureAtSpeed(point, point, fields.slice(), 0) > 0) continue;
-            const support = try frame.collision.trace(.{ .start = point, .end = v.add(point, .{ 0, 0, -2 }), .mins = frame.hull.mins, .maxs = frame.hull.maxs, .slot = frame.slot, .mask = frame.motionMask() & ~@as(u32, c.CONTENTS_BODY) });
+            // Moving sideways on a ramp changes the supported height. Probe
+            // that floor instead of requiring the goal's exact height there.
+            const support = try frame.collision.trace(.{ .start = v.add(point, .{ 0, 0, 1 }), .end = v.add(point, .{ 0, 0, -24 }), .mins = frame.hull.mins, .maxs = frame.hull.maxs, .slot = frame.slot, .mask = frame.motionMask() & ~@as(u32, c.CONTENTS_BODY) });
             if (support.start_solid or support.all_solid or support.fraction == 1 or support.normal[2] < 0.7) continue;
+            point = support.end;
+            if (@abs(point[2] - goal[2]) > 24 or exposureAtSpeed(point, point, fields.slice(), 0) > 0) continue;
             const distance = v.length(v.subtract(point, position));
             if (distance < cost) {
                 best = point;
@@ -215,7 +219,8 @@ fn forecastHazards(comptime Class: type, world: *data.World, frame: Frame, posit
         const contact: ?@import("../../core/domain/navigation_input.zig").Bounds = if (@hasField(@TypeOf(forecast), "bounds")) forecast.bounds else null;
         var maxs = frame.hull.maxs;
         if (frame.state.ducked) maxs[2] = 4;
-        const bounds: ?@import("../../core/domain/navigation_input.zig").Bounds = if (contact) |box| .{ .mins = v.subtract(v.subtract(box.mins, maxs), @splat(1)), .maxs = v.add(v.subtract(box.maxs, frame.hull.mins), @splat(1)) } else null;
+        const contact_field: @import("../domain/motion_forecast.zig").Field = .{ .point = forecast.point, .radius = if (@hasField(@TypeOf(forecast), "radius")) forecast.radius else 256, .contact = contact };
+        const bounds = contact_field.forHull(frame.hull.mins, maxs).bounds;
         result.add(.{ .point = forecast.point, .eta = forecast.eta, .radius = if (@hasField(@TypeOf(forecast), "radius")) forecast.radius else 256, .field = field, .bounds = bounds, .contact = contact });
     };
 }
@@ -425,17 +430,36 @@ pub fn strafe(frame: Frame, position: v.Vec3, enemy: v.Vec3, anchor: v.Vec3, sid
     // to twice its length): it hits far harder up close than from range
     // (a cryotech's freezing spray reaches about 250).
     const range = v.length(.{ enemy[0] - position[0], enemy[1] - position[1], 0 });
-    if (range < 280 and v.length(.{ away[0], away[1], 0 }) < 224) {
+    // An explicit arena already bounds the fighting footprint. A second
+    // tether must not pin its distant corner or pull a retreat toward a
+    // brawler merely because the original firing stance is far behind it.
+    if (range < 280 and (arena != null or !tethered or v.length(.{ away[0], away[1], 0 }) < 224)) {
         const heading = std.math.atan2(-bearing[1], -bearing[0]);
-        for ([_]f32{ 0, side * 0.7853982, -side * 0.7853982, side * 1.5707964, -side * 1.5707964 }) |turn| {
-            const back: v.Vec3 = .{ @cos(heading + turn) * 64, @sin(heading + turn) * 64, 0 };
+        // Turn along a wall while there is still room to shed running
+        // momentum. A clear short step alone keeps choosing straight back
+        // until the body is pinned against the wall by a faster pursuer.
+        // Retain short qualified steps when no longer escape lane exists.
+        // At a concave corner both backward and perpendicular directions can
+        // meet walls. A shallow forward flank can lead along the open wall;
+        // it still needs the same supported, hazard-free full-hull corridor.
+        for ([_]f32{ 192, 0 }) |lookahead| for ([_]f32{ 64, 32 }) |stride| for ([_]f32{ 0, side * 0.7853982, -side * 0.7853982, side * 1.5707964, -side * 1.5707964, side * 2.3561945, -side * 2.3561945 }) |turn| {
+            const back: v.Vec3 = .{ @cos(heading + turn) * stride, @sin(heading + turn) * stride, 0 };
+            if (lookahead > 0) {
+                const ahead = v.add(position, v.scale(back, lookahead / stride));
+                if (!inside(arena, ahead) or !try walkable(frame, position, ahead)) continue;
+            }
             if (inside(arena, v.add(position, back)) and try walkable(frame, position, v.add(position, back)) and !try avoid(frame, position, back)) return back;
-        }
+        };
     }
-    if (tethered and v.length(.{ away[0], away[1], 0 }) > 112) return v.scale(.{ -away[0], -away[1], 0 }, 1);
-    const step = v.scale(.{ -bearing[1] * side, bearing[0] * side, 0 }, 96);
-    if (!inside(arena, v.add(position, step)) or !try walkable(frame, position, v.add(position, step)) or try avoid(frame, position, step)) return null;
-    return step;
+    if (tethered and range >= 280 and v.length(.{ away[0], away[1], 0 }) > 112) {
+        const back = v.scale(v.normalize(.{ -away[0], -away[1], 0 }), 64);
+        if (inside(arena, v.add(position, back)) and try walkable(frame, position, v.add(position, back)) and !try avoid(frame, position, back)) return back;
+    }
+    for ([_]f32{ side, -side }) |direction| {
+        const step = v.scale(.{ -bearing[1] * direction, bearing[0] * direction, 0 }, 96);
+        if (inside(arena, v.add(position, step)) and try walkable(frame, position, v.add(position, step)) and !try avoid(frame, position, step)) return step;
+    }
+    return null;
 }
 
 test "evasion minimises the summed splash at the moment each threat lands" {
@@ -446,5 +470,92 @@ test "evasion minimises the summed splash at the moment each threat lands" {
     const late = [_]Threat{.{ .point = .{ 0, 0, 0 }, .eta = 2, .radius = 256 }};
     const soon = [_]Threat{.{ .point = .{ 0, 0, 0 }, .eta = 0.2, .radius = 256 }};
     try std.testing.expect(exposure(.{ 0, 0, 0 }, .{ 288, 0, 0 }, &late) < exposure(.{ 0, 0, 0 }, .{ 288, 0, 0 }, &soon));
+}
+
+test "retreat turns along a wall before its short backward step reaches it" {
+    const Fixture = struct {
+        wall_x: f32 = 100,
+        wall_y: f32 = 10000,
+        fn trace(raw: *anyopaque, request: @import("../../core/domain/collision.zig").Request) !@import("../../core/domain/collision.zig").Trace {
+            const self: *@This() = @ptrCast(@alignCast(raw));
+            const Trace = @import("../../core/domain/collision.zig").Trace;
+            var hit: Trace = .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+            const edge = self.wall_x - request.maxs[0];
+            if (request.start[0] > edge) return .{ .fraction = 0, .end = request.start, .normal = .{ -1, 0, 0 }, .start_solid = true };
+            if (request.end[0] > edge) {
+                hit.fraction = (edge - request.start[0]) / (request.end[0] - request.start[0]);
+                hit.normal = .{ -1, 0, 0 };
+            }
+            const edge_y = self.wall_y - request.maxs[1];
+            if (request.start[1] > edge_y) return .{ .fraction = 0, .end = request.start, .normal = .{ 0, -1, 0 }, .start_solid = true };
+            if (request.end[1] > edge_y) {
+                const fraction = (edge_y - request.start[1]) / (request.end[1] - request.start[1]);
+                if (fraction < hit.fraction) {
+                    hit.fraction = fraction;
+                    hit.normal = .{ 0, -1, 0 };
+                }
+            }
+            const bottom = request.start[2] + request.mins[2];
+            const end_bottom = request.end[2] + request.mins[2];
+            if (end_bottom < 0 and bottom >= 0) {
+                const fraction = bottom / (bottom - end_bottom);
+                if (fraction <= hit.fraction) {
+                    hit.fraction = fraction;
+                    hit.normal = .{ 0, 0, 1 };
+                }
+            }
+            hit.end = v.add(request.start, v.scale(v.subtract(request.end, request.start), hit.fraction));
+            return hit;
+        }
+        fn contents(_: *anyopaque, _: v.Vec3, _: u16) !u32 {
+            return 0;
+        }
+        fn avoid(_: Frame, _: v.Vec3, _: v.Vec3) !bool {
+            return false;
+        }
+    };
+    var world = data.World.init(std.testing.allocator, 2);
+    defer world.deinit();
+    const entity = try world.create(1, .{data.Body{}});
+    var fixture: Fixture = .{};
+    const frame: Frame = .{ .world = &world, .slots = undefined, .projections = &.{}, .service = undefined, .collision = .{ .context = &fixture, .trace_fn = Fixture.trace, .contents_fn = Fixture.contents }, .table = undefined, .slot = 0, .entity = entity, .state = .{}, .now = 0 };
+    const position: v.Vec3 = .{ 0, 0, 24 };
+    try std.testing.expect(try walkable(frame, position, .{ 64, 0, 24 }));
+    try std.testing.expect(!try walkable(frame, position, .{ 192, 0, 24 }));
+    const step = (try strafe(frame, position, .{ -200, 0, 24 }, position, 1, false, null, Fixture.avoid)).?;
+    try std.testing.expect(@abs(step[0]) < 1);
+    try std.testing.expect(@abs(step[1]) >= 32);
+    // At an inside corner, the open wall leads slightly toward the pursuer.
+    // Rejecting that flank leaves a body pinned despite clear supported floor.
+    fixture = .{ .wall_x = 20, .wall_y = 20 };
+    const flank = (try strafe(frame, position, .{ -108, -132, 24 }, position, 1, false, null, Fixture.avoid)).?;
+    try std.testing.expect(flank[0] < -32);
+    try std.testing.expect(flank[1] < 0);
+    try std.testing.expect(try walkable(frame, position, v.add(position, flank)));
+    // A large authored arena replaces the short firing tether. At its far
+    // side, returning toward the old anchor walks straight into the brawler.
+    fixture = .{ .wall_x = 10000 };
+    const retreat = (try strafe(frame, position, .{ -80, 0, 24 }, .{ -256, 0, 24 }, 1, true, .{ .{ -512, -512 }, .{ 512, 512 } }, Fixture.avoid)).?;
+    try std.testing.expect(retreat[0] > 0);
+}
+
+test "returning to a combat tether cannot cross an unsupported floor" {
+    const Fixture = struct {
+        fn trace(_: *anyopaque, request: @import("../../core/domain/collision.zig").Request) !@import("../../core/domain/collision.zig").Trace {
+            return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+        }
+        fn contents(_: *anyopaque, _: v.Vec3, _: u16) !u32 {
+            return 0;
+        }
+        fn avoid(_: Frame, _: v.Vec3, _: v.Vec3) !bool {
+            return false;
+        }
+    };
+    var world = data.World.init(std.testing.allocator, 2);
+    defer world.deinit();
+    const entity = try world.create(1, .{data.Body{}});
+    var fixture: u8 = 0;
+    const frame: Frame = .{ .world = &world, .slots = undefined, .projections = &.{}, .service = undefined, .collision = .{ .context = &fixture, .trace_fn = Fixture.trace, .contents_fn = Fixture.contents }, .table = undefined, .slot = 0, .entity = entity, .state = .{}, .now = 0 };
+    try std.testing.expect(try strafe(frame, .{ 160, 0, 24 }, .{ 600, 0, 24 }, .{ 0, 0, 24 }, 1, true, null, Fixture.avoid) == null);
 }
 const hazards = @import("../../game/server/hazard_classes.zig").classes;

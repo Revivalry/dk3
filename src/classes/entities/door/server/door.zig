@@ -8,6 +8,6 @@ const prop = @import("../../../../mechanics/server/properties.zig");
 const context = @import("../../../../mechanics/server/entity_classes/context.zig");
 pub const classnames = [_][]const u8{"func_door"};
 pub const brush: context.Brush = .{ .angles = .zeroed };
-pub const traits: context.Traits = .{ .door = .sliding };
+pub const traits: context.Traits = .{ .door = .sliding, .relays = true };
 /// A party member pushing into it opens it on the mover's terms.
 pub const openForParty = @import("../../mover/server/movers.zig").openForParty;

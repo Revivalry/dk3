@@ -48,6 +48,55 @@ fn teleport(world: *data.World, entity: ecs.Entity, actor: *data.Actor, now: i64
     actor.mode = .attack;
     return true;
 }
+fn teleportPlacement(collision: @import("../../../../core/domain/collision.zig").Collision, destination: v.Vec3, mins: v.Vec3, maxs: v.Vec3, slot: u16) !?v.Vec3 {
+    const request: @import("../../../../core/domain/collision.zig").Request = .{ .start = destination, .end = destination, .mins = mins, .maxs = maxs, .slot = slot, .mask = c.MASK_PLAYERSOLID };
+    const exact = try collision.trace(request);
+    if (!exact.start_solid and !exact.all_solid and exact.fraction == 1) return destination;
+    // Fit a shallow floor overlap within one step. Bodies are never support
+    // for this recovery and must be absent at the final full-hull placement.
+    var support_request = request;
+    support_request.start[2] += 18;
+    support_request.end[2] -= 4;
+    support_request.mask &= ~@as(u32, c.CONTENTS_BODY);
+    const support = try @import("../../../../core/domain/navigation_input.zig").supportedPoint(collision, support_request);
+    const supported = support.floor orelse return null;
+    if (supported.end[2] < destination[2] or supported.end[2] - destination[2] > 18) return null;
+    var placed = request;
+    placed.start = supported.end;
+    placed.end = supported.end;
+    const clearance = try collision.trace(placed);
+    return if (!clearance.start_solid and !clearance.all_solid and clearance.fraction == 1) supported.end else null;
+}
+test "teleport markers fit a shallow floor without bypassing an occupant or a deep overlap" {
+    const Collision = @import("../../../../core/domain/collision.zig");
+    const Fixture = struct {
+        occupied: bool = false,
+        fn trace(raw: *anyopaque, request: Collision.Request) !Collision.Trace {
+            const self: *@This() = @ptrCast(@alignCast(raw));
+            const a = request.start[2] + request.mins[2];
+            const b = request.end[2] + request.mins[2];
+            if (self.occupied and request.mask & c.CONTENTS_BODY != 0) return .{ .fraction = 0, .start_solid = true, .all_solid = true, .end = request.start, .normal = @splat(0), .entity = 2 };
+            if (a < 0) return .{ .fraction = 0, .start_solid = true, .all_solid = b < 0, .end = request.start, .normal = @splat(0) };
+            if (b < 0) {
+                const fraction = (a - 0.125) / (a - b);
+                return .{ .fraction = fraction, .end = v.add(request.start, v.scale(v.subtract(request.end, request.start), fraction)), .normal = .{ 0, 0, 1 } };
+            }
+            return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+        }
+    };
+    var fixture: Fixture = .{};
+    const collision: Collision.Collision = .{ .context = &fixture, .trace_fn = Fixture.trace };
+    const mins: v.Vec3 = .{ -18, -18, -24 };
+    const maxs: v.Vec3 = .{ 18, 18, 36 };
+    const marker: v.Vec3 = .{ -728, 1224, 8 };
+    const fitted = (try teleportPlacement(collision, marker, mins, maxs, 1)).?;
+    try std.testing.expectApproxEqAbs(@as(f32, 24.125), fitted[2], 0.001);
+    try std.testing.expectEqual(fitted, (try teleportPlacement(collision, fitted, mins, maxs, 1)).?);
+    fixture.occupied = true;
+    try std.testing.expectEqual(@as(?v.Vec3, null), try teleportPlacement(collision, marker, mins, maxs, 1));
+    fixture.occupied = false;
+    try std.testing.expectEqual(@as(?v.Vec3, null), try teleportPlacement(collision, .{ -728, 1224, -100 }, mins, maxs, 1));
+}
 fn choose(actors: *@import("../../../../mechanics/server/actors.zig").Actors, world: *data.World, slots: *Slots, entity: ecs.Entity, target: Ref, actor: *data.Actor, pose: data.Transform, body: data.Body, navigation: @import("../../../../core/domain/navigation.zig").Service, now: i64) !void {
     const random = try world.get(entity, data.Random);
     if (try @import("../../../../mechanics/server/actor_evasion.zig").targeted(world, entity, target, pose) and random.next() < 0.25 and now > actor.nharre.teleport_ready_ms) if (try teleport(world, entity, actor, now)) return;
@@ -93,8 +142,10 @@ fn think(actors: *@import("../../../../mechanics/server/actors.zig").Actors, wor
         actor.mode = .attack;
         var clear = false;
         if (state.phase == .fading_out and state.alpha <= 0.1) {
-            const hit = try engine.collisionService().trace(.{ .start = state.destination, .end = state.destination, .mins = body.mins, .maxs = body.maxs, .slot = (try world.get(entity, data.Binding)).slot, .mask = c.MASK_PLAYERSOLID });
-            clear = !hit.start_solid and !hit.all_solid;
+            if (try teleportPlacement(engine.collisionService(), state.destination, body.mins, body.maxs, (try world.get(entity, data.Binding)).slot)) |placement| {
+                state.destination = placement;
+                clear = true;
+            }
         }
         switch (state.fade(clear)) {
             .waiting => {},

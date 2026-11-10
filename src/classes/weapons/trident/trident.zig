@@ -7,10 +7,13 @@ pub const spec: profiles.Spec = .{
     .player_grip = .rifle,
     .combat = .owned,
     .splash_hazard = true,
+    // Before the360ms merge, at most three ordinary tips can burst. Budget
+    // all three with the water multiplier, even for a dry firing position.
+    .bot_close_splash = .{ .max_damage_scale = 6, .max_flight_ms = 300 },
     .protects_water = true,
     .ammo_class = "ammo_tritips", // trident
     .ammo_pack = 30,
-    .projectile = .{ .mins = @splat(0), .maxs = @splat(0), .direct_scale = 0, .splash_scale = 1, .splash_radius = 100, .lifetime_ms = 60000 },
+    .projectile = .{ .mins = @splat(0), .maxs = @splat(0), .direct_scale = 0, .splash_scale = 1, .splash_radius = 100, .self_splash = 0.325, .lifetime_ms = 60000 },
     .visual = .{ .projectile_model = "models/e2/we_tritip.dkm", .color = .{ 0.4, 0.4, 0.9 }, .blast_sound = "global/e_wexplodee.wav", .glow = false },
     .world_model = "models/e2/a_tri.dkm",
     .animation = .{
