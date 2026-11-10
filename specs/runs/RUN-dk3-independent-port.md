@@ -15762,5 +15762,12 @@ most of its health standing in the ramp cryotech's firing lane. The chute
 then kills the player. The upper vent medicine detour is discarded: the
 normal duct relay collapses its floor before that aisle is available. E1-09
 readies the ion gun before climbing and engages from the first supported stop.
-The platform route defers its first boarding and rejects a large drop onto
-the rising target. That route and the Episode 1 ending still await replay.
+E1-09 retains 62 health through the ramp, survives the 29-point chute
+fall, and crosses from deck175 to deck173 at compatible heights. The first
+attempt dies to a Sludgeminion below deck171. Ordinary recovery returns to
+the crate vent and the second attempt crosses all five decks, returns to
+the companions, defeats the central brain and reaches E2m1a. E1-10's optional
+pool fight instead leaves the player under the sphere and minion together;
+it remains diagnostic and the change is discarded. The selected recording
+scope is E1-03/04/09, including the checkpoint recovery. All four gameplay
+scopes now have recorded endings; MP4 export and review remain pending.
