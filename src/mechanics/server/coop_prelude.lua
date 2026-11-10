@@ -490,7 +490,7 @@ function flood(goals, box, step, from, hull)
         if not found and cost[candidate] then found = candidate end
       end end end
     end
-    local label = string.format("%d,%d,%d", goal[1], goal[2], goal[3])
+    local label = string.format("%.0f,%.0f,%.0f", goal[1], goal[2], goal[3])
     if not found then
       dk3.log("flood " .. label .. ": no route")
       local closest, distance
@@ -612,7 +612,7 @@ function walkflood(goals, box, step, opts)
       if across <= 48 and math.abs(node.z - goal[3]) <= 40 and (not best or d < best) then found, best = k, d end
       if not nearest_d or d < nearest_d then nearest, nearest_d = k, d end
     end
-    local label = string.format("%d,%d,%d", goal[1], goal[2], goal[3])
+    local label = string.format("%.0f,%.0f,%.0f", goal[1], goal[2], goal[3])
     if not found then
       local node = nodes[nearest]
       dk3.log(string.format("walkflood %s: unreached; nearest floor %.0f,%.0f,%.0f", label, node.x, node.y, node.z))

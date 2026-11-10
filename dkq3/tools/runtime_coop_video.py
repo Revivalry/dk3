@@ -43,7 +43,7 @@ def launch(args, home, values, commands, log):
     else:
         command = [str(args.guard), '--gpu', '--mem', '16G', '--timeout', f'{args.timeout}s', '--',
                    'xvfb-run', '-a', '-s', '-screen 0 1280x720x24', 'env',
-                   'SDL_AUDIODRIVER=dummy', str(args.engine / 'bin/dk3')]
+                   'SDL_AUDIODRIVER=dummy', str(args.replay_client or args.engine / 'bin/dk3')]
     for key in ('fs_basepath', 'fs_homepath', 'fs_homedatapath', 'fs_homestatepath', 'com_basegame'):
         value = values[key]
         command += ['+set', key, str(value)]
@@ -133,6 +133,8 @@ def record(args):
                     events.append(event)
                     if event.get('event') in ('level', 'death', 'finish', 'fail'):
                         print(line, flush=True)
+                    if event.get('event') in ('finish', 'fail'):
+                        stopped = 'finished' if event['event'] == 'finish' else 'failed'
                     if args.until_map and event.get('event') == 'level' and f'map={args.until_map} ' in event.get('detail', '') + ' ':
                         stopped = 'episode boundary'
                     if args.seconds and int(event.get('t', '0')) >= args.seconds * 1000:
@@ -183,8 +185,10 @@ def render(args):
         if digest(candidate) != manifest['share/dk3/cgame.so']:
             raise RuntimeError('Presentation module differs from immutable installation')
         shutil.copy2(candidate, home / 'dk3/cgame.so')
+    client = args.replay_client or args.engine / 'bin/dk3'
     (args.report / 'render-inputs.json').write_text(json.dumps(dict(
         engine=str(args.engine), presentation_update=args.update_presentation, selected_demo_indices=indices,
+        replay_client=str(client), replay_client_sha256=digest(client),
         raw_video=args.raw_video,
         modules={p.name: digest(p) for p in sorted((home / 'dk3').glob('*.so'))},
         recorded_modules={p.name: digest(p) for p in sorted((args.report / 'profile/dk3').glob('*.so'))}), indent=2) + '\n')
@@ -213,12 +217,17 @@ def render(args):
             # The engine prints this only after closing the AVI and its index.
             # Encode rollover chunks while replay continues, bounding raw disk
             # use rather than retaining hours of Motion JPEG until completion.
-            names = re.findall(r'Wrote \d+:\d+ frames to videos/(\S+)', log.read_text(errors='replace'))
-            for name in names:
+            output_log = log.read_text(errors='replace')
+            if any(marker in output_log for marker in ('\nERROR:', 'AVI capture error:', 'Z_Malloc: failed')):
+                raise RuntimeError(f'Demo playback reported an engine error: {log}')
+            names = re.findall(r'Wrote (\d+):\d+ frames to videos/(\S+)', output_log)
+            for frames, name in names:
                 if name in handled:
                     continue
-                if not re.fullmatch(rf'clip-{number:03d}\.avi_*', name):
+                if not re.fullmatch(rf'clip-{number:03d}\.avi(?:_+|_[0-9]{{6,10}})?', name):
                     raise RuntimeError(f'Unexpected capture name: {name}')
+                if len(parts) >= 32 and name.endswith('_'):
+                    raise RuntimeError('Legacy AVI rollover may truncate this replay; use a numbered AVI client')
                 video = home / 'dk3/videos' / name
                 encoded = output / f'{number:03d}-part-{len(parts):03d}.mp4'
                 paused = None
@@ -238,7 +247,7 @@ def render(args):
                         if process.poll() is None and 'dk3-video-complete' not in log.read_text(errors='replace'):
                             raise RuntimeError('Live raw replay has no owned PID for bounded encoding')
                 try:
-                    encode_video(video, encoded)
+                    encode_video(video, encoded, int(frames))
                 finally:
                     if paused is not None:
                         try:
@@ -253,8 +262,6 @@ def render(args):
         try:
             while process.poll() is None:
                 encode_closed()
-                if '\nERROR:' in log.read_text(errors='replace'):
-                    raise RuntimeError(f'Demo playback reported an engine error: {log}')
                 time.sleep(0.5)
             encode_closed()
         finally:
@@ -268,8 +275,8 @@ def render(args):
     join([output / f'{i:03d}.mp4' for i in indices], args.report / args.output)
 
 
-def encode_video(video, encoded):
-    subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y', '-i', str(video),
+def encode_video(video, encoded, frames):
+    subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-xerror', '-y', '-i', str(video),
                     '-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1',
                     '-c:v', 'libx264', '-threads', '4', '-preset', 'fast', '-crf', '21', '-pix_fmt', 'yuv420p',
                     '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', str(encoded)], check=True)
@@ -278,6 +285,8 @@ def encode_video(video, encoded):
     streams = json.loads(probe)['streams']
     if not any(s['codec_type'] == 'video' for s in streams) or not any(s['codec_type'] == 'audio' for s in streams):
         raise RuntimeError(f'Video or audio missing: {encoded}')
+    if int(next(s for s in streams if s['codec_type'] == 'video')['nb_frames']) != frames:
+        raise RuntimeError(f'Encoded frame count differs from engine capture: {encoded}')
     (encoded.with_suffix('.json')).write_text(probe)
 
 
@@ -294,6 +303,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=('record', 'render'))
     parser.add_argument('--engine', type=Path, required=True, help='immutable play installation')
+    parser.add_argument('--replay-client', type=Path, help='render with a reviewed client binary while retaining the staged modules and assets')
     parser.add_argument('--guard', type=Path, default=ROOT / 'zig-out/native-dev/bin/dkguard')
     parser.add_argument('--report', type=Path, required=True)
     parser.add_argument('--script', default='episode1-connected.lua')
@@ -312,6 +322,10 @@ def main():
     parser.add_argument('--output', default='playthrough.mp4')
     args = parser.parse_args()
     args.engine, args.guard, args.report = args.engine.resolve(), args.guard.resolve(), args.report.resolve()
+    if args.replay_client:
+        args.replay_client = args.replay_client.resolve()
+        if args.mode != 'render' or not args.replay_client.is_file() or not os.access(args.replay_client, os.X_OK):
+            parser.error('--replay-client requires an executable and render mode')
     (record if args.mode == 'record' else render)(args)
 
 

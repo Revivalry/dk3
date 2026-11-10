@@ -15727,3 +15727,40 @@ completed clips are reused. Interrupted unfinished JPEG exports are retained in
 per-report `mjpeg-interrupted-*` folders and are not selected as complete clips.
 The first raw continuation has encoded multiple chunks with bounded storage;
 natural EOF and complete-media acceptance remain pending.
+
+E4-06 completes the Training Center continuation, Hideout, labs and both
+final encounters. The driver reports `finish map=credits` with zero deaths on
+this continuation. The selected recording scope is E4-03/05/06. E4-03 retains
+the original Training Center C client failure; export uses the corrected
+presentation module with unchanged recorded server and UI modules. The recorder
+now stops on the driver's finish or fail event, including a finish that leaves
+the engine at its menu.
+
+E3-12 clears the named Dungeon B Buboids and the blades, reaching the return
+from the Dungeon C lever. E3-14 uses a landing radius of 24 on that lever jump
+and returns to the control after combat; it then reaches Wyndrax. E3-15 defeats
+Wyndrax and Garroth, runs the ending and timestream34, and enters E4m1a.
+The selected scope is E3-03/12/14/15, with ordinary checkpoint continuations.
+E3-15 contains death recovery and repeated Crypt footage; the selection retains
+the first Wyndrax passage and the final Crypt-to-ending passage. The floor
+search helpers format fractional probe positions safely; the bundled Lua
+probe exercises the fractional case.
+
+The old ioquake3 AVI rollover appended one underscore to the previous path
+per chunk. E2-03 clip 001 reached natural demo EOF but its video stopped at
+1162.74 seconds; E4-03's export hit an index error and exhausted the main
+zone after 45 chunks. Both incomplete exports are archived. Numbered rollover
+uses a fixed base name, checks path length before opening, and releases
+buffers if index reopen fails. The exporter checks the encoded frame count
+against the engine's close message and rejects capture errors even at demo
+EOF. An independent replay client keeps the recorded module and asset inputs
+intact. The engine-only build passes; E2-03 emits and encodes numbered chunks
+with matched frame counts. Long-export acceptance is pending.
+
+E1-08 kills the gallery guard sooner and reaches the crate vent, but loses
+most of its health standing in the ramp cryotech's firing lane. The chute
+then kills the player. The upper vent medicine detour is discarded: the
+normal duct relay collapses its floor before that aisle is available. E1-09
+readies the ion gun before climbing and engages from the first supported stop.
+The platform route defers its first boarding and rejects a large drop onto
+the rising target. That route and the Episode 1 ending still await replay.

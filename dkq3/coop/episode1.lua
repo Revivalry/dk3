@@ -2980,6 +2980,10 @@ level("e1m7a", function(visit, resumed)
       -- Its north edge is a continuous supported ramp to the upper deck.
       for _,point in ipairs({{-1040,-100,304},{-1120,-100,304},
           {-1152,-100,320},{-1184,-100,338},{-1220,-100,356},{-1257,-100,368}}) do
+        local guard=dk3.entity{index=25}
+        if guard and (guard.health or 0)>0 and dk3.visible{index=25} then
+          try(kill,{index=25},{hold=true,weapon=2,timeout=12})
+        end
         move(point,{direct=true,fight=false,weapon=2,pace=0.6,
           radius=8,vertical_radius=16,on_floor=true})
       end
@@ -3080,9 +3084,11 @@ level("e1m7a", function(visit, resumed)
       -- Reach the ramp's supported bend before opening the firing lane.
       -- Shooting from its foot sends the area planner down to the lower
       -- gallery when the cryotech is hidden behind the shoulder.
+      -- The first supported stop is below its muzzle. Ready the ion gun
+      -- before climbing; closing slowly to a second precise point lets the
+      -- cryotech empty a full burst before we can fire.
+      weapon(dk3.ammo(2) > 0 and 2 or 4)
       move({-1504,-1036,440}, {fight = false, timeout = 30})
-      move({-1504,-1036,440},{direct=true,on_floor=true,fight=false,
-        pace=0.35,radius=4,vertical_radius=8,timeout=15})
       kill({ index = 26 }, {hold = true, timeout = 90,
         arena = {{-1648,-1064},{-1408,-1000}},
         weapon = dk3.ammo(2) > 0 and 2 or 4})
@@ -3487,7 +3493,9 @@ level("e1m7a", function(visit, resumed)
         try(kill, {index = foe}, {hold = true, weapon = 2, timeout = 15,
           arena = {{-752,-100},{-720,-64}}})
       end
-      local defer_first_boarding = false
+      -- The first observed pairing leaves the second deck over300 units
+      -- below the takeoff. Wait one initial boarding window on fixed floor.
+      local defer_first_boarding = true
       local function board(index, from, takeoff, current, offset, launch_below, descending_landing)
         -- XY belongs to the moving deck; its height keeps changing during
         -- the run-up. Ground support, not the old sampled height, settles it.
@@ -3519,7 +3527,7 @@ level("e1m7a", function(visit, resumed)
           if index == 170 then rising_allowance = target_descending and 32 or -80 end
           if index == 171 then rising_allowance = -32 end
           if index == 172 and not target_descending then rising_allowance = -8 end
-          local drop = index == 173 and 600 or index == 170 and 320 or 160
+          local drop = index == 173 and 120 or index == 170 and 320 or 160
           local ready = deck and deck.z + 320 >= height - drop and deck.z + 320 < height + rising_allowance
             and (not launch_below or height <= launch_below)
             and (not descending_landing or target_descending)

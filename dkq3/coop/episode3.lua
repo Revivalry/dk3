@@ -114,7 +114,7 @@ local function escorted_walk(points, options, defend, before_rally, envelope)
     previous = point
   end
 end
-local function carry_through(control, gate, face, crossed, approach, waiting_area, toggle_control, landing, defense_weapon)
+local function carry_through(control, gate, face, crossed, approach, waiting_area, toggle_control, landing, defense_weapon, reapproach_control)
   local x,y,z = dk3.position()
   point_at(landing or face, {fight = false})
   aimed_order("superfly", landing and "move" or "come")
@@ -127,7 +127,7 @@ local function carry_through(control, gate, face, crossed, approach, waiting_are
       end
       -- These levers stay open after their timed door closes. Close the
       -- lever normally before its next opening can fire that door again.
-      P.press(control,{areas=true,hold=approach~=nil,fight=false,weapon=defense_weapon})
+      P.press(control,{areas=true,hold=approach~=nil and not reapproach_control,fight=false,weapon=defense_weapon})
       wait_until(function() return dk3.mover{index=control}=="closed" end,
         {timeout=5,fight=defense_weapon~=nil,weapon=defense_weapon,reason="toggle lever resets before reopening its timed door"})
       state="closed"
@@ -136,7 +136,7 @@ local function carry_through(control, gate, face, crossed, approach, waiting_are
       if approach then
         move(approach, {direct = true, fight = defense_weapon~=nil, weapon=defense_weapon, radius = 8, vertical_radius = 16})
       end
-      P.press(control, {areas = true, hold = approach ~= nil, fight = false, weapon=defense_weapon})
+      P.press(control, {areas = true, hold = approach ~= nil and not reapproach_control, fight = false, weapon=defense_weapon})
       move({x,y,z}, {direct = approach ~= nil, fight = defense_weapon~=nil, weapon=defense_weapon, radius = 8, vertical_radius = 24})
       wait_until(function() return dk3.mover({index = gate}) == "open" end,
         {timeout = 10, fight = defense_weapon~=nil, weapon=defense_weapon, stance = {x,y,z}, around = {0,0,0},
@@ -901,6 +901,9 @@ level("e3m3b", function(visit, resumed)
         arena={{-1278,-848},{-784,-560}},timeout=120})
       clear {radius = 480, vertical_radius = 48, weapon = 16,
         arena = {{-1278,-848},{-784,-560}}, timeout = 120}
+      -- A collapsed Buboid remains alive while the broad clear skips its
+      -- nonsolid body. Finish its resurrection before leaving the cell.
+      kill({index=103},{weapon=16,timeout=90})
       kill({index = 105}, {weapon = 16, timeout = 60})
       kill({index = 104}, {weapon = 16, timeout = 60})
       refill_corridor()
@@ -1011,6 +1014,9 @@ level("e3m3b", function(visit, resumed)
       clear {radius = 400, vertical_radius = 96, weapon = 16, hold = true,
         arena = {{128,-888},{336,-768}}, timeout = 90}
       rally_carrier({32,-936,-224}, true, 48, 128)
+      -- Finish this landing's resurrecting occupant before disabling combat
+      -- for the precise upper-floor walk; otherwise it revives under Hiro.
+      kill({index=131},{weapon=16,hold=true,timeout=90})
       -- The area's item approach can choose the crusher floor far below
       -- this landing. Walk the supported upper corridor before collecting.
       local upper=walkflood({{352,-728,-168}}, {-32,-1088,512,-480},16,{crouch=true})[1]
@@ -1487,7 +1493,7 @@ level("e3m3c", function(visit, resumed)
       -- floor before turning into the door; the next call brings the carrier.
       point_at({496,632,408},{fight=false})
       leap({568,632,408},{496,632,408},{crouch=true,fight=false,
-        pace=1,radius=12,vertical_radius=16})
+        pace=1,radius=24,vertical_radius=16})
       move({424,632,408}, {direct = true, fight = false,
         crouch = true, radius = 4, vertical_radius = 8, pace = 0.5})
       move({424,480,408}, {direct = true, fight = false,
@@ -1495,7 +1501,7 @@ level("e3m3c", function(visit, resumed)
       carry_through(908, 130, {424,320,408}, function()
         local buddy = dk3.entity {class = "mikikofly"}
         return buddy and buddy.y < 480 and math.abs(buddy.z-408) < 24
-      end, {360,488,408}, {{328,384},{520,528}}, true, {424,440,384}, 15)
+      end, {360,488,408}, {{328,384},{520,528}}, true, {424,440,384}, 15, true)
       -- Keep Come aimed into the admitted room; aiming back at the old
       -- approach can pull the carrier into the closing leaf again.
       rally_carrier({424,320,408}, true, 48, 128)
