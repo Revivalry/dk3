@@ -15545,3 +15545,52 @@ fresh E3 and E4 on native370 (860/841), with the two later local route changes
 qualified by862/865 and exact archived inputs retained. Broad139 passes;
 formatting and class ownership remain zero. This does not close rendering,
 audio, multiplayer, the combined campaign or all optional item approaches.
+
+## walkthrough-videos-588 — committed campaign recordings
+
+Owner requested commit/push, PR update, then full Episode 1–4 videos. Commit
+`207a96dfa7171e6004f57d74f2155cca7ed80bb9` was pushed on
+`feature/episode3-4-progression`; no existing PR was found, so PR15 was opened
+at https://github.com/Revivalry/dk3/pull/15. Local backups, assets and media
+were excluded from the commit.
+
+The committed sources build successfully with Zig 0.16, ReleaseSafe,
+`-Dpython=/usr/bin/python3 -j4`, into isolated prefix
+`zig-out/walkthrough-videos-588`. The immutable client installation is
+`play/e9c0060c1b54a3ed8d99c5af24239912594706d71ad77da059d2f118daa3097d`
+under that prefix. It uses the existing local asset cache and the retained
+HD textures, materials and neural character overlays; no original installation
+or saves are overwritten.
+
+Fresh real-client demo captures use the committed `episodeN-pass.lua` routes,
+normal pilot inputs, authored cinematics and unchanged gameplay limits, each
+in its own profile under `zig-out/reports/walkthrough-videos-588/episodeN-01`.
+E1 starts at intro and stops on E2 arrival; E2/E3 stop on the following episode's
+arrival; E4 includes its ending/credits. All engine invocations use dkguard.
+Software capture retains demos without rasterizing the live scene; subsequent
+GPU playback exports 720p video/audio. Each report retains input/module hashes,
+events and demo hashes. Capture completion, rendered output and media inspection
+are pending; the earlier headless passes do not establish these results.
+
+The initial `episodeN-01` captures were deliberately stopped during the recording
+setup review, not accepted as full episodes. Querying `r_norefresh` after client
+admission returns zero: the engine resets that cheat-tagged rendering cvar, so
+the software path still rasterizes with llvmpipe. A fresh guarded Vulkan capture
+uses the RTX 5090 and advances faster without changing game rules or binaries.
+All four fresh complete-scope captures therefore restart as `episodeN-02` with
+normal GPU rendering. The earlier partial attempts and their results remain local;
+they are not intended for the final four videos. No runtime repair was required.
+
+The guarded GPU comparison also confirms exclusivity: E2–E4 queue behind E1.
+Those `-02` attempts were stopped before accepting any complete episode. To
+retain parallel software demo capture, the recording driver now explicitly sets
+`dk3_coop_capture_no_refresh=1`; the rendered co-op mechanism restores
+`r_norefresh=1` after admission only when that opt-in is set. The default and
+video playback explicitly use zero. This affects discarded live rasterization,
+not simulation, inputs, inventory, combat or demo playback. The repair requires
+a new immutable module generation and fresh `episodeN-03` captures. Earlier
+partial results remain preserved. Build and consolidated checks are running.
+
+The recording-only repair builds successfully; consolidated `zig build test
+-Dpython=/usr/bin/python3 -j4` exits zero (414 Python checks plus native/component
+checks). Ownership update remains zero for R1–R11. Diff whitespace is clean.

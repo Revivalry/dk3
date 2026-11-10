@@ -62,7 +62,7 @@ def base(args, home):
                   s_useOpenAL='0', s_sdlSpeed='48000',
                   con_notifytime='0', cl_noprint='1',
                   dk3_resume='0', dk3_travel_pending='0', dk3_cinematics='1',
-                  dk3_coop_render='1', g_residentWorlds='1')
+                  dk3_coop_render='1', dk3_coop_capture_no_refresh='0', g_residentWorlds='1')
     if args.motion_trace:
         values.update(cg_debugReplay='1', dk3_coop_motion_trace='1')
     return values
@@ -93,7 +93,7 @@ def record(args):
     if args.software_record:
         # Capture needs the real client's admission/command processing, not
         # live rasterization. The demo is later rendered normally on the GPU.
-        values.update(cl_renderer='opengl2', r_customwidth='320', r_customheight='180',
+        values.update(dk3_coop_capture_no_refresh='1', cl_renderer='opengl2', r_customwidth='320', r_customheight='180',
                       r_norefresh='1', r_picmip='3')
     if args.load:
         saves = home / 'state/dk3/saves'

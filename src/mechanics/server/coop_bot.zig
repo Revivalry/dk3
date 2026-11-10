@@ -180,6 +180,7 @@ pub const Driver = struct {
         engine.register("dk3_coop_render", "0", 0);
         engine.register("dk3_coop_fast", "0", 0);
         engine.register("dk3_coop_fast_frame_ms", "16", 0);
+        engine.register("dk3_coop_capture_no_refresh", "0", 0);
         engine.register("dk3_coop_skill", "10", 0);
         engine.register("dk3_coop_status_ms", "1000", 0);
         engine.register("dk3_coop_quit", "1", 0);
@@ -229,6 +230,11 @@ pub const Driver = struct {
         if (!self.enabled) return null;
         self.frames +|= 1;
         if (self.rendered) {
+            // Demo-only software capture still needs the real client, but its
+            // live scene is discarded. Admission resets renderer cheat cvars;
+            // restore only the explicitly requested capture suppression.
+            if (engine.integer("dk3_coop_capture_no_refresh") != 0 and engine.integer("r_norefresh") != 1)
+                _ = engine.gateway.call(c.G_CVAR_SET, .{ @as([*:0]const u8, "r_norefresh"), @as([*:0]const u8, "1") });
             // The local engine resets cheat-tagged timing cvars on gamestate
             // admission. Keep the server's normal 50 ms simulation ticks, but
             // allow client/fragment transport to advance between server ticks.
