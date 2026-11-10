@@ -15771,3 +15771,14 @@ pool fight instead leaves the player under the sphere and minion together;
 it remains diagnostic and the change is discarded. The selected recording
 scope is E1-03/04/09, including the checkpoint recovery. All four gameplay
 scopes now have recorded endings; MP4 export and review remain pending.
+
+The numbered AVI client has SHA-256
+`50c7c9327721c00d69e19b6b1b70dc11ee0687b87b9a2adac863d7fba1297b20`.
+E2-03 clip001 reaches natural demo EOF in 51 closed chunks; their total
+39,239 video frames matches the joined 1280×720 MP4, 1309.827 seconds.
+A frame past the previous cutoff shows the Aegis scene, weapon and HUD.
+This qualifies the rollover repair beyond the previous filename limit.
+E1 and E3 also export through dkguard's software display with no GPU lock;
+sampled chunks show the opening cinematic and Dungeon B gameplay. Exports
+from a single report use an exclusive lock to protect the shared playback
+profile, while different reports can render concurrently.

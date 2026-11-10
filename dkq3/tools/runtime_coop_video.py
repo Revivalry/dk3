@@ -7,6 +7,7 @@ capture retains authoritative gameplay at its original simulation rate; AVI
 playback mixes game audio and renders at 30 fps independently of machine speed.
 """
 import argparse
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -40,6 +41,9 @@ def launch(args, home, values, commands, log):
     if args.mode == 'record' and args.software_record:
         command = [str(args.guard), '--headless', '--screen', '320x180', '--mem', '16G',
                    '--timeout', f'{args.timeout}s', '--', str(args.engine / 'bin/dk3')]
+    elif args.software_render:
+        command = [str(args.guard), '--headless', '--screen', '1280x720', '--mem', '16G',
+                   '--timeout', f'{args.timeout}s', '--', str(args.replay_client or args.engine / 'bin/dk3')]
     else:
         command = [str(args.guard), '--gpu', '--mem', '16G', '--timeout', f'{args.timeout}s', '--',
                    'xvfb-run', '-a', '-s', '-screen 0 1280x720x24', 'env',
@@ -160,6 +164,14 @@ def record(args):
 
 
 def render(args):
+    # Independent episodes may render in parallel, but a report owns one
+    # playback profile, capture directory and set of output clip paths.
+    with (args.report / '.render.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        render_locked(args)
+
+
+def render_locked(args):
     result = json.loads((args.report / 'result.json').read_text())
     if (result['outcome'] not in ('finished', 'episode boundary', 'sample') and not args.include_failed) or not result['demos']:
         raise RuntimeError('Refusing to label an incomplete run as a playthrough')
@@ -189,7 +201,7 @@ def render(args):
     (args.report / 'render-inputs.json').write_text(json.dumps(dict(
         engine=str(args.engine), presentation_update=args.update_presentation, selected_demo_indices=indices,
         replay_client=str(client), replay_client_sha256=digest(client),
-        raw_video=args.raw_video,
+        raw_video=args.raw_video, software_render=args.software_render,
         modules={p.name: digest(p) for p in sorted((home / 'dk3').glob('*.so'))},
         recorded_modules={p.name: digest(p) for p in sorted((args.report / 'profile/dk3').glob('*.so'))}), indent=2) + '\n')
     output = args.report / 'clips'
@@ -314,6 +326,7 @@ def main():
     parser.add_argument('--include-failed', action='store_true', help='explicitly render a failed attempt; its outcome is retained')
     parser.add_argument('--raw-video', action='store_true', help='render through uncompressed AVI chunks instead of Motion JPEG; requires more temporary disk bandwidth')
     parser.add_argument('--software-record', action='store_true', help='capture demos without live scene rasterization; replay renders full video')
+    parser.add_argument('--software-render', action='store_true', help='render full video with the headless software renderer')
     parser.add_argument('--seconds', type=int, help='explicit short sample, not episode acceptance')
     parser.add_argument('--motion-trace', action='store_true', help='retain per-frame replay poses and authoritative bot turns for movement evaluation')
     parser.add_argument('--update-presentation', action='store_true', help='explicitly replay with a reviewed cgame update while recorded game/UI module identities remain unchanged')
@@ -322,6 +335,8 @@ def main():
     parser.add_argument('--output', default='playthrough.mp4')
     args = parser.parse_args()
     args.engine, args.guard, args.report = args.engine.resolve(), args.guard.resolve(), args.report.resolve()
+    if args.software_render and args.mode != 'render':
+        parser.error('--software-render requires render mode')
     if args.replay_client:
         args.replay_client = args.replay_client.resolve()
         if args.mode != 'render' or not args.replay_client.is_file() or not os.access(args.replay_client, os.X_OK):
