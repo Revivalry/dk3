@@ -188,8 +188,6 @@ def render_locked(args):
         # Presentation folders are excluded from the rules identity. Admit only
         # a reviewed cgame update while the recorded server/UI remain identical.
         installation = args.engine / 'share/dk3'
-        if any((args.report / 'clips' / f'{index:03d}.mp4').exists() for index in indices):
-            raise RuntimeError('Presentation update requires fresh exports; retain existing complete clips separately first')
         for name in ('qagame', 'ui'):
             expected = digest(installation / f'{name}.so')
             if expected != digest(args.report / f'profile/dk3/{name}.so') or expected != digest(home / f'dk3/{name}.so'):
@@ -198,6 +196,13 @@ def render_locked(args):
         manifest = json.loads((args.engine / 'installation.json').read_text())['files']
         if digest(candidate) != manifest['share/dk3/cgame.so']:
             raise RuntimeError('Presentation module differs from immutable installation')
+        for index in indices:
+            if not (args.report / 'clips' / f'{index:03d}.mp4').exists():
+                continue
+            provenance = args.report / f'render-{index:03d}.inputs.json'
+            if (not provenance.exists() or
+                json.loads(provenance.read_text()).get('modules', {}).get('cgame.so') != manifest['share/dk3/cgame.so']):
+                raise RuntimeError('Existing clip uses another presentation; retain it separately before re-exporting')
         shutil.copy2(candidate, home / 'dk3/cgame.so')
     client = args.replay_client or args.engine / 'bin/dk3'
     (args.report / 'render-inputs.json').write_text(json.dumps(dict(

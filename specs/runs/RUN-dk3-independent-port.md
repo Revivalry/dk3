@@ -15915,3 +15915,11 @@ ordinary checkpoint continuations. Final encoding, decoding/cadence/audio
 checks and contact-sheet review remain pending. The long E1 continuation's
 unfinished software export is archived and requeued on the guarded GPU;
 its already completed opening clip is retained.
+
+The parallel E1 export queues meet at a completed gallery clip. The original
+presentation-update guard rejects that harmless retry after the report lock
+is released. The guard now reuses completed clips only when their per-clip
+provenance records the requested cgame hash. A real retry against the completed
+gallery clip exits0 and preserves its media, without starting another replay.
+E1's six selected clips and E4's three selected clips finish export and enter
+independent-stream assembly. Complete-media validation is still pending.
