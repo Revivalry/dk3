@@ -15923,3 +15923,34 @@ provenance records the requested cgame hash. A real retry against the completed
 gallery clip exits0 and preserves its media, without starting another replay.
 E1's six selected clips and E4's three selected clips finish export and enter
 independent-stream assembly. Complete-media validation is still pending.
+
+### Final replacement media acceptance
+
+All four completed MP4s pass full video/audio decoding, exact30 fps packet
+cadence,1280×720 dimensions,48 kHz stereo AAC, chapter timing, audible-game
+sound and SHA-256 checks. Every contact sheet is inspected. Additional E1
+opening/finale frames and E4 closing-credit frames are inspected. The recorded
+native cinematic dark/red transitions and the final credit fade remain visible.
+
+| Episode | Duration | Decoded frames | Chapters |
+| --- | --- | --- | --- |
+| 1 | 1:32:00 | 165601 | 5 |
+| 2 | 1:11:36 | 128892 | 3 |
+| 3 | 1:17:32 | 139565 | 5 |
+| 4 | 1:20:48 | 145432 | 2 |
+
+The19 selected source demos and all four final video hashes match their
+manifests. The579490 decoded frames include all17/19/11/14 episode maps,
+the opening, transitions, endings and final credits. Chapters label ordinary
+checkpoint continuations. Acceptance applies to this recorded route coverage
+and exported media.
+
+Final videos and sidecars live in
+`zig-out/recordings/walkthrough-videos-589/`. Source recordings, route/module
+identities, failures, assembly specifications, map coverage and
+`acceptance.json` live in `.keep/walkthrough-videos-589/`.
+After acceptance,9845277417 bytes of owned redundant report playthroughs,
+failed older assembly movies and interrupted raw intermediates are removed.
+Final videos, selected clips, source demos, manifests and logs are retained.
+The filesystem reports223 GiB available after this cleanup. The two previously
+reported root-owned build-cache remnants still require administrator access.
