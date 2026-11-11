@@ -138,7 +138,10 @@ local function carry_through(control, gate, face, crossed, approach, waiting_are
       end
       P.press(control, {areas = true, hold = approach ~= nil and not reapproach_control, fight = false, weapon=defense_weapon})
       move({x,y,z}, {direct = approach ~= nil, fight = defense_weapon~=nil, weapon=defense_weapon, radius = 8, vertical_radius = 24})
-      wait_until(function() return dk3.mover({index = gate}) == "open" end,
+      wait_until(function()
+        return crossed() or dk3.mover({index = gate}) == "open"
+          or dk3.mover({index = control}) == "closed"
+      end,
         {timeout = 10, fight = defense_weapon~=nil, weapon=defense_weapon, stance = {x,y,z}, around = {0,0,0},
           reason = "timed gate opens for the carrying companion"})
       point_at(landing or face, {fight = false})
@@ -913,6 +916,34 @@ level("e3m3b", function(visit, resumed)
       P.follow()
     end},
     {"blade-staircase", checkpoint = true, supplies = false, function()
+      local function finish_upper_landing()
+        -- Finish a nearby resurrecting occupant before the precise walk.
+        local function defend_landing()
+          local occupant=dk3.entity{index=131}
+          local px,py,pz=dk3.position()
+          if occupant and (occupant.health or 0)>0 and math.abs(occupant.z-pz)<96
+              and (occupant.x-px)^2+(occupant.y-py)^2<256^2 then
+            kill({index=131},{weapon=16,hold=true,timeout=60})
+          end
+        end
+        defend_landing()
+        local upper=walkflood({{352,-728,-168}}, {-32,-1088,512,-480},16,{crouch=true})[1]
+        assert(upper,"no supported upper corridor to the blade-stair landing")
+        for _,point in ipairs(upper) do
+          defend_landing()
+          move(point,{direct=true,crouch=point.mark=="c",fight=true,weapon=16,pace=0.5,
+            radius=4,vertical_radius=16})
+        end
+        P.take(93,nil,{direct=true,weapon=16})
+      end
+      -- A failure save on this reached landing retains the completed lower
+      -- staircase. Continue along its floor instead of descending through
+      -- the timed gate again to repeat the already completed approach.
+      local px,py,pz=dk3.position()
+      if px>128 and px<336 and py>-1000 and py<-768 and pz>-224 then
+        finish_upper_landing()
+        return
+      end
       move({-1200,-600,-680}, {radius = 8, vertical_radius = 16, weapon=16})
       -- The wheel releases this thrower into the retreat corridor. Clear
       -- him before turning toward the close ambush or its medicine controls.
@@ -1014,18 +1045,9 @@ level("e3m3b", function(visit, resumed)
       clear {radius = 400, vertical_radius = 96, weapon = 16, hold = true,
         arena = {{128,-888},{336,-768}}, timeout = 90}
       rally_carrier({32,-936,-224}, true, 48, 128)
-      -- Finish this landing's resurrecting occupant before disabling combat
-      -- for the precise upper-floor walk; otherwise it revives under Hiro.
-      kill({index=131},{weapon=16,hold=true,timeout=90})
       -- The area's item approach can choose the crusher floor far below
       -- this landing. Walk the supported upper corridor before collecting.
-      local upper=walkflood({{352,-728,-168}}, {-32,-1088,512,-480},16,{crouch=true})[1]
-      assert(upper,"no supported upper corridor to the blade-stair landing")
-      for _,point in ipairs(upper) do
-        move(point,{direct=true,crouch=point.mark=="c",fight=false,pace=0.5,
-          radius=4,vertical_radius=16})
-      end
-      P.take(93,nil,{direct=true,weapon=16})
+      finish_upper_landing()
     end},
     {"moving-blade-staircase", checkpoint = true, supplies = false, function()
       if dk3.health() < 60 then P.take(95, nil, {areas = true}) end

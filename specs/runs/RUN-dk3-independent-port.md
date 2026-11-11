@@ -15830,3 +15830,22 @@ under `.keep/walkthrough-videos-589/episodeN-01`. Their frozen source settings
 and routes remain in each report. Playback metadata is now retained for each
 clip so a presentation update to a later clip preserves the provenance of
 earlier completed exports.
+
+The replacement E2-01 opening reaches Athens C, then stops at a ladder foot
+whose airborne body never satisfies settled arrival. E2-02 is a retained
+capture-setup error with an out-of-range stage; E2-03 retains an exact-coordinate
+match that misses the fractional authored node. E2-04 uses a small coordinate
+envelope with unsettled arrival and passes into Acropolis/Aegis. Its lower
+return stops within the exit-protection envelope. The final walkflood point
+now stops within32 units and lets the ordinary exit action select the seam.
+E2-05 qualifies that crossing and returns to Aegis B after one normal recovery.
+
+The replacement E3-01 reaches Dungeon B and misses a short timed opening
+while returning from its lever. The wait now also recognizes a completed
+carrier crossing or reset lever, allowing the next ordinary opening cycle.
+E3-02 passes the gate and cell after one recovery, then retains a held attack
+on a distant Buboid. The upper landing now checks that enemy's current proximity
+throughout the walk and uses defensive movement. A failure checkpoint already
+on that landing continues its supported upper corridor. E3-03/04 retain the
+failed backtrack and pursuing-enemy probes. E3-05 passes the landing, the moving
+blade stairs and enters Dungeon C. Final episode/video acceptance is pending.

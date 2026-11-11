@@ -727,7 +727,15 @@ level("e2m3c", function(visit, resumed)
       operate(301, {areas = true, hold = true, fight = false})
     end },
     { "acropolis", checkpoint = true, function()
-      nodepath({index = 31}, {standoff = 160, weapon = 9})
+      nodepath({index = 31}, {standoff = 160, weapon = 9,
+        segment_options = function(point)
+          -- This node is the foot of the ladder. The climbing body can
+          -- hover a few units above it until the next step leaves the rungs.
+          if math.abs(point[1]+474)<8 and math.abs(point[2]+3012)<8
+              and math.abs(point[3]-184)<16 then
+            return {settle = false}
+          end
+        end})
       exit({index = 31}, {timeout = 240})
     end },
   }(visit, resumed)
@@ -1039,8 +1047,10 @@ level("e2m4e", function(visit, resumed)
         move({416,1104,1560},{direct=true,radius=8,vertical_radius=16,fight=false})
         local back=walkflood({{-1728,1184,908}}, {-2304,896,640,2304},32,{crouch=true})[1]
         assert(back,"no supported lower return corridor from the gold door")
-        for _,point in ipairs(back) do
-          move(point,{direct=true,crouch=point.mark=="c",radius=8,
+        for index,point in ipairs(back) do
+          -- The last node overlaps the exit's protected approach. Stop
+          -- within walking reach, then let crossing select that seam.
+          move(point,{direct=true,crouch=point.mark=="c",radius=index==#back and 32 or 8,
             vertical_radius=16,pace=0.5,weapon=13})
         end
         return crossing(192, {areas = true})
