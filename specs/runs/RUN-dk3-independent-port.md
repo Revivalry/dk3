@@ -15878,3 +15878,24 @@ is E2-01/04/05 with labelled continuations. E4-03 completes Hideout, the labs,
 both final fights, ending and credits, with one ordinary checkpoint recovery.
 The selected replacement E4 scope is E4-01/03. Their MP4 exports and final
 media review remain pending.
+
+E1-02 reaches the Ice Base entry, where the area planner requests an upper
+control from the lower room. E1-03 uses the authored ramp/ladder corridor
+and reaches the gallery. The ladder dismount now ends at the supported
+southern stand before defense, with a narrow fighting arena that excludes
+the opening. E1-04 qualifies that repair and reaches the next deck. Its held
+Cryotech678 attack closes across the adjacent gap; that fight now stays on
+the northern supported stand. E1-05 qualifies the deck fight, the ramp,
+crate vent and moving-platform arrival.
+
+E3-06 reaches the tower doorway. E3-07 retains the alternative north-bank
+approach falling through the area-planner shortcut; E3-08 instead walks a
+traced upper-floor corridor. Its optional medicine approach cuts the timed
+door's jamb. E3-09 uses the doorway centre for that tour, the correct return
+lever, a crouched faster return strip and normal reset/reopening of the
+tower lever. It passes Castle A/B, Wyndrax and the Crypt and reaches Throne.
+
+The updated cgame's initial demo-patch recovery is exercised by E4-03's
+real exported continuation. The replay logs the orphaned initial suffix
+and continues encoding beyond it. Source demos and per-clip module hashes
+are retained under the new report root.

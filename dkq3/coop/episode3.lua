@@ -1391,7 +1391,15 @@ level("e3m3c", function(visit, resumed)
       end
     end},
     {"collapsing-column-hall", checkpoint = true, function()
-      move({1006,1028,152}, {weapon = 15, radius = 8, vertical_radius = 16})
+      -- The ammunition return can leave Hiro on the north bank. The area
+      -- shortcut to this hall cuts across the hole below that same floor.
+      local approach=walkflood({{1006,1028,152}},
+        {768,896,1536,2048},16,{crouch=true})[1]
+      assert(approach,"no supported upper approach to the column hall")
+      for _,point in ipairs(approach) do
+        move(point,{direct=true,crouch=point.mark=="c",fight=true,weapon=16,
+          radius=4,vertical_radius=8,pace=0.5})
+      end
       clear {radius = 512, vertical_radius = 64, weapon = 18, timeout = 120}
       -- Keep under the column overhang instead of letting a partial node
       -- corridor drop into the lower room. The western wall rises to the grate.
@@ -1469,11 +1477,18 @@ level("e3m3c", function(visit, resumed)
         {timeout = 15, reason = "far-side lever reopens the timed upper passage"})
       local medicine = dk3.entity {index = 59}
       if medicine and medicine.visible and medicine.wanted ~= false then
-        P.take(59, nil, {areas = true, weapon = 17})
+        -- Use the doorway's centre before turning toward the western item.
+        -- The area approach cuts into the south jamb from the lever stand.
+        move({-384,1784,432},{direct=true,fight=false,crouch=true,
+          radius=8,vertical_radius=16})
+        move({-600,1784,408},{direct=true,fight=false,crouch=true,on_floor=true,
+          radius=8,vertical_radius=16})
+        P.take(59, nil, {direct = true, weapon = 16})
         P.press(586, {areas = true, weapon = 17})
         wait_until(function() return dk3.mover({index = 152}) == "open" end,
           {timeout = 15, reason = "reopen the passage after collecting its western medicine"})
-        move({-448,1784,432}, {direct = true, weapon = 17, radius = 8, vertical_radius = 16})
+        move({-448,1784,432}, {direct = true, fight=false,crouch=true,
+          radius = 8, vertical_radius = 16})
       end
       -- Stand far enough inside that Come's clear spot is also beyond the
       -- leaf. From the jamb its forward64-unit spot is still outside.

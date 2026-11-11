@@ -2468,8 +2468,10 @@ level("e1m7a", function(visit, resumed)
       for _, item in ipairs({ 80, 609, 88, 83 }) do
         if dk3.reachable({ index = item }) then try(pickup, { index = item }, { timeout = 30 }) end
       end
-      advance({ 300, -2300, 338 })
-      move({ 300, -2300, 338 }, { timeout = 120, cautious = true })
+      -- Follow the authored ramp and ladder corridor. The area planner
+      -- can request the upper big-door control from the lower entry room.
+      nodepath({300,-2300,338},{weapon=2,cautious=true})
+      move({300,-2300,338},{timeout=120,cautious=true,weapon=2})
       -- East along this same walkway: the ion blasters standing on its ledges.
       -- The guards of this map answer from four or five hundred units and the
       -- disruptor's bolt carries eighty, so a body that reaches them with
@@ -2836,7 +2838,8 @@ level("e1m7a", function(visit, resumed)
         if z() > 180 then break end
         try(move, { -864, -866, 88 }, { direct = true, radius = 14, timeout = 20 })
         try(move, { -864, -872, 206 }, { direct = true, radius = 14, timeout = 35 })
-        try(move, { -864, -943, 216 }, { timeout = 45 })
+        try(move, { -864, -943, 216 }, {direct=true,fight=false,
+          radius=8,vertical_radius=16,timeout=45})
         if z() > 150 and y() > -890 then
           try(move, { -864, -910, 224 }, { direct = true, radius = 16, timeout = 20 })
         end
@@ -2844,6 +2847,10 @@ level("e1m7a", function(visit, resumed)
       expect(z() > 180, "not up the ladder in the hall's west corner")
     end },
     { "gallery", checkpoint = true, function()
+      -- Leave the ladder opening before defending the gallery. A broad
+      -- arrival can stop on the lip, where a dodge falls back down the shaft.
+      move({-864,-943,216},{direct=true,on_floor=true,fight=false,
+        radius=8,vertical_radius=16})
       -- Keep the party off the touch-operated platform before the approach;
       -- a member held on its raised deck prevents Hiro boarding from below.
       dk3.sidekick("all", "stay")
@@ -2860,8 +2867,8 @@ level("e1m7a", function(visit, resumed)
       -- before the run ever reached the platform. They are fought a man at a
       -- time, from the ground the party already stands on.
       for _, foe in ipairs({ 19, 694, 695 }) do
-        try(kill, { index = foe }, { hold = true, timeout = 25,
-          arena = { { -1010, -960 }, { -820, -640 } } })
+        try(kill, { index = foe }, { hold = true, weapon=2, timeout = 25,
+          arena = { { -920, -968 }, { -848, -928 } } })
       end
       path({ { -940, -943, 216 }, { -964, -823, 216 }, { -1068, -728, 216 },
              { -1208, -604, 216 }, { -1339, -488, 216 }, { -1443, -456, 216 } },
@@ -3042,6 +3049,7 @@ level("e1m7a", function(visit, resumed)
       -- Clear the southern cryotech before turning away toward the keypad;
       -- its spray otherwise holds that precise crossing under continuous fire.
       kill({ index = 678 }, {hold = true, timeout = 25,
+        arena = {{-1664,-508},{-1624,-460}},
         -- An empty ion pack otherwise falls back to a six-shot recoil burst
         -- on the narrow southern corner. Use the stocked rocket launcher
         -- from this wider northern landing before entering that corner.
