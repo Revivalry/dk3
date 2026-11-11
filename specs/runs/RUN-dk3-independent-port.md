@@ -15849,3 +15849,11 @@ throughout the walk and uses defensive movement. A failure checkpoint already
 on that landing continues its supported upper corridor. E3-03/04 retain the
 failed backtrack and pursuing-enemy probes. E3-05 passes the landing, the moving
 blade stairs and enters Dungeon C. Final episode/video acceptance is pending.
+
+E4-01 records the opening through Training Center and reaches Hideout,
+then its GL2 renderer exhausts the default512 MiB hunk while retaining the
+visited worlds. E4-02 retains a failed2 GiB allocation attempt, which exceeds
+the engine's signed allocation limit. Private capture/export startup now
+passes1 GiB hunk and128 MiB zone values before engine allocation. E4-03 loads
+the ordinary Hideout arrival save and passes the garden and rock buttons.
+Queued exports restart with the corrected allocation settings.

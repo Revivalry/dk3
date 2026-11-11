@@ -48,7 +48,8 @@ def launch(args, home, values, commands, log):
         command = [str(args.guard), '--gpu', '--mem', '16G', '--timeout', f'{args.timeout}s', '--',
                    'xvfb-run', '-a', '-s', '-screen 0 1280x720x24', 'env',
                    'SDL_AUDIODRIVER=dummy', str(args.replay_client or args.engine / 'bin/dk3')]
-    for key in ('fs_basepath', 'fs_homepath', 'fs_homedatapath', 'fs_homestatepath', 'com_basegame'):
+    for key in ('fs_basepath', 'fs_homepath', 'fs_homedatapath', 'fs_homestatepath', 'com_basegame',
+                'com_hunkMegs', 'com_zoneMegs'):
         value = values[key]
         command += ['+set', key, str(value)]
     command += commands
@@ -63,6 +64,7 @@ def launch(args, home, values, commands, log):
 def base(args, home):
     values = client_settings(args.engine, home, renderer='vulkan')
     values.update(r_customwidth='1280', r_customheight='720', r_swapInterval='0',
+                  com_hunkMegs='1024', com_zoneMegs='128',
                   com_maxfps='0', com_maxfpsUnfocused='0', com_maxfpsMinimized='0',
                   s_useOpenAL='0', s_sdlSpeed='48000',
                   con_notifytime='0', cl_noprint='1',
