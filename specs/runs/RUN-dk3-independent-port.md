@@ -15782,3 +15782,51 @@ E1 and E3 also export through dkguard's software display with no GPU lock;
 sampled chunks show the opening cinematic and Dungeon B gameplay. Exports
 from a single report use an exclusive lock to protect the shared playback
 profile, while different reports can render concurrently.
+
+## walkthrough-videos-589 — cleanup and recording recovery
+
+The owner requests removal of old build data and Cargo caches throughout
+`~/sources` before continuing the recordings. Signature-identified Cargo
+targets, CMake and Meson build trees, Zig caches, old compiled output
+directories and the Cargo download caches are removed. Source-bearing
+`build` and Linux `target` directories are preserved. The filesystem now
+reports 233 GiB free. Root-owned remnants remain in
+`synaTudor/build` and `memoryroom/target`; noninteractive sudo is unavailable.
+
+At resumption, `zig-out/reports` is absent and the original recording/export
+processes are gone. That path is absent from the cleanup deletion inventory.
+No campaign demos are found elsewhere in the checkout or local Trash.
+The earlier Episode1/2 MP4s, frozen installations, source changes and partial
+Episode2 assembly remain. New recordings will use `.keep` for their reports.
+The earlier recorded-completion observations remain historical evidence;
+their local demo files are currently unavailable.
+
+The first Episode2 assembly exposed corrupt H.264 packets when stream-copying
+nested clip concatenations. All five source clips separately passed complete
+video/audio decoding before the report loss. The assembler now decodes each
+source independently, concatenates exact frame/sample lengths and encodes one
+30 fps stream. Its interrupted output is retained for diagnosis.
+
+A diagnostic replay of the Crypt continuation identifies an initial-world
+patch with serial5, offset384 and length516 whose first chunk precedes demo
+recording. The bundled client now exposes its actual playback state through a
+read-only cvar. Presentation skips an orphaned initial-world patch suffix
+during replay, retaining the gamestate's complete configuration. Other
+receiver validation remains active. Build and replay acceptance are pending.
+
+After cleanup, the bundled engine and client presentation module build.
+`zig build game-client` now rebuilds presentation independently of the
+server module. Installation
+`play/57a0741de43f1a72ac1e5bdaa7771e511af2b4cb155999a4869820889684af5a`
+retains the 66e269 recording server/UI and assets with the repaired engine
+and cgame. A short native E3 opening records and exports successfully.
+An assembly of two independently decoded sample clips passes all 566 frame
+and audio decode checks, exact30 fps, chapter checks and 18.9-second duration.
+The contact sheet is inspected and shows both cards and the expected game
+scene, characters and HUD.
+
+Four replacement episode captures start at the normal episode openings
+under `.keep/walkthrough-videos-589/episodeN-01`. Their frozen source settings
+and routes remain in each report. Playback metadata is now retained for each
+clip so a presentation update to a later clip preserves the provenance of
+earlier completed exports.

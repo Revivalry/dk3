@@ -1691,32 +1691,22 @@ level("e3m5a", function(visit, resumed)
           if clear_parking_ray(candidate) then return candidate end
         end
       end
-      local park=parking_ray()
-      -- A carrier north of the takeoff blocks these rays. The supported
-      -- south stand sees past him; retain the original stand when clear.
-      if not park then
-        move({-640,-352,216}, {direct = true, on_floor = true, fight = false,
-          pace = 0.35, radius = 4, vertical_radius = 8})
-        park=parking_ray()
-      end
-      expect(park~=nil,"a clear order ray to the western Crypt parking bank")
       -- Looking takes ordinary frames; the yielding carrier can step into
-      -- a ray that was clear before that turn. Check the selected floor
-      -- again after aiming before issuing the actual Move command.
+      -- a ray that was clear before that turn. Check again from another
+      -- supported stand if the carrier blocks the original ray.
+      local park
       local aimed=false
-      local deadline=dk3.time()+15000
-      while not aimed and dk3.time()<deadline do
-        point_at(park,{fight=false})
-        aimed=clear_parking_ray(park)
-        if not aimed then
+      for _,stand in ipairs({{-624,-304,216},{-640,-352,216},{-688,-332,216}}) do
+        move(stand,{direct=true,on_floor=true,fight=false,
+          pace=0.35,radius=4,vertical_radius=8})
+        for _=1,3 do
           park=parking_ray()
-          if not park then
-            move({-640,-352,216},{direct=true,on_floor=true,fight=false,
-              pace=0.35,radius=4,vertical_radius=8})
-            park=parking_ray()
-          end
-          expect(park~=nil,"a clear parking ray after the carrier yields")
+          if not park then break end
+          point_at(park,{fight=false})
+          aimed=clear_parking_ray(park)
+          if aimed then break end
         end
+        if aimed then break end
       end
       expect(aimed,"the western parking floor remains clear after aiming")
       dk3.sidekick("superfly", "move")

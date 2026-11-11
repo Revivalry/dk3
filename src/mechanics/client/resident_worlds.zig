@@ -118,6 +118,14 @@ pub const State = struct {
             const length = try std.fmt.parseInt(usize, arg(3, &buffer), 10);
             const digest = try std.fmt.parseInt(u64, arg(4, &buffer), 10);
             const offset = try std.fmt.parseInt(usize, arg(5, &buffer), 10);
+            var hex: [wire.chunk_size * 2 + 1]u8 = undefined;
+            var decoded: [wire.chunk_size]u8 = undefined;
+            const encoded = arg(6, &hex);
+            if (encoded.len == 0 or encoded.len % 2 != 0) return error.InvalidWorldChunk;
+            const bytes = try std.fmt.hexToBytes(&decoded, encoded);
+            if (length == 0 or length > wire.maximum or offset >= length or
+                offset % wire.chunk_size != 0 or bytes.len != @min(wire.chunk_size, length - offset))
+                return error.InvalidWorldChunk;
             const owner = try self.view(id);
             var selected: ?usize = null;
             for (self.patches, 0..) |maybe, index| if (maybe) |patch| if (patch.owner == id) {
@@ -125,7 +133,16 @@ pub const State = struct {
                 break;
             };
             if (selected == null) {
-                if (offset != 0) return error.InvalidWorldChunk;
+                if (offset != 0) {
+                    // The demo gamestate contains the last complete initial
+                    // configuration. A transfer begun before recording can
+                    // leave only its suffix in the recorded reliable stream.
+                    if (id == 0 and engine.integer("cl_demoPlayback") != 0) {
+                        engine.print("dk3 demo: skipped an initial world patch that began before recording\n");
+                        return;
+                    }
+                    return error.InvalidWorldChunk;
+                }
                 for (&self.patches, 0..) |*maybe, index| if (maybe.* == null) {
                     maybe.* = .{ .owner = id, .receiver = try wire.Receiver.init(std.heap.c_allocator, length, digest) };
                     selected = index;
@@ -135,19 +152,15 @@ pub const State = struct {
             const index = selected orelse return error.WorldPatchCapacity;
             const receiver = &self.patches[index].?.receiver;
             if (receiver.digest != digest or receiver.bytes.len != length) return error.WorldConfigDigest;
-            var hex: [wire.chunk_size * 2 + 1]u8 = undefined;
-            var decoded: [wire.chunk_size]u8 = undefined;
-            const encoded = arg(6, &hex);
-            if (encoded.len % 2 != 0) return error.InvalidWorldChunk;
-            try receiver.accept(offset, try std.fmt.hexToBytes(&decoded, encoded));
+            try receiver.accept(offset, bytes);
             if (receiver.received != receiver.bytes.len) {
                 try patchAck(id, serial);
                 return;
             }
-            const bytes = try receiver.validatedBytes();
-            if (bytes.len < 2) return error.InvalidWorldConfig;
-            const field = std.mem.readInt(u16, bytes[0..2], .little);
-            const value = bytes[2..];
+            const complete = try receiver.validatedBytes();
+            if (complete.len < 2) return error.InvalidWorldConfig;
+            const field = std.mem.readInt(u16, complete[0..2], .little);
+            const value = complete[2..];
             const scope = try self.selectPresentation(id);
             defer scope.deinit();
             if (value.len != 0) {

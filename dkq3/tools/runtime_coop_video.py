@@ -186,7 +186,7 @@ def render_locked(args):
         # Presentation folders are excluded from the rules identity. Admit only
         # a reviewed cgame update while the recorded server/UI remain identical.
         installation = args.engine / 'share/dk3'
-        if any((args.report / 'clips').glob('[0-9][0-9][0-9].mp4')):
+        if any((args.report / 'clips' / f'{index:03d}.mp4').exists() for index in indices):
             raise RuntimeError('Presentation update requires fresh exports; retain existing complete clips separately first')
         for name in ('qagame', 'ui'):
             expected = digest(installation / f'{name}.so')
@@ -222,6 +222,7 @@ def render_locked(args):
         values.update(dk3_coop_script='', cl_autoRecordDemo='0', fixedtime='0', timedemo='0',
                       cl_aviFrameRate='30', cl_aviMotionJpeg='0' if args.raw_video else '1', nextdemo='echo dk3-video-complete; quit')
         log = args.report / f'render-{number:03d}.log'
+        shutil.copyfile(args.report / 'render-inputs.json', log.with_suffix('.inputs.json'))
         process = launch(args, home, values, ['+demo', demo.stem, '+video', f'clip-{number:03d}'], log)
         parts, handled = [], set()
 
