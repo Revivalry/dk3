@@ -15899,3 +15899,19 @@ The updated cgame's initial demo-patch recovery is exercised by E4-03's
 real exported continuation. The replay logs the orphaned initial suffix
 and continues encoding beyond it. Source demos and per-clip module hashes
 are retained under the new report root.
+
+E1-05 crosses the full moving-platform course after one ordinary pool/ladder
+retry, completes the central brain and reaches E2m1a. E3-09 completes the
+Purifier, both Throne bridge circuits, Garroth, the final cinematic and
+timestream34, then reaches E4m1a. All four replacement recording scopes now
+contain their endings. Selection checks against the actual per-demo recording
+spans cover17/19/11/14 episode maps plus the opening, transitions and credits.
+`selected-map-coverage.json` and the four assembly specifications are retained
+in `.keep/walkthrough-videos-589`.
+
+The selected replacement E1 scope is E1-01/02/03/04/05. E3 uses
+E3-01/02/05/06/09. Redundant retries remain in the reports. Chapters identify
+ordinary checkpoint continuations. Final encoding, decoding/cadence/audio
+checks and contact-sheet review remain pending. The long E1 continuation's
+unfinished software export is archived and requeued on the guarded GPU;
+its already completed opening clip is retained.
