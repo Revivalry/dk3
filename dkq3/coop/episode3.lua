@@ -1321,8 +1321,8 @@ level("e3m3c", function(visit, resumed)
       -- The lower-room shooter still sees this landing, and a second worm
       -- follows from the stair. Clear both before disabling combat for the
       -- narrow approach; killing only108 leaves that ambush alive.
-      for _, threat in ipairs({{103,15},{104,15}}) do
-        kill({index = threat[1]}, {weapon = threat[2], hold = true,
+      for _, threat in ipairs({103,104}) do
+        kill({index = threat}, {weapon = 16, hold = true,
           arena = {{1700,1300},{1824,1504}}, timeout = 90})
       end
       kill({index = 107}, {weapon = 16, timeout = 90})
@@ -1507,7 +1507,14 @@ level("e3m3c", function(visit, resumed)
       move({568,632,408}, {direct = true, fight = false,
         radius = 4, vertical_radius = 8, pace = 0.35})
       rally_carrier({675,1120,392}, true, 48, 96)
-      P.once(726, {areas = true, hold = true, weapon = 16})
+      if dk3.mover{index=130}~="open" then
+        if dk3.mover{index=726}=="open" then
+          P.press(726,{areas=true,hold=true,weapon=16})
+          wait_until(function() return dk3.mover{index=726}=="closed" end,
+            {timeout=5,fight=false,reason="reset the tower lever before reopening"})
+        end
+        P.press(726,{areas=true,hold=true,weapon=16})
+      end
       wait_until(function() return dk3.mover({index = 130}) == "open" end,
         {timeout = 15, reason = "corridor lever opens the tower door"})
       -- The opened lever projects above the return strip by more than a
@@ -1517,9 +1524,9 @@ level("e3m3c", function(visit, resumed)
       leap({568,632,408},{496,632,408},{crouch=true,fight=false,
         pace=1,radius=24,vertical_radius=16})
       move({424,632,408}, {direct = true, fight = false,
-        crouch = true, radius = 4, vertical_radius = 8, pace = 0.5})
+        crouch = true, radius = 8, vertical_radius = 8, pace = 1})
       move({424,480,408}, {direct = true, fight = false,
-        radius = 8, vertical_radius = 16})
+        crouch = true, radius = 8, vertical_radius = 16, pace = 1})
       carry_through(908, 130, {424,320,408}, function()
         local buddy = dk3.entity {class = "mikikofly"}
         return buddy and buddy.y < 480 and math.abs(buddy.z-408) < 24

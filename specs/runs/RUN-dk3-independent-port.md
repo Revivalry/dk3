@@ -15857,3 +15857,24 @@ the engine's signed allocation limit. Private capture/export startup now
 passes1 GiB hunk and128 MiB zone values before engine allocation. E4-03 loads
 the ordinary Hideout arrival save and passes the garden and rock buttons.
 Queued exports restart with the corrected allocation settings.
+
+The E1-01 opening reaches Vault A and then hits GL2's2048-image table limit
+after the resident prior maps. Both bundled GL renderer tables now allow
+16384 images. The engine rebuild passes. Installation
+`play/c5f64a7199a3c960edc264019149b4fbd0bb7eaca8538f48faab81329f1808b0`
+retains the recording modules/assets and supplies these renderers. E1-02
+continues from the Icelab B stage7 checkpoint into Vault A/B/C. Its inspected
+image-list command reports1005 images after the new process's Vault admission.
+
+E3-05 reaches the northern Dungeon C stair but dies while attempting the
+rotworm103 and dwarf104 with melee. E3-06 uses ranged weapon16 from the
+broad landing, passes that fight and reaches the tower-door approach.
+The return now retains crouching through the doorway and uses normal reset
+and reopening of an already-latched tower lever. E3-07 repeats the ordinary
+northern-stair checkpoint to qualify the connected route.
+
+E2-05 reaches Medusa, timestream23 and E3m1a. The selected replacement scope
+is E2-01/04/05 with labelled continuations. E4-03 completes Hideout, the labs,
+both final fights, ending and credits, with one ordinary checkpoint recovery.
+The selected replacement E4 scope is E4-01/03. Their MP4 exports and final
+media review remain pending.
