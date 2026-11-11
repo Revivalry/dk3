@@ -137,6 +137,11 @@ fn give(actors: *const @import("../../../../mechanics/server/actors.zig").Actors
         if ((try ref.get(data.Health)).current <= 0 or !companion.enabled) continue;
         var chosen = requested;
         var refused = false;
+        const come_destination = if (requested == .come)
+            try comePoint(@import("../../../../mechanics/server/actor_collision.zig").probe(), (try ref.get(data.Body)).*, owner_pose, (try world.get(player, data.Body)).*, (try world.get(player, data.Binding)).slot, if (world.get(player, data.Player) catch null) |state| state.water_level > 0 else false)
+        else
+            null;
+        if (requested == .come and come_destination == null) refused = true;
         if (requested == .collect) {
             const allowed = if (ref.world.find(target)) |item| try @import("companion_items.zig").allows(ref.world, ref.entity, item, &actors.weapons, actors.episode, true, now) else false;
             refused = !allowed;
@@ -162,7 +167,7 @@ fn give(actors: *const @import("../../../../mechanics/server/actors.zig").Actors
         companion.collect_until_ms = now + 15000;
         companion.yielding_until_ms = 0;
         (try ref.get(data.Actor)).route = .{};
-        @import("companion_pilot.zig").forget(try ref.id());
+        @import("companion_pilot.zig").replan(try ref.id());
         companion.owner = try world.persistentId(player);
         companion.order = chosen;
         companion.puzzle = null;
@@ -172,13 +177,125 @@ fn give(actors: *const @import("../../../../mechanics/server/actors.zig").Actors
         companion.animation_until = null;
         (try ref.get(data.Actor)).scripted_pose = null;
         if (chosen == .move) {
-            companion.destination = if (access.find(world, target)) |destination| (try destination.get(data.Transform)).position else point;
+            // A brush's transform is its model offset, not the point the
+            // owner indicated on its surface. Only living travellers name
+            // a destination by their body origin.
+            const traveller = if (access.find(world, target)) |destination|
+                if ((destination.get(data.Actor) catch null) != null or (destination.get(data.Player) catch null) != null)
+                    (try destination.get(data.Transform)).position
+                else
+                    null
+            else
+                null;
+            companion.destination = traveller orelse point;
+            if (traveller == null) {
+                // A pointed floor is a contact point, not the companion's
+                // body origin. Retain a supported standing destination so
+                // Move can finish on stairs without seeking the floor below.
+                const body = (try ref.get(data.Body)).*;
+                companion.destination = v.add(point, .{ 0, 0, -body.mins[2] });
+                const above = v.add(point, .{ 0, 0, -body.mins[2] + 2 });
+                const floor = try @import("../../../../core/domain/navigation_input.zig").supportedPoint(@import("../../../../mechanics/server/actor_collision.zig").probe(), .{
+                    .start = above,
+                    .end = v.add(above, .{ 0, 0, -64 }),
+                    .mins = body.mins,
+                    .maxs = body.maxs,
+                    .slot = (try ref.get(data.Binding)).slot,
+                    .mask = body.collision_mask & ~@as(u32, c.CONTENTS_BODY),
+                });
+                if (floor.floor) |support| companion.destination = support.end;
+            }
         }
-        // Come here: a spot 64 units in front of the owner (reference SIDEKICK_COMMAND_COMEHERE).
-        if (chosen == .come) companion.destination = v.add(owner_pose.position, v.scale(v.basis(.{ 0, owner_pose.angles[1], 0 }).forward, 64));
+        // Gold's Come command uses FindClearSpotFrom around the owner. Its
+        // earlier 64-unit forward calculation is not the selected task goal.
+        if (chosen == .come) companion.destination = come_destination.?;
         changed = true;
     }
     return changed;
+}
+fn comePoint(queries: @import("../../../../core/domain/collision.zig").Collision, body: data.Body, owner: data.Transform, owner_body: data.Body, owner_slot: u16, owner_wet: bool) !?v.Vec3 {
+    const mask = body.collision_mask & ~@as(u32, c.CONTENTS_BODY | c.CONTENTS_CORPSE);
+    const forbidden = @as(u32, c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_NITRO) | (if (owner_wet) @as(u32, 0) else @as(u32, c.CONTENTS_WATER));
+    // Prefer the owner's floor before accepting the ordinary one-step
+    // height tolerance. Overlapping turns of a spiral otherwise offer an
+    // earlier clear point below the walkway the owner actually stands on.
+    for ([_]f32{ 16, 24 }) |height_limit| for ([_]f32{ 64, 96, 128, 48, 32 }) |radius| for ([_]f32{ 0, 45, -45, 90, -90, 135, -135, 180 }) |offset| {
+        const angle = (owner.angles[1] + offset) * std.math.pi / 180;
+        const candidate = v.add(owner.position, .{ @cos(angle) * radius, @sin(angle) * radius, 0 });
+        // A one-unit difference between leader and follower footprints can
+        // matter on a broken beam. Refine a candidate before abandoning it;
+        // every sample still needs complete collision and support admission.
+        for ([_][2]f32{ .{ 0, 0 }, .{ -1, 0 }, .{ 1, 0 }, .{ 0, -1 }, .{ 0, 1 }, .{ -2, 0 }, .{ 2, 0 }, .{ 0, -2 }, .{ 0, 2 }, .{ -4, 0 }, .{ 4, 0 }, .{ 0, -4 }, .{ 0, 4 }, .{ -4, -4 }, .{ -4, 4 }, .{ 4, -4 }, .{ 4, 4 }, .{ -8, 0 }, .{ 8, 0 }, .{ 0, -8 }, .{ 0, 8 }, .{ -8, -8 }, .{ -8, 8 }, .{ 8, -8 }, .{ 8, 8 } }) |nudge| {
+            // Short tangent offsets need a small radial correction on a
+            // curved walkway. Keep the wider search local to compact goals.
+            if (radius > 48 and (@abs(nudge[0]) > 2 or @abs(nudge[1]) > 2)) continue;
+            const point = v.add(candidate, .{ nudge[0], nudge[1], 0 });
+            // Compact landings can fit two bodies side by side. Keep their
+            // rectangles separate even though the clearance mask omits bodies.
+            if (point[0] + body.mins[0] < owner.position[0] + owner_body.maxs[0] and
+                point[0] + body.maxs[0] > owner.position[0] + owner_body.mins[0] and
+                point[1] + body.mins[1] < owner.position[1] + owner_body.maxs[1] and
+                point[1] + body.maxs[1] > owner.position[1] + owner_body.mins[1]) continue;
+            const clear = try queries.trace(.{ .start = point, .end = point, .mins = body.mins, .maxs = body.maxs, .slot = owner_slot, .mask = mask });
+            if (clear.start_solid or clear.all_solid) continue;
+            // The owner can occupy a slightly narrower corner than the party
+            // hull. Trace a sight segment separately instead of rejecting every
+            // candidate because a full hull starts in that corner.
+            const sight = try queries.trace(.{ .start = owner.position, .end = point, .mins = @splat(0), .maxs = @splat(0), .slot = owner_slot, .mask = mask });
+            if (sight.start_solid or sight.all_solid or sight.fraction < 1) continue;
+            const support = try @import("../../../../core/domain/navigation_input.zig").supportedPoint(queries, .{ .start = v.add(point, .{ 0, 0, 1 }), .end = v.add(point, .{ 0, 0, -32 }), .mins = body.mins, .maxs = body.maxs, .slot = owner_slot, .mask = mask });
+            const floor = support.floor orelse continue;
+            if (@abs(floor.end[2] - owner.position[2]) > height_limit) continue;
+            if (try queries.contents(v.add(floor.end, .{ 0, 0, body.mins[2] + 1 }), owner_slot) & forbidden != 0) continue;
+            return floor.end;
+        }
+    };
+    return null;
+}
+test "Come chooses supported clear space around a wall-facing owner and refuses empty footing" {
+    const collision = @import("../../../../core/domain/collision.zig");
+    const Fixture = struct {
+        no_floor: bool = false,
+        compact: bool = false,
+        tight_y: bool = false,
+        lower_front: bool = false,
+        fn trace(raw: *anyopaque, request: collision.Request) !collision.Trace {
+            const self: *@This() = @ptrCast(@alignCast(raw));
+            if (request.end[0] + request.maxs[0] >= @as(f32, if (self.lower_front) 1000 else if (self.compact) 80 else 40)) return .{ .fraction = 0, .end = request.start, .normal = .{ -1, 0, 0 }, .start_solid = true, .all_solid = true };
+            if (self.tight_y and request.end[1] + request.maxs[1] >= 16) return .{ .fraction = 0, .end = request.start, .normal = .{ 0, -1, 0 }, .start_solid = true, .all_solid = true };
+            const a = request.start[2] + request.mins[2];
+            const b = request.end[2] + request.mins[2];
+            const plane: f32 = if (self.lower_front and request.end[0] > 40 and @abs(request.end[1]) < 10) -24 else 0;
+            if (self.no_floor or b >= plane or (self.compact and (@abs(request.end[0]) > 40 or @abs(request.end[1]) > 16))) return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+            const fraction = if (a > plane) (a - plane) / (a - b) else 0;
+            return .{ .fraction = fraction, .end = v.add(request.start, v.scale(v.subtract(request.end, request.start), fraction)), .normal = .{ 0, 0, 1 } };
+        }
+        fn contents(_: *anyopaque, point: v.Vec3, _: u16) !u32 {
+            return if (point[1] < -1) c.CONTENTS_LAVA else 0;
+        }
+    };
+    var fixture: Fixture = .{};
+    const queries: collision.Collision = .{ .context = &fixture, .trace_fn = Fixture.trace, .contents_fn = Fixture.contents };
+    const body: data.Body = .{ .mins = .{ -16, -16, -24 }, .maxs = .{ 16, 16, 32 }, .collision_mask = c.MASK_PLAYERSOLID };
+    const chosen = (try comePoint(queries, body, .{ .position = .{ 0, 0, 24 } }, body, 0, false)).?;
+    try std.testing.expect(chosen[0] + body.maxs[0] < 40 and chosen[1] >= 48);
+    try std.testing.expectApproxEqAbs(@as(f32, 24), chosen[2], 0.001);
+    const corner = (try comePoint(queries, body, .{ .position = .{ 32, 0, 24 } }, body, 0, false)).?;
+    try std.testing.expect(corner[0] + body.maxs[0] < 40 and corner[1] >= 0);
+    fixture.compact = true;
+    const narrow = (try comePoint(queries, body, .{ .position = .{ 0, 0, 24 } }, body, 0, false)).?;
+    try std.testing.expect(narrow[0] >= 32 and narrow[0] <= 40 and @abs(narrow[1]) <= 16);
+    try std.testing.expectApproxEqAbs(@as(f32, 24), narrow[2], 0.001);
+    fixture.tight_y = true;
+    const refined = (try comePoint(queries, body, .{ .position = .{ 0, 0, 24 } }, body, 0, false)).?;
+    try std.testing.expect(@abs(refined[0]) >= 31.99 and @abs(refined[0]) <= 40.01 and refined[1] < 0 and refined[1] >= -16);
+    try std.testing.expectApproxEqAbs(@as(f32, 24), refined[2], 0.001);
+    fixture.no_floor = true;
+    try std.testing.expectEqual(null, try comePoint(queries, body, .{ .position = .{ 0, 0, 24 } }, body, 0, false));
+    fixture = .{ .lower_front = true };
+    const same_floor = (try comePoint(queries, body, .{ .position = .{ 0, 0, 24 } }, body, 0, false)).?;
+    try std.testing.expectApproxEqAbs(@as(f32, 24), same_floor[2], 0.001);
+    try std.testing.expect(@abs(same_floor[1]) >= 32);
 }
 /// The sidekick answers an order it hears in the owner's sight (reference SIDEKICK_CommandAcknowledge:
 /// in the owner's PVS, not over another line).
@@ -292,6 +409,15 @@ pub fn camera(world: *data.World, player: ecs.Entity, state: *c.playerState_t) !
         state.dk3CameraFov = 90;
         return;
     };
+}
+/// The actor's hostility is observable; its hidden anger value is not exposed.
+pub fn hostile(world: *data.World, player: ecs.Entity) !bool {
+    const owner = try world.persistentId(player);
+    for ([_]policy.Identity{ .mikiko, .superfly }) |identity| {
+        const found = member(world, identity, owner) orelse continue;
+        if ((try found.get(data.Health)).current > 0 and (try found.get(data.Companion)).anger.retaliating) return true;
+    }
+    return false;
 }
 pub fn required(world: *data.World, player: ecs.Entity, flags: u32) !bool {
     const origin = (try world.get(player, data.Transform)).position;

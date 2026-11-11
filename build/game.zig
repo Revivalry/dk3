@@ -6,6 +6,7 @@ const config = @import("ioq3_config.zig");
 pub fn declare(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, rules_identity: []const u8) void {
     const step = b.step("game", "Build independent dk3 game, client and UI modules");
     const server_step = b.step("game-server", "Build the native game server module for headless campaign iteration");
+    const client_step = b.step("game-client", "Build the native client presentation module");
     if (std.mem.eql(u8, b.install_path, b.pathFromRoot("zig-out/online"))) {
         step.dependOn(&b.addFail("The preserved online installation is not a development prefix").step);
         b.getInstallStep().dependOn(step);
@@ -16,6 +17,7 @@ pub fn declare(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
         const install = b.addInstallFileWithDir(artifact.getEmittedBin(), .lib, b.fmt("dk3/{t}{s}", .{ product, if (target.result.os.tag == .windows) @as([]const u8, ".dll") else ".so" }));
         step.dependOn(&install.step);
         if (product == .qagame) server_step.dependOn(&install.step);
+        if (product == .cgame) client_step.dependOn(&install.step);
     }
     step.dependOn(&b.addInstallFile(b.path("src/mechanics/client/dk3-projectile-weather.shader"), "share/dk3/scripts/dk3-projectile-weather.shader").step);
     b.getInstallStep().dependOn(step);

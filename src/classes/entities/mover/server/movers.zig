@@ -38,6 +38,18 @@ fn directionFor(object: data.MapObject) !v.Vec3 {
     const angles = if (prop.text(object, "angles")) |text| try @import("../../../../mechanics/server/map.zig").vector(text) else v.Vec3{ 0, yaw, 0 };
     return if (yaw == -1) .{ 0, 0, 1 } else if (yaw == -2) .{ 0, 0, -1 } else v.basis(angles).forward;
 }
+fn defaultLip(object: data.MapObject) f32 {
+    return if (eq(object.classname, "func_button")) 4 else if (eq(object.classname, "func_water")) 0 else 8;
+}
+fn defaultSpeed(object: data.MapObject) f32 {
+    return if (eq(object.classname, "func_button")) 40 else if (eq(object.classname, "func_water")) 25 else 100;
+}
+fn defaultWait(object: data.MapObject) f32 {
+    return if (eq(object.classname, "func_button")) 1 else if (eq(object.classname, "func_water")) -1 else 3;
+}
+fn toggles(object: data.MapObject) bool {
+    return object.flags & (8 | 32) != 0 or (eq(object.classname, "func_water") and prop.text(object, "wait") == null);
+}
 fn remapPoint(point: v.Vec3, old_closed: v.Vec3, old_opened: v.Vec3, closed: v.Vec3, opened: v.Vec3) v.Vec3 {
     const old_delta = v.subtract(old_opened, old_closed);
     const length = v.dot(old_delta, old_delta);
@@ -51,8 +63,8 @@ fn restoreTravel(object: data.MapObject, body: data.Body, mover: *data.Mover, tr
     if (mover.travel_version != 0) return;
     defer mover.travel_version = 1;
     if (mover.angular) return;
-    const button = eq(object.classname, "func_button");
-    const lip = try prop.number(object, "lip", if (button) 4 else 8);
+    // Version-zero water archives still used the generic eight-unit lip.
+    const lip = try prop.number(object, "lip", if (eq(object.classname, "func_water")) 8 else defaultLip(object));
     const hull = v.subtract(body.maxs, body.mins);
     const old_closed = mover.closed;
     const old_opened = mover.opened;
@@ -76,6 +88,57 @@ fn restoreTravel(object: data.MapObject, body: data.Body, mover: *data.Mover, tr
     mover.closed = closed;
     mover.opened = opened;
 }
+/// Water has its own immutable defaults. Preserve the saved phase and pose;
+/// remove only the erroneous generic-door return, and recognize the old
+/// eight-unit default lip before remapping its travel fraction.
+fn restoreWater(object: data.MapObject, body: data.Body, mover: *data.Mover, transform: *data.Transform) !void {
+    if (!eq(object.classname, "func_water")) return;
+    if (prop.text(object, "wait") == null) {
+        mover.wait_ms = -1;
+        mover.toggle = true;
+        mover.return_at = .{};
+    }
+    if (prop.text(object, "speed") == null and mover.speed == 100) mover.speed = defaultSpeed(object);
+    if (mover.travel_version >= 2) return;
+    defer mover.travel_version = 2;
+    if (prop.text(object, "lip") != null) return;
+    const direction = try directionFor(object);
+    const size = authoredExtents(body);
+    const old_distance = travelDistance(direction, size, 8);
+    if (@abs(v.length(v.subtract(mover.opened, mover.closed)) - @abs(old_distance)) > 0.01) return;
+    const old_closed = mover.closed;
+    const old_opened = mover.opened;
+    if (object.flags & 1 != 0) mover.closed = v.add(mover.closed, v.scale(direction, 8)) else mover.opened = v.add(mover.opened, v.scale(direction, 8));
+    transform.position = remapPoint(transform.position, old_closed, old_opened, mover.closed, mover.opened);
+    mover.motion.base = remapPoint(mover.motion.base, old_closed, old_opened, mover.closed, mover.opened);
+    mover.motion.end = remapPoint(mover.motion.end, old_closed, old_opened, mover.closed, mover.opened);
+}
+test "water defaults hold until reactivation and migrate saved policy without losing phase" {
+    const t = std.testing;
+    var object: data.MapObject = .{ .classname = "func_water", .properties = &.{.{ .key = "angle", .value = "-1" }} };
+    const body: data.Body = .{ .mins = @splat(-1), .maxs = @splat(101) };
+    var mover: data.Mover = .{ .closed = @splat(0), .opened = .{ 0, 0, 92 }, .motion = .{ .end = .{ 0, 0, 92 } }, .state = .open, .travel_version = 1, .return_at = .{ .at_ms = 3000 } };
+    var pose: data.Transform = .{ .position = mover.opened };
+    try restoreWater(object, body, &mover, &pose);
+    try t.expect(mover.toggle);
+    try t.expectEqual(@as(i32, -1), mover.wait_ms);
+    try t.expectEqual(@as(f32, 25), mover.speed);
+    try t.expectEqual(@as(f32, 100), pose.position[2]);
+    try t.expectEqual(@as(f32, 100), mover.motion.end[2]);
+    try t.expectEqual(@as(?i64, null), mover.return_at.at_ms);
+    try t.expectEqual(@as(?bool, false), try mover.use(4000, 1));
+    mover.start(true, mover.closed, 4000, 100, false);
+    _ = try mover.reached(4100, true);
+    try t.expectEqual(@as(?i64, null), mover.return_at.at_ms);
+    object.flags = 1;
+    mover = .{ .closed = .{ 0, 0, 92 }, .opened = @splat(0), .motion = .{}, .travel_version = 1 };
+    pose.position = .{ 0, 0, 46 };
+    try restoreWater(object, body, &mover, &pose);
+    try t.expectEqual(@as(f32, 50), pose.position[2]);
+    object.properties = &.{.{ .key = "wait", .value = "3" }};
+    try t.expect(!toggles(object));
+    try t.expectEqual(@as(i32, 3000), try prop.milliseconds(object, "wait", defaultWait(object)));
+}
 /// Pure staged admission, shared by active, resident and visited save worlds.
 pub fn admit(world: *data.World) !void {
     {
@@ -83,6 +146,7 @@ pub fn admit(world: *data.World) !void {
         defer query.deinit();
         while (query.next()) |view| for (view.read(data.MapObject), view.read(data.Body), view.write(data.Mover), view.write(data.Transform)) |object, body, *mover, *transform| {
             try restoreTravel(object, body, mover, transform);
+            try restoreWater(object, body, mover, transform);
         };
     }
     try regroup(world);
@@ -198,7 +262,7 @@ pub fn spawn(world: *data.World, slots: *const Slots, projections: []abi.EntityP
         const body = (try world.get(entity, data.Body)).*;
         var closed = if (rotating) transform.angles else transform.position;
         var opened = closed;
-        const lip = try prop.number(object, "lip", if (button) 4 else 8);
+        const lip = try prop.number(object, "lip", defaultLip(object));
         const size = authoredExtents(body);
         if (rotating) {
             opened = try rotatedEnd(object, closed);
@@ -209,8 +273,8 @@ pub fn spawn(world: *data.World, slots: *const Slots, projections: []abi.EntityP
             opened = v.add(closed, v.scale(direction, travelDistance(direction, size, lip)));
         }
         if (object.flags & 1 != 0 and !button) std.mem.swap(v.Vec3, &closed, &opened);
-        const speed = try prop.number(object, "speed", if (button) 40 else 100);
-        var mover: data.Mover = .{ .closed = closed, .opened = opened, .travel_version = 1, .motion = .{ .base = closed, .end = closed, .curve = if (try prop.number(object, "boing", 0) != 0) .bounce else if (try prop.number(object, "accelerate", 0) != 0) .accelerate else .linear }, .angular = rotating, .platform = platform, .speed = if (speed > 0) speed else if (button) 40 else 100, .wait_ms = try prop.milliseconds(object, "wait", if (button) 1 else 3), .delay_ms = if (std.mem.startsWith(u8, object.classname, "func_door")) @max(0, try prop.milliseconds(object, "delay", 0)) else 0, .toggle = object.flags & (8 | 32) != 0, .return_both = object.flags & 64 != 0, .force = (try prop.number(object, "forcemove", 0) != 0) or (!rotating and object.flags & 512 != 0), .damage = @intFromFloat(try prop.number(object, "damage", try prop.number(object, "dmg", 2))), .group = try world.persistentId(entity) };
+        const speed = try prop.number(object, "speed", defaultSpeed(object));
+        var mover: data.Mover = .{ .closed = closed, .opened = opened, .travel_version = if (eq(object.classname, "func_water")) 2 else 1, .motion = .{ .base = closed, .end = closed, .curve = if (try prop.number(object, "boing", 0) != 0) .bounce else if (try prop.number(object, "accelerate", 0) != 0) .accelerate else .linear }, .angular = rotating, .platform = platform, .speed = if (speed > 0) speed else defaultSpeed(object), .wait_ms = try prop.milliseconds(object, "wait", defaultWait(object)), .delay_ms = if (std.mem.startsWith(u8, object.classname, "func_door")) @max(0, try prop.milliseconds(object, "delay", 0)) else 0, .toggle = toggles(object), .return_both = object.flags & 64 != 0, .force = (try prop.number(object, "forcemove", 0) != 0) or (!rotating and object.flags & 512 != 0), .damage = @intFromFloat(try prop.number(object, "damage", try prop.number(object, "dmg", 2))), .group = try world.persistentId(entity) };
         try bindSounds(object, &mover);
         try world.put(entity, mover);
         const actual = try world.get(entity, data.Transform);
@@ -451,10 +515,10 @@ pub fn step(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
             // Holding it against a jamb traps the occupant in a repeated
             // push/fall cycle. Reopen the whole assembly without firing its
             // use targets again; opening obstructions still hold the clock.
-            if (ordinary_door and !master.force and master.state == .closing) {
-                try start(world, slots, projections, master.group, true, now, false);
+            if (ordinary_door and !master.force) if (obstructionReopen(object, master.state)) |opened| {
+                try start(world, slots, projections, master.group, opened, now, false);
                 continue;
-            }
+            };
             // Ordinary doors already attempt a swept physical push. If there
             // is no room, hold the travel clock without damaging the occupant.
             // Authored crushing platforms and water retain their own damage.
@@ -485,7 +549,10 @@ pub fn finish(world: *data.World, slots: *Slots, projections: []abi.EntityProjec
         const mover = world.get(entity, data.Mover) catch continue;
         if (mover.moving() and mover.motion.finished(now)) {
             const arrival = if (mover.state == .opening) mover.opened_sound else mover.closed_sound;
-            if (try mover.reached(now, mover.group == try world.persistentId(entity))) {
+            const closing_targets = mover.state == .closing and closingTargets((try world.get(entity, data.MapObject)).*);
+            const master = mover.group == try world.persistentId(entity);
+            const opening_targets = try mover.reached(now, master);
+            if (opening_targets or (master and closing_targets)) {
                 arrivals.entities[arrivals.count] = entity;
                 arrivals.count += 1;
             }
@@ -525,6 +592,44 @@ pub fn finish(world: *data.World, slots: *Slots, projections: []abi.EntityProjec
     // arrival sound starts on the same tick.
     for (settling[0..settling_count]) |sound| try emit(world, slots, projections, sound.entity, sound.index, now, sound.parameters);
     return arrivals;
+}
+
+// Toggle and use-to-close doors operate their authored targets on the return
+// stroke too. A button's automatic release is not another operation. Keep this
+// class contract outside the game-agnostic binary motion state machine.
+fn closingTargets(object: data.MapObject) bool {
+    return (eq(object.classname, "func_door") or eq(object.classname, "func_door_rotate") or eq(object.classname, "func_water")) and object.flags & (8 | 32) != 0;
+}
+
+// START_OPEN swaps the binary endpoints at spawn. Its .opening stroke closes
+// the physical doorway; reversing its .closing stroke would shut an opening
+// door on the occupant instead of releasing one caught by a closing leaf.
+fn obstructionReopen(object: data.MapObject, state: @FieldType(data.Mover, "state")) ?bool {
+    const swapped = object.flags & 1 != 0;
+    const closing: @FieldType(data.Mover, "state") = if (swapped) .opening else .closing;
+    if (state != closing) return null;
+    return !swapped;
+}
+
+test "blocked door release respects authored START_OPEN endpoint swapping" {
+    const door: data.MapObject = .{ .classname = "func_door" };
+    const swapped: data.MapObject = .{ .classname = "func_door", .flags = 1 };
+    try std.testing.expectEqual(@as(?bool, true), obstructionReopen(door, .closing));
+    try std.testing.expectEqual(@as(?bool, null), obstructionReopen(door, .opening));
+    try std.testing.expectEqual(@as(?bool, false), obstructionReopen(swapped, .opening));
+    try std.testing.expectEqual(@as(?bool, null), obstructionReopen(swapped, .closing));
+    try std.testing.expectEqual(@as(?bool, null), obstructionReopen(swapped, .open));
+}
+
+test "reversible doors emit closing targets while buttons and automatic doors do not" {
+    for ([_][]const u8{ "func_door", "func_door_rotate", "func_water" }) |classname| {
+        try std.testing.expect(!closingTargets(.{ .classname = classname }));
+        try std.testing.expect(closingTargets(.{ .classname = classname, .flags = 8 }));
+        try std.testing.expect(closingTargets(.{ .classname = classname, .flags = 32 }));
+    }
+    try std.testing.expect(!closingTargets(.{ .classname = "func_button", .flags = 8 }));
+    // A loop-sound flag alone never makes an automatic return a second use.
+    try std.testing.expect(!closingTargets(.{ .classname = "func_door_rotate", .flags = 2048 }));
 }
 
 test "old saved button travel is repaired without replaying targets or resetting dwell" {
@@ -627,7 +732,7 @@ pub fn openForParty(world: *data.World, slots: *Slots, projections: []abi.Entity
     const object = (try world.get(entity, data.MapObject)).*;
     const slot = (try world.get(entity, data.Binding)).slot;
     const party_door = object.targetname.len != 0 and @import("../../../../mechanics/server/authored_nodes.zig").partyDoor(world, object, projections[slot].shared.absmin, projections[slot].shared.absmax);
-    if ((object.targetname.len != 0 and !party_door) or mover.toggle or mover.moving() or mover.state != .closed or try @import("../../../../mechanics/server/properties.zig").number(object, "health", 0) > 0) return false;
+    if ((object.targetname.len != 0 and !object.manually_unlocked and !party_door) or mover.toggle or mover.moving() or mover.state != .closed or try @import("../../../../mechanics/server/properties.zig").number(object, "health", 0) > 0) return false;
     try use(world, slots, projections, entity, activator, now);
     return true;
 }
@@ -681,4 +786,7 @@ pub fn samplePart(world: *data.World, entity: ecs.Entity, now: i64, destination:
 /// Mover part ownership (platforms.zig).
 pub fn ownsPart(world: *data.World, entity: ecs.Entity) bool {
     return (world.get(entity, data.Mover) catch null) != null;
+}
+pub fn movingPart(world: *data.World, entity: ecs.Entity) bool {
+    return if (world.get(entity, data.Mover) catch null) |mover| mover.moving() else false;
 }

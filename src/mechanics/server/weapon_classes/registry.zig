@@ -118,10 +118,10 @@ pub fn linked(projectile: *const @import("../../../game/domain/components.zig").
         else => unreachable,
     }
 }
-/// The inventory bits of weapons whose blasts linger (`lingering`).
-pub fn lingeringMask() i32 {
+/// Attacks requiring a deliberate request: lingering blasts or class-owned rituals.
+pub fn deliberateMask() i32 {
     var mask: i32 = 0;
-    inline for (adapters) |A| if (@hasDecl(A, "lingering")) {
+    inline for (adapters) |A| if (@hasDecl(A, "lingering") or A.description.spec.bot_requires_request) {
         mask |= @as(i32, 1) << A.description.id;
     };
     return mask;

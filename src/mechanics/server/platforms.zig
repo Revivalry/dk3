@@ -11,6 +11,20 @@ pub fn isMoverPart(world: *data.World, entity: ecs.Entity) bool {
     inline for (motion) |Class| if (@hasDecl(Class, "ownsPart") and Class.ownsPart(world, entity)) return true;
     return false;
 }
+/// Whether the owning class is currently moving this part.
+pub fn isMoving(world: *data.World, entity: ecs.Entity) bool {
+    inline for (motion) |Class| if (@hasDecl(Class, "movingPart") and Class.ownsPart(world, entity)) return Class.movingPart(world, entity);
+    return false;
+}
+/// Sample the owning mover's current motion segment without changing it.
+pub fn sample(world: *data.World, entity: ecs.Entity, now: i64) !data.Transform {
+    var pose = (try world.get(entity, data.Transform)).*;
+    inline for (motion) |Class| if (@hasDecl(Class, "samplePart") and Class.ownsPart(world, entity)) {
+        Class.samplePart(world, entity, now, &pose);
+        break;
+    };
+    return pose;
+}
 /// The phase of a path platform, or null for anything else.
 pub fn pathPhase(world: *data.World, entity: ecs.Entity) ?PathPhase {
     inline for (motion) |Class| if (@hasDecl(Class, "pathPhase")) {

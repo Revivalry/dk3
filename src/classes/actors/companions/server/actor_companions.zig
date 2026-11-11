@@ -109,7 +109,9 @@ pub fn diagnose(view: context.View, writer: *std.Io.Writer) !void {
 }
 pub fn move(frame: *Frame) !void {
     if (frame.dead) return common.move(frame);
-    try @import("companion_pilot.zig").drive(frame.actors, frame.world, frame.slots, frame.projections, frame.entity, frame.actor, frame.pose, frame.body, frame.velocity, frame.navigation, frame.definition.*, frame.definition.speed * frame.slow, frame.now, frame.elapsed);
+    const difficulty = catalog.difficulty.factor(@import("../../../../engine/server.zig").integer("g_spSkill"));
+    const speed = policy.locomotionSpeed(frame.definition.speed, difficulty) * frame.slow;
+    try @import("companion_pilot.zig").drive(frame.actors, frame.world, frame.slots, frame.projections, frame.entity, frame.actor, frame.pose, frame.body, frame.velocity, frame.navigation, frame.definition.*, speed, frame.now, frame.elapsed);
 }
 pub fn decorate(decoration: *context.Decoration) !void {
     const actor = decoration.view.actor;

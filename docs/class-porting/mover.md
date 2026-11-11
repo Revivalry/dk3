@@ -4,6 +4,18 @@ Reference provenance: Gold `dlls/world/DOOR.CPP`, blocked door handlers.
 This sheet covers damage attribution and door grouping; complete mover acceptance
 remains open.
 
+Sequence587 control planning: sliding and rotating door declarations expose
+their existing target-forwarding behavior through the registry relay trait.
+The shared planner recognizes an unnamed manually usable mover as a control,
+including an interior lift lever; named remote doors still require their
+authored control. `waterfalls-return-07` operates the trolley's rotating lever97,
+rides its real travel and opens cage101 at both ends. The same continuation
+opens pedestrian door118 through upper lever191 before descending. Timed use
+observations include the mover return deadline, so refreshing an already-open
+control is distinguishable from a missed press. Native regressions cover relay
+metadata, manual-control eligibility and refreshed deadlines. Rendered/audio
+acceptance and complete campaign traversal remain open.
+
 Sequence 579 continuation: Gold `DOOR.CPP` `TouchingDoor`/`DoorFindTouching` and
 `common.h` link touching leaves unless flag4 forbids linking. Repeated editor
 team names do not link distant door pairs. Athens C reused `golddoor` for the
@@ -67,3 +79,49 @@ and centurion health during closing pushes. Fresh E2 run217 exposes a separate
 closing jamb trap at Aegis B door583. The blocked-closing reversal is implemented
 in repair222 and awaits that saved-approach replay; the earlier push probe alone
 does not accept the new reversal.
+
+Sequence587 reviews Gold `DOOR.CPP` toggle/reverse target semantics after
+Alcatraz's two-operation cellblock lever leaves the opposite passage closed.
+Both deliberate directions operate the linked doors. The native class emitted
+targets only at opening arrival, so returning the lever never restored its
+targets. Door/water toggle and use-to-close arrivals now emit their return
+targets too; an ordinary automatic return and a button release do not gain
+another activation. This is a class-owned rule over the existing binary motion
+mechanism, with no new saved field and no imported reference implementation.
+START_OPEN swaps the endpoint labels, so obstruction recovery now identifies
+physical closing before reversing; it never reverses physical opening into an
+occupant. Neither repair introduces saved state. The flag/class and endpoint
+regressions pass in the consolidated652-test run. Alcatraz continuations
+`e4-41`/`e4-42` demonstrate the two-operation passage, cell release and later
+third lever operation opening the yard, with zero deaths. Other door families
+and complete episode traversal retain their separate acceptance requirements.
+
+Sequence587 sewer continuation reviews moving-water spawn policy in Gold
+`dlls/world/func_various.cpp`. With no authored wait, water holds at either end
+and the next activation reverses it; it does not inherit an ordinary door's
+three-second return. Its default speed is25 and lip is0. Explicit map values
+remain authoritative. Native spawn now supplies those class-owned defaults.
+Saved admission removes the erroneous implicit return and recognizes the old
+eight-unit default lip, remapping the saved travel fraction (including
+START_OPEN) without resetting the phase or emitting targets. Existing explicit
+wait/lip/speed values are preserved. A focused regression covers hold, second
+activation, old-save endpoints and an explicit wait. Sewer replay is pending.
+
+Sequence587 also repairs support acquisition for resting pickups. The shared
+brush transaction checks exact contact with the moved brush beneath each nearby
+world-grounded visible pickup before moving. Existing item support poses then
+carry it once; pickups remain nonblocking triggers and do not veto the brush
+transaction. No saved fields are added. This restores the map-placed Stavros
+staff rising with its platform, demonstrated in `stavros-support-diagnostic-01`;
+collection and complete Dungeon traversal remain open. Debug46 passes544/544,
+including support contact, hidden/unsupported exclusions and repeated settlement.
+
+Native138 repairs an authored actor already overlapping a retracted brush.
+The previous full-translation push moved the Hideout upper guard downward into
+its fixed floor; the ladder consequently remained held forever. A non-rider
+whose hull contacted the brush before movement can now resolve that existing
+overlap from its original pose within18 units, using exact live collision and
+the existing transactional rollback. New contacts, riders and deep overlaps
+retain the ordinary push/refusal path. `hideout-pusher-overlap-01` lowers457 and
+climbs both initial hub ladders; its later guard combat death remains failed.
+Debug59 and the dedicated native build pass; ownership10 remains zero.

@@ -254,7 +254,21 @@ fn returnPoint(actors: *@import("../../../../mechanics/server/actors.zig").Actor
     // The authored search snaps to a node after testing a different point.
     // Reject a newly obstructed destination instead of embedding the boss.
     const hit = try @import("../../../../mechanics/server/region_collision.zig").trace(.{ .start = destination, .end = destination, .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = body.collision_mask });
-    return if (hit.start_solid or hit.all_solid) null else destination;
+    if (!hit.start_solid and !hit.all_solid) return destination;
+    // The enemy can occupy the nearest node while waiting for our return.
+    // Keep the already clear surrounding candidate when its actual floor
+    // supports the complete hull; otherwise every retry snaps back into the
+    // same occupied node and leaves the boss permanently invisible.
+    const candidate = point.?;
+    const floor = try @import("../../../../mechanics/server/region_collision.zig").trace(.{
+        .start = v.add(candidate, .{ 0, 0, 18 }),
+        .end = v.add(candidate, .{ 0, 0, -64 }),
+        .mins = body.mins,
+        .maxs = body.maxs,
+        .slot = slot,
+        .mask = body.collision_mask,
+    });
+    return if (!floor.start_solid and !floor.all_solid and floor.fraction < 1 and floor.normal[2] >= 0.7) floor.end else null;
 }
 pub fn death(world: *data.World, slots: *Slots) !void {
     for (slots.occupants) |maybe| if (maybe) |entity| if ((world.get(entity, data.Player) catch null) != null) {

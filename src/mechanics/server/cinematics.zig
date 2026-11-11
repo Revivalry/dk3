@@ -88,6 +88,21 @@ pub const State = struct {
     }
     pub fn trigger(self: *State, world: *data.World, entity: ecs.Entity, name: []const u8, activator: u32) !bool {
         if (!self.available(name)) return false;
+        if (findController(world)) |controller| {
+            const playback = try world.get(controller, data.Cinematic);
+            // Script tasks can request the next scene just before their own
+            // last shot ends. Reserve it without replacing the live program
+            // or losing the request when that shot commits its local state.
+            if (!playback.finished or playback.pending_count > 0) {
+                if (std.mem.eql(u8, playback.name, name)) return false;
+                for (playback.pending[0..playback.pending_count]) |request| if (std.mem.eql(u8, request.name, name)) return true;
+                if (playback.pending_count == playback.pending.len) return error.CinematicContinuationCapacity;
+                const viewer = if (playback.viewer != 0) playback.viewer else if (triggerViewer(world, activator)) |player| try world.persistentId(player) else return false;
+                playback.pending[playback.pending_count] = .{ .name = name, .trigger = try world.persistentId(entity), .viewer = viewer };
+                playback.pending_count += 1;
+                return true;
+            }
+        }
         if (active(world)) return false;
         const player = triggerViewer(world, activator) orelse return false;
         if ((world.get(player, data.Player) catch return false).mode != .normal) return false;
@@ -171,6 +186,7 @@ pub const State = struct {
             if (world.get(entity, data.Cinematic) catch null) |playback| {
                 const program = self.program orelse return error.UnavailableSavedCinematic;
                 if (!std.mem.eql(u8, self.name, playback.name)) return error.SavedCinematicMismatch;
+                for (playback.pending[0..playback.pending_count]) |request| if (!self.available(request.name)) return error.UnavailableSavedCinematic;
                 if (playback.shot >= program.shots.len and !playback.finished) return error.InvalidSavedCinematicShot;
                 if (!playback.finished) {
                     const shot = program.shots[playback.shot];
@@ -203,6 +219,10 @@ pub const State = struct {
             playback.viewer = try world.persistentId(viewer);
             (try world.get(viewer, data.Player)).mode = .frozen;
             (try world.get(viewer, data.Velocity)).linear = @splat(0);
+            // A first-shot use can request another scene too. Publish its
+            // viewer before those tasks run: the frozen player cannot be
+            // rediscovered through ordinary campaign-player selection.
+            (try world.get(controller, data.Cinematic)).* = playback;
             engine.print("dk3 cinematic: started\n");
         }
         var shot = program.shots[playback.shot];
@@ -210,6 +230,11 @@ pub const State = struct {
         // Finish each shot's due tasks before advancing, including exact-end removals.
         try self.queue(world, slots, projections, program, shot, &playback, elapsed, now);
         try self.perform(world, slots, projections, router, viewer, now);
+        // perform() routes authored uses, including continuation requests.
+        // Preserve those writes before publishing this shot's local copy.
+        const requested = (try world.get(controller, data.Cinematic)).*;
+        playback.pending = requested.pending;
+        playback.pending_count = requested.pending_count;
         if (elapsed >= shot.duration() and (!shot.end_on_actor or done(world, shot.end_name))) {
             playback.inherited = shot.camera(elapsed, playback.inherited);
             playback.shot += 1;
@@ -494,6 +519,27 @@ test "a non-player death target starts its scene for the local campaign player" 
     try std.testing.expectEqual(@as(i32, 0), (try world.get(world.find(2).?, data.Health)).current);
 }
 
+test "an in-shot continuation retains the frozen viewer and current program" {
+    var world = data.World.init(std.testing.allocator, 8);
+    defer world.deinit();
+    _ = try world.create(1, .{ data.Player{ .mode = .frozen }, data.Body{ .motion_owner = 2 } });
+    const controller = try world.create(2, .{data.Cinematic{ .name = "first", .viewer = 1, .trigger = 3, .active = true }});
+    const trigger = try world.create(3, .{data.Transform{}});
+    var state: State = .{};
+    state.programs[0] = .{ .name = "first", .value = .{ .shots = &.{}, .tasks = &.{} } };
+    state.programs[1] = .{ .name = "next", .value = .{ .shots = &.{}, .tasks = &.{} } };
+    state.program_count = 2;
+    try state.select("first");
+    try std.testing.expect(try state.trigger(&world, trigger, "next", 3));
+    try std.testing.expect(try state.trigger(&world, trigger, "next", 3));
+    const playback = try world.get(controller, data.Cinematic);
+    try std.testing.expectEqual(@as(u8, 1), playback.pending_count);
+    try std.testing.expectEqual(@as(u32, 1), playback.pending[0].viewer);
+    try std.testing.expectEqualStrings("first", state.name);
+    try @import("../domain/snapshot_ids.zig").remap(.cinematic, playback, .{ .from = 1, .to = 7 });
+    try std.testing.expectEqual(@as(u32, 7), playback.pending[0].viewer);
+}
+
 pub fn findController(world: *data.World) ?ecs.Entity {
     var query = world.queryAccess(data.World.mask(.{data.Cinematic}), 0, 0);
     defer query.deinit();
@@ -554,13 +600,15 @@ pub fn completePlayback(world: *data.World, slots: *Slots, projections: []abi.En
 }
 pub fn finish(world: *data.World, slots: *Slots, projections: []abi.EntityProjection, router: *Router, player: ecs.Entity, now: i64) !void {
     var name: []const u8 = "";
+    var continuing = false;
     if (findController(world)) |entity| {
         const playback = try world.get(entity, data.Cinematic);
         if (playback.finished) return;
         name = playback.name;
+        continuing = playback.pending_count > 0;
         playback.active = false;
         playback.finished = true;
-        if ((try world.get(player, data.Body)).motion_owner == try world.persistentId(entity)) (try world.get(player, data.Body)).motion_owner = null;
+        if (!continuing and (try world.get(player, data.Body)).motion_owner == try world.persistentId(entity)) (try world.get(player, data.Body)).motion_owner = null;
     }
     if (name.len == 0) return;
     for (slots.occupants) |occupant| if (occupant) |entity| {
@@ -576,8 +624,10 @@ pub fn finish(world: *data.World, slots: *Slots, projections: []abi.EntityProjec
         }
     };
     const state = try world.get(player, data.Player);
-    if (state.mode == .frozen) state.mode = if ((try world.get(player, data.Health)).current > 0) .normal else .dead;
-    engine.send(0, "dk3_cine_stop");
+    if (!continuing) {
+        if (state.mode == .frozen) state.mode = if ((try world.get(player, data.Health)).current > 0) .normal else .dead;
+        engine.send(0, "dk3_cine_stop");
+    }
     // Completion targets run after performers are removed and the viewer is released.
     // Capture identities before routing: a use can remove another completion target.
     var completion: [ecs.max_entities]u32 = undefined;
@@ -605,6 +655,24 @@ pub fn finish(world: *data.World, slots: *Slots, projections: []abi.EntityProjec
         }
     };
     engine.print("dk3 cinematic: completed\n");
+    if (findController(world)) |controller| {
+        const previous = (try world.get(controller, data.Cinematic)).*;
+        if (previous.finished and previous.pending_count > 0) {
+            const next = previous.pending[0];
+            const cinematic_state = router.cinematics orelse return error.MissingCinematicPrograms;
+            try cinematic_state.select(next.name);
+            var following: data.Cinematic = .{ .name = next.name, .trigger = next.trigger, .viewer = next.viewer, .pending_count = previous.pending_count - 1 };
+            for (0..following.pending_count) |index| following.pending[index] = previous.pending[index + 1];
+            try world.put(controller, following);
+            const viewer = world.find(next.viewer) orelse return error.MissingCinematicViewer;
+            (try world.get(viewer, data.Body)).motion_owner = try world.persistentId(controller);
+            (try world.get(viewer, data.Player)).mode = .frozen;
+            (try world.get(viewer, data.Velocity)).linear = @splat(0);
+            engine.print("dk3 cinematic: continued\n");
+            // The next server frame starts its performers. Keep the viewer
+            // frozen and its last camera published across that boundary.
+        }
+    }
 }
 pub fn publish(world: *data.World, entity: ecs.Entity, projections: []abi.EntityProjection, now: i64) !void {
     const performer = (try world.get(entity, data.Performer)).*;

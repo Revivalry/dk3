@@ -173,7 +173,7 @@ pub const State = struct {
                 var steering = try brain.pilot.steer(try self.frame(world, slots, projections, clients, service, gates, index, entity, player, session, now), .{ .attack_when_dead = true });
                 // A dead player requests respawn with attack on every step.
                 steering.command.attack = true;
-                @import("bot_input.zig").submit(@intCast(index), steering.command, player.delta_angles, now);
+                _ = try @import("bot_input.zig").submit(world, entity, @intCast(index), steering.command, steering.report.used_slot, player.delta_angles, now);
                 continue;
             }
             brain.pilot.level = brain.skill;
@@ -237,7 +237,9 @@ pub const State = struct {
             if (steering.command.use and engine.integer("developer") > 0) if (brain.pilot.control) |control| {
                 engine.print(try std.fmt.bufPrintZ(&message, "dk3 bot control: slot={d} use={d} obstacle={d} route_obstacle={d}\n", .{ index, control.id, control.obstacle, control.route_obstacle }));
             };
-            @import("bot_input.zig").submit(@intCast(index), steering.command, player.delta_angles, now);
+            const used = try @import("bot_input.zig").submit(world, entity, @intCast(index), steering.command, steering.report.used_slot, player.delta_angles, now);
+            brain.report.used = used;
+            if (steering.report.used and !used) brain.pilot.use_ready = now + 50;
         }
     }
     /// The pilot's view of a bot client: its player state, the engine's

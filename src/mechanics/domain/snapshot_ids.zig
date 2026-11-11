@@ -71,7 +71,10 @@ pub fn remap(comptime kind: data.ComponentId, value: *data.types[@intFromEnum(ki
             }
         },
         .melee, .weapon_launch => try map.one(&value.owner),
-        .cinematic => try map.fields(value, .{ "trigger", "exit", "viewer" }),
+        .cinematic => {
+            try map.fields(value, .{ "trigger", "exit", "viewer" });
+            for (&value.pending) |*request| try map.fields(request, .{ "trigger", "viewer" });
+        },
         .script => {
             try map.one(&value.activator);
             for (&value.stack) |*frame| try map.one(&frame.activator);

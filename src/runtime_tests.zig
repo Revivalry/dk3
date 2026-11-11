@@ -52,6 +52,10 @@ test {
     _ = @import("engine/lua.zig");
     _ = @import("mechanics/domain/coop_route.zig");
     _ = @import("mechanics/server/coop_bot.zig");
+    _ = @import("classes/items/keys/server/locks.zig");
+    _ = @import("mechanics/server/coop_targets.zig");
+    _ = @import("mechanics/server/item_support.zig");
+    _ = @import("mechanics/server/navigation_gates.zig");
     _ = @import("mechanics/server/bot_evasion.zig");
     _ = @import("mechanics/server/bot_pilot.zig");
     _ = @import("mechanics/server/coop_motor.zig");
@@ -134,6 +138,9 @@ test {
     _ = @import("mechanics/server/damage.zig");
     _ = @import("mechanics/server/actor_pain.zig");
     _ = @import("mechanics/server/actor_classes/registry.zig");
+    _ = @import("classes/weapons/ballista/server/ballista_forecast.zig");
+    _ = @import("classes/actors/buboid/server/buboids.zig");
+    _ = @import("classes/actors/nharre/server/nharres.zig");
     _ = @import("classes/actors/mishima_guard/server/mishima_guard.zig");
     _ = @import("classes/actors/medusa/server/medusas.zig");
     _ = @import("classes/actors/nharre/server/nharre_reaper.zig");

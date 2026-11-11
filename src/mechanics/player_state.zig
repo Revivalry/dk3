@@ -4,6 +4,8 @@ const c = @import("../engine/abi.zig").c;
 const move = @import("domain/player_move.zig");
 const data = @import("../game/domain/components.zig");
 pub const version = "dk3-zig-" ++ @import("runtime_build").identity;
+pub const pitch_short_limit = 16000;
+pub const pitch_limit: f32 = pitch_short_limit * (360.0 / 65536.0);
 pub fn holdView(player: *data.Player, angles: [3]f32, input: c.usercmd_t) void {
     if (player.mode != .frozen) return;
     for (angles, 0..) |angle, i| player.delta_angles[i] = @as(i32, @intFromFloat(angle * (65536.0 / 360.0))) -% input.angles[i];
@@ -13,13 +15,13 @@ pub fn command(input: c.usercmd_t, delta: *[3]i32) move.Command {
     for (&angles, 0..) |*angle, i| {
         var value: i16 = @truncate(input.angles[i] +% delta[i]);
         if (i == 0) {
-            if (value > 16000) {
-                value = 16000;
-                delta[i] = 16000 -% input.angles[i];
+            if (value > pitch_short_limit) {
+                value = pitch_short_limit;
+                delta[i] = pitch_short_limit -% input.angles[i];
             }
-            if (value < -16000) {
-                value = -16000;
-                delta[i] = -16000 -% input.angles[i];
+            if (value < -pitch_short_limit) {
+                value = -pitch_short_limit;
+                delta[i] = -pitch_short_limit -% input.angles[i];
             }
         }
         angle.* = @as(f32, @floatFromInt(value)) * (360.0 / 65536.0);
@@ -86,7 +88,9 @@ pub fn characterParametersForMode(slot: u16, character: data.Character, ailments
     var result = parameters(slot);
     result.speed = @floatFromInt(@as(i32, @intFromFloat(result.speed * @import("weapon_catalog").character.movementFactor(character.attribute(.speed, now)))));
     result.jump_speed *= @import("weapon_catalog").character.acrobaticsFactor(character.attribute(.acro, now), multiplayer);
-    if (ailments.mask & 4 != 0) result.speed = @floatFromInt(@as(i32, @intFromFloat(result.speed * (1 - 0.8 * ailments.freeze_level))));
+    // Reviewed player cold exposure damages and tints the body; it does not
+    // reduce movement speed. Slowing a deep-water ascent creates a feedback
+    // loop in which increasing cold makes the authored keystone dive fatal.
     if (ailments.mask & 128 != 0) result.speed = 0;
     return result;
 }
@@ -122,6 +126,11 @@ test "character projections round-trip and use integer speed with float jump sca
     try std.testing.expectApproxEqAbs(@as(f32, 472.5), boosted.jump_speed, 0.001);
     try std.testing.expectApproxEqAbs(@as(f32, 675), characterParametersForMode(0, character, .{}, 999, true).jump_speed, 0.001);
     try std.testing.expectEqual(@as(f32, 320), characterParameters(0, character, .{}, 1000).speed);
+    const cold: data.Ailments = .{ .mask = 4, .freeze_level = 1, .cold_water = true };
+    try std.testing.expectEqual(@as(f32, 320), characterParameters(0, character, cold, 1000).speed);
+    var frozen = cold;
+    frozen.mask |= 128;
+    try std.testing.expectEqual(@as(f32, 0), characterParameters(0, character, frozen, 1000).speed);
     character.attributes[2] = 5;
     try std.testing.expectEqual(@as(f32, 448), characterParameters(0, character, .{}, 1000).speed);
 }

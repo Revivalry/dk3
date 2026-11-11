@@ -6,7 +6,38 @@ covering Episodes1/2, including the episode boundaries. Fresh Episode2 run394
 completes every map and rune revisit through Episode3 arrival with zero deaths.
 Sequence583 fresh Episode1 run148 completes New Game through Greece/Lemnos B
 with two combat checkpoint recoveries and no companion losses.
-Episodes3/4 still have placeholder routes. Campaign verification uses Ronin
+Sequence587 replaces the Episode3/4 placeholders with authored puzzle stages,
+inventory-based hub revisits and dedicated repair/pass/connected entries. The
+late-episode routes are implemented; complete traversal remains unverified while
+normal-input repairs progress through Dungeon C and Mishima's Labs. Recorded
+continuations pass all village keystones, Passage, the Dungeon Ballista, the
+Alcatraz cell release/kitchen/showers, coal, saltpeter and sulphur, the complete
+prison-return continuation, the Waterfalls girders/trolley/dock, Tower basement
+admission and the north pipe/ventilation/office route. A separate upper Tower
+continuation reaches `e4m3c` after fixing supported exit sampling across stairs.
+These remain scoped saves, not a complete fresh episode pass.
+Later continuations defeat Stavros, collect his staff and climb the raised spiral.
+Native131 also brings the carrying companion up that spiral using collision-qualified
+authored ground links when the moved arena floor has no area route. Player-only
+continuations cross the chasm ledges and extend the companion bridge; the connected
+party route enters Wyndrax Tower with both companions and no deaths in Dungeon C.
+Tower continuations lower the drawbridge, return through the window, operate the
+lightning control, defeat both crypt guardians, collect the key and return on
+the lift. Later continuations disable Wyndrax's rod from the upper annulus,
+defeat him, collect the wisp and enter Nharre's Crypt without deaths. Its pillar
+route remains under repair. Labs continuations collect
+and spend all B cards, return through the yellow door, collect C's green/blue
+cards, destroy both generator weakpoints through the low side passages, return to
+the main bay and ride the damaged transport to its breakdown. Later continuations
+climb both monkey vents, operate all four cages and enter the Hideout, then pass
+the garden, four rocks, museum machinery/switch and Chambers lift/red button
+without deaths. A later continuation replenishes placed supplies, climbs the
+final hub ladders and enters Training with both companions and no deaths.
+Training and later maps remain under repair or unrun.
+The Dungeon A checkpoint also brings the carrying companion over
+both catwalk jumps and through both timed gates into B. Later maps and full
+fresh Episode3/4 runs retain their unrun or failed states in the acceptance log.
+Campaign verification uses Ronin
 (`--skill 1`); results retain their actual recovery counts and configured limits.
 See [native acceptance](native-acceptance.md).
 
@@ -117,6 +148,11 @@ and checkpoint continuations. See the scenario ledger for their exact scope.
 
 ## Run it
 
+`--script episode12-pass.lua --map intro --skill 1 --resident-worlds` checks
+continuous normal New Game through Episodes1/2 and Episode3 arrival. This entry
+stops at the first death, clears map-specific retry allowances and grants no
+inventory. Its existence is not a recorded campaign pass.
+
 Episode 2 has a dedicated entry, `--script episode2-pass.lua --map e2m1a
 --skill 1`. Sequence581 run394 uses the stricter `episode2-connected.lua` entry
 and completes the fresh headless route with zero deaths. Full rendered/audio
@@ -185,6 +221,10 @@ composes files. Lua is sandboxed: base, coroutine, string, table, math and
 utf8 only; no io/os/package/debug, no bytecode, bounded memory (64 MiB) and
 instructions between yields (50 M).
 
+`level(name, body, {arrival = false})` skips the automatic arrival recovery,
+arming and gameplay save for terminal scenes such as the ending and credits.
+Their bodies still own normal cinematic playback and route completion.
+
 ```lua
 settings { level_deaths = 4 }          -- restorations allowed per map
 
@@ -230,12 +270,13 @@ are chased beyond the default room scan unless an explicit radius is supplied.
 |---|---|
 | `move(t, {radius, vertical_radius, direct, crouch, cautious, pace})` | within `radius` (default 40); `vertical_radius` optionally sets precise depth/height tolerance instead of the normal step allowance; `direct` steers straight and brakes into the goal, settling on dry land while admitting a passing waypoint in water; `pace` (0.1–1) walks it; `cautious` stops to fight whatever engages the player and resumes when the engagement ends |
 | `path({points}, opts)` | every point reached, starting at the point nearest the player |
+| `allowed_exit = {index = n}` in movement options | allows the named exit during an authored approach or hop; other exits remain fenced, and the normal trigger/companion checks still decide travel |
 | `touch(t)` | the hull overlaps the trigger, or it fired/was consumed |
 | `use(t)` | the control reacted (mover/trigger state); presses are retried with re-aim |
 | `shoot(t, {from = {spots}, weapon, around})` | the target broke or died; `from` fires from the first spot with a lane; `weapon` names the weapon (the glove for glass under water); `around` names the part of a long target to aim at first (a window's far end, away from a companion's splash) |
 | `pickup(t)` | taken (absent already counts as done) |
 | `ride(lift)` | the bot rode the platform and it stopped at the end of its run (a train pausing at a corner part-way along, whose next corner carries on the same way, is pressed on from its on-board button) |
-| `kill(t, {radius, around, count, hold, arena})` / `clear(opts)` | matching hostiles in the area are dead; `hold` fights from the current spot (strafing, dodging, repositioning when the prey hides); `arena` bounds that movement |
+| `kill(t, {radius, vertical_radius, around, count, hold, arena})` / `clear(opts)` | matching hostiles are dead or removed; `vertical_radius` optionally restricts a room clear to the anchor's height band; `hold` fights from the current spot (strafing, dodging, repositioning when the prey hides); `arena` bounds that movement. Ordinary clears stop pursuing withdrawn nonblocking actors. Live actors outside the admitted hunt are reported as not pursued, never counted as kills. |
 | `exit(map)` | the campaign travelled (identity seams, cuts and landings) |
 | `cinematic()` | a scene played and released control (3 s grace if none starts) |
 | `leap(takeoff, landing, {pace = f})` | a running jump landed on the far side; `pace` (0.1–1) slows the run-up and jump for a short hop onto a narrow ledge |
@@ -246,7 +287,7 @@ are chased beyond the default room scan unless an explicit radius is supplied.
 | `regroup(radius, timeout)` | every living sidekick is within `radius` (one let through a door just opened for it) |
 | `tend(radius, fraction)` | a hurt sidekick was sent for the reachable health nearest it until healthy or none is near (also run before stage checkpoints and exits: a sidekick's death loses the level) |
 | `survey(map)`, `trace(t, from)`, `flood(goals, box, step, from, hull)` | read-only authoring logs: reachable controls, the area graph's route, a live flood fill through air and water (routes with their longest stretch under water); optional `from` changes the queried origin, without moving the player; `hull` defaults to standing and accepts `"crouch"` for low passages |
-| `walkflood(goals, box, step, opts)` | read-only floor search; `opts.from` selects the query origin, `jump` is the probe's rise and `jump_span` (1–8) permits jump rays spanning several grid cells; `crouch` admits low passages. These geometric probes do not establish ballistic jump or traversal acceptance. |
+| `walkflood(goals, box, step, opts)` | read-only floor search; `opts.from` selects the query origin, `jump` is the standing probe's rise, `crouch_jump` adds a separate crouched rise (`cj`), and `jump_span` (1–8) permits jump rays spanning several grid cells; `crouch` admits low passages. These geometric probes do not establish ballistic jump or traversal acceptance. |
 
 Routes state intent: what to operate, shoot, take or reach, by entity. Getting
 there is navigation's job, including closed doors, switched lasers and force
@@ -255,6 +296,17 @@ fields, lifts and breakables on the way (the planner in
 so a route survives map changes that keep the progression. Explicit moves remain
 only for what the area graph cannot express (a boosted jump, a draught). e1m3a is
 written this way.
+
+`stay` stops following but still permits a companion to yield out of the
+player's lane. Park companions on supported ground clear of the whole run-up,
+then confirm their position after moving the player back to the takeoff bank.
+Freezing a companion beside the departure point can make it step into the next
+jump while yielding. For a solo stair or ledge puzzle, park before entering its
+narrow approach, then release Follow when the player returns to the broad floor.
+
+A bot's Use pulse is qualified again after the normal movement command changes
+its eye position and stance. Only a resulting ray hitting the requested control
+counts as a press; a changed ray retries without spending a press attempt.
 
 Every action takes `timeout` (seconds) and `fight` (default true). Movement
 can use `settle = false` for a through-point at the top of a climb, followed
@@ -267,13 +319,19 @@ any navigation route. A failure raises a Lua error naming the route line.
 
 Read-only queries: `dk3.time()`, `dk3.map()`, `dk3.visit()`, `dk3.position()`,
 `dk3.health()` (current, maximum, armor), `dk3.alive()`, `dk3.mode()`,
+`dk3.party_hostile()` (whether a living party member is retaliating; no anger value),
 `dk3.weapon()`, `dk3.has_weapon(id)`, `dk3.entity(t)` (id, classname, x/y/z,
 health, state, visible, wanted, fruit), `dk3.mover(t)`, `dk3.hostiles(radius)`,
 `dk3.visible(t)`, `dk3.cinematic()`, `dk3.log(text)`. For authoring:
 `dk3.route(t, from)` (the area graph's predicted route as points, from the
 player or a given point), `dk3.trace(start, end, hull)` (live collision against
-world and movers: fraction, end point, normal, class and entity index,
-`start_solid`, `ladder`), `dk3.contents(point)` (contents bits there, liquids
+world and movers: fraction, end point, normal, class, full persistent `id`
+and low ordinal `index` (use `id` to resolve a traced entity; a travelling actor
+can share an ordinal with an authored mover),
+`start_solid`, `ladder`; `true` uses the standing player hull, `"crouch"` the
+crouched hull, `"shot"` a bullet ray, `"floor"` the standing hull against world
+and movers without living/corpse bodies, and an entity selector uses that traveller's
+actual hull and collision mask), `dk3.contents(point)` (contents bits there, liquids
 from movers included: water 32, slime 16, lava 8, solid 1), `dk3.pickups(radius)`,
 `dk3.reachable(t, kind)`, `dk3.controls()` and `dk3.plan(t)` (the navigation
 planner's next step toward `t`: the control to operate, `{wait=true}` while the
@@ -512,8 +570,8 @@ sources of authored waypoints.
   A standalone finale start lacks the campaign's arsenal and is not encounter
   acceptance.
   Episode 2 is now fully authored and its fresh Ronin headless run168 completes
-  every map into Episode 3 with zero deaths. Episodes 3–4 retain generic
-  `progress` bodies and need authored puzzle and encounter steps.
+  every map into Episode 3 with zero deaths. Episodes 3–4 now have authored
+  puzzle and encounter stages; their complete fresh passes remain open.
   `episode1-pass.lua` runs the normal campaign with `settings {finish_map =
   "e2m1b"}`: finish only after ordinary arrival preparation in that map, having
   crossed the E1/E2 boundary and traversed Lemnos A. This setting does not skip

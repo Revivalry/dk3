@@ -73,7 +73,7 @@ pub fn step(actors: *@import("../../../../mechanics/server/actors.zig").Actors, 
                     .attack => {
                         actor.mode = .attack;
                         const sequence = definition.attacks[0];
-                        if (actor.melee.event(1, @divTrunc(@as(i64, definition.strikes[0]) * 1000, sequence.fps), now, false)) {
+                        if (actor.melee.event(1, @divTrunc(@as(i64, definition.strikes[0]) * 1000, sequence.fps), now, false) and state.claimStrike()) {
                             try @import("../../../../mechanics/server/actor_attack_sounds.zig").emit(world, slots, projections, entity, actor, pose.position, definition, now);
                             _ = try @import("../../../../mechanics/server/weapon_damage.zig").hurt(target.world, target.entity, try world.persistentId(entity), 0, 1 + 3 * (try world.get(entity, data.Random)).next(), now, false);
                         }
@@ -81,8 +81,7 @@ pub fn step(actors: *@import("../../../../mechanics/server/actors.zig").Actors, 
                             state.fade(now);
                             actor.melee.active = false;
                         } else if (sensed.distance > definition.range) { // beyond its weapon's reach (90)
-                            state.phase = .chase;
-                            state.started_ms = now;
+                            state.leaveAttack(now);
                             actor.melee.active = false;
                         }
                     },

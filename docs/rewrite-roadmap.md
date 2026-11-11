@@ -19,11 +19,82 @@ Episode 2 pass, including all rune revisits and the Episode 3 boundary, with zer
 deaths in final run168; earlier run159 used two combat checkpoint retries.
 Sequence581 fresh run394 repeats the complete headless Episode2 route, including
 all rune revisits, Medusa's awakened-statue counter, timestream23 and Episode3
-arrival, with zero deaths on its recorded native candidate. Navigation404 repeats
-all62 frozen manifests: actor failures fall91.304% and follower failures83.418%;
-two follower old-pass regressions keep the additional strict gate open.
+arrival, with zero deaths on its recorded native candidate. Sequence587's
+navigation202 repeats all62 frozen manifests and19594 trials per controller:
+actor failures fall91.304% (552→48), follower failures90.694% (591→55), with
+zero formerly passing cases regressing. Both strict75% reduction gates pass;
+the remaining failures and bounded private-copy scope remain recorded.
 Full rendered/audio episode and full campaign acceptance
 remain open.
+Sequence587 fresh Episode4 run648 repeats every authored map and revisit, both
+final encounters, the ending and credits on native358:1864/1869 actions,
+924.6 wall seconds, four ordinary combat recoveries within the unchanged
+4-per-map/12-total allowance, and no companion losses. This verifies headless
+authoritative progression; rendered/audio and full combined campaign acceptance
+remain open. Fresh current Episodes1–3 remain under repair and replay.
+Earlier fresh Episode4 run498 completes every authored map, the ending and
+credits on native335 with two ordinary combat checkpoint recoveries and no
+companion losses (1820/1823 actions). This is headless authoritative progression
+evidence for that recorded candidate, retained alongside the later358 pass.
+Sequence587 fresh Episode2 run676 completes all authored maps/rune revisits,
+Medusa's awakened-monster counter, timestream23 and full E3 arrival on native360:
+2927/2935 actions,734.4 wall seconds, three ordinary Temple recoveries within
+the unchanged four-per-map limit, and no companion losses. Broad133 passes.
+Fresh current E1/E3/E4 replays retain their separate statuses; rendered/audio,
+multiplayer and full combined campaign acceptance remain open.
+Fresh Episode4 run678 also passes on native360:1863/1867 actions,1146.7 wall
+seconds, three ordinary recoveries within unchanged4-per-map/12-total limits,
+no companion losses, complete ending and credits. Current fresh E1/E3 remain
+under route repair; the native360 E2/E4 headless results preserve their scope.
+Native361 retains an observed intermediate Move landing after the leader has
+advanced beyond it. Broad134 passes. Fresh E4 run702 repeats the full ending
+and credits on361:1863/1867 actions,1134.0 wall seconds, three normal recoveries
+within unchanged limits and no companion losses. Fresh E1/E2/E3 remain under
+affected route replay; earlier native360 E2 acceptance retains its scope.
+Fresh E1 run703 completes New Game, all17 authored episode maps, the ending and
+Lemnos A into B on native361:1987/2036 actions,1333.7 wall seconds, two ordinary
+Marsh recoveries within unchanged allowances and no companion losses. It uses
+its exact archived route; the later moving-deck cycle guard separately passes
+704's actual failed input through the ending. Current native361 E2/E3 checks
+remain open; full rendered/audio, multiplayer and combined campaign acceptance
+are still separate release gates.
+Native363–367 repair full traced identity, bounded downward companion transfers,
+post-movement bot Use admission and motor qualification of class-declared launch
+recoil. Integrated builds and Broad137 pass:414 Python plus native/component
+checks, formatting and ownership zero. Fresh native367 E4 run793 completes all
+authored maps/revisits, both final encounters, ending and credits:1839/1841
+actions,853.5 wall seconds, one ordinary final-opponent recovery within unchanged
+limits and no companion losses.
+
+Native368–370 repair nearby blocked Move recovery, walking from settled
+mover supports and the mismatch between a forecast steering target and its
+nearby arrival. Integrated370 and Broad139 pass:414 Python plus native/component
+checks, formatting and ownership zero. Exact saved-order820 and full spiral827
+pass;837 completes the measured northern ammunition aisle and all late E3
+through full E4 arrival with zero deaths.842 likewise qualifies post-aim Crypt
+parking through both pillars, Throne/Garroth and full E4 arrival.
+
+Fresh native370 E4 run841 completes every authored map/revisit, both finals,
+ending and credits:1859/1860 actions,879.9 wall seconds, zero deaths and no
+companion losses within unchanged limits. Its eastern Hideout landing clear
+is qualified by840 and the full fresh result. Earlier native367/369 full E4
+passes retain their exact archived inputs.
+
+Fresh native370 E3 run860 completes Village revisits, Passage, all Dungeon/
+Castle maps, Crypt/Nharre, Throne/Garroth and full E4 arrival:2153/2158 actions,
+655.0 wall seconds, zero deaths and no companion losses within unchanged limits.
+The supplied route includes measured Passage banks and aimed party parking,
+ordinary prison medicine and the opened-cell Bolter fight, and a deeper
+carrier landing beyond the timed blade gate. Its exact archived route precedes
+only two local follow-ups: declining optional ammo when no supported aisle is
+found, and a controlled lever-return leap over a raised brush.862 qualifies the
+optional continuation through the column hall;865 lands the measured leap and
+completes all late E3 through full E4 arrival:679/681 actions,238.3 wall seconds,
+zero deaths. Broad139 remains
+valid for unchanged native370. Full rendered/audio and combined campaign
+acceptance remain separate from these headless episode passes.
+Exact failed inputs and scoped passes remain in the acceptance ledger/run log.
+Rendered/audio, multiplayer and the combined campaign remain separate gates.
 Sequence583 fresh resident New Game148 completes intro, all17 Episode1 maps,
 the ending and Greece/Lemnos A into B on candidate84. It uses two normal combat
 checkpoint recoveries within unchanged limits, with no companion losses.

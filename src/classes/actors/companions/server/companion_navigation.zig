@@ -12,6 +12,12 @@ const std = @import("std");
 pub fn prepare(world: *data.World, slots: *Slots, projections: []abi.EntityProjection, entity: ecs.Entity, actor: *data.Actor, pose: data.Transform, body: data.Body, now: i64) !void {
     const companion = try world.get(entity, data.Companion);
     if (!companion.enabled or companion.stopped or companion.authored != .none or companion.puzzle != null or body.motion_owner != null or actor.scripted_pose != null or actor.reaction != null) return;
+    // A passing spot qualifies a walk from supported footing. It cannot
+    // replace a jump's approach or landing while the pilot still owns it.
+    if (!body.grounded and companion.motor.water_level < 2) return;
+    if (@import("companion_pilot.zig").find(try world.persistentId(entity))) |flown| {
+        if (flown.pilot.runup != null or flown.pilot.flight != null) return;
+    }
     const slot = (try world.get(entity, data.Binding)).slot;
     if (now < companion.yielding_until_ms) {
         actor.mode = .chase;
@@ -20,7 +26,8 @@ pub fn prepare(world: *data.World, slots: *Slots, projections: []abi.EntityProje
         return;
     }
     var yielding_to: ?@import("../../../../mechanics/domain/world_references.zig").Ref = null;
-    if (@import("../../../../mechanics/server/region_access.zig").find(world, companion.owner)) |owner| {
+    const yielding_owner = if (companion.anger.retaliating) null else @import("../../../../mechanics/server/region_access.zig").find(world, companion.owner);
+    if (yielding_owner) |owner| {
         const leader = (try owner.get(data.Transform)).*;
         const motion = (try owner.get(data.Velocity)).linear;
         const delta = v.subtract(pose.position, leader.position);
@@ -34,12 +41,13 @@ pub fn prepare(world: *data.World, slots: *Slots, projections: []abi.EntityProje
             const contact = try @import("../../../../mechanics/server/actor_collision.zig").service().trace(.{ .start = leader.position, .end = v.add(leader.position, v.scale(facing, 56)), .mins = leader_body.mins, .maxs = leader_body.maxs, .slot = leader_slot, .mask = leader_body.collision_mask });
             // A peripheral corner of the hull can block motion even when
             // the companion's centre is outside the view-direction cone.
-            blocks_hull = contact.entity == slot and contact.fraction < 1;
+            blocks_hull = bodiesTouch(pose.position, body, leader.position, leader_body) or
+                (contact.entity == slot and contact.fraction < 1);
         }
         if (v.length(delta) < 96 and (blocks_hull or close_ahead or (v.length(motion) > 20 and v.dot(v.normalize(motion), v.normalize(delta)) > 0.5))) yielding_to = owner;
     }
     if (actor.mode == .chase) {
-        const toward = if (actor.route.waypoint) |point| point.point else actor.threat_position;
+        const toward = @import("companion_pilot.zig").corridorGoal(try world.persistentId(entity)) orelse if (actor.route.waypoint) |point| point.point else actor.threat_position;
         // Climbing straight up (a ladder under a hatch): the door is overhead.
         const flat: v.Vec3 = .{ toward[0] - pose.position[0], toward[1] - pose.position[1], 0 };
         const direction = if (toward[2] - pose.position[2] > 18 and v.length(flat) < 24) v.Vec3{ 0, 0, 1 } else v.normalize(flat);
@@ -76,6 +84,47 @@ pub fn prepare(world: *data.World, slots: *Slots, projections: []abi.EntityProje
         }
     }
 }
+test "lane yielding preserves an airborne or still-owned landing destination" {
+    var world = data.World.init(std.testing.allocator, 4);
+    defer world.deinit();
+    const traveller = try world.create(7, .{
+        data.Companion{ .identity = .superfly, .enabled = true, .order = .move, .yielding_until_ms = 2000, .yield_position = .{ 178, 345, -969 } },
+        data.Actor{ .definition = 0, .mode = .chase },
+        data.Binding{ .slot = 1 },
+    });
+    const motor = @import("companion_pilot.zig");
+    const flown = motor.entry(&world, 7, 1, 1000);
+    defer motor.forget(7);
+    const landing: v.Vec3 = .{ 208, 256, -936 };
+    flown.intent.destination = landing;
+    var slots: Slots = .{};
+    var projections: [0]abi.EntityProjection = .{};
+    const actor = try world.get(traveller, data.Actor);
+    try prepare(&world, &slots, &projections, traveller, actor, .{ .position = .{ 207, 258, -934 } }, .{ .grounded = false }, 1000);
+    try std.testing.expectEqual(landing, flown.intent.destination.?);
+    try std.testing.expect(!flown.intent.direct);
+    // Brief contact with an edge does not release a qualified flight.
+    flown.pilot.flight = .{ .point = landing, .started = 900, .crouch = false };
+    try prepare(&world, &slots, &projections, traveller, actor, .{ .position = .{ 207, 258, -934 } }, .{ .grounded = true }, 1000);
+    try std.testing.expectEqual(landing, flown.intent.destination.?);
+    try std.testing.expect(!flown.intent.direct);
+}
+/// A corner contact can obstruct the leader without lying in its view cone.
+/// Include the collision skin, but do not confuse actors on different floors.
+fn bodiesTouch(a: v.Vec3, first: data.Body, b: v.Vec3, second: data.Body) bool {
+    for (0..3) |axis| {
+        if (a[axis] + first.maxs[axis] + 1 < b[axis] + second.mins[axis] or
+            b[axis] + second.maxs[axis] + 1 < a[axis] + first.mins[axis]) return false;
+    }
+    return true;
+}
+test "a follower yields at a touching hull corner outside the leader's facing cone" {
+    const follower: data.Body = .{ .mins = .{ -16, -16, -24 }, .maxs = .{ 16, 16, 32 } };
+    const player: data.Body = .{ .mins = .{ -15, -15, -24 }, .maxs = .{ 15, 15, 32 } };
+    try std.testing.expect(bodiesTouch(.{ 190, 272, -296 }, follower, .{ 159, 245, -296 }, player));
+    try std.testing.expect(!bodiesTouch(.{ 224, 272, -296 }, follower, .{ 159, 245, -296 }, player));
+    try std.testing.expect(!bodiesTouch(.{ 190, 272, -200 }, follower, .{ 159, 245, -296 }, player));
+}
 /// Reserve actual passing room, rather than a combat sidestep's reduced
 /// distance. If the passage is too narrow for that, back away along it.
 fn passingSpot(collision: @import("../../../../core/domain/collision.zig").Collision, position: v.Vec3, body: data.Body, slot: u16, other: data.Transform, other_body: data.Body, roll: f32) !?v.Vec3 {
@@ -88,14 +137,20 @@ fn passingSpot(collision: @import("../../../../core/domain/collision.zig").Colli
     const candidates = [_]v.Vec3{ v.scale(side, sign * 64), v.scale(side, -sign * 64), v.scale(away, 64), v.scale(along, 64), v.scale(away, 96), v.scale(along, 96) };
     const wet = try collision.contents(v.add(position, .{ 0, 0, body.mins[2] + 1 }), slot) & c.CONTENTS_WATER != 0;
     const forbidden: u32 = @as(u32, c.CONTENTS_LAVA | c.CONTENTS_SLIME | c.CONTENTS_DK3_NITRO) | (if (wet) 0 else @as(u32, c.CONTENTS_WATER));
-    for (candidates, 0..) |offset, index| {
+    // Curved stairs can reject every view-relative side/away stroke. Try a
+    // bounded ring as well, through the same full-hull supported rollout.
+    for (0..candidates.len + 16) |index| {
+        const offset = if (index < candidates.len) candidates[index] else blk: {
+            const angle = @as(f32, @floatFromInt(index - candidates.len)) * std.math.pi / 8;
+            break :blk v.Vec3{ @cos(angle) * 64, @sin(angle) * 64, 0 };
+        };
         if (v.length(offset) < 1) continue;
         const candidate = v.add(position, offset);
         if (index < 2 and @abs(v.dot(v.subtract(candidate, other.position), side)) < clearance) continue;
         // The supported rollout already checks every swept hull and stair.
         // A level sweep here would reject a legal retreat up a single tread,
         // leaving both bodies locked face to face in a narrow passage.
-        const supported = try @import("../../../../core/domain/navigation_input.zig").walkPathSupported(collision, .{ .start = position, .end = candidate, .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = body.collision_mask }, forbidden, &.{}, 22, body.collision_mask & ~@as(u32, c.CONTENTS_BODY)) orelse continue;
+        const supported = try @import("../../../../core/domain/navigation_input.zig").walkPathSupported(collision, .{ .start = position, .end = candidate, .mins = body.mins, .maxs = body.maxs, .slot = slot, .mask = body.collision_mask }, forbidden, &.{}, 36, body.collision_mask & ~@as(u32, c.CONTENTS_BODY)) orelse continue;
         return supported;
     }
     return null;
@@ -105,14 +160,18 @@ test "a follower backs out of a narrow lane and rejects an unsupported retreat" 
     const Fixture = struct {
         gap: bool = false,
         step: bool = false,
+        drop: f32 = 0,
         fn trace(raw: *anyopaque, request: col.Request) !col.Trace {
             const self: *@This() = @ptrCast(@alignCast(raw));
+            // The leader occupies the lower end of this narrow lane.
+            if (request.end[1] < request.start[1] and request.end[1] < 27)
+                return .{ .fraction = 0, .end = request.start, .normal = .{ 0, 1, 0 } };
             if (request.end[0] + request.maxs[0] > 20 or request.end[0] + request.mins[0] < -20)
                 return .{ .fraction = 0, .end = request.start, .normal = .{ -1, 0, 0 } };
             if (self.step and request.end[1] > request.start[1] and request.end[1] >= 40 and request.start[2] < 40)
                 return .{ .fraction = 0.5, .end = request.start, .normal = .{ 0, -1, 0 } };
             if (request.end[2] < request.start[2] and !(self.gap and request.start[1] > 40)) {
-                const height = -request.mins[2] + (if (self.step and request.start[1] >= 40) @as(f32, 16) else 0);
+                const height = -request.mins[2] + (if (request.start[1] >= 40) (if (self.step) @as(f32, 16) else -self.drop) else 0);
                 if (request.start[2] >= height and request.end[2] <= height) {
                     const fraction = (request.start[2] - height) / (request.start[2] - request.end[2]);
                     return .{ .fraction = fraction, .end = .{ request.end[0], request.end[1], height }, .normal = .{ 0, 0, 1 } };
@@ -133,11 +192,42 @@ test "a follower backs out of a narrow lane and rejects an unsupported retreat" 
     try std.testing.expect(chosen[1] >= 91 and @abs(chosen[0]) < 1);
     const off_center = (try passingSpot(collision, .{ -6, 27, 24 }, body, 1, leader, other, 0)).?;
     try std.testing.expect(off_center[1] >= 91 and @abs(off_center[0] + 6) < 1);
+    fixture.drop = 32;
+    const downstairs = (try passingSpot(collision, .{ 0, 27, 24 }, body, 1, leader, other, 0)).?;
+    try std.testing.expect(downstairs[1] >= 91 and downstairs[2] == -8);
+    fixture.drop = 48;
+    try std.testing.expectEqual(null, try passingSpot(collision, .{ 0, 27, 24 }, body, 1, leader, other, 0));
+    fixture.drop = 0;
     fixture.step = true;
     const upstairs = (try passingSpot(collision, .{ 0, 27, 24 }, body, 1, leader, other, 0)).?;
     try std.testing.expect(upstairs[1] >= 91 and upstairs[2] == 40);
     fixture.gap = true;
     try std.testing.expectEqual(null, try passingSpot(collision, .{ 0, 27, 24 }, body, 1, leader, other, 0));
+}
+test "a curved passing lane can require a direction outside the leader-relative candidates" {
+    const col = @import("../../../../core/domain/collision.zig");
+    const Corridor = struct {
+        fn trace(_: *anyopaque, request: col.Request) !col.Trace {
+            const normal: v.Vec3 = .{ 0.9238795, 0.3826834, 0 };
+            const side = v.dot(v.subtract(request.end, .{ 30, 30, 24 }), normal);
+            if (@abs(side) > 8) return .{ .fraction = 0, .end = request.start, .normal = v.scale(normal, if (side > 0) @as(f32, -1) else 1) };
+            if (request.end[2] < request.start[2] and request.start[2] >= 24 and request.end[2] <= 24) {
+                const fraction = (request.start[2] - 24) / (request.start[2] - request.end[2]);
+                return .{ .fraction = fraction, .end = .{ request.end[0], request.end[1], 24 }, .normal = .{ 0, 0, 1 } };
+            }
+            return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+        }
+        fn contents(_: *anyopaque, _: v.Vec3, _: u16) !u32 {
+            return 0;
+        }
+    };
+    var raw: u8 = 0;
+    const service: col.Collision = .{ .context = &raw, .trace_fn = Corridor.trace, .contents_fn = Corridor.contents };
+    const body: data.Body = .{ .mins = .{ -2, -2, -24 }, .maxs = .{ 2, 2, 32 }, .collision_mask = c.MASK_PLAYERSOLID };
+    const start: v.Vec3 = .{ 30, 30, 24 };
+    const chosen = (try passingSpot(service, start, body, 1, .{ .position = .{ 0, 0, 24 } }, body, 1)).?;
+    try std.testing.expect(v.length(v.subtract(chosen, start)) >= 60);
+    try std.testing.expect(@abs(v.dot(v.subtract(chosen, start), .{ 0.9238795, 0.3826834, 0 })) <= 8);
 }
 /// Step aside along a straight, braked line; fighting goes on meanwhile.
 fn yieldTo(world: *data.World, entity: ecs.Entity, point: v.Vec3, now: i64) !void {

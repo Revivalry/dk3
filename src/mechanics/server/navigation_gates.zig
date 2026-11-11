@@ -68,13 +68,18 @@ pub const State = struct {
     /// route would take were every gate open (null: no route even then, or a
     /// live route exists already).
     pub fn blocking(self: *State, from: v.Vec3, slot: u16, goal: v.Vec3) ?Block {
+        return self.blockingExcept(from, slot, goal, &.{});
+    }
+    /// Keep already rejected shortcuts shut while looking for an alternative
+    /// route's first operable gate. Live routing is restored on every return.
+    pub fn blockingExcept(self: *State, from: v.Vec3, slot: u16, goal: v.Vec3, excluded: []const u32) ?Block {
         const navigation = @import("../../engine/navigation.zig");
         const flags = navigation.travelFlags(true);
         var start = engine.gateway.call(c.BOTLIB_AI_REACHABILITY_AREA, .{ &from, @as(isize, slot) });
         var target = navigation.destinationArea(goal);
         if (start == 0 or target == 0) return report("no area", start, target);
         if (engine.gateway.call(c.BOTLIB_AAS_AREA_TRAVEL_TIME_TO_GOAL_AREA, .{ start, &from, target, @as(isize, flags) }) > 0) return report("routed", start, target);
-        self.open();
+        self.openExcept(excluded);
         defer self.restore();
         if (engine.gateway.call(c.BOTLIB_AAS_AREA_TRAVEL_TIME_TO_GOAL_AREA, .{ start, &from, target, @as(isize, flags) }) == 0) {
             // A rider of a lift-like mover (a raised door) is placed in that
@@ -134,6 +139,12 @@ pub const State = struct {
     /// restores them afterwards (`restore`).
     pub fn open(self: *State) void {
         for (self.gates.items) |gate| if (gate.closed) for (gate.areas) |area| route(area, true);
+    }
+    pub fn openExcept(self: *State, excluded: []const u32) void {
+        self.open();
+        // Apply exclusions last: another gate can share the same area.
+        for (self.gates.items) |gate| if (gate.closed and std.mem.indexOfScalar(u32, excluded, gate.id) != null)
+            for (gate.areas) |area| route(area, false);
     }
     pub fn restore(self: *State) void {
         for (self.gates.items) |gate| if (gate.closed) for (gate.areas) |area| route(area, false);
@@ -384,6 +395,37 @@ fn report(reason: []const u8, start: isize, target: isize) ?Block {
 }
 fn route(area: i32, enable: bool) void {
     _ = engine.gateway.call(c.BOTLIB_AAS_ENABLE_ROUTING_AREA, .{ @as(isize, area), @as(isize, @intFromBool(enable)) });
+}
+
+test "alternative routing keeps rejected gates shut through shared areas and restores the live state" {
+    const Fixture = struct {
+        var enabled: [4]bool = @splat(false);
+        fn syscall(operation: isize, ...) callconv(.c) isize {
+            var args = @cVaStart();
+            defer @cVaEnd(&args);
+            if (operation == c.BOTLIB_AAS_ENABLE_ROUTING_AREA) {
+                const area = @cVaArg(&args, isize);
+                const enable = @cVaArg(&args, isize);
+                enabled[@intCast(area)] = enable != 0;
+            }
+            return 0;
+        }
+    };
+    const previous = engine.gateway;
+    defer engine.gateway = previous;
+    engine.gateway.bind(Fixture.syscall);
+    Fixture.enabled = @splat(false);
+    var first = [_]i32{ 1, 2 };
+    var second = [_]i32{ 2, 3 };
+    var state: State = .{};
+    defer state.gates.deinit(std.testing.allocator);
+    try state.gates.append(std.testing.allocator, .{ .id = 7, .kind = .door, .areas = &first, .closed = true });
+    try state.gates.append(std.testing.allocator, .{ .id = 8, .kind = .door, .areas = &second, .closed = true });
+    state.openExcept(&.{7});
+    try std.testing.expectEqual([4]bool{ false, false, false, true }, Fixture.enabled);
+    state.restore();
+    try std.testing.expectEqual([4]bool{ false, false, false, false }, Fixture.enabled);
+    try std.testing.expect(state.gates.items[0].closed and state.gates.items[1].closed);
 }
 fn blocks(world: *data.World, entity: @import("../../core/ecs/world.zig").Entity, kind: Kind) !bool {
     return switch (kind) {

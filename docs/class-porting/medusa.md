@@ -42,6 +42,18 @@ Episode3 with zero deaths; its rendered export passes movement and full media
 checks. Hiro is visible in the inspected timestream ending frame. Artistic
 gaze/cinematic comparison remains a separate gate.
 
+Sequence587 native301 corrects the warning contract again: the targeted screen
+flash and rattle remain active behind cover, so the bot keeps its view averted
+until that phase ends. A sight-ray requirement reacted too late when an already
+active gaze became visible. A later qualified walking stroke also overwrote the
+safe view; the pilot now applies that view last while preserving world-space
+movement through its existing input rotation. Class-owned gaze timing, eye
+contact, damage and petrification remain unchanged. Debug182 passes the targeted
+warning and final-view regressions. `medusa-targeted-flash-final-view194-348`
+defeats Medusa, completes the ten-monster counter and timestream, and arrives in
+Episode3 with zero deaths from the preserved normal arrival save. This scoped
+result does not establish a complete fresh episode.
+
 The same run exposes a separate driver recovery defect: a lethally petrified
 player retains frozen mode. The shared driver and input motor now recognize
 nonpositive health when requesting the ordinary checkpoint restart. Regression

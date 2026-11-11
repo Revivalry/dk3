@@ -35,7 +35,7 @@ def run(specification):
         raise RuntimeError(f'Output already exists: {target}')
     work = target.parent / (target.stem + '-assembly')
     work.mkdir(exist_ok=True)
-    paths, chapters, evidence = [], [], []
+    paths, frames, chapters, evidence = [], [], [], []
     elapsed = 0.0
     font = subprocess.check_output(['fc-match', '-f', '%{file}', 'DejaVuSans'], text=True)
     for number, part in enumerate(spec['parts']):
@@ -66,25 +66,21 @@ def run(specification):
                 '-c:a', 'aac', '-b:a', '160k', str(card)], check=True)
         start = elapsed
         paths.append(card)
-        elapsed += float(probe(card)['format']['duration'])
+        frames.append(round(float(probe(card)['format']['duration']) * 30))
+        elapsed += frames[-1] / 30
         clip_evidence = []
         for i, clip in zip(indices, clips):
             info = probe(clip)
             video = next(s for s in info['streams'] if s['codec_type'] == 'video')
             source_size = [video['width'], video['height']]
-            use = clip
-            if source_size != [1280, 720]:
-                use = work / f'{number:02d}-{i:03d}-normalized.mp4'
-                if not use.exists():
-                    subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y', '-i', str(clip),
-                        '-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1',
-                        '-c:v', 'libx264', '-preset', 'fast', '-crf', '21', '-pix_fmt', 'yuv420p',
-                        '-c:a', 'copy', '-movflags', '+faststart', str(use)], check=True)
-            paths.append(use)
-            elapsed += float(probe(use)['format']['duration'])
+            paths.append(clip)
+            frames.append(round(float(info['format']['duration']) * 30))
+            elapsed += frames[-1] / 30
             motion = report / f'motion-{i:03d}.json'
+            render_inputs = report / f'render-{i:03d}.inputs.json'
             clip_evidence.append(dict(path=str(clip), sha256=digest(clip), source_size=source_size,
                 render_log_sha256=digest(report / f'render-{i:03d}.log'),
+                render_inputs_sha256=digest(render_inputs) if render_inputs.exists() else None,
                 motion_evaluation_sha256=digest(motion) if motion.exists() else None))
         chapters.append((start, elapsed, label))
         evidence.append(dict(report=str(report), result_sha256=digest(report / 'result.json'),
@@ -97,37 +93,39 @@ def run(specification):
                 if (report / 'observed-failure.json').exists() else None,
             observed_failure_sha256=digest(report / 'observed-failure.json')
                 if (report / 'observed-failure.json').exists() else None))
-    listing = work / 'concat.txt'
-    listing.write_text(''.join("file '" + str(p).replace("'", "'\\''") + "'\n" for p in paths))
     metadata = work / 'chapters.txt'
     metadata.write_text(';FFMETADATA1\ntitle=' + metadata_value(spec['title']) + '\n' + ''.join(
         f'[CHAPTER]\nTIMEBASE=1/1000\nSTART={round(start*1000)}\nEND={round(end*1000)}\ntitle={metadata_value(label)}\n'
         for start, end, label in chapters))
     partial = work / 'assembled.mp4'
-    subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0',
-        '-i', str(listing), '-i', str(metadata), '-map', '0:v:0', '-map', '0:a:0', '-map_metadata', '1',
-        '-map_chapters', '1', '-c', 'copy', '-movflags', '+faststart', str(partial)], check=True)
+    # Decode each source with its own H.264 headers. A stream copy of nested
+    # clip concatenations can corrupt packets when encoder headers differ.
+    inputs, filters, segments = [], [], []
+    for index, (path, count) in enumerate(zip(paths, frames)):
+        inputs += ['-threads', '2', '-i', str(path)]
+        filters += [
+            f'[{index}:v]scale=1280:720:force_original_aspect_ratio=decrease,'
+            'pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30:start_time=0,'
+            f'tpad=stop_mode=clone:stop_duration=1,trim=end_frame={count},setpts=PTS-STARTPTS[v{index}]',
+            f'[{index}:a]aresample=48000:async=1:first_pts=0,aformat=channel_layouts=stereo,'
+            f'apad,atrim=end_sample={count * 1600},asetpts=PTS-STARTPTS[a{index}]',
+        ]
+        segments.append(f'[v{index}][a{index}]')
+    filters.append(''.join(segments) + f'concat=n={len(paths)}:v=1:a=1[joined][sound]')
+    filters.append('[joined]fps=30:start_time=0,settb=1/30,setpts=N[video]')
+    filters.append('[sound]asettb=1/48000,asetpts=N[audio]')
+    subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-xerror', '-y', *inputs,
+        '-i', str(metadata), '-filter_complex_threads', '2', '-filter_complex', ';'.join(filters),
+        '-map', '[video]', '-map', '[audio]', '-map_metadata', str(len(paths)),
+        '-map_chapters', str(len(paths)), '-r', '30', '-fps_mode', 'cfr', '-enc_time_base:v', '1/30',
+        '-c:v', 'libx264', '-threads', '6', '-preset', 'fast', '-crf', '21', '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart', str(partial)], check=True)
     info = probe(partial)
     video = next(s for s in info['streams'] if s['codec_type'] == 'video')
     cadence = video_cadence(partial, video)
-    normalized_timestamps = video['r_frame_rate'] != '30/1' or video['avg_frame_rate'] != '30/1' or not cadence['passed']
-    if normalized_timestamps:
-        # AAC padding and independently closed AVI chunks can leave fractional
-        # gaps at concatenation boundaries, despite every source being 30 fps.
-        # Preserve the soundtrack/chapters and fill those gaps on a uniform grid.
-        original = work / 'assembled-before-cfr.mp4'
-        partial.replace(original)
-        subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y', '-i', str(original),
-            '-map', '0:v:0', '-map', '0:a:0', '-map_metadata', '0', '-map_chapters', '0',
-            '-vf', 'fps=30:start_time=0,settb=1/30,setpts=N',
-            '-r', '30', '-fps_mode', 'cfr', '-enc_time_base', '1/30',
-            '-c:v', 'libx264', '-preset', 'fast', '-crf', '21',
-            '-pix_fmt', 'yuv420p', '-c:a', 'copy', '-movflags', '+faststart', str(partial)], check=True)
-        info = probe(partial)
-        video = next(s for s in info['streams'] if s['codec_type'] == 'video')
-        cadence = video_cadence(partial, video)
     assert (video['width'], video['height'], video['r_frame_rate'], video['avg_frame_rate']) == (1280, 720, '30/1', '30/1')
     assert cadence['passed'], cadence
+    assert int(video['nb_frames']) == sum(frames), (video['nb_frames'], sum(frames))
     assert any(s['codec_type'] == 'audio' for s in info['streams'])
     assert abs(float(info['format']['duration']) - elapsed) < 1, (info['format']['duration'], elapsed)
     partial.rename(target)
@@ -136,7 +134,7 @@ def run(specification):
         scope='Recorded bot walkthrough assembled from labelled attempts and ordinary checkpoint continuations; not a fresh uninterrupted pass.',
         sha256=digest(target), duration_seconds=float(info['format']['duration']),
         chapters=chapters, sources=evidence, media=info,
-        normalized_timestamps=normalized_timestamps, cadence=cadence), indent=2) + '\n')
+        normalized_timestamps=True, cadence=cadence), indent=2) + '\n')
     print(target, flush=True)
 
 

@@ -1,8 +1,39 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-//! Shared mechanism: Inventory-based bot decisions; attacks still run through ordinary player input.
+//! Shared mechanism: Bot combat priorities and inventory decisions; attacks still run through ordinary player input.
 const std = @import("std");
+/// A grounded body's residual gravity stroke is not falling travel to lead.
+pub fn leadVelocity(velocity: [3]f32, grounded: bool) [3]f32 {
+    var travel = velocity;
+    if (grounded) travel[2] = 0;
+    return travel;
+}
+test "projectile lead keeps grounded lateral travel without aiming below its floor" {
+    const t = std.testing;
+    try t.expectEqual([3]f32{ 0, 0, 0 }, leadVelocity(.{ 0, 0, -40 }, true));
+    try t.expectEqual([3]f32{ 120, -60, 0 }, leadVelocity(.{ 120, -60, -40 }, true));
+    try t.expectEqual([3]f32{ 120, -60, -40 }, leadVelocity(.{ 120, -60, -40 }, false));
+    try t.expectEqual([3]f32{ 0, 0, 240 }, leadVelocity(.{ 0, 0, 240 }, false));
+}
 const catalog = @import("weapon_catalog");
 const weapons = @import("weapons.zig");
+/// Preserve a chosen prey, but answer an imminent nearby attack before
+/// continuing to aim at another actor across the room.
+pub fn targetPriority(distance: f32, is_preferred: bool, is_current: bool, threatening: bool) f32 {
+    if (threatening and distance <= 160) return distance * 0.025;
+    return distance * @as(f32, if (is_preferred) 0.25 else 1) * @as(f32, if (is_current) 0.6 else 1);
+}
+pub fn recentAggressor(source: u32, at_ms: i64, now: i64) u32 {
+    return if (at_ms >= 0 and now >= at_ms and now - at_ms <= 1500) source else 0;
+}
+test "a close attacking body interrupts scripted focus without chasing distant retaliation" {
+    try std.testing.expect(targetPriority(80, false, false, true) < targetPriority(100, true, true, false));
+    try std.testing.expect(targetPriority(800, false, false, true) > targetPriority(100, true, true, false));
+    try std.testing.expect(targetPriority(100, true, true, false) < targetPriority(90, false, false, false));
+    try std.testing.expectEqual(@as(u32, 17), recentAggressor(17, 100, 1600));
+    try std.testing.expectEqual(@as(u32, 0), recentAggressor(17, 100, 1601));
+    try std.testing.expectEqual(@as(u32, 0), recentAggressor(17, 100, 99));
+    try std.testing.expectEqual(@as(u32, 0), recentAggressor(17, -1, 99));
+}
 pub fn select(loadout: weapons.State, table: *const weapons.Table, distance: ?f32) u5 {
     return selectFor(loadout, table, distance, .{});
 }
@@ -21,6 +52,20 @@ pub const Situation = struct {
     /// splash weapons with its leader beside the target, for instance.
     excluded: i32 = 0,
 };
+/// A conservative spacing preference is useful when another ranged weapon
+/// reaches. It must not force a distant melee pursuit when only melee remains.
+pub fn blastProximity(distance: f32, radius: f32, authored: bool, ally_near: bool) enum { clear, avoid, unsafe } {
+    if (ally_near or distance < radius * 1.25) return .unsafe;
+    const spacing = if (authored) @max(radius * 1.5, 160) else @max(radius * 2, 320);
+    return if (distance < spacing) .avoid else .clear;
+}
+test "blast spacing distinguishes a safe ranged fallback from an unsafe close shot" {
+    try std.testing.expect(blastProximity(200, 128, false, false) == .avoid);
+    try std.testing.expect(blastProximity(200, 128, true, false) == .clear);
+    try std.testing.expect(blastProximity(150, 128, false, false) == .unsafe);
+    try std.testing.expect(blastProximity(400, 128, false, true) == .unsafe);
+    try std.testing.expect(blastProximity(400, 128, false, false) == .clear);
+}
 fn available(loadout: weapons.State, table: *const weapons.Table, entry: catalog.Entry) bool {
     const tuning = table.entries[entry.id];
     return entry.spec.auto_select and tuning.damage > 0 and
@@ -56,6 +101,7 @@ fn selectBest(loadout: weapons.State, table: *const weapons.Table, distance: ?f3
         const tuning = table.entries[entry.id];
         const empty = loadout.ammo[entry.id] < tuning.ammoCost;
         if (!available(loadout, table, entry)) continue;
+        if (entry.spec.bot_requires_request) continue;
         if (situation.excluded & (@as(i32, 1) << entry.id) != 0) continue;
         if (situation.wet and dischargesInWater(entry.id)) continue;
         if (situation.advancing and entry.spec.placed) continue;
@@ -232,6 +278,30 @@ pub fn reachFor(loadout: weapons.State, table: *const weapons.Table, weapon: u5)
 pub fn standOffFor(loadout: weapons.State, table: *const weapons.Table, weapon: u5) f32 {
     return standOffReach(reachFor(loadout, table, weapon));
 }
+/// A temporary melee fallback must still make room for an armed explosive.
+/// Otherwise blast safety plants the shooter in a melee trade indefinitely.
+pub fn escapeReach(loadout: weapons.State, table: *const weapons.Table, selected: u5, requested: ?u5, distance: f32) f32 {
+    const reach = reachFor(loadout, table, selected);
+    if (reach >= 160) return reach;
+    const wanted = requested orelse return reach;
+    if (preferred(loadout, table, wanted) == null) return reach;
+    const entry = catalog.find(wanted) orelse return reach;
+    if (!entry.spec.splash_hazard or distance >= entry.spec.projectile.splash_radius * 1.25) return reach;
+    return @max(reach, reachFor(loadout, table, wanted));
+}
+test "blast-safe melee fallback retreats to regain an armed requested weapon" {
+    const launcher = catalog.classes.sidewinder.id;
+    const close = catalog.classes.silverclaw.id;
+    var table: weapons.Table = .{};
+    table.entries[launcher] = .{ .damage = 120, .range = 2000, .ammoCost = 1 };
+    table.entries[close] = .{ .damage = 40, .range = 80, .ammoCost = 0 };
+    var loadout: weapons.State = .{ .weapon = close, .dk3Inventory = (@as(i32, 1) << launcher) | (@as(i32, 1) << close) };
+    loadout.ammo[launcher] = 1;
+    try std.testing.expect(escapeReach(loadout, &table, close, launcher, 60) >= 160);
+    try std.testing.expect(escapeReach(loadout, &table, close, null, 60) < 160);
+    loadout.ammo[launcher] = 0;
+    try std.testing.expect(escapeReach(loadout, &table, close, launcher, 60) < 160);
+}
 pub fn standOff(table: *const weapons.Table, weapon: u5) f32 {
     const entry = catalog.find(weapon) orelse return 96;
     const reach = entry.spec.bot_range orelse table.entries[weapon].range;
@@ -248,13 +318,43 @@ pub fn maintainCharge(loadout: weapons.State) bool {
         loadout.dk3Charge < entry.spec.bot_charge_ms and loadout.weaponstate != 1 and loadout.weaponstate != 2;
 }
 pub fn attack(loadout: weapons.State, table: *const weapons.Table, distance: f32) bool {
+    return attackWithHealth(loadout, table, distance, 0);
+}
+/// A class may bound the self damage of its short-flight rounds. Reserve a
+/// full additional health margin; armour and distance falloff buy no credit.
+pub fn closeSplashAllowed(table: *const weapons.Table, weapon: u5, distance: f32, health: i32) bool {
+    const entry = catalog.find(weapon) orelse return false;
+    const allowance = entry.spec.bot_close_splash orelse return false;
+    const tuning = table.entries[weapon];
+    if (!entry.spec.splash_hazard or tuning.damage <= 0 or tuning.speed <= 0 or distance < allowance.min_distance) return false;
+    // Include muzzle/target contact uncertainty in the flight-time bound.
+    if ((distance + 32) * 1000 / tuning.speed > allowance.max_flight_ms) return false;
+    const self_damage = @ceil(tuning.damage * allowance.max_damage_scale * entry.spec.projectile.self_splash);
+    return @as(f32, @floatFromInt(health)) > self_damage + allowance.health_reserve;
+}
+pub fn attackWithHealth(loadout: weapons.State, table: *const weapons.Table, distance: f32, health: i32) bool {
     const entry = catalog.find(@intCast(loadout.weapon)) orelse return false;
     if (!entry.spec.auto_select or loadout.weaponstate == 1 or loadout.weaponstate == 2) return false;
     const tuning = table.entries[entry.id];
     if (tuning.damage <= 0 or distance > reachFor(loadout, table, entry.id)) return false;
-    if (entry.spec.splash_hazard and distance < entry.spec.projectile.splash_radius) return false;
+    if (entry.spec.splash_hazard and distance < entry.spec.projectile.splash_radius and !closeSplashAllowed(table, entry.id, distance, health)) return false;
     if (entry.spec.bot_charge_ms > 0 and loadout.dk3AttackHeld != 0 and loadout.dk3Charge >= entry.spec.bot_charge_ms) return false;
     return loadout.ammo[entry.id] >= tuning.ammoCost or entry.spec.bot_contact_melee_range != null;
+}
+test "a reviewed short-flight splash needs health for its entire volley and reserve" {
+    const id = catalog.classes.trident.id;
+    var table: weapons.Table = .{};
+    table.entries[id] = .{ .damage = 20, .range = 2000, .speed = 600, .ammoCost = 3 };
+    var loadout: weapons.State = .{ .weapon = id, .dk3Inventory = @as(i32, 1) << id };
+    loadout.ammo[id] = 30;
+    try std.testing.expect(attackWithHealth(loadout, &table, 64, 100));
+    try std.testing.expect(!attack(loadout, &table, 64));
+    try std.testing.expect(!attackWithHealth(loadout, &table, 64, 79));
+    try std.testing.expect(!attackWithHealth(loadout, &table, 8, 100));
+    try std.testing.expect(!closeSplashAllowed(&table, id, 200, 100));
+    table.entries[id].speed = 100;
+    try std.testing.expect(!attackWithHealth(loadout, &table, 64, 100));
+    try std.testing.expect(!closeSplashAllowed(&table, catalog.classes.ballista.id, 64, 1000));
 }
 test "stored ammunition does not make an unowned requested weapon available" {
     const id = catalog.classes.sidewinder.id;
@@ -305,6 +405,21 @@ test "a distant target gets a ranged weapon instead of an ineffective spread bur
     try std.testing.expectEqual(ion, selectFor(loadout, &table, 620, .{}));
     try std.testing.expectEqual(spread, selectFor(loadout, &table, 192, .{}));
 }
+test "deliberate attacks remain requestable without becoming automatic fallbacks" {
+    const ritual = catalog.classes.nightmare.id;
+    const ranged_weapon = catalog.classes.bolter.id;
+    var loadout: weapons.State = .{ .weapon = ritual, .dk3Inventory = (1 << ritual) | (1 << ranged_weapon) };
+    var table: weapons.Table = .{};
+    table.entries[ritual] = .{ .damage = 300, .range = 2000, .ammoCost = 10 };
+    table.entries[ranged_weapon] = .{ .damage = 30, .range = 2000, .ammoCost = 1 };
+    loadout.ammo[ritual] = 20;
+    loadout.ammo[ranged_weapon] = 50;
+    try std.testing.expectEqual(ranged_weapon, selectFor(loadout, &table, 400, .{}));
+    try std.testing.expectEqual(@as(?u5, ritual), preferred(loadout, &table, ritual));
+    loadout.dk3Inventory = 1 << ritual;
+    try std.testing.expect(!armedFor(loadout, &table, .{}));
+}
+
 test "bots reject unavailable ammunition and flashlight and release a charged Hammer" {
     var loadout: weapons.State = .{ .weapon = 1, .dk3Inventory = (1 << 1) | (1 << 2) | (1 << 28) };
     var table: weapons.Table = .{};

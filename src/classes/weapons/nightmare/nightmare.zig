@@ -5,6 +5,8 @@ pub const id: u5 = 20;
 pub const spec: profiles.Spec = .{
     .player_grip = .pistol, // nightmare
     .combat = .owned,
+    // Interruption punishes the caster; this ritual needs an authored safe interval.
+    .bot_requires_request = true,
     .credited_kill_ammo = 1,
     .visual = .{ .projectile_model = "models/e3/we_nnreaper.dkm", .color = .{ 0.9, 0.2, 1 } },
     .world_model = "models/e3/a_nmare.dkm",

@@ -203,6 +203,7 @@ fn consider(frame: pilot.Frame, candidate: Ref, position: v.Vec3, rule: Pick, ne
     const health = candidate.get(data.Health) catch return null;
     const kind = catalog.entries[actor.definition].kind;
     if (health.current <= 0 or !route.hostile(kind)) return null;
+    if (candidate.get(data.Body) catch null) |body| if (body.contents == 0) return null;
     if (frame.capabilities.ignore_ambient and catalog.ambient(kind)) return null;
     const id = try candidate.id();
     const ordered = rule.preferred != 0 and id == rule.preferred;
@@ -235,6 +236,8 @@ pub const Situation = struct {
     position: v.Vec3,
     health: data.Health,
     loadout: data.Weapons,
+    /// The same admitted weapon preference the firing pilot receives.
+    weapon: ?u5 = null,
     /// A health detour is under way.
     detouring: bool = false,
     /// Break off below this percentage of maximum health with a pack near.
@@ -273,7 +276,8 @@ pub fn engage(state: *Engagement, situation: Situation, target: Aggressor) !Deci
     }
     var at = (try target.ref.get(data.Transform)).position;
     if (target.ref.get(data.Body) catch null) |body| at[2] += (body.mins[2] + body.maxs[2]) * 0.5;
-    const weapon = combat.selectFor(situation.loadout, frame.table, target.distance, .{ .excluded = excluded });
+    const preferred = if (situation.weapon) |wanted| combat.permittedPreference(situation.loadout, frame.table, wanted, excluded) else null;
+    const weapon = preferred orelse combat.selectFor(situation.loadout, frame.table, target.distance, .{ .excluded = excluded });
     const reach = @min(situation.max_reach, combat.standOffFor(situation.loadout, frame.table, weapon));
     var span = v.length(v.subtract(at, situation.position));
     if (reach < 128) if (target.ref.get(data.Body) catch null) |body| {
@@ -314,6 +318,69 @@ pub fn standing(frame: pilot.Frame, point: v.Vec3) !v.Vec3 {
     return floor.end;
 }
 
+test "engagement uses the firing preference and ignores temporarily noncolliding actors" {
+    const collision = @import("../../core/domain/collision.zig");
+    const Fixture = struct {
+        fn next(_: *anyopaque, request: nav.Request) !?nav.Waypoint {
+            return .{ .point = request.destination };
+        }
+        fn trace(_: *anyopaque, request: collision.Request) !collision.Trace {
+            return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+        }
+        fn contents(_: *anyopaque, _: v.Vec3, _: u16) !u32 {
+            return 0;
+        }
+    };
+    var world = data.World.init(std.testing.allocator, 4);
+    defer world.deinit();
+    const target = try world.create(2, .{ data.Transform{ .position = .{ 300, 0, 24 } }, data.Body{ .contents = c.CONTENTS_BODY }, data.Health{ .current = 100, .maximum = 100 } });
+    var context: u8 = 0;
+    var slots: @import("../../engine/slots.zig").Slots = .{};
+    var table: @import("../domain/weapons.zig").Table = .{};
+    const melee_id = @import("weapon_catalog").classes.silverclaw.id;
+    const ranged_id = @import("weapon_catalog").classes.bolter.id;
+    table.entries[melee_id] = .{ .damage = 60, .range = 100 };
+    table.entries[ranged_id] = .{ .damage = 30, .range = 1000, .ammoCost = 1 };
+    const frame: pilot.Frame = .{
+        .world = &world,
+        .slots = &slots,
+        .projections = &.{},
+        .service = .{ .context = &context, .next_fn = Fixture.next },
+        .collision = .{ .context = &context, .trace_fn = Fixture.trace, .contents_fn = Fixture.contents },
+        .table = &table,
+        .slot = 0,
+        .entity = target,
+        .state = .{},
+        .now = 1000,
+    };
+    var situation: Situation = .{
+        .frame = frame,
+        .report = .{ .enemy = 2 },
+        .position = .{ 0, 0, 24 },
+        .health = .{ .current = 100, .maximum = 100 },
+        .loadout = .{ .weapon = ranged_id, .dk3Inventory = (@as(i32, 1) << melee_id) | (@as(i32, 1) << ranged_id) },
+    };
+    situation.loadout.ammo[ranged_id] = 40;
+    const aggressor: Aggressor = .{ .ref = .{ .world = &world, .entity = target }, .id = 2, .distance = 300 };
+    var ranged_state: Engagement = .{};
+    try std.testing.expect((try engage(&ranged_state, situation, aggressor)) == .hold);
+    situation.weapon = melee_id;
+    var melee_state: Engagement = .{};
+    try std.testing.expect((try engage(&melee_state, situation, aggressor)) == .approach);
+    situation.loadout.dk3Inventory &= ~(@as(i32, 1) << melee_id);
+    var unowned_state: Engagement = .{};
+    try std.testing.expect((try engage(&unowned_state, situation, aggressor)) == .hold);
+    const definition: u8 = for (catalog.entries, 0..) |entry, index| {
+        if (route.hostile(entry.kind) and !catalog.ambient(entry.kind)) break @intCast(index);
+    } else unreachable;
+    const hidden = try world.create(3, .{ data.Actor{ .definition = definition, .threat = 1 }, data.Health{ .current = 100, .maximum = 100 }, data.Transform{ .position = .{ 300, 0, 24 } }, data.Body{ .contents = 0 } });
+    const candidate: Ref = .{ .world = &world, .entity = hidden };
+    const ignore: Ignore = .{};
+    const rule: Pick = .{ .self_id = 1, .ignore = &ignore };
+    try std.testing.expectEqual(null, try consider(frame, candidate, situation.position, rule, 1000));
+    (try world.get(hidden, data.Body)).contents = c.CONTENTS_BODY;
+    try std.testing.expect(try consider(frame, candidate, situation.position, rule, 1000) != null);
+}
 test "an ignored aggressor returns once its time is up, and the oldest entry is replaced" {
     var ignore: Ignore = .{};
     ignore.ignore(7, 1000);
