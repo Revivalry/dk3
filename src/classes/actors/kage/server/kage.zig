@@ -61,6 +61,26 @@ pub fn decorate(decoration: *context.Decoration) !void {
 pub fn admitDamage(actor: *const data.Actor, damage: context.Damage) bool {
     return !actor.kage.invulnerable() and !actor.kage.shielded(damage.now);
 }
+/// His charging animation refunds hits; the visible shield also rejects them.
+/// This is firing discipline, independent of the human player's damage rules.
+pub fn botDamageable(actor: *const data.Actor, now: i64) bool {
+    return !actor.kage.recharging() and admitDamage(actor, .{ .weapon = 0, .now = now });
+}
+test "bots wait out recharge while ordinary damage retains the refund path" {
+    var actor: data.Actor = .{ .definition = 0 };
+    actor.kage = policy.initialize(750, 1);
+    try std.testing.expect(botDamageable(&actor, 1000));
+    actor.kage.phase = .protectors;
+    try std.testing.expect(admitDamage(&actor, .{ .weapon = 0, .now = 1000 }));
+    try std.testing.expect(!botDamageable(&actor, 1000));
+    actor.kage.phase = .charging;
+    try std.testing.expect(admitDamage(&actor, .{ .weapon = 0, .now = 1000 }));
+    try std.testing.expect(!botDamageable(&actor, 1000));
+    actor.kage.phase = .combat;
+    actor.kage.recharge_ready_ms = 2000;
+    try std.testing.expect(!botDamageable(&actor, 1000));
+    try std.testing.expect(botDamageable(&actor, 2000));
+}
 pub fn immovable(actor: *const data.Actor) bool {
     return actor.kage.invulnerable();
 }

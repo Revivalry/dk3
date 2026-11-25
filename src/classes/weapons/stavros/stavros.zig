@@ -5,8 +5,12 @@ pub const id: u5 = 17;
 pub const spec: profiles.Spec = .{
     .player_grip = .rifle,
     .combat = .owned,
+    // The supplied range is the meteor's blast radius, not its flight reach.
+    // Treating it as firing reach leaves no usable interval outside splash.
+    .bot_range = 2000,
+    .splash_hazard = true,
     .ammo_class = "ammo_stavros", // stavros
-    .projectile = .{ .mins = @splat(-12), .maxs = @splat(12), .direct_scale = 0, .splash_scale = 1, .lifetime_ms = 12000, .loop_sound = "global/e_torchd.wav" },
+    .projectile = .{ .mins = @splat(-12), .maxs = @splat(12), .direct_scale = 0, .splash_scale = 1, .splash_radius = 200, .lifetime_ms = 12000, .loop_sound = "global/e_torchd.wav" },
     .visual = .{ .projectile_model = "models/e3/we_meteor.dkm", .blast_sound = "global/e_explode1.wav", .color = .{ 0.85, 0.35, 0.15 }, .glow = false },
     .world_model = "models/e3/a_stav.dkm",
     .animation = .{

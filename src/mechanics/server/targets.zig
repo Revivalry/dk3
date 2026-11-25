@@ -87,6 +87,7 @@ pub const Router = struct {
         try self.dispatch(world, slots, projections, entity, activator, now);
     }
     fn dispatch(self: *Router, world: *data.World, slots: *Slots, projections: []abi.EntityProjection, entity: ecs.Entity, activator: u32, now: i64) anyerror!void {
+        inline for (uses.locks) |Class| try Class.fired(world, entity, activator);
         // Successful target emission is durable evidence, including a button that
         // has since returned to rest. Failed locks and queued delays do not count.
         (try world.get(entity, data.MapObject)).objective_uses +|= 1;

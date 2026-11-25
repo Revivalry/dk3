@@ -603,11 +603,18 @@ void SV_ClipToEntity( trace_t *trace, const vec3_t start, const vec3_t mins, con
 	}
 
 	CM_TransformedBoxTrace ( trace, (float *)start, (float *)end,
-		(float *)mins, (float *)maxs, clipHandle,  contentmask,
+		(float *)mins, (float *)maxs, clipHandle,
+		touch->r.bmodel ? contentmask : contentmask | CONTENTS_BODY,
 		origin, angles, capsule);
+	// Temporary boxes/capsules use CONTENTS_BODY internally. The entity's
+	// declared contents already passed the filter above; preserve those
+	// contents for both the exact clip and its result (solid props included).
+	if ( !touch->r.bmodel && (trace->fraction < 1 || trace->startsolid) ) {
+		trace->contents = touch->r.contents;
+	}
 
 	if ( trace->fraction < 1 ) {
-		trace->entityNum = touch->s.number;
+		trace->entityNum = entityNum;
 	}
 }
 
@@ -624,8 +631,6 @@ static void SV_ClipMoveToEntities( moveclip_t *clip ) {
 	sharedEntity_t *touch;
 	int			passOwnerNum;
 	trace_t		trace;
-	clipHandle_t	clipHandle;
-	float		*origin, *angles;
 
 	num = SV_AreaEntities( clip->boxmins, clip->boxmaxs, touchlist, MAX_GENTITIES);
 
@@ -657,33 +662,15 @@ static void SV_ClipMoveToEntities( moveclip_t *clip ) {
 			}
 		}
 
-		// if it doesn't have any brushes of a type we
-		// are looking for, ignore it
-		if ( ! ( clip->contentmask & touch->r.contents ) ) {
-			continue;
-		}
-
-		// might intersect, so do an exact clip
-		clipHandle = SV_ClipHandleForEntity (touch);
-
-		origin = touch->r.currentOrigin;
-		angles = touch->r.currentAngles;
-
-
-		if ( !touch->r.bmodel ) {
-			angles = vec3_origin;	// boxes don't rotate
-		}
-
-		CM_TransformedBoxTrace ( &trace, (float *)clip->start, (float *)clip->end,
-			(float *)clip->mins, (float *)clip->maxs, clipHandle,  clip->contentmask,
-			origin, angles, clip->capsule);
+		SV_ClipToEntity( &trace, clip->start, clip->mins, clip->maxs,
+			clip->end, touchlist[i], clip->contentmask, clip->capsule );
 
 		if ( trace.allsolid ) {
 			clip->trace.allsolid = qtrue;
-			trace.entityNum = touch->s.number;
+			trace.entityNum = touchlist[i];
 		} else if ( trace.startsolid ) {
 			clip->trace.startsolid = qtrue;
-			trace.entityNum = touch->s.number;
+			trace.entityNum = touchlist[i];
 		}
 
 		if ( trace.fraction < clip->trace.fraction ) {
@@ -692,7 +679,7 @@ static void SV_ClipMoveToEntities( moveclip_t *clip ) {
 			// make sure we keep a startsolid from a previous trace
 			oldStart = clip->trace.startsolid;
 
-			trace.entityNum = touch->s.number;
+			trace.entityNum = touchlist[i];
 			clip->trace = trace;
 			clip->trace.startsolid |= oldStart;
 		}
@@ -756,6 +743,27 @@ void SV_Trace( trace_t *results, const vec3_t start, vec3_t mins, vec3_t maxs, c
 	SV_ClipMoveToEntities ( &clip );
 
 	*results = clip.trace;
+	// Opt-in comparison of broadphase admission with the selected entity's
+	// exact geometry. Useful for stale links and regional collision diagnosis.
+	if (com_developer && com_developer->integer >= 3) {
+		int selected = Cvar_VariableIntegerValue("dk3_trace_entity");
+		if (selected > 0 && selected < sv.world->num_entities && contentmask == MASK_SHOT) {
+			sharedEntity_t *entity = SV_GentityNum(selected);
+			vec3_t low, high, middle;
+			CM_ModelBounds(SV_ClipHandleForEntity(entity), low, high);
+			for (i = 0; i < 3; ++i) middle[i] = entity->r.currentOrigin[i] + (low[i] + high[i]) * 0.5f;
+			if (DistanceSquared(end, middle) < 128 * 128) {
+				trace_t direct;
+				int list[MAX_GENTITIES], count, found = 0;
+				SV_ClipToEntity(&direct, start, mins, maxs, end, selected, contentmask, capsule);
+				count = SV_AreaEntities(clip.boxmins, clip.boxmaxs, list, MAX_GENTITIES);
+				for (i = 0; i < count; ++i) if (list[i] == selected) found = 1;
+				Com_Printf("dk3 entity trace: slot=%d number=%d present=%d hit=%d fraction=%.3f direct=%.3f worlds=%u,%u bounds=%.1f,%.1f,%.1f..%.1f,%.1f,%.1f\n",
+					selected, entity->s.number, found, results->entityNum, results->fraction, direct.fraction,
+					SV_CurrentWorld(), CM_CurrentWorld(), entity->r.absmin[0], entity->r.absmin[1], entity->r.absmin[2], entity->r.absmax[0], entity->r.absmax[1], entity->r.absmax[2]);
+			}
+		}
+	}
 }
 
 
@@ -792,6 +800,7 @@ int SV_PointContents( const vec3_t p, int passEntityNum ) {
 		}
 
 		c2 = CM_TransformedPointContents (p, clipHandle, hit->r.currentOrigin, angles);
+		if ( !hit->r.bmodel && c2 ) c2 = hit->r.contents;
 
 		contents |= c2;
 	}

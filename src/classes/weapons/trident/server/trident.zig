@@ -108,7 +108,7 @@ fn moveTip(world: *data.World, slots: *Slots, projections: []abi.EntityProjectio
     if (hit.fraction < 1) {
         if (!hit.sky and !hit.no_impact) {
             const amount = W.blastDamage(projectile.damage, projectile.wet, projectile.flight.trident.charged);
-            try @import("../../../../mechanics/server/area_damage.zig").apply(world, slots, .{ .world = motion.owner, .owner = projectile.owner, .weapon = W.id, .origin = pose.position, .damage = amount, .radius = 100, .skip_slot = slot, .self_scale = 0.325, .occlusion = false }, now);
+            try @import("../../../../mechanics/server/area_damage.zig").apply(world, slots, .{ .world = motion.owner, .owner = projectile.owner, .weapon = W.id, .origin = pose.position, .damage = amount, .radius = 100, .skip_slot = slot, .self_scale = W.spec.projectile.self_splash, .occlusion = false }, now);
             try @import("../../../../mechanics/server/impacts.zig").contact(world, slots, projections, W.id, hit, .{ .detonation = true, .charged = projectile.flight.trident.charged }, now);
             if (engine.integer("developer") > 0) {
                 var text: [160]u8 = undefined;

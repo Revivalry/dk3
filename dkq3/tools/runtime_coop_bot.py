@@ -156,13 +156,17 @@ def run(args):
     staging = tempfile.TemporaryDirectory(prefix='dk3-coop-bot-')
     home = Path(staging.name)
     stage(args, home)
+    # Retain the exact staged scripts after the temporary profile is removed.
+    # A hash alone cannot reconstruct a route edited during later repairs.
+    route_snapshot = args.report / 'routes'
+    shutil.copytree(home / 'dk3/coop', route_snapshot)
     values = settings(args, home)
     command = launch_command(args, home, values)
     inputs = dict(launch=command, settings=values, script=args.script,
                   overlays={str(path): digest(path) for path in args.overlay},
                   identity={'qagame.so': digest(args.modules / 'qagame.so'), 'dk3ded': digest(args.engine / 'bin/dk3ded'),
                             'autoexec.cfg': digest(home / 'dk3/autoexec.cfg'),
-                            **{f'coop/{p.relative_to(args.routes)}': digest(p) for p in sorted(args.routes.rglob('*.lua'))}})
+                            **{f'coop/{p.relative_to(route_snapshot)}': digest(p) for p in sorted(route_snapshot.rglob('*.lua'))}})
     (args.report / 'inputs.json').write_text(json.dumps(inputs, indent=2) + '\n')
     log = args.report / 'server.log'
     events = []
@@ -199,7 +203,8 @@ def run(args):
                     mirrored = time.monotonic()
                     saves = home / 'state/dk3/saves'
                     if saves.is_dir():
-                        shutil.copytree(saves, args.report / 'saves', dirs_exist_ok=True)
+                        shutil.copytree(saves, args.report / 'saves', dirs_exist_ok=True,
+                                        ignore=shutil.ignore_patterns('*.pending'))
                 time.sleep(0.2)
             else:
                 events.append(dict(event='fail', reason=f'wall-clock timeout after {args.timeout} s'))
@@ -220,7 +225,8 @@ def run(args):
             reap_isolated_job(log.read_text(errors='replace'), home)
             saves = home / 'state/dk3/saves'
             if saves.is_dir():
-                shutil.copytree(saves, args.report / "saves", dirs_exist_ok=True)
+                shutil.copytree(saves, args.report / "saves", dirs_exist_ok=True,
+                                ignore=shutil.ignore_patterns('*.pending'))
             staging.cleanup()
     # Re-read once more so trailing lines written during shutdown are included.
     events = [e for e in (parse_event(line) for line in log.read_text(errors='replace').splitlines()) if e] + \

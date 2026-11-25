@@ -52,7 +52,7 @@ pub fn launch(world: *data.World, slots: *Slots, projections: []abi.EntityProjec
     const attack = (try world.get(owner, data.Character)).attribute(.attack, now);
     const entity = try world.create(null, .{
         data.Transform{ .position = start, .angles = shot.angles },
-        data.Velocity{ .linear = v.scale(rules.aim(start, target, forward), tuning.speed * (1 + 0.3 * @as(f32, @floatFromInt(attack)))) },
+        data.Velocity{ .linear = v.scale(catalog.ballistics.aimDirection(start, target), tuning.speed * (1 + 0.3 * @as(f32, @floatFromInt(attack)))) },
         data.Body{ .mins = @splat(-8), .maxs = @splat(8), .contents = c.CONTENTS_CORPSE, .collision_mask = c.MASK_SOLID },
         data.Health{ .current = 5, .maximum = 5 },
         data.Charge{ .owner = owner_id, .damage = tuning.damage, .born_ms = now, .stepped_ms = now, .next_ms = now + 50, .expires_ms = now + @as(i64, @intFromFloat(std.math.clamp(tuning.lifetime * 1000, 1, 3600000))) },

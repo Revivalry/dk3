@@ -4,6 +4,17 @@ The reference files are `dlls/world/BUBOID.cpp` and the generic AI. Provenance o
 
 The native code is `src/classes/actors/buboid/` (`buboid.zig`: melt, resurrection and coffin state; `server/buboids.zig`: swings, melt, resurfacing; `server/buboid.zig`: hooks, damage).
 
+Sequence587, native140 repairs the resurfacing clearance probes. Enlarging the
+hull about a grounded enemy buried its feet in the floor; the fixed32-unit ray
+also began inside the enemy's body. The probe now preserves the enemy's foot
+clearance and starts outside the combined horizontal hulls in each of eight
+directions. Holy-floor rejection, node selection and final live-hull placement
+remain required. `tower-resurface-key-01` restores an already melted coffin
+guardian, defeats it, releases the crypt fence and collects169 with zero deaths.
+Debug62 and the dedicated build pass; ownership12 remains zero. A class-owned
+regression covers floor alignment and separation from the enemy in all eight
+directions. Full Tower and campaign acceptance remain open.
+
 | Section | Reference behaviour | Native status |
 |---|---|---|
 | Identity | `monster_buboid` (159, Episode 3; summoned by Nharre and Garroth), model `m_buboid`, aidata 100 HP, run 80; punch 15 + rnd·10, reach 60 | Implemented |

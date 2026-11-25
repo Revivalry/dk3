@@ -164,7 +164,7 @@ pub fn spawn(world: *data.World, slots: *Slots, projections: []abi.EntityProject
         const velocity = try world.get(owner, data.Velocity);
         velocity.linear = v.subtract(velocity.linear, v.scale(forward, spec.projectile.recoil));
     }
-    const initial = try catalog.flightMotion(shot.weapon, &projectile.flight, .{ .age_ms = 0, .delta_ms = 0, .distance = 0, .wet = projectile.wet, .was_wet = false, .velocity = v.scale(rules.aim(start, target, forward), speed), .speed = speed });
+    const initial = try catalog.flightMotion(shot.weapon, &projectile.flight, .{ .age_ms = 0, .delta_ms = 0, .distance = 0, .wet = projectile.wet, .was_wet = false, .velocity = v.scale(catalog.ballistics.aimDirection(start, target), speed), .speed = speed });
     const lifetime: i64 = if (spec.projectile.lifetime_ms != 0) spec.projectile.lifetime_ms else @intFromFloat(std.math.clamp((if (tuning.lifetime > 0) tuning.lifetime * 1000 else 5000) * spec.projectile.lifetime_scale, 1, 3600000));
     projectile.lifetime_ms = lifetime;
     var flight: weapon_classes.Flight = .{ .projectile = &projectile, .start = start, .velocity = initial.velocity, .speed = tuning.speed, .seed = @truncate(@as(u64, @bitCast(now)) ^ owner_id) };

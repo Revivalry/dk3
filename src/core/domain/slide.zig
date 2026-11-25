@@ -136,6 +136,7 @@ pub const Context = struct {
         }
         const start = state.*;
         if (!try self.move(state)) return;
+        const ordinary = state.*;
         var down = start.position;
         down[2] -= 18;
         var hit = try self.trace(start.position, down);
@@ -157,9 +158,47 @@ pub const Context = struct {
         if (hit.all_solid) self.abort = .{ .where = 3, .fraction = hit.fraction, .normal = hit.normal, .entity = hit.entity, .contents = hit.contents, .from = state.position, .to = down };
         if (!hit.all_solid) state.position = hit.end;
         if (hit.fraction < 1) state.velocity = v.clip(state.velocity, hit.normal);
+        // A ceiling can clip the raised attempt to less than a stair. Its
+        // final push-down must not erase an otherwise valid upward stroke
+        // when it gained no step height at all.
+        if (start.velocity[2] > 0 and state.position[2] <= start.position[2] + 0.25 and ordinary.position[2] > state.position[2] + 0.25) {
+            state.* = ordinary;
+            return;
+        }
         self.step_height = @max(0, state.position[2] - start.position[2]);
     }
 };
+
+test "a clipped step attempt cannot cancel a jump under a low ceiling" {
+    const Fixture = struct {
+        fn trace(_: *anyopaque, request: collision.Request) !collision.Trace {
+            var fraction: f32 = 1;
+            var normal: v.Vec3 = @splat(0);
+            const feet_a = request.start[2] + request.mins[2];
+            const feet_b = request.end[2] + request.mins[2];
+            const head_a = request.start[2] + request.maxs[2];
+            const head_b = request.end[2] + request.maxs[2];
+            if (feet_b < 0 and feet_b < feet_a) {
+                fraction = @max(0, feet_a / (feet_a - feet_b));
+                normal = .{ 0, 0, 1 };
+            }
+            if (head_b > 68 and head_b > head_a) {
+                const ceiling = @max(0, (68 - head_a) / (head_b - head_a));
+                if (ceiling < fraction) {
+                    fraction = ceiling;
+                    normal = .{ 0, 0, -1 };
+                }
+            }
+            return .{ .fraction = fraction, .end = v.add(request.start, v.scale(v.subtract(request.end, request.start), fraction)), .normal = normal, .entity = 2046 };
+        }
+    };
+    var fixture: u8 = 0;
+    var context: Context = .{ .service = .{ .context = &fixture, .trace_fn = Fixture.trace }, .mins = .{ -15, -15, -24 }, .maxs = .{ 15, 15, 32 }, .slot = 0, .mask = 1, .delta = 0.05, .gravity = 800 };
+    var body: State = .{ .position = .{ 0, 0, 24 }, .velocity = .{ 100, 0, 270 } };
+    try context.step(&body);
+    try @import("std").testing.expect(body.position[2] > 35 and body.position[2] <= 36.01);
+    try @import("std").testing.expect(body.position[0] > 0);
+}
 
 test "shallow wall overlap recovers into an ordinary parallel slide while deep overlap stays blocked" {
     const std = @import("std");

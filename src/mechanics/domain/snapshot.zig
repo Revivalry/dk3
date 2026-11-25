@@ -854,6 +854,8 @@ fn validateWorld(snapshot: *Loaded, references: @import("world_references.zig").
         }
         if (world.get(entity, data.Cinematic) catch null) |playback| {
             if (!validName(playback.name) or (playback.active and playback.finished)) return error.InvalidSavedCinematic;
+            if (playback.pending_count > playback.pending.len) return error.InvalidSavedCinematic;
+            for (playback.pending[0..playback.pending_count]) |request| if (!validName(request.name) or request.viewer == 0 or request.trigger == 0) return error.InvalidSavedCinematic;
             try require(world, entity, .{data.MapObject});
         }
         if (world.get(entity, data.Performer) catch null) |performer| {

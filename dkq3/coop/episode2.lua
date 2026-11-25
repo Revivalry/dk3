@@ -8,7 +8,15 @@ local function take(index, opts)
     for key, value in pairs(opts or {}) do
       if key ~= "collect_direct" then path[key], collect[key] = value, value end
     end
-    nodepath({ index = index }, path)
+    if opts and opts.areas then
+      -- An area approach must bypass the supplied ground-node corridor.
+      -- Merely forwarding this option leaves nodepath's control planner
+      -- free to operate an unrelated door on the far side of the map.
+      path.radius, path.vertical_radius = 96, 48
+      move({index = index}, path)
+    else
+      nodepath({ index = index }, path)
+    end
     if opts and opts.collect_direct ~= nil then
       collect.direct = opts.collect_direct
     elseif not opts or opts.direct == nil then
@@ -26,8 +34,10 @@ end
 
 -- Multiple exits to one map lead to different entrances: select the seam,
 -- not merely the destination BSP (especially the G and I rune branches).
-local function crossing(index)
-  nodepath({ index = index }, { standoff = 160 })
+local function crossing(index, opts)
+  local approach = {standoff = 160}
+  for key,value in pairs(opts or {}) do approach[key] = value end
+  if not opts or not opts.areas then nodepath({ index = index }, approach) end
   exit({ index = index }, { timeout = 180 })
 end
 
@@ -39,7 +49,12 @@ local function operate(index, opts)
   if completed() then return end
   local approach = {standoff = 160}
   for key, value in pairs(opts or {}) do approach[key] = value end
-  nodepath({ index = index }, approach)
+  if opts and opts.areas then
+    approach.radius, approach.vertical_radius = 96, 48
+    move({index = index}, approach)
+  else
+    nodepath({ index = index }, approach)
+  end
   -- The ordinary pilot may operate this gate while approaching it.
   if not completed() then use({index = index}, opts) end
 end
@@ -195,7 +210,16 @@ level("e2m1c", function(visit, resumed)
       move({2464, 1616, 304}, {direct = true, radius = 8})
       leap({2492, 1616, 304}, {2704, 1616, 304}, {fight = false, timeout = 15})
     end },
-    { "drachma", checkpoint = true, function() take(57, {weapon = 9}) end },
+    { "drachma", checkpoint = true, function()
+      nodepath({2787,1607,305},{weapon=9})
+      -- Both stacked boards fill this doorway. Breaking only the upper
+      -- board leaves the lower one across the standing and crouched hull.
+      for _,index in ipairs({172,173}) do
+        local plank=dk3.entity{index=index}
+        if plank and (plank.health or 0)>0 then shoot({index=index},{weapon=9}) end
+      end
+      take(57, {weapon = 9})
+    end },
     { "statue-ambush", checkpoint = true, function()
       -- Taking the coin wakes these four statue occupants. Clear the room
       -- before following the fallen-column exit back toward Charon.
@@ -222,6 +246,11 @@ level("e2m2a", function(visit, resumed)
   -- The guide's sunflare alcove supplies the ranged weapon needed for the
   -- creatures above the canyon. Do not hunt a high griffon with only a sword.
   take(62)
+  -- Use the supplies beside the canyon approach before drawing its entrance
+  -- pack onto the narrow rocks. These are placed pickups, not retry grants.
+  take(63, {areas=true,weapon=dk3.ammo(11)>0 and 11 or 9})
+  take(109, {areas=true,weapon=dk3.ammo(11)>0 and 11 or 9})
+  take(217, {areas=true,weapon=dk3.ammo(11)>0 and 11 or 9})
   -- Follow the canyon's bend, fighting the creatures actually met on it.
   -- The skeleton behind the southern rock and the high griffon cannot be
   -- cleared from the western bank. Use venomous rounds on this moving leg;
@@ -232,6 +261,12 @@ level("e2m2a", function(visit, resumed)
     { "black-rocks", checkpoint = true, function()
   -- Clear the entrance pack before committing to the narrow rock crown. Dodging
   -- a griffon or a spider while crawling here walks off the supporting lip.
+  -- When the canyon has exhausted the Venomous, answer the attackers already
+  -- in striking range with the sword before aiming the returning discus at
+  -- a flying target. Otherwise several close enemies attack during its flight.
+  if dk3.ammo(11) == 0 then
+    clear {radius=240,vertical_radius=80,weapon=8,timeout=60}
+  end
   for _, foe in ipairs {142, 83, 97, 99, 66} do
     local enemy = dk3.entity {index = foe}
     if enemy and (enemy.health or 0) > 0 then
@@ -304,14 +339,22 @@ level("e2m2a", function(visit, resumed)
   move({1928,-280,208}, {direct = true, radius = 8, vertical_radius = 12, weapon = guard_weapon})
   local spider = dk3.entity {index = 82}
   if spider and (spider.health or 0) > 0 then
-    kill({index = 82}, {weapon = guard_weapon, timeout = 20})
+    kill({index = 82}, {weapon = guard_weapon, hold = true, timeout = 20})
   end
+  move({1928,-280,208}, {direct = true, radius = 8, vertical_radius = 12, weapon = guard_weapon})
   save("cave-waterway")
     end },
     { "waterway", checkpoint = true, supplies = false, function()
   -- The last dry approach is above the lower waterfall alcove. Dropping
   -- into that alcove ends at a health pickup, below the actual exit hole.
-  take(53, {standoff = 0})
+  -- Follow the upper bank even when medicine is not wanted. The lower
+  -- waterfall corridor reconnects below the exit and cannot replace it.
+  path({{1928,-280,208},{1896,-448,208},{1893,-500,232},{1883,-705,184},
+      {1886,-817,240},{1880,-944,256},{1992,-1032,320},{2024,-960,362}},
+    {direct=true,cautious=false,radius=16,vertical_radius=24,weapon=dk3.ammo(11)>0 and 11 or 8})
+  -- Keep this bank's medicine for the return fight when arriving healthy.
+  -- Spending25 points to heal two leaves no reserve after the shelf pack.
+  if dk3.health()<=75 then take(53, {standoff = 0}) end
   -- Keep defending on the long return through the occupied cave. Only
   -- the low exit approach needs the smaller hull.
   local function low_exit(point)
@@ -319,8 +362,61 @@ level("e2m2a", function(visit, resumed)
       return {crouch = true}
     end
   end
-  nodepath({2024,720,416}, {segment_options = low_exit})
-  nodepath({index = 75}, {standoff = 160, segment_options = low_exit})
+  -- Resolve the griffon/spider ambush from the dry high shelf before the
+  -- route descends into their narrow waterway. A melee walk through that
+  -- descent gives both attackers repeated free hits.
+  nodepath({3064,-413,483},{cautious=false,weapon=9,
+    segment_options=function()
+      local x,y,z=dk3.position()
+      for _,index in ipairs({81}) do
+        local foe=dk3.entity{index=index}
+        if foe and (foe.health or 0)>0 and
+            (foe.x-x)^2+(foe.y-y)^2+(foe.z-z)^2<400^2 and dk3.visible{index=index} then
+          kill({index=index},{hold=true,weapon=9,timeout=30,
+            arena={{x-24,y-24},{x+24,y+24}}})
+        end
+      end
+    end})
+  -- Two griffons can reach this shelf together. Keep the fought-through
+  -- approach open behind Hiro instead of trading every swoop from one spot.
+  for _=1,8 do
+    local pursuing=false
+    for _,index in ipairs({96,103,143,79}) do
+      local foe=dk3.entity{index=index}
+      if foe and (foe.health or 0)>0 then pursuing=true break end
+    end
+    if not pursuing then break end
+    local pack_alive=false
+    for _,index in ipairs({81,143,103,80,79}) do
+      local foe=dk3.entity{index=index}
+      if foe and (foe.health or 0)>0 then pack_alive=true break end
+    end
+    path({{3024,-664,483},{2944,-824,454},{3024,-664,483}},
+      {direct=true,cautious=false,weapon=pack_alive and 9 or 8,radius=16,vertical_radius=24})
+  end
+  save("canyon-shelf-fight")
+  local medicine=dk3.entity{index=53}
+  if dk3.health()<75 and medicine and medicine.visible and medicine.wanted~=false then
+    take(53,{standoff=0,weapon=9,cautious=false})
+    nodepath({3064,-413,483},{cautious=false,weapon=9})
+  end
+  local hx,hy=dk3.position()
+  for _,index in ipairs({81,143,103,96,80}) do
+    local enemy=dk3.entity{index=index}
+    if enemy and (enemy.health or 0)>0 and dk3.visible{index=index} then
+      local px,py,pz=dk3.position()
+      local close=(enemy.x-px)^2+(enemy.y-py)^2+(enemy.z-pz)^2<128^2
+      kill({index=index},{weapon=(index==96 or index==103) and close and 8 or 9,
+        hold=true,arena={{hx-48,hy-48},{hx+48,hy+48}},timeout=90})
+    end
+  end
+  -- Retain a real ranged reserve for the next map's first skeleton when
+  -- both ordinary stocks were spent on the canyon's flying pack.
+  if dk3.ammo(9)==0 and dk3.ammo(11)==0 and dk3.ammo(10)==0 then
+    take(59, {areas = true, weapon = 8, cautious = false})
+  end
+  nodepath({2024,720,416}, {segment_options = low_exit, cautious=false, weapon=dk3.ammo(11)>0 and 11 or 8})
+  nodepath({index = 75}, {standoff = 160, segment_options = low_exit, cautious=false, weapon=dk3.ammo(11)>0 and 11 or 8})
   exit({index = 75}, {crouch = true, fight = false, timeout = 180})
     end },
   }(visit, resumed)
@@ -330,7 +426,9 @@ level("e2m2b", function(visit, resumed)
     { "ruins-supplies", function()
       -- Entering the first chamber breaks the rear alcove wall. Only then
       -- turn back for the silver armor described by the guide.
-      nodepath {index = 139}
+      local entry_weapon=dk3.ammo(11)>0 and 11 or
+        (dk3.ammo(9)>0 and 9 or (dk3.ammo(10)>0 and 10 or 8))
+      nodepath({index = 139}, {weapon = entry_weapon})
       touch {index = 139}
       take(372)
       take(128)
@@ -356,8 +454,30 @@ level("e2m2b", function(visit, resumed)
       move({816,2688,408}, {direct = true, radius = 8, vertical_radius = 12})
       -- The standing jump hits the low beam above the broken span. Duck
       -- across to the far shoulder, then climb its last step to the deck.
-      leap({816,2700,408}, {816,2808,360}, {fight = false, crouch = true, pace = 1})
-      move({816,2840,408}, {direct = true, radius = 8, vertical_radius = 12, fight = false})
+      -- At full speed the next frame beyond2719 has already lost support.
+      -- Launch before that edge rather than waiting for a point over the gap.
+      local function bank_support()
+        local px,py,pz=dk3.position()
+        local floor=dk3.trace({px,py,pz+0.25},{px,py,pz-2},"floor")
+        return py>=2816 and math.abs(px-816)<=32 and math.abs(pz-408)<=16
+          and not floor.start_solid and floor.fraction<1 and floor.normal_z>=0.7
+          and floor.class=="world" and floor.index==0
+      end
+      try(leap,{816,2712,408}, {816,2840,408}, {fight = false, crouch = true,
+        pace = 1, radius = 40, vertical_radius = 16})
+      if not bank_support() then
+        local px,py,pz=dk3.position()
+        local floor=dk3.trace({px,py,pz+0.25},{px,py,pz-2},"floor")
+        -- The breaking piece can catch the first jump before its far end.
+        -- Continue from that actual support with one more normal hop.
+        expect(py>2719 and py<2816 and not floor.start_solid
+          and floor.fraction<1 and floor.normal_z>=0.7 and floor.index==116,
+          "supported bridge piece before the final bank hop")
+        try(leap,{px,py,pz},{816,2880,408},{fight=false,crouch=true,
+          pace=0.8,radius=24,vertical_radius=16})
+      end
+      expect(bank_support(),"supported stone bank beyond the broken bridge")
+      move({816,2880,408}, {direct = true, radius = 8, vertical_radius = 12, fight = false})
       save("bridge-railing")
       end
       crossing(45)
@@ -403,12 +523,32 @@ level("e2m2c", function(visit, resumed)
     end },
     { "athens", checkpoint = true, function()
       save("mikiko-rescued")
-      if dk3.health() < 100 then try(take, 47) end
-      take(61)
-      if dk3.health() < 100 then try(take, 48) end
-      nodepath({index = 68}, {standoff = 160})
-      if dk3.health() < 100 then try(take, 235) end
-      exit({index = 68}, {timeout = 180})
+      -- Refill an empty ranged loadout from the nearby lower-hall supplies
+      -- before climbing into the skeletons and spiders above the rescue.
+      if dk3.ammo(9)==0 and dk3.ammo(11)==0 then
+        -- Regroup in the cleared rescue hall before entering the one-body
+        -- supply alcove. Following into it parks Mikiko across its approach.
+        move({1664,3712,216},{fight=false,weapon=8,radius=8,vertical_radius=24})
+        wait_until(function()
+          local buddy=dk3.entity{class="mikiko"}
+          return buddy and (buddy.x-1664)^2+(buddy.y-3712)^2<128^2
+        end,{timeout=30,fight=false,reason="Mikiko leaves the supply alcove approach"})
+        dk3.sidekick("mikiko","stay")
+        take(47,{areas=true,weapon=8})
+        -- Keep the smaller hull through this low supply recess.
+        take(53,{areas=true,weapon=8,crouch=true,fight=false})
+        dk3.sidekick("mikiko","follow")
+        take(59,{areas=true,weapon=10})
+      end
+      -- Full Hammer quakes cost health and launch their user. Keep a normal
+      -- attack while supplies and the exit cross these ledges.
+      local weapon=dk3.ammo(9)>0 and 9 or dk3.ammo(11)>0 and 11 or 8
+      if dk3.health() < 100 then try(take, 47, {weapon=weapon}) end
+      take(61, {weapon=weapon})
+      if dk3.health() < 100 then try(take, 48, {weapon=weapon}) end
+      nodepath({index = 68}, {standoff = 160, weapon=weapon})
+      if dk3.health() < 100 then try(take, 235, {weapon=weapon}) end
+      exit({index = 68}, {timeout = 180, weapon=weapon})
     end },
   }(visit, resumed)
 end)
@@ -423,7 +563,7 @@ level("e2m3a", function(visit, resumed)
         nodepath({-1478,396,-24}, {radius = 2, vertical_radius = 8, fight = false})
         move({-1656,396,-24}, {direct = true, crouch = true,
           radius = 2, vertical_radius = 8, fight = false})
-        pickup({index = 69}, {direct = true})
+        pickup({index = 69}, {direct = true,crouch=true})
         dk3.sidekick("mikiko", "follow")
       end
     end },
@@ -574,10 +714,28 @@ level("e2m3c", function(visit, resumed)
       end
       take(21)
       operate(50)
-      operate(301)
+      -- The lever's use stance can finish against the northern wall. Start
+      -- the next live route on the walkway's measured interior floor.
+      move({512,-2240,536}, {direct = true, on_floor = true, fight = false,
+        pace = 0.35, radius = 4, vertical_radius = 8, timeout = 20})
+      -- Stay on the measured narrow bridge through the two low crosspieces.
+      -- Combat pursuit beside it can step off into the courtyard below.
+      path({{512,-2304,552},{512,-2336,544},{512,-2784,544},
+          {512,-2816,552},{512,-2848,536},{512,-2880,536}},
+        {direct = true, on_floor = true, fight = false, pace = 0.5,
+          radius = 4, vertical_radius = 8, timeout = 30})
+      operate(301, {areas = true, hold = true, fight = false})
     end },
     { "acropolis", checkpoint = true, function()
-      nodepath({index = 31}, {standoff = 160, weapon = 9})
+      nodepath({index = 31}, {standoff = 160, weapon = 9,
+        segment_options = function(point)
+          -- This node is the foot of the ladder. The climbing body can
+          -- hover a few units above it until the next step leaves the rungs.
+          if math.abs(point[1]+474)<8 and math.abs(point[2]+3012)<8
+              and math.abs(point[3]-184)<16 then
+            return {settle = false}
+          end
+        end})
       exit({index = 31}, {timeout = 240})
     end },
   }(visit, resumed)
@@ -607,10 +765,18 @@ end)
 level("e2m4b", function(visit, resumed)
   local function a_rune()
     if dk3.has_key(21) then return end
+    local collected=dk3.entity{index=129}
+    if collected and not collected.visible and (collected.uses or 0)>0 then return end
+    -- Keep Mikiko off the narrow door stance and the pool's descent. Her
+    -- following body can become the player's apparent raised footing.
+    dk3.sidekick("mikiko","stay")
     -- Operate the narrow swinging door from its east side, clear of the
     -- westward sweep chosen by its away-from-player opening.
     if x() > 3456 or z() > 360 then
       nodepath({3572,-3256,280}, {standoff = 96})
+      -- Clear the solid spider before asking for the precise lower stance;
+      -- otherwise its back holds the player51 units above that target.
+      kill({index=100},{hold=true,weapon=dk3.ammo(11)>0 and 11 or 9,timeout=60})
       -- Land beyond the full leaf sweep before approaching its handle.
       -- An already-open eastward leaf otherwise catches the descending
       -- body above the lower floor and prevents the precise approach.
@@ -630,13 +796,16 @@ level("e2m4b", function(visit, resumed)
       use({index = 59}, {hold = true, fight = false, timeout = 8})
     end
     take(39)
-    move({1700,-2140,300}, {radius = 24, vertical_radius = 96, timeout = 90})
+    local stair_weapon=dk3.ammo(11)>0 and 11 or 9
+    nodepath({1700,-2140,300},{radius=24,vertical_radius=96,weapon=stair_weapon})
+    move({1700,-2140,300}, {radius = 24, vertical_radius = 96, weapon=stair_weapon,timeout = 90})
     -- The tablet is below the spider pool's rim. A surface approach can
     -- enter the horizontal pickup radius while remaining above the tablet.
     move({1700,-2140,224}, {direct = true, crouch = true, fight = false,
       radius = 4, vertical_radius = 8, timeout = 30})
     pickup({index = 129}, {direct = true, crouch = true, fight = false})
     assert(dk3.has_key(21), "the spider pool A rune was not collected")
+    dk3.sidekick("mikiko","follow")
   end
   if dk3.has_key(25) then
     a_rune()
@@ -648,8 +817,11 @@ level("e2m4b", function(visit, resumed)
       a_rune()
       -- The destination is the health station itself. A second health
       -- detour can pin its return inside the pool after climbing its rim.
-      nodepath({index = 86}, {cautious = false})
-      recharge {index = 86}
+      move({index = 86}, {radius = 64, vertical_radius = 32,
+        cautious = false, weapon = 13, timeout = 90})
+      -- The broad arrival radius can stop outside the fountain's drinking
+      -- reach. Let normal use approach its qualified stand before holding it.
+      recharge({index = 86}, {weapon = 13})
     end },
     { "pressure-plate", checkpoint = true, function()
       nodepath { 520, -3488, 304 }
@@ -763,65 +935,148 @@ level("e2m4d", function(visit, resumed)
       -- weapon before the narrow gallery's skeletons reach contact range.
       local gallery_cleared = false
       nodepath({index = 73}, {segment_options = function(point)
+        if point[1]>=400 and point[1]<=850 and point[2]>=1200 and
+            point[2]<=1800 and point[3]>=600 then
+          -- Clear the two shelf pursuers from each supported bend before
+          -- disabling sidesteps for its narrow outgoing leg.
+          local x,y,z=dk3.position()
+          for _,index in ipairs({82,579,657}) do
+            local foe=dk3.entity{index=index}
+            if foe and (foe.health or 0)>0 and dk3.visible{index=index} and
+                (foe.x-x)^2+(foe.y-y)^2+(foe.z-z)^2<512^2 then
+              kill({index=index},{hold=true,timeout=60,
+                arena={{x-24,y-24},{x+24,y+24}},
+                weapon=dk3.ammo(13)>0 and 13 or (dk3.ammo(11)>0 and 11 or 9)})
+            end
+          end
+          -- Answer pursuers that emerge during the leg, keeping defensive
+          -- movement inside the supplied bend's narrow strip.
+          return {direct=true,cautious=false,radius=4,vertical_radius=16,pace=0.5,
+            weapon=dk3.ammo(13)>0 and 13 or (dk3.ammo(11)>0 and 11 or 9),
+            arena={{math.min(x,point[1])-8,math.min(y,point[2])-8},
+              {math.max(x,point[1])+8,math.max(y,point[2])+8}}}
+        end
         if point[1] >= 1550 and point[1] <= 1700 and
             point[2] >= -300 and point[2] <= 300 and point[3] >= 600 then
-          if not gallery_cleared and point[2] < -110 then
+          if not gallery_cleared and point[2] < 100 then
             -- Meet the gallery's melee guards on the flat landing before
             -- their bodies force a sidestep off the descending narrow span.
             for _, index in ipairs({76,614}) do
               local foe = dk3.entity {index = index}
               if foe and (foe.health or 0) > 0 and dk3.visible {index = index} then
                 kill({index = index}, {hold = true, timeout = 10,
-                  arena = {{1584,-112},{1648,32}},
+                  arena = {{1584,-112},{1648,128}},
                   weapon = dk3.ammo(11) > 0 and 11 or 9})
               end
             end
             gallery_cleared = true
           end
-          return {weapon = dk3.ammo(11) > 0 and 11 or 0, radius = 8}
+          return {fight=false,cautious=false,radius=4,vertical_radius=16}
         end
       end})
       take(73)
     end },
-    { "aegis-hall", checkpoint = true, function() crossing(151) end },
+    { "aegis-hall", checkpoint = true, function()
+      crossing(151,{segment_options=function(point)
+        if point[1]>=1700 and point[1]<=2050 and point[2]>=0 and
+            point[2]<=640 and point[3]>=288 and point[3]<=500 then
+          -- Finish each narrow return-stair tread before turning toward
+          -- the next one; the broad node radius cuts across its outer edge.
+          return {direct=true,cautious=false,radius=4,vertical_radius=8,pace=0.4,fight=false}
+        end
+      end})
+    end },
   }(visit, resumed)
 end)
 level("e2m4e", function(visit, resumed)
-  -- The upper arrival from I reaches the gate's hall before the fountain.
-  -- Open its remote dial before following the graph through the gate.
-  local hall_dial = dk3.entity { index = 106 }
-  if dk3.has_key(24) and hall_dial and (hall_dial.uses or 0) == 0 and hall_dial.state == "closed" then
-    nodepath { 976, -700, 1928 }
-    operate(106)
+  save("aegis-hall-arrival")
+  local function clear_landing()
+    local x,y,z=dk3.position()
+    for _,index in ipairs({15,31,32,33,34,35,36,37,38,41,42,43,44,45,46,47,48,49,50,51,55,56,57,58,59,60,61,62,63,64,65,66,69,552,553,574,575,576}) do
+      local foe=dk3.entity{index=index}
+      if foe and (foe.health or 0)>0 and
+          (foe.x-x)^2+(foe.y-y)^2+(foe.z-z)^2<512^2 and dk3.visible{index=index} then
+        kill({index=index},{hold=true,weapon=13,timeout=30})
+      end
+    end
   end
-  if not dk3.has_key(25) then
-    take(7)
-    take(737)
-    nodepath {index = 10}
-    recharge {index = 10}
-    take(68)
+  local rune_slots={79,532,533,534,535}
+  local function inserted(index)
+    local slot=dk3.entity{index=rune_slots[index]}
+    return slot and (slot.uses or 0)>0
   end
-  local fountain_dial = dk3.entity { index = 110 }
-  if fountain_dial and (fountain_dial.uses or 0) == 0 and fountain_dial.state == "closed" then
-    nodepath({index = 110}, {standoff = 96, cautious = false})
-    use {index = 110}
-  end
-  wait_until(function() return dk3.mover({index = 101}) == "open" end,
-    { timeout = 40, reason = "fountain dial clears the boulder" })
-  for key = 21, 25 do
-    if not dk3.has_key(key) then return crossing(192) end
+  -- Inserting a rune consumes its inventory key. Restored progress comes
+  -- from the sockets and revealed wheel, not from requiring those keys again.
+  local runes_placed=dk3.mover{index=17}=="open"
+  if not runes_placed then
+    -- The upper arrival from I reaches the gate's hall before the fountain.
+    -- Open its remote dial before following the graph through the gate.
+    local hall_dial = dk3.entity { index = 106 }
+    if dk3.has_key(24) and hall_dial and (hall_dial.uses or 0) == 0 and hall_dial.state == "closed" then
+      -- The fountain is on the lower storey behind this gate. Open the
+      -- upper dial before attempting that resupply route.
+      nodepath({976,-700,1928}, {weapon=13})
+      clear_landing()
+      operate(106)
+    end
+    if not dk3.has_key(25) then
+      take(7)
+      take(737)
+      nodepath {index = 10}
+      recharge {index = 10}
+      take(68)
+    end
+    local fountain_dial = dk3.entity { index = 110 }
+    if fountain_dial and (fountain_dial.uses or 0) == 0 and fountain_dial.state == "closed" then
+      nodepath({index = 110}, {standoff = 96, cautious = false})
+      use {index = 110}
+    end
+    wait_until(function() return dk3.mover({index = 101}) == "open" end,
+      { timeout = 40, reason = "fountain dial clears the boulder" })
+    for rune = 1, 5 do
+      if not dk3.has_key(20+rune) and not inserted(rune) then
+        -- The lower return is open after the fountain dial. Use its live
+        -- corridor instead of the supplied chain through the upper door.
+        move({416,800,1560}, {radius = 8, vertical_radius = 16,
+          fight = false, timeout = 90})
+        use({index = 637}, {hold = true, fight = false})
+        wait_until(function() return dk3.mover{index=637}=="open" end,
+          {timeout = 10, fight = false, reason = "gold return door clears its centre"})
+        move({416,960,1560}, {direct = true, radius = 8,
+          vertical_radius = 16, fight = false, timeout = 15})
+        move({416,1104,1560},{direct=true,radius=8,vertical_radius=16,fight=false})
+        local back=walkflood({{-1728,1184,908}}, {-2304,896,640,2304},32,{crouch=true})[1]
+        assert(back,"no supported lower return corridor from the gold door")
+        for index,point in ipairs(back) do
+          -- The last node overlaps the exit's protected approach. Stop
+          -- within walking reach, then let crossing select that seam.
+          move(point,{direct=true,crouch=point.mark=="c",radius=index==#back and 32 or 8,
+            vertical_radius=16,pace=0.5,weapon=13})
+        end
+        return crossing(192, {areas = true})
+      end
+    end
   end
   return stages {
     { "gate-dial", function()
+      if runes_placed then return end
       operate(106)
-      nodepath({index = 92}, {cautious = false})
+      -- Plan to the fountain's actual landing. The supplied upper node
+      -- chain can retain a point368 above Hiro after combat at its edge.
+      move({416,-899,1632}, {weapon=13,cautious=false,radius=8,
+        vertical_radius=16,timeout=120})
+      -- Clear the guards from the fountain's actual landing before its
+      -- drinking action takes over the view. Pursuing a named remote guard
+      -- from the arrival instead runs through the occupied upper hall.
+      clear_landing()
       -- The fountain is beyond the upper-hall stair loop, not through the
       -- low wall beside the supplied graph's endpoint. Allow that walk and
       -- its guards, using the available ranged ammunition along the way.
       recharge({index = 92}, {timeout = 120, cautious = false,
-        weapon = dk3.ammo(11) > 0 and 11 or 9})
+        weapon = 13,hold=true})
     end },
     { "aegis", checkpoint = true, function()
+      if runes_placed then return end
       nodepath({index = 79}, {standoff = 160, cautious = false,
         weapon = dk3.ammo(11) > 0 and 11 or 9,
         segment_options = function(point)
@@ -834,21 +1089,55 @@ level("e2m4e", function(visit, resumed)
         end})
       try(clear, {class = "monster_spider", radius = 450, hold = true,
         timeout = 10, weapon = dk3.ammo(11) > 0 and 11 or 9})
-      for _, index in ipairs { 79, 532, 533, 534, 535 } do operate(index) end
+      for rune,index in ipairs(rune_slots) do
+        if not inserted(rune) then operate(index) end
+      end
     end },
     { "gate-wheel", checkpoint = true, function()
       wait_until(function() return dk3.mover({index = 17}) == "open" end,
         {timeout = 20, reason = "all five runes uncover the gate wheel"})
-      operate(662)
+      local gate=dk3.mover{index=102}
+      if gate~="open" and gate~="opening" then operate(662) end
       wait_until(function() return dk3.mover({index = 102}) == "open" end,
         {timeout = 25, reason = "wheel opens the large temple gate"})
     end },
     { "cerberus", checkpoint = true, function()
-      nodepath {index = 92}
-      recharge({index = 92}, {timeout = 120, cautious = false,
-        weapon = dk3.ammo(11) > 0 and 11 or 9})
-      nodepath({ index = 76 }, { standoff = 300 })
-      kill({ index = 76 }, { timeout = 240 })
+      -- The temple's optional soul is still available after the rune circuit.
+      -- Collect its real health reserve before committing to the boss court.
+      take(40, {areas = true, weapon = 13})
+      local court_x=dk3.position()
+      if court_x<592 then
+        -- Leave the recessed soul court through its southern entrance; its
+        -- nearest supplied graph node is across the courtyard's north wall.
+        move({251,-1407,1584}, {weapon = 13, timeout = 120, radius = 32})
+        -- Cerberus only admits the Trident. Ready it before rounding the
+        -- courtyard: changing guns within the pounce's reach loses the lane.
+        local health,maximum=dk3.health()
+        if health<maximum then
+          move({416,-899,1632}, {weapon=13,cautious=false,radius=8,
+            vertical_radius=16,timeout=120})
+          recharge({index = 92}, {timeout = 120, cautious = false,
+            weapon = 13, hold = true})
+        end
+        -- The large gate is already open. Its actual court route avoids the
+        -- supplied node chain's detour to upper wooden door717.
+        -- Walk its low centre and the southern slope around the open hinge;
+        -- the area route cannot join from the raised rock beside that hinge.
+        path({{512,-1536,1584},{512,-1728,1590},{512,-1824,1603},
+            {768,-1824,1633}},
+          {direct = true, on_floor = true, fight = false, radius = 4,
+            vertical_radius = 8, pace = 0.5, timeout = 30})
+      end
+      -- From this side of the hinge the supplied court chain follows the
+      -- long southern ramp and eastern rock, with no remote door detour.
+      nodepath({2200,-1200,1740}, {weapon = 13})
+      move({2200,-1128,1716}, {direct = true, cautious = false,
+        weapon = 13, radius = 4, vertical_radius = 48})
+      -- Draw him out through the actual path around the inner rock. A
+      -- straight retreat meets its diagonal face and leaves Hiro cornered.
+      move({2600,-1128,1664}, {fight = false,
+        weapon = 13, radius = 16, vertical_radius = 48})
+      kill({index = 76}, {weapon = 13, timeout = 240})
     end },
     { "medusa-lair", checkpoint = true, function()
       if dk3.mover({index = 102}) == "closed" then operate(662) end
@@ -861,7 +1150,10 @@ level("e2m5a", function(visit, resumed)
     { "zeus", function() take(65) end },
     { "river", checkpoint = true, function()
       if z() > 400 then
-        nodepath({284, -1436, 488}, {radius = 48})
+        -- This descending ledge has no return from the lower river floor.
+        -- Keep the authored footing through incoming fire; combat sidesteps
+        -- can otherwise drop below the next upper waypoint.
+        nodepath({284, -1436, 488}, {radius = 48, fight = false, cautious = false})
         move({0, -1320, 488}, {direct = true, radius = 64, fight = false})
         move({0, -1088, 488}, {direct = true, radius = 80, fight = false})
         move({0, -760, 152}, {direct = true, radius = 48, fight = false})
@@ -924,7 +1216,19 @@ level("e2m5b", function(visit, resumed)
       -- Fight the thieves on the dry banks before committing to the poison
       -- dive. Ignoring them here can restore a checkpoint into the same
       -- unopposed melee ambush on every attempt.
-      take(11, {collect_direct = false})
+      local function clear_bank()
+        local x,y,z=dk3.position()
+        for _,index in ipairs({20,21,22,63,65,317,318,319}) do
+          local foe=dk3.entity{index=index}
+          if foe and (foe.health or 0)>0 and
+              (foe.x-x)^2+(foe.y-y)^2+(foe.z-z)^2<512^2 and dk3.visible{index=index} then
+            kill({index=index},{hold=true,weapon=13,timeout=30,
+              arena={{x-24,y-24},{x+24,y+24}}})
+          end
+        end
+      end
+      take(11, {collect_direct=false,weapon=13,fight=false,cautious=false,
+        segment_options=function() clear_bank() end})
       nodepath({index = 172}, {standoff = 160})
       -- Dive through the bottom of the poison pool, south of the dry
       -- ledge. Its lower tunnel runs north underneath that ledge.
@@ -983,20 +1287,30 @@ level("e2m5c", function(visit, resumed)
     end },
   }(visit, resumed)
 end)
-level("e2m5d", function() crossing(2) end)
+level("e2m5d", function()
+  -- Replan the final descent through the actual areas. The supplied node
+  -- corridor can leave the traveller below an unreachable upper waypoint.
+  exit({index=2},{timeout=180})
+end)
 level("e2m5e", function(visit, resumed)
   return stages {
     { "medusa", function()
   for _, index in ipairs { 5, 251, 252, 253 } do take(index) end
   local medusa = dk3.entity {index = 32}
-  if medusa and medusa.health and medusa.health > 0 then kill({ index = 32 }, { weapon = 14 }) end
+  if medusa and medusa.health and medusa.health > 0 then
+    -- Resume a short ranged burst between gaze warnings. Repeated warnings
+    -- can interrupt the Eye's long wind-up while the pilot averts its view.
+    kill({index = 32}, {weapon = dk3.ammo(13) > 0 and 13 or 14})
+  end
   cinematic()
     end },
     { "awakened-monsters", checkpoint = true, function()
       -- The generator wakes the statues in delayed waves. An empty arena
       -- between waves does not complete the ten-monster ending counter.
       local deadline = dk3.time() + 900000
-      local posts = {{2600,-152,-1928},{2584,-32,-1928},{2656,-32,-1928},{2640,-152,-1928}}
+      local posts = {{2600,-152,-1928},{2584,-32,-1928},{2656,-32,-1928},
+        {2640,-152,-1928},{2712,-160,-1928},
+        {2544,-128,-1928},{2544,-208,-1928}}
       local round = 0
       while dk3.map() == "e2m5e" do
         local counter = dk3.entity {index = 43}
@@ -1008,11 +1322,12 @@ level("e2m5e", function(visit, resumed)
         end
         expect(dk3.time() < deadline, "the ten awakened monsters complete the ending counter")
         round = round + 1
-        move(posts[(round-1) % #posts + 1],
+        local post = (round-1) % #posts + 1
+        move(posts[post],
           -- These are combat viewpoints, not narrow puzzle landings. Accept
           -- the supported dry shoulder beside an altar lip instead of
           -- demanding its exact top while newly awakened enemies approach.
-          {direct = true, radius = 24, vertical_radius = 24, fight = false, timeout = 15})
+          {direct = true, radius = post > 5 and 8 or 24, vertical_radius = 24, fight = false, timeout = 15})
         -- Fight from the altar and its dry approaches. The statue basins
         -- around it are poisonous, and the upper statues can be shot from
         -- here without following them into those basins.
@@ -1024,7 +1339,10 @@ level("e2m5e", function(visit, resumed)
             -- Standing object-aim checks several parts of the live body.
             -- Crouched combat aim is hidden by the altar rim for foes below
             -- it; chasing/dodging those foes walks into their poison basins.
-            try(shoot, {id = foe.id}, {hold = true, fight = false, weapon = 13, timeout = 8})
+            -- The western dry viewpoints expose heads above the basin rim.
+            -- Request that visible part instead of the lower body centre.
+            local head = post > 5 and {target.x,target.y,target.z+28} or nil
+            try(shoot, {id = foe.id}, {hold = true, fight = false, weapon = 13, around = head, timeout = 8})
           end
         end
         cinematic()

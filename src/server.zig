@@ -297,7 +297,13 @@ fn saveCommand(command: []const u8) !bool {
     if (saving) {
         if (progression.held or active.restore_pending != null) return error.RegionAdmissionInProgress;
         try saveRegion(slot, .clean);
-        rememberCheckpoint(slot, false) catch |err| saveFeedback(err);
+        const health = (try active.world.?.get(active.clients.entities[0].?, component.Health)).*;
+        var admitted = !coop.enabled or checkpoint_rules.scriptedSaveAdmits(health.current, health.maximum);
+        if (admitted) rememberCheckpoint(slot, false) catch |err| {
+            saveFeedback(err);
+            admitted = false;
+        };
+        coop.saveCompleted(slot, admitted);
         engine.print("dk3 zig: world saved\n");
     } else {
         const extra = engine.argv(2, &option);
@@ -370,10 +376,10 @@ fn recovery() !void {
     if (engine.integer("g_gametype") != c.GT_SINGLE_PLAYER or active.restore_pending != null or campaign.departing or active.targets.travel != null) return;
     const entity = active.clients.entities[0] orelse return;
     const player = (try active.world.?.get(entity, component.Player)).*;
-    const alive = (try active.world.?.get(entity, component.Health)).current > 0;
+    const health = (try active.world.?.get(entity, component.Health)).*;
+    const alive = !checkpoint_rules.requiresRestart(player.mode, health.current);
     const playable = alive and player.mode == .normal and player.command_ms > 0 and !@import("mechanics/server/cinematics.zig").active(&active.world.?) and !progression.held;
     const periodic_due = autosave.due(clock.now_ms);
-    const health = (try active.world.?.get(entity, component.Health)).*;
     const arrival_due = checkpoint.pending and checkpoint_rules.Autosave.arrivalAdmits(health.current, health.maximum, checkpoint.available);
     if (playable and clock.now_ms >= autosave.retry_ms and (arrival_due or (!checkpoint.pending and periodic_due and try session.party.healthyParty(&active.world.?, entity)))) {
         const slot = if (checkpoint.pending) checkpoint_rules.arrival_slot else checkpoint_rules.periodic_slot;

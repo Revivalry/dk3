@@ -5,16 +5,22 @@ const c = @import("../../engine/abi.zig").c;
 const engine = @import("../../engine/client.zig");
 const v = @import("../../core/domain/vector.zig");
 const policy = @import("actor_catalog").bursts;
+fn drawableOwner(owner: c.entityState_t, world: i32) bool {
+    return owner.dk3World == world and owner.modelindex > 0 and owner.eFlags & c.EF_DEAD == 0;
+}
 pub fn draw(game: *const c.gameState_t, effect: c.entityState_t, entities: []const c.entityState_t, now: i32) !void {
     const kind = std.enums.fromInt(policy.Kind, effect.weapon) orelse return error.InvalidGunnerBurst;
     const style = policy.style(kind);
     if (style.muzzle == .offset and @mod(effect.time2, 2) != 0) return;
     var parent: ?c.entityState_t = null;
-    for (entities) |candidate| if (candidate.number == effect.otherEntityNum) {
+    for (entities) |candidate| if (candidate.number == effect.otherEntityNum and candidate.dk3World == effect.dk3World) {
         parent = candidate;
         break;
     };
     const owner = parent orelse return;
+    // A burst can outlive the snapshot that kills or gibs its shooter.
+    // A removed body has no muzzle model to attach the remaining flash to.
+    if (!drawableOwner(owner, effect.dk3World)) return;
     const axes = v.basis(@import("../../engine/trajectory.zig").evaluate(owner.apos, now));
     const origin = @import("../../engine/trajectory.zig").evaluate(owner.pos, now);
     const basis = [3]v.Vec3{ axes.forward, v.scale(axes.right, -1), v.cross(axes.forward, v.scale(axes.right, -1)) };
@@ -52,4 +58,16 @@ pub fn draw(game: *const c.gameState_t, effect: c.entityState_t, entities: []con
         flash.renderfx = c.RF_NOSHADOW;
         _ = engine.gateway.call(c.CG_R_ADDREFENTITYTOSCENE, .{&flash});
     }
+}
+test "burst attachments reject dead, removed and foreign-world owners" {
+    var owner = std.mem.zeroes(c.entityState_t);
+    owner.dk3World = 7;
+    owner.modelindex = 3;
+    try std.testing.expect(drawableOwner(owner, 7));
+    try std.testing.expect(!drawableOwner(owner, 8));
+    owner.eFlags = c.EF_DEAD;
+    try std.testing.expect(!drawableOwner(owner, 7));
+    owner.eFlags = 0;
+    owner.modelindex = 0;
+    try std.testing.expect(!drawableOwner(owner, 7));
 }

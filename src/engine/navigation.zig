@@ -90,7 +90,42 @@ pub const Navigation = struct {
         }
     }
     pub fn service(self: *Navigation) rules.Service {
-        return .{ .context = self, .next_fn = next, .predict_fn = predict, .travel_fn = travel };
+        return .{ .context = self, .next_fn = next, .predict_fn = predict, .jumps_fn = jumps, .travel_fn = travel };
+    }
+    fn jumps(raw: *anyopaque, request: rules.Request, points: []rules.Waypoint) !usize {
+        const self: *Navigation = @ptrCast(@alignCast(raw));
+        if (!self.started or engine.gateway.call(c.BOTLIB_AAS_INITIALIZED, .{}) == 0) return 0;
+        var origin: [3]f32 = request.position;
+        var from = startArea(request, &origin, false);
+        if (from == 0) from = startArea(request, &origin, true);
+        const to = destinationArea(request.destination);
+        if (from == 0 or to == 0 or from == to) return 0;
+        var count: usize = 0;
+        while (count < @min(points.len, 4) and from != to) {
+            var route = std.mem.zeroes(c.aas_predictroute_t);
+            // Stop at the next airborne transfer instead of every growing
+            // route prefix. A second bounded query crosses only that link.
+            _ = engine.gateway.call(c.BOTLIB_AAS_PREDICT_ROUTE, .{ &route, from, &origin, to, @as(isize, requestFlags(request)), @as(isize, 32), @as(isize, 0), @as(isize, c.RSE_USETRAVELTYPE), @as(isize, 0), @as(isize, c.TFL_JUMP | c.TFL_BARRIERJUMP | c.TFL_WALKOFFLEDGE), @as(isize, 0) });
+            if (engine.integer("developer") >= 2) {
+                var text: [192]u8 = undefined;
+                engine.print(try std.fmt.bufPrintZ(&text, "dk3 jump route: from={d} to={d} stop={d} area={d} at={d:.1},{d:.1},{d:.1} type={d}\n", .{ from, to, route.stopevent, route.endarea, route.endpos[0], route.endpos[1], route.endpos[2], route.endtravelflags }));
+            }
+            if (route.stopevent != c.RSE_USETRAVELTYPE or route.endarea <= 0 or rules.horizontalDistance(request.position, route.endpos) > 320) break;
+            const entrance = route.endpos;
+            const source = route.endarea;
+            var crossing = std.mem.zeroes(c.aas_predictroute_t);
+            _ = engine.gateway.call(c.BOTLIB_AAS_PREDICT_ROUTE, .{ &crossing, @as(isize, source), &entrance, to, @as(isize, requestFlags(request)), @as(isize, 1), @as(isize, 0), @as(isize, 0), @as(isize, 0), @as(isize, 0), @as(isize, 0) });
+            if (engine.integer("developer") >= 2) {
+                var text: [192]u8 = undefined;
+                engine.print(try std.fmt.bufPrintZ(&text, "dk3 jump crossing: from={d} to={d} stop={d} area={d} at={d:.1},{d:.1},{d:.1} type={d}\n", .{ source, to, crossing.stopevent, crossing.endarea, crossing.endpos[0], crossing.endpos[1], crossing.endpos[2], crossing.endtravelflags }));
+            }
+            if (crossing.stopevent == c.RSE_NOROUTE or crossing.endarea <= 0 or crossing.endarea == source or crossing.endtravelflags & (c.TFL_JUMP | c.TFL_BARRIERJUMP | c.TFL_WALKOFFLEDGE) == 0) break;
+            points[count] = .{ .point = crossing.endpos, .entrance = entrance, .jump = crossing.endtravelflags & (c.TFL_JUMP | c.TFL_BARRIERJUMP) != 0, .drop = crossing.endtravelflags & c.TFL_WALKOFFLEDGE != 0, .crouch = crouchOnly(crossing.endarea), .from_area = source, .to_area = crossing.endarea };
+            count += 1;
+            origin = crossing.endpos;
+            from = crossing.endarea;
+        }
+        return count;
     }
     /// Successive positions along the predicted route, one per area crossed.
     fn predict(raw: *anyopaque, request: rules.Request, points: [][3]f32) !usize {
@@ -214,14 +249,36 @@ fn landingUnsafe(point: [3]f32) bool {
 /// route (it can be an area above or below): the nearest area a short step
 /// away that the hull reaches unobstructed.
 fn startArea(request: rules.Request, origin: *[3]f32, nudged: bool) isize {
-    if (!nudged) return engine.gateway.call(c.BOTLIB_AI_REACHABILITY_AREA, .{ &request.position, @as(isize, request.slot) });
+    // A collision-qualified landing can straddle the baked area boundary.
+    // Continue from that retained polygon in walking queries as well as jumps.
+    if (request.start_hint > 0 and engine.gateway.call(c.BOTLIB_AAS_AREA_REACHABILITY, .{@as(isize, request.start_hint)}) != 0)
+        return @as(isize, request.start_hint);
+    if (!nudged) {
+        // The fuzzy bot lookup may retain a downstairs area after a jump
+        // onto an upper corridor. Prefer the actual reachable area around
+        // the standing origin, including its thin floor boundary.
+        for ([_]f32{ 0, 1, 2, 4 }) |rise| {
+            const point: [3]f32 = .{ request.position[0], request.position[1], request.position[2] + rise };
+            const area = engine.gateway.call(c.BOTLIB_AAS_POINT_AREA_NUM, .{&point});
+            if (area > 0 and engine.gateway.call(c.BOTLIB_AAS_AREA_REACHABILITY, .{area}) != 0) return area;
+        }
+        // The fuzzy lookup can choose the upstairs floor while a narrower
+        // traveller stands beside the stairs, outside the compiled hull.
+        // Prefer a physically reachable neighbouring area in that case.
+        const nearby = startArea(request, origin, true);
+        if (nearby > 0) return nearby;
+        return engine.gateway.call(c.BOTLIB_AI_REACHABILITY_AREA, .{ &request.position, @as(isize, request.slot) });
+    }
     if (engine.gateway.call(c.BOTLIB_AAS_POINT_AREA_NUM, .{&request.position}) != 0) return 0;
     const directions = [_][2]f32{ .{ 1, 0 }, .{ -1, 0 }, .{ 0, 1 }, .{ 0, -1 }, .{ 0.7071, 0.7071 }, .{ -0.7071, 0.7071 }, .{ 0.7071, -0.7071 }, .{ -0.7071, -0.7071 } };
-    for ([_]f32{ 8, 16 }) |distance| for (directions) |direction| {
-        const point: [3]f32 = .{ request.position[0] + direction[0] * distance, request.position[1] + direction[1] * distance, request.position[2] };
+    for ([_]f32{ 8, 16 }) |distance| for (directions) |direction| for ([_]f32{ 0, 1, 2, 4 }) |rise| {
+        // At a sloping pipe edge both a horizontal boundary and the thin
+        // floor boundary can exclude the exact origin. Qualify their small
+        // combined offset with the traveller's real collision hull.
+        const point: [3]f32 = .{ request.position[0] + direction[0] * distance, request.position[1] + direction[1] * distance, request.position[2] + rise };
         const area = engine.gateway.call(c.BOTLIB_AAS_POINT_AREA_NUM, .{&point});
         if (area <= 0 or engine.gateway.call(c.BOTLIB_AAS_AREA_REACHABILITY, .{area}) == 0) continue;
-        const clear = engine.collisionService().trace(.{ .start = request.position, .end = point, .mins = .{ -15, -15, -24 }, .maxs = .{ 15, 15, 4 }, .slot = request.slot, .mask = c.MASK_PLAYERSOLID }) catch continue;
+        const clear = engine.collisionService().trace(.{ .start = request.position, .end = point, .mins = request.mins, .maxs = request.maxs, .slot = request.slot, .mask = if (request.mask != 0) request.mask else c.MASK_PLAYERSOLID }) catch continue;
         if (clear.start_solid or clear.fraction < 1) continue;
         origin.* = point;
         return area;
@@ -241,7 +298,7 @@ pub fn destinationArea(point: [3]f32) isize {
     // The area the point lies in, or one a little above it (a goal set at an
     // item's base in a crawlway sits below the lowest origin there): botlib's
     // own guess from inside solid can be the floor beneath.
-    for ([_]f32{ 0, 4, 12, 16, 24 }) |rise| {
+    for ([_]f32{ 0, 1, 2, 4, 12, 16, 24 }) |rise| {
         const probe: [3]f32 = .{ point[0], point[1], point[2] + rise };
         const area = engine.gateway.call(c.BOTLIB_AAS_POINT_AREA_NUM, .{&probe});
         if (area > 0 and engine.gateway.call(c.BOTLIB_AAS_AREA_REACHABILITY, .{area}) != 0) return area;
@@ -253,6 +310,157 @@ pub fn destinationArea(point: [3]f32) isize {
     }
     return 0;
 }
+test "local jump prediction preserves jump links without treating ordinary route points as jumps" {
+    const Fixture = struct {
+        var travel: c_int = c.TFL_JUMP;
+        var expected_source: isize = 1;
+        fn syscall(operation: isize, ...) callconv(.c) isize {
+            var args = @cVaStart();
+            defer @cVaEnd(&args);
+            if (operation == c.BOTLIB_AAS_INITIALIZED) return 1;
+            if (operation == c.BOTLIB_AAS_POINT_AREA_NUM) {
+                const point = @cVaArg(&args, *const [3]f32);
+                return if (point[0] >= 256) 4 else 1;
+            }
+            if (operation == c.BOTLIB_AAS_AREA_REACHABILITY) return 1;
+            if (operation == c.BOTLIB_AI_REACHABILITY_AREA) return 1;
+            if (operation == c.BOTLIB_AAS_PREDICT_ROUTE) {
+                const out = @cVaArg(&args, *c.aas_predictroute_t);
+                const from = @cVaArg(&args, isize);
+                _ = @cVaArg(&args, *const [3]f32);
+                _ = @cVaArg(&args, isize);
+                _ = @cVaArg(&args, isize);
+                const areas = @cVaArg(&args, isize);
+                _ = @cVaArg(&args, isize);
+                const stopping = @cVaArg(&args, isize);
+                out.* = std.mem.zeroes(c.aas_predictroute_t);
+                if (stopping == c.RSE_USETRAVELTYPE and from == expected_source) {
+                    out.endarea = 2;
+                    out.endpos = .{ 64, 0, 24 };
+                    out.endtravelflags = travel;
+                    out.stopevent = c.RSE_USETRAVELTYPE;
+                } else if (from == 2 and areas == 1) {
+                    out.endarea = 3;
+                    out.endpos = .{ 128, 0, 24 };
+                    out.endtravelflags = travel;
+                } else {
+                    out.endarea = 4;
+                    out.endpos = .{ 256, 0, 24 };
+                    out.endtravelflags = c.TFL_WALK;
+                }
+                return 1;
+            }
+            return 0;
+        }
+    };
+    const previous = engine.gateway;
+    defer engine.gateway = previous;
+    engine.gateway.bind(Fixture.syscall);
+    var navigation: Navigation = .{ .started = true };
+    var points: [4]rules.Waypoint = undefined;
+    const count = try navigation.service().jumps(.{ .position = .{ 0, 0, 24 }, .destination = .{ 256, 0, 24 }, .slot = 1 }, &points);
+    try std.testing.expectEqual(@as(usize, 1), count);
+    try std.testing.expect(points[0].jump);
+    try std.testing.expectEqual(@as([3]f32, .{ 64, 0, 24 }), points[0].entrance);
+    try std.testing.expectEqual(@as([3]f32, .{ 128, 0, 24 }), points[0].point);
+    Fixture.travel = c.TFL_WALKOFFLEDGE;
+    try std.testing.expectEqual(@as(usize, 1), try navigation.service().jumps(.{ .position = .{ 0, 0, 24 }, .destination = .{ 256, 0, 24 }, .slot = 1 }, &points));
+    try std.testing.expect(!points[0].jump and points[0].drop);
+    Fixture.expected_source = 5;
+    try std.testing.expectEqual(@as(usize, 1), try navigation.service().jumps(.{ .position = .{ 0, 0, 24 }, .destination = .{ 256, 0, 24 }, .slot = 1, .start_hint = 5 }, &points));
+    Fixture.travel = c.TFL_WALK;
+    const continuation = (try navigation.service().next(.{ .position = .{ 0, 0, 24 }, .destination = .{ 256, 0, 24 }, .slot = 1, .start_hint = 5 })).?;
+    try std.testing.expectEqual(@as(i32, 5), continuation.from_area);
+}
+
+test "an exact upper-floor origin resolves its thin grounded area before a lower-floor fallback" {
+    const Fixture = struct {
+        fn syscall(operation: isize, ...) callconv(.c) isize {
+            var args = @cVaStart();
+            defer @cVaEnd(&args);
+            if (operation == c.BOTLIB_AAS_POINT_AREA_NUM) {
+                const point = @cVaArg(&args, *const [3]f32);
+                return if (point[2] > 528 and point[2] <= 531) 11 else 0;
+            }
+            if (operation == c.BOTLIB_AAS_AREA_REACHABILITY) return if (@cVaArg(&args, isize) == 11) 1 else 0;
+            if (operation == c.BOTLIB_AI_REACHABILITY_AREA) return 22;
+            return 0;
+        }
+    };
+    const previous = engine.gateway;
+    defer engine.gateway = previous;
+    engine.gateway.bind(Fixture.syscall);
+    try std.testing.expectEqual(@as(isize, 11), destinationArea(.{ 32, 32, 528 }));
+    try std.testing.expectEqual(@as(isize, 22), destinationArea(.{ 32, 32, 600 }));
+}
+test "standing route starts on its actual floor before a fuzzy downstairs guess" {
+    const Fixture = struct {
+        fn syscall(operation: isize, ...) callconv(.c) isize {
+            var args = @cVaStart();
+            defer @cVaEnd(&args);
+            if (operation == c.BOTLIB_AAS_POINT_AREA_NUM) {
+                const point = @cVaArg(&args, *const [3]f32);
+                return if (point[2] >= 528 and point[2] <= 531) 11 else 0;
+            }
+            if (operation == c.BOTLIB_AAS_AREA_REACHABILITY) return 1;
+            if (operation == c.BOTLIB_AI_REACHABILITY_AREA) return 22;
+            return 0;
+        }
+    };
+    const previous = engine.gateway;
+    defer engine.gateway = previous;
+    engine.gateway.bind(Fixture.syscall);
+    for ([_]f32{ 527, 528 }) |height| {
+        var origin: [3]f32 = .{ 32, 32, height };
+        const request: rules.Request = .{ .position = origin, .destination = .{ 64, 32, height }, .slot = 1 };
+        try std.testing.expectEqual(@as(isize, 11), startArea(request, &origin, false));
+        try std.testing.expectEqual(request.position, origin);
+    }
+}
+test "outside-area recovery uses the traveller hull before a fuzzy upstairs guess" {
+    const Fixture = struct {
+        var slope_boundary: bool = false;
+        fn syscall(operation: isize, ...) callconv(.c) isize {
+            var args = @cVaStart();
+            defer @cVaEnd(&args);
+            if (operation == c.BOTLIB_AAS_POINT_AREA_NUM) {
+                const point = @cVaArg(&args, *const [3]f32);
+                return if (point[0] >= 8 and (!slope_boundary or point[2] >= 28)) 11 else 0;
+            }
+            if (operation == c.BOTLIB_AAS_AREA_REACHABILITY) return 1;
+            if (operation == c.BOTLIB_AI_REACHABILITY_AREA) return 22;
+            if (operation == c.G_TRACE) {
+                const out = @cVaArg(&args, *c.trace_t);
+                _ = @cVaArg(&args, *const [3]f32);
+                const mins = @cVaArg(&args, *const [3]f32);
+                _ = @cVaArg(&args, *const [3]f32);
+                const end = @cVaArg(&args, *const [3]f32);
+                out.* = std.mem.zeroes(c.trace_t);
+                out.fraction = 1;
+                out.endpos = end.*;
+                out.entityNum = c.ENTITYNUM_NONE;
+                out.startsolid = @intFromBool(mins[0] < -12);
+            }
+            return 0;
+        }
+    };
+    const previous = engine.gateway;
+    defer engine.gateway = previous;
+    engine.gateway.bind(Fixture.syscall);
+    var origin: [3]f32 = .{ 0, 0, 24 };
+    var request: rules.Request = .{ .position = origin, .destination = .{ 64, 0, 24 }, .slot = 1 };
+    try std.testing.expectEqual(@as(isize, 22), startArea(request, &origin, false));
+    try std.testing.expectEqual(request.position, origin);
+    request.mins[0] = -12;
+    request.maxs[0] = 12;
+    try std.testing.expectEqual(@as(isize, 11), startArea(request, &origin, false));
+    try std.testing.expectEqual(@as(f32, 8), origin[0]);
+    Fixture.slope_boundary = true;
+    origin = request.position;
+    try std.testing.expectEqual(@as(isize, 11), startArea(request, &origin, false));
+    try std.testing.expectEqual(@as([3]f32, .{ 8, 0, 28 }), origin);
+}
+
 /// A request's travel flags: lift links left out when the lift is away
 /// and the traveller cannot call it.
 fn requestFlags(request: rules.Request) i32 {

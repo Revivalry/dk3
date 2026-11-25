@@ -33,9 +33,7 @@ pub fn launch(world: *data.World, slots: *Slots, projections: []abi.EntityProjec
     try publish(world, entity, projections);
 }
 fn valid(entity: Ref, owner: u32) !bool {
-    if (try entity.id() == owner or (entity.get(data.Health) catch return false).current <= 0) return false;
-    if ((entity.get(data.Actor) catch null) != null) return true;
-    return engine.integer("g_gametype") != c.GT_SINGLE_PLAYER and (entity.get(data.Player) catch null) != null;
+    return @import("../../../../mechanics/server/weapon_targets.zig").allowed(entity, owner, W.spec.automatic_targets, engine.integer("g_gametype") != c.GT_SINGLE_PLAYER);
 }
 fn point(entity: Ref) !v.Vec3 {
     return @import("../../../../mechanics/server/area_damage.zig").center(entity.world, entity.entity);
@@ -114,7 +112,7 @@ fn bolts(world: *data.World, slots: *Slots, projections: []abi.EntityProjection,
         const owner = access.find(world, bolt.owner);
         const source = access.find(world, bolt.source);
         const target = access.find(world, bolt.target);
-        if (parent == null or owner == null or source == null or target == null or (try owner.?.get(data.Health)).current <= 0) {
+        if (parent == null or owner == null or source == null or target == null or (try owner.?.get(data.Health)).current <= 0 or (bolt.phase != .fading and !try valid(target.?, bolt.owner))) {
             try removeBolt(world, slots, projections, entity, bolt);
             continue;
         }

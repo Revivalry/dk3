@@ -84,6 +84,7 @@ fn spawnOne(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
     try world.put(entity, body);
     try world.put(entity, data.Pickup{ .kind = kind, .amount = @intFromFloat(try prop.number(object, "count", 0)) });
     try world.put(entity, data.ItemMotion{ .base = position, .started_ms = now });
+    inline for (@import("../../game/server/item_events.zig").spawned) |Class| try Class.spawned(world, entity);
     // Slots can previously belong to a sound/event, corpse or brush entity.
     projections[slot] = std.mem.zeroes(abi.EntityProjection);
     try publish(world, entity, projections);
@@ -215,6 +216,7 @@ pub fn step(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
             const stays = rules.weaponStays(pickup.*, !single_player and engine.integer("dm_weapons_stay") != 0);
             if (stays and (try world.get(player, data.Weapons)).dk3Inventory & (@as(i32, 1) << pickup.kind.weapon) != 0) continue;
             if (!rules.give(pickup.*, .{ .keys = try world.get(player, data.Keys), .health = try world.get(player, data.Health), .loadout = try world.get(player, data.Weapons), .character = try world.get(player, data.Character), .ailments = try world.get(player, data.Ailments) }, table, now, engine.integer("g_gametype") == c.GT_SINGLE_PLAYER)) continue;
+            inline for (@import("../../game/server/item_events.zig").collected) |Class| try Class.collected(world, entity, player);
             pickup.visible = stays;
             if (pickup.kind == .weapon and player_slot < Slots.clients) {
                 var command: [48]u8 = undefined;

@@ -11122,3 +11122,4835 @@ decode and contiguous-frame inspection pass. The failed Episode1 media-admission
 replay and initial local-walk turn failure remain retained. Replacement full
 recordings01 have started; their outcomes/exports remain unverified. Evidence:
 `zig-out/reports/replay-motion-585/`. Owner107-file profile baseline is preserved.
+
+## [seq:587] episode34-progression — late campaign implementation and repairs
+
+Implemented the connected Episode3/4 stages and companion-aware hub revisits in
+`dkq3/coop/episode3.lua` and `episode4.lua`, using the official GameSpot guide's
+puzzle sequence and local converted entity identities. Native fixes discovered
+during these continuations include single-use key/unlock persistence and physical
+card bounds, moving-brush support for resting pickups, correct crouched firing
+clearance, qualified lower-floor landings, retained authored arcs over liquids,
+terminal train rotation, usable proximity-door discovery and blast metadata.
+The [acceptance ledger](../../docs/native-acceptance.md#sequence-587--episode34-progression--authored-late-campaign)
+retains each scoped pass and failed follow-on; writing a stage is not a pass.
+
+Native131 adds a transient companion ground-link fallback when a moving floor
+leaves the area graph. New legs are qualified through live support and the shared
+motor/hazard rollout; no position, inventory, target firing or required control
+is granted by a graph link. Cached progress, order/reset handling and bounded
+retry keep this out of the ordinary per-frame search path. Exit waiting holds an
+already clear approach instead of retreating across the preceding door; thin
+trigger retreats intersect the body-expanded box along the approach axis.
+Native132 prevents a step early in a run-up from launching the jump before its
+takeoff: raised-joint departure is restricted to the last32 units.
+
+Latest runtime check: Debug53,548/548; native132 dedicated build succeeds.
+Ownership07: R1–R11 all zero. These are development checks, not episode acceptance.
+Follow-up native133 makes explicit companion Move/Come orders leave a mover
+instead of implicitly continuing its ride, and honours direct trigger-action
+options. Native134's overhang projection regressed a stacked-floor route in
+`labs-control-ramp-01`. Native135 rejects a projection whose initial foot slab
+is embedded in solid, allowing the raised retry to retain the upper storey.
+Debug56 passes548, including the extended overhang/solid-foot regression;
+native135 builds successfully. Affected gameplay replays remain in progress.
+Native136 fixes train path names shared with relays and dispatches the departing
+corner's ordinary targets once, retaining and remapping the pending identity in
+saves. Debug57 and its dedicated build pass; ownership09 remains zero for all
+rules. `tower-train-targets-01` passes the lightning-linked gate and descends247
+without deaths, then fails at the crypt approach. Native137 aligns the bot's
+use qualification with its planner: reach is measured to the hit surface of a
+brush, rather than rejecting its more distant centre. Debug58 and its dedicated
+build pass; affected cage-button replay remains pending.
+
+`labs-control-stairs-09` clears both blocking captains, climbs the control's actual
+east stairs, operates122, rides the damaged transport, steps from its raised rim
+onto the lower corridor and climbs both vent ladders with zero deaths. It reaches
+the cage section and fails using155. Its preceding rail-height and run-up failures
+are retained. `hideout-lower-landing-06` proves safe disembarkation for Hiro and
+Mikiko, operates208 and climbs to173 without deaths. `hideout-hub-checkpoint-01`
+returns through the main lift149 and operates458. Its descending ladder457 remains
+blocked by upper SEAL guard75; this does not establish Hideout completion.
+Native138 resolves a pre-existing non-rider/brush overlap from the actor's original
+pose within one18-unit movement step, retaining all-collider clearance and pusher
+rollback. New contacts and riders retain their existing swept push. Debug59 and
+the dedicated build pass; ownership10 remains zero. `hideout-pusher-overlap-01`
+lowers457 and climbs the first two hub ladders, then dies to that upper guard.
+`labs-cages-standing-02` on native137 passes all four cage controls and the Labs
+boundary, then the Hideout garden, four rocks, museum169, Chambers208 and173 with
+zero deaths. Its final ladder failure is retained; this is a connected checkpoint
+continuation, not a fresh full-map or episode pass.
+Native140 fixes two independent Buboid resurfacing refusals: the inflated hull
+extended below a grounded enemy's floor, and its32-unit start overlapped the
+enemy body. Floor-aligned probes now begin outside the combined horizontal
+hulls. Debug62 explicitly includes the class's eight-direction clearance test;
+the dedicated build and ownership12 pass. `tower-resurface-key-01` restores the
+already melted guardian, defeats it and collects the fence-protected crypt key
+with zero deaths. Native139's floor-only repair still failed and is retained.
+`tower-crypt-return-01` then passes the complete connected crypt/key/return-lift
+sequence, unlocks642 and enters `e3m4b` with both companions and zero deaths in
+Tower A. Its later lightning-rod approach dies on the lower floor. The revised
+table route stays on the upper annular walkway and awaits replay.
+`hideout-pivot-ladder-01` replenishes the placed Slugger supplies, defeats the
+upper guard, climbs the correct pivoting ladder at370 rather than the unrelated
+fixed rungs at492, and enters Training with both companions and zero deaths.
+Its Training draft incorrectly chose optional broken lift61; the mandatory
+course descent is23/95, and the return companion lift is93/92. Those corrected
+stages and the first ladder remain under scenario verification.
+`wyndrax-upper-ring-01` stays on the upper annulus, operates36 with the spellbook,
+defeats Wyndrax, collects his wisp and enters Nharre's Crypt with zero deaths.
+The torch and fragment3 then pass; its subsequent ground-node route fails.
+Training's first lift87 must finish its cinematic descent before leaving it;
+early ground routing selected upper nodes while the platform was still descending.
+The new entry waits for that ordinary ride before approaching the first ladder.
+The isolated graphical native130 installation was built under
+`zig-out/episode34-progression-587/play/current`; its saved generator-room and
+vent captures were inspected to diagnose low passages and the short entry ladder.
+The normal owner installation and saves were not replaced.
+
+Evidence lives under `zig-out/reports/episode34-progression-587/`, with frozen
+scripts/module identities, full `server.log`, action results and continuation
+saves. Ordinary `runtime_coop_bot.py` inputs use skill1 and zero permitted deaths
+in repair runs, with isolated profiles under dkguard. Important latest frontiers:
+
+| Scenario | State | Evidence and limit |
+|---|---|---|
+| Dungeon B carrier, blade, floor and third-crank admission | Passed continuation | `dungeon-passage-lever-01`; both companions enter C, no deaths. |
+| Stavros arena, raised staff and upper spiral | Passed player continuation | `dungeon-arena-carrier-03`; no deaths; carrier initially remains below. |
+| Carrier spiral, columns, chasm ledges/extended bridge and Tower boundary | Passed continuation | `dungeon-bridge-carrier-03` on native132; both companions enter `e3m4a`, no deaths in Dungeon C. Subsequent Tower approach fails. |
+| Labs yellow card and return through A into C | Passed continuation | `labs-yellow-card-bounds-01`; no deaths through admission. |
+| Labs C cards, both generators, low passages and main-bay return | Passed scoped continuations | `labs-atrium-return-01`, `labs-generators-return-01`, `labs-main-bay-dismount-02`; their original later failures remain recorded. |
+| Damaged transport and first vent checkpoint | Passed continuation | `labs-first-vent-checkpoint-01`; ordinary call, boarding, inside button and ride, no deaths. |
+| Both monkey vents, four cages and Hideout boundary | Passed continuation | `labs-second-vent-01` starts at the first-vent save, enters Hideout with Mikiko and no deaths in Labs; later Hideout combat death retained. Connected replay from before the transport remains required. |
+| Hideout supplies and four rock buttons | Passed continuation with later failure | `hideout-supplies-03`; eight courtyard enemies and four buttons cleared without deaths, then museum firing approach times out. |
+| Tower water/ladder route, Hideout museum and later maps | Repairs in progress / later maps unrun | Current source includes physical routes; preserve failed probes and replay before promoting acceptance. |
+
+Fresh complete Episode3/4 passes, current-candidate Episode1/2 regression coverage,
+strict navigation regression gates and complete rendered/audio/cinematic acceptance
+remain required. None of these continuations closes the complete-port scope.
+
+Sequence587 continuation through native153: `labs-c-connected-04` completes all
+Labs C stages from its entry checkpoint and enters Hideout with Mikiko, no deaths.
+`hideout-return-door-01` repairs the timed return through215 and continues through
+the hub, Training A and Training B's rotating decks/cage with no deaths before
+the piston failure. The cage uses its actual start countdown and lower rotating
+rail. A speculative manual-door change in142 was fully reverted143: its event
+generator's target names are property keys, and the remote-lock test remains.
+
+Native146 repairs Nharre's shallow floor-overlapping teleport placement while
+retaining occupied-destination refusal. `nharre-teleport-recovery-02` restores the
+stuck fade, defeats him and collects Nightmare. `nharre-fragment-bank-01` then
+collects the final shard and leaves the lowering pedestal without deaths, but
+cannot exit because the carrier remains near the entrance. Native147's short
+stride experiment progresses partway but still fails; it is superseded by
+continuous stair-support qualification in150. Individual terrain steps renew
+the walking fall budget only while their support remains continuous; deep drops,
+harmful liquids and swept hazards retain their checks. Debug73 passes, including
+the descending-stair case and the existing small/deep-drop and liquid cases.
+Nharre carrier replays progress farther but remain failed at door235. Native153
+adds a physically qualified near-door approach and aims the existing party-door
+contact along the active ground corridor; its scenario remains under verification.
+
+`training-piston-lane-01` completes the five piston islands without deaths by
+observing complete live retraction cycles before entry and keeping a straight
+jump lane. Waiting on an island and repeatedly correcting lateral position during
+jump takeoffs caused the earlier failures. The subsequent draft incorrectly
+accepted an upper-walkway partial ground route as shark-tank completion; that is
+not acceptance. `training-shark-drain-02` obtains the suit, swims into the pool,
+defeats the four upper sharks and descends the drain, with no deaths, then stalls
+in the lower tunnel. Live collision surveys identify the actual lower corners;
+the repaired tunnel route and later moving decks remain under replay. Ownership16
+remains all zero; no complete episode or rendered/audio gate is promoted.
+
+Native154–155 connect supplied nearby landing points to the shared physical jump
+and run-up solver and keep that qualified run-up from being cancelled by the
+companion's additional landing guard. Debug75 passes, including a local landing
+without compiled reachability and harmful-liquid refusal. `nharre-runup-guard-01`
+physically brings the stranded carrier through the stairs, door235 and pillar
+jumps, then enters the Throne with no deaths. Its later Throne draft fails at the
+unimplemented sinking-rock crossing. That crossing is now written and under
+replay; retained failures identify run-up momentum, narrow landing tolerances and
+the cost of stopping on a sinking rock. No full Throne/episode pass is claimed.
+
+`training-tank-exit-01` completes the suit, upper sharks, drain, lower tunnel,
+far-bank climb, guards and timed door without deaths. Native156 tracks a jump's
+moving departure frame;157 aims a moving landing at its predicted flight-arrival
+position through the registered mover sampling hooks. `training-deck-prediction-01`
+passes all four moving decks, leaves by the actual bank and climbs the exit
+ladder, without deaths, before the next course's door approach fails. The final
+course now uses its floor start/completion controls and the rotating fan quarters;
+it remains failed under replay. Debug76 passes the prior integrated runtime;
+native158 keeps observed surface positions authoritative while sampling only the
+future target pose. Its prediction regression checks that sampling does not move
+the live entity. Ownership17 remains all zero. Fresh campaign, strict navigation
+and rendered/audio/cinematic acceptance remain open.
+
+Native159–160 retain moving-source takeoffs for jumps to static banks and require
+stable contact for ordinary moving-platform landings. Authored sinking-rock
+handoffs explicitly continue without settling; actual ground contact is still
+required. Debug78 passes and ownership19 stays zero. `training-fan-opposite-quarter-01`
+crosses the opposite quarter and exits to Training A; `training-vault-safe-wait-01`
+waits beyond the vault door sweep and reaches Submarine C, zero deaths.
+
+Native161 queues a distinct cinematic requested during a live shot, preserving
+the current program and frozen viewer until cleanup. Pending viewer/source IDs
+participate in save validation and identity remapping. Unsupported authored STAY
+teleports park companions until a supported placement or travel releases them;
+ordinary following teleports still require support. `submarine-continuation-01`
+descends the submarine ladder, completes Kage and the previously dropped hallway
+continuation, then reaches the final encounter, ending and credits with zero
+deaths. Its stage2 save confirms both gameplay companions remain parked near
+the authored staging coordinates instead of falling millions of units. Debug79
+and ownership20 pass (R1–R11 zero). This is headless checkpoint acceptance.
+
+`throne-fourth-runup-01` crosses all six sinking rocks but fails on a later
+static island check. `training-fans-connected-01` crosses all fan transfers and
+the opposite quarter but fails at its final takeoff under a different phase.
+Both remain under repair, with their first failures retained. Fresh full
+Episodes3/4, affected Episodes1/2 regression, strict navigation and rendered/audio
+acceptance remain open; no complete-campaign claim follows from these runs.
+
+`throne-lift-boarding-01` now completes the six rocks, winding bank, health,
+lowering wait, physical boarding and first lift ascent with zero deaths.
+`throne-first-guard-01` clears129, collects111 and operates158, then fails
+because static navigation does not cross the raised lift. Explicit bridge
+jumps are written and under replay. `training-fan-bank-03` exits its final fan,
+returns through Training A and reaches the submarine, then dies to Kage;
+alternate fight strategies remain failed and do not supersede that result.
+
+Native162–165 add short qualified combat escape candidates and the opposite
+strafe when the preferred side is blocked. Tether return now requires the same
+supported, hazard-checked path as other evasion, rather than returning an
+unchecked vector. Unrestricted hunts may seek health while holding a temporary
+firing position; explicit hold orders remain held. A caller-supplied arena now
+bounds pursuit even without a hold order, and blind held repositioning brakes
+at its destination. Debug82 passes, including the unsupported tether-return and
+parked companion release regressions; ownership21 remains all zero. The
+alternate Kage continuation still fails, so no reliable combat pass is claimed
+from these mechanism repairs. Fresh campaign and presentation gates remain open.
+
+Native166 retains an already-boarded rider's real local footprint instead of
+re-probing a cage centre and steering into shaft geometry. The previous top
+ascent crush remains in `throne-second-bridge-01`; `throne-preserved-rider-01`
+replays that ascent and operates the companion lift with zero deaths.
+`throne-upper-ground-nodes-01` establishes the earlier physical bridge and real
+stair climb to393. The throne audience now starts through doorway77, not remote
+cinematic button62. `throne-doorway-areas-01` completes the audience, Garroth,
+ending, `timestream34` and the Episode4 intro, zero deaths. This is a top-floor
+checkpoint continuation, not fresh campaign acceptance.
+
+Fresh native166 `e3-fresh-03` reaches the church crypt before its west-coffin
+jump fails, zero deaths. `e4-fresh-01` stalls at the opening pistol; the explicit
+crouched cell-lip route passes pistol/bottle/pipes in `alcatraz-cell-lip-01`.
+`alcatraz-lever-focus-01` operates the cell controls without abandoning them
+to chase a guard, reaches the yard and returns to A through the kitchen, zero
+deaths, then fails the overhead return. The narrow-plank checkpoint no longer
+runs optional supply detours; the subsequent gallery pickup lane remains under
+diagnosis. Companion weapon collection is moved after the barrel lever opens
+the actual cell access. Replays and the optional failed supply actions are
+retained; no fresh Episode3/4, E1/E2 regression, strict navigation or rendered
+acceptance gate is promoted. Last runtime check is Debug82/native165; the
+additional ride change still needs the final integrated check.
+
+Debug83 passes the integrated native167 runtime, and ownership22 remains all
+zero. Native167 publishes the initial cinematic viewer before first-shot task
+dispatch, so a first-shot continuation can retain the already-frozen viewer.
+Native168 adds an optional crouched jump geometry probe (`crouch_jump`, `cj`)
+to `walkflood`; it is not motor/traversal acceptance. The isolated graphical
+generation is `0e0e433fe4037a0b579d75419945550ad8b3e17b9e1c874e75327c52c5e4f0be`.
+`pipe-first-step-visual168-02` and `pipe-upper-visual168-03` load its native save
+and capture ordinary view turns for geometry inspection only. The first capture
+failed on the temporary filesystem quota; the successful captures use a temporary
+directory under the dedicated prefix, without touching unrelated model caches.
+
+`crypt-coffin-crouch-01` passes the west-coffin jump, fragment/hex acquisition,
+Village B/A return and Passage route, zero deaths, then fails the exit approach.
+`passage-exit-rock-jump-03` uses the real south-side rock step and the exit action's
+intended-volume permission, crosses into Dungeon A, and completes its intro,
+carrying encounter and cave chasms, zero deaths. Its later upper-room failure is
+repaired by crouched corridor input in `dungeon-upper-headroom-01`, which reaches
+the final gates and then dies to276. `dungeon-gate-lycanthir-01` clears276 with the
+Silverclaw before escorting and crosses both gates into Dungeon B with no deaths;
+its later lever728 use fails after combat pulls the bot away. Short timed escort
+controls now retain their physical focus instead of chasing ranged enemies.
+
+Fresh native168 `e3-fresh-04` passes the complete opening/church/crypt, both
+Village revisits, Passage and most of Dungeon A with zero deaths, then fails
+the carrier's first timed gate. Its gate wait could accept arrival relative to
+a combat-displaced player rather than the intended bank. The predicate and
+stance now use the authored bank. Subsequent diagnostics also show door172's
+swing pushing a follower that settled short of that bank back off the jump.
+The route now asks Come toward the safe southern bank, holds the carrier there
+while opening the leaf, and resumes following after clearance. This repair is
+under replay; the failed anchor/clearance runs remain preserved.
+
+Alcatraz return repair disables optional supply detours on the overhead plank.
+`alcatraz-gallery-survey-01` confirms the attempted ammunition lane is blocked by
+fixed world bars; it is no longer a required detour. The shower route now shoots
+trigger612 and waits for hatch613 instead of walking into its closed leaf.
+`alcatraz-vent-shot-01` crosses that hatch and reaches the next prisoners, then
+dies in combat. The official guide's earlier pipe-room Slugger was omitted;
+its physical collection route is under investigation. Low floor routing and
+in-place jumping below it do not collect the weapon, and the upper-pipe survey
+remains geometric evidence only. No fresh full Episode3/4, current E1/E2,
+strict navigation or rendered cinematic/audio acceptance is claimed.
+
+Native169 adds a grounded partial-endpoint monitor for companion corridor
+recovery. Debug84 passes. `dungeon-partial-endpoint-01` gets the carrier past
+the previously stalled Dungeon B stairs and gates, then dies to a later dwarf;
+it is not a complete Dungeon pass. `dungeon-carrier-safe-come-01` confirms the
+safe southern bank and both Dungeon A escort gates, zero deaths through that
+boundary. Fresh `e3-fresh-05` passes the opening, crypt, Passage and those gates,
+then is deliberately terminated during Dungeon B CPU diagnosis; its one combat
+checkpoint death and incomplete outcome remain recorded.
+
+GDB samples of that isolated engine show repeated jump-preview motor/collision
+rollouts, including a transport-slot scan on each collision request. Native170
+uses a checked binding hint, retaining the authoritative scan for absent or
+stale bindings; regression coverage includes wrong-slot and released-slot cases.
+Frozen169 baseline and170 candidate replay the identical stage6 save and route
+with the same engine/assets and45s observation limit. First pair reaches99/106
+game seconds in65.2s wall respectively; both time out at the same carrier rally,
+zero deaths. This single pair establishes no reliable speedup or completion
+gain. Timing evidence is separate from the instrumented navigation diagnosis.
+
+`dungeon-carrier-stall-diagnostic-01` retains the complete rally timeout: the
+follower circles within roughly50 units of an ordinary partial endpoint128
+units below the destination. Sidesteps and alternating adjacent waypoints reset
+the original monitor. Native171 measures escape from the local64-unit pocket
+instead, preserving exclusions for special traversal and destination arrival.
+The actual oscillation coordinates accompany the regression test. Debug85
+passes the integrated runtime; ownership23 remains zero for R1–R11. The
+`game-server` build passes after an initial incorrect `server` target invocation.
+Affected carrier replay remains in progress.
+
+`alcatraz-pipe-route-01` physically climbs the east-room pipes, circles the tall
+pipe and crawls the narrow west corner to collect the hidden Slugger with zero
+deaths,71/71 actions. Its ordinary-input save confirms weapon23 and15 rounds.
+The campaign includes that proven route before leaving the pipe room. This
+supersedes the geometric-only pickup investigation, not the full-prison gate.
+Fresh `e4-fresh-06` is in progress. No full-episode or presentation acceptance
+is promoted by these scoped repairs.
+
+Native173 adds a bounded body-space floor search (1024 nodes,16-unit columns,
+separate height layers), with swept support, liquid/hurt-volume rejection and
+live motor qualification. `dungeon-carrier-stair-clear-01` clears the stair-head
+worm, brings the carrier up the formerly stalled spiral and crosses both upper
+gates. It subsequently dies in the cellblock. Debug86 passes; ownership24 is
+zero. Native174 also checks a projectile's predicted interception distance:
+a distant target cannot qualify a near bar/sill impact inside the shooter's
+blast radius. The first cell encounter gets farther but still dies; this is
+neither a complete Dungeon pass nor proof that every blast remains safe after
+the world moves. The narrow-bolt cell strategy is under replay.
+
+Fresh `e4-fresh-06` passes prison A, yard B, return A and shower admission with
+zero deaths, then stalls at bench ammunition94. `alcatraz-ammo94-bench-01`
+physically hops the24-unit bench and collects it. The integrated continuation
+crosses the waterway and lower ladders. `alcatraz-grate-outward-01` catches the
+actual hanging rungs before stepping outward without pressing the ladder's
+descend input. `alcatraz-rim-supported-hop-01` separates the848 ladder-top stance
+from the872 stone rim with a fresh standing hop, and climbs the upper girders.
+`alcatraz-return-supported-ledge-01` collects sulphur, descends to the actual1512
+return landing, traverses the lower drops and reaches the sewer in B, zero
+deaths through that boundary. It is deliberately terminated during another
+CPU diagnosis (incomplete,45/47 actions); its report remains retained.
+
+Frozen navigation engine `zig-out/gameplay-stability-581-release/bin/dk3ded`
+matches baseline hash7b79af82…98b81b. Exact whole-map diagnostic replays on that
+engine retain both old-pass follower regressions (E2m5c180 and E4m1c127); no
+strict75% gate passes. Single-case diagnostics renumber their row to0 only
+because the unchanged parser requires contiguous row indices; they retain the
+original coordinates/hulls and are not aggregate acceptance. Ground search
+adds qualified terminal connections inside the existing arrival disk, and a
+shared follower attempt around persistent contact fields; these still do not
+resolve the two regressions. Debug87 passes the integrated175 batch; ownership25
+remains zero. Further navigation diagnosis is required.
+
+Native178 spreads exhaustive jump run-up groups across ordinary updates rather
+than evaluating every alignment in one frame. Search cursor state is transient;
+movement, velocity, hull, destination or compiled-candidate changes restart it.
+All accepted flights are freshly motor-qualified. Equal candidate values at a
+new address preserve progress. The initial build rejects a mutable/const slice
+comparison; explicit value comparison repairs it. Debug88 first fails because
+the new test incorrectly demands completion in a single slice; its repaired
+test compares the completed sliced result with the exhaustive solver and checks
+bounded resumption and movement invalidation. The repaired runtime check passes.
+
+The perf skill's paired sewer workload freezes the same arrival save, route,
+engine, assets, settings and30-second observation limit. Its only arm change is
+qagame:177 `09e5027f…7adde9`,178 `7780ce99…3a47a`. GDB on the original isolated
+run shows `walkThrough` inside companion `localJump` at game8150ms after431s of
+99.7% CPU; it is on-CPU forecasting, not a blocked worker. The module contains
+the new `localJumpSlice`/`JumpProgress` functions, not merely changed debug data.
+
+| Trial |177 baseline |178 candidate |
+|---|---|---|
+|1 | First valve still pending at30s cutoff;50.1s including cleanup,0.3s simulated |36 actions,97s simulated in22.5s; later ledge death |
+|2 | Same first-valve timeout and50.1s including cleanup | Same36 actions/ledge death;97s simulated in22.9s |
+
+The first pair overlaps a runtime test build; the second pair retains the same
+stall/progress difference after that check. This demonstrates removal of this
+CPU stall, not a whole-game FPS claim or episode completion. Both candidates
+operate all five sewer wheels, return to the yard and trigger the bomb before
+the same separate outside-ledge failure. The route is now testing a supported
+takeoff with an actual run-up; no death budget is increased. Timing reports are
+`jump-budget-{baseline,candidate}-{01,02}` and remain separate from diagnostics.
+
+Native181 checks completed pickup/control actions before optional combat, so a
+finished action can hand off to its successor. Native187 qualifies predicted
+explosive interception against the shooter's whole hull, rather than only the
+eye point. The Dungeon cell encounter still requires replay with that repair.
+Native182–183 retain bounded jump-search work and include persistent contact
+volumes in flight qualification. The two previously known regression fixtures
+pass in `navigation-local-obstacle-01`; this does not establish aggregate success.
+
+The unchanged frozen navigation protocol reports the following full comparisons
+against `gameplay-stability-581/baseline-all-36` (19594 trials per controller):
+
+| Module/report | Actor failures / old-pass regressions | Follower failures / old-pass regressions | Strict gate |
+|---|---|---|---|
+|183 / `navigation-all-183` |48 /0 |87 /23 | Failed |
+|186 / `navigation-all-186` |48 /0 |67 /11 | Failed |
+
+Although follower failure reduction is88.663% with186, eleven previously passing
+cases now fail. This does not satisfy the requested improvement without
+regressions. The177 control shows most183 regressions predate the CPU repair.
+Disabling the shared floor recovery in184 loses the previously repaired E2m5c
+case;185 restores it.185 steers submerged nearby destinations to their actual
+depth instead of a surface waypoint.186 clamps immersion sampling inside tiny
+hulls. Focused swimming cases pass and Debug90 passes.188's additional clear
+swimming-line test leaves the eleven remaining regression cases unchanged;
+Debug91 passes.189 changes run-up exploration order and rejects offset landings
+that fail to advance toward the destination; acceptance is pending.
+
+The prison outside-gap repair uses an actually supported running takeoff and
+lands on the opposite ledge. `alcatraz-opposite-ledge-01` passes into E4m2a with
+zero deaths. `cavern-ground-corridor-01` reaches and collects the waterfall
+Ripgun; it later times out at the attack-boost pickup. With188,
+`waterfalls-completed-pickup-01` collects both that pickup and the upper save gem,
+climbs the next ladder and breaks the balcony obstacles. It then dies to
+rocketdude786 while detouring toward health775. That failure remains open.
+
+`dungeon-cell-ranged-supplies-01` heals, collects supplies and escorts the carrier
+up the spiral and through the first upper gate, but dies during the optional
+health63 approach while holding a landing. That approach now requests the
+ground-node route; its replay remains pending. No complete fresh E3/E4 pass,
+fresh E1/E2 regression, or rendered/audio acceptance is promoted by these scoped
+results. Owner installation and saves are unchanged.
+
+Native189's focused run fixes six of the eleven186 follower regressions. The
+full frozen `navigation-all-189` comparison is valid but still fails: actor48
+failures/0 regressions, follower62 failures/6 regressions (89.509% failure
+reduction). The changed run-up order adds E2m4a291 to the five remaining old
+failures. No threshold or baseline manifest changes were made.
+
+Debug92 passes189; Debug93 passes191, including the class-owned pinned-Ballista
+forecast and its expiry-update regression. Ownership27 remains R1–R11=0.
+`dungeon-cell-safe-blasts-01` passes the health63 approach and reaches the cell,
+then dies with self-inflicted blast hits and Buboid103 still alive.
+`dungeon-pinned-blast-01`191 shows no self-inflicted Ballista hits, but dies to
+ordinary enemies during the cell fight. The route now prioritizes the Buboid,
+whose resurfacing can bypass the closed bars; replay remains in progress.
+The forecast preserves actual timed explosions and damage, including owner
+damage; it supplies avoidance information through the hazard registry.
+
+The191 shallow-water/support projection changes do not fix any of the six
+focused remaining navigation cases (`navigation-supported-water-01`).192 adds
+a distinct motor forecast for the normal sixteen-unit final arrival disk.
+Precise takeoff alignment and intermediate ground-route qualification retain
+the strict endpoint forecast.192 is implemented; replay pending.
+
+`navigation-all-192` is a valid complete comparison: actor48 failures/0
+regressions, follower60 failures/4 regressions (89.848% reduction), strict gate
+still failed. Debug94 passes the separate normal-arrival disk forecast, with
+unsupported precise takeoff and intervening hazard rejection.193 admits an
+afloat final arrival without admitting a swimming jump takeoff; Debug95 passes
+and the frozen E1m2a298 case now passes.194 removes188's straight swimming
+shortcut: it fixed none of its intended cases and manufactured E2m4a291's
+surface detour. That case passes again in `navigation-no-swim-shortcut-01`.
+
+E2m5c238's small supported arrival lies a quarter-unit clear of a point flame;
+the independent one-unit contact expansions incorrectly fence it off.
+Collision probes (`navigation-flame-floor-inspect-02`, skill3 to retain the
+source actor) confirm the opposite candidate beside the wall is solid and the
+outer floor is supported.195 centralizes hull expansion with the collision
+world's0.125-unit separation. Physical contact remains forbidden; the focused
+case passes at distance15.521 without widening the arrival disk or disabling
+flame damage. Debug96 initially fails a local variable redeclaration; the
+renamed repair passes, including contact/separation and swept-contact checks.
+The complete195 comparison remains in progress. Tiny guppy E2m2a161 is still
+a known failed follower case; no strict gate is promoted.
+
+Dungeon diagnostics confirm x=-1260/-1248 lie inside the western wall, while
+x=-1240 is supported. `dungeon-cell-held-ambush-01` kills the first dwarf,
+holds outside the cell and kills resurfacing Buboid103 with the Silverclaw;
+it then stalls on dwarf139 and dies to its ranged attacks. The server trace
+shows a clear aimed shot with ammunition39, but the final firing check reports
+safe=0. That check uses a generic six-unit projectile cube while the approach
+planner uses the actual Ballista bounds.196 replaces the generic cube with
+the weapon's declared bounds and adds a narrow-slit regression. Replay pending.
+The new `barred-purifier-shard` checkpoint separates that encounter from its
+already traversed stair/gate setup; historical numbered B-stage fixtures must
+be mapped to their stage names before reuse.
+
+The complete `navigation-all-195` comparison is valid: actor48 failures/0
+regressions; follower56 failures/1 regression,90.525% failure reduction.
+Hazardous outcomes remain1/10 versus baseline3/29. E2m2a161 is the remaining
+old-pass regression, so the strict gate still fails.196's build and Debug97
+first fail a test-local name shadowing the module's `blocked` function;
+197 renames that local and also prevents down-swimming from enlarging a hull
+whose standing height is already below the crouching ceiling. Tiny-hull eye
+inset scales below sixteen-unit body height; ordinary player eyes stay22.
+The connected197 build, Debug98 and affected replays remain pending.
+
+197 and Debug98 pass after the test-local rename. The small-hull crouch repair
+does not fix E2m2a161 (`navigation-tiny-hull-01`, distance47.923). A paired183/197
+diagnostic shows183 performs a water jump while197 remains at the bank.
+198/199 try shallow submerged exit probes; Debug99/100 pass their focused
+contracts, but the frozen bank case remains failed at47.923.201 removes those
+ineffective exit-probe additions; ordinary water-jump eligibility is retained.
+The small-hull crouch/eye corrections remain implemented, not promoted as a
+navigation acceptance result.
+
+Dungeon B now also collects accessible health64 when needed. From the original
+stage2 checkpoint, `dungeon-cell-health-reserve-01` reaches the cell at82HP,
+kills dwarf530 and Buboid103, but again withholds fire on dwarf139 and dies.
+The new cell-only saved continuation is useful diagnostically but changes
+encounter timing; `dungeon-cell-projectile-bounds-01` and
+`dungeon-cell-restored-ambush-01` fail earlier. They do not replace the original
+setup replay. Full server logs, rather than the runner's filtered output,
+show an aimed dwarf139 shot with ammunition38 and safe=0.
+
+The final object-shot check's additional1.25-times muzzle-distance margin still
+disagrees with the planner's actual hull/radius qualification.201 reuses the
+same `roundSafe` body-space test at the live impact, retaining ally checks and
+declared projectile bounds. Regression coverage requires a genuinely clear
+narrow slit, permits a blast outside the actual shooter hull/radius, and
+rejects the same shot inside that radius.200 first fails because the reused
+Lane initializer omitted its required muzzle;201 supplies it. Debug102,
+the integrated201 build and affected encounter replay are pending.
+
+201 and Debug102 pass. `dungeon-cell-live-blast-admission-01`, from the ordinary
+health-reserve stage3 save, kills dwarf530, finishes Buboid103, fires on and
+kills dwarf139, opens the cell, finishes its remaining threats, collects
+Purifier fragment29 and turns wheel102. The cell section passes with zero
+deaths. The continuation dies during the following stage4 health approach to
+dwarf134; its prior route explicitly suppressed fighting on that approach.
+Those health approaches now permit normal combat.203 also admits a usable
+melee alternative when a close explosive weapon is excluded; a lack of spare
+ranged ammunition must not leave the shooter holding a silent unsafe launcher.
+
+Collision probes in `navigation-bank-contents-01` and the183/197 control expose
+the actual low-bank issue: a fixed four-unit wall probe sits above a tiny
+swimmer's standing hull and misses the ledge still blocking its feet.202 clamps
+the low probe into that hull, preserving the ordinary player's four-unit
+probe and water-level-two eligibility. Debug103 passes its low-bank regression.
+The focused E2m2a161 case passes at distance12.6.
+
+**`navigation-all-202` passes the defined strict gate.** The complete unchanged
+62-map comparison reports19594 trials per controller: actor552→48 failures
+(91.304% reduction), follower591→55 failures (90.694%), zero old-pass regressions
+for both. Hazardous liquid outcomes fall3→1 and29→10. Input/protocol validation
+passes, both controller gates pass and the process exits0. The remaining48/55
+failed trials are retained in the report. This bounds acceptance to private
+locomotion copies against map collision; it does not establish all actor-AI,
+campaign, rendering or audio behavior. No full E3/E4 acceptance is promoted.
+
+E4's balcony route now requests a held Ripgun fight against rocket guard786
+before attempting the exposed goldensoul/cavern crossing. Its affected replay
+is pending; the earlier owner-independent waterfall death remains retained.
+
+204 consolidates the close-blast alternative check through existing `armedFor`,
+whose tests already cover usable ammunition-free melee and damage exclusions.
+204 server build, all game/client/UI modules, Debug104 and ownership30 pass;
+R1–R11 remain zero. The202 locomotion-only comparison remains valid: these
+subsequent changes affect the scripted driver's combat/interaction behavior,
+not the frozen fight-disabled locomotion controllers.
+
+`dungeon-stair-active-defense-01` gets through the former stair-health death,
+then dies to rotworm133 during the far gate encounter. Clearing that worm
+before crossing allows the timed gate to close during the hunt and strands
+the driver outside; `dungeon-gate-local-defense-01` retains that failure.
+The optional local-clear callback can now run after the hero crosses and
+before calling the carrier. It clears nearby worms/rats without blocking the
+original gate callbacks. The fixed opposite-lever point lies inside a wall;
+removing that hold lets the use planner find its visible face.
+`dungeon-return-lever-footing-01` presses it, brings the carrier through and
+passes the former gate failure. It later falls from the upper ramp: fighting
+during orientation/rally actions displaces Hiro from the authored footing,
+so the next direct leg begins off its intended corridor.
+
+E4 `waterfalls-west-window-01` uses the acquired Ripgun during building combat,
+hops the west window sill, kills rocket guard786, collects goldensoul775 and
+Acro774, opens the upper station and boards trolley98. It dies during the
+ride. Floor/sight probes show why the earlier held shot from inside the
+building could not hit the rocket guard; its previous failure remains kept.
+The new window route has no positioning grants. Safe stage4 and stage5 saves
+are now available because the route retains enough health at those boundaries.
+
+Trolley diagnostics (`trolley-use-face-01`) show its lever's surface is within
+88 units of the established rider even though the brush centre is farther
+away. The driver nevertheless walks toward a new stand and ends beneath the
+moving cage.205 adds read-only actual-panel-face reach qualification and
+preserves the rider's supported patch when that panel can already be used.
+An explicit waiting stance now constrains combat movement as well as ordinary
+movement: aim/fire remain allowed, close-in chase and unrequested sidesteps
+do not leave its anchor. Caller-supplied arenas retain their bounded movement.
+`point_at`/`look` accept explicit action options, and E3 carrier orientation
+uses fight=false before the defended anchored wait.
+
+205 and Debug105 pass panel-face range/occlusion, driver waiting-stance and
+Lua orientation-option regressions. Ownership30 remains zero. Affected E3
+ramp/rally and E4 trolley continuations are in progress. Full fresh E3/E4,
+current E1/E2, and rendered/audio acceptance remain open.
+
+`dungeon-rally-held-footing-01`205 crosses all authored upper ramp turns and
+keeps the carrier on them: the prior combat-displacement fall is repaired.
+The subsequent unheld melee hunt for Lycanthir130 leaves that upper route and
+ends in blade train269 below it.206 motor-qualifies a melee charge rather
+than replacing its route after a short geometric support sweep, and never
+steers such a charge during an existing flight/run-up. The route reaches the
+upper platform before its held melee duel. Debug106 and206 build pass; its
+affected replay remains in progress.
+
+`trolley-preserve-usable-stance-01`205 reaches and uses the onboard lever but
+still dies after departure. Its trace shows that approaching the lever changed
+the rider's safe patch; once moving, the driver returned toward its old entry
+patch.206 captures the actual supported control-use patch as the continuing
+local rider position. A motion-traced saved continuation is in progress. The
+failed205 trolley replay remains retained, not promoted to ride acceptance.
+
+**`trolley-control-stand-carry-01`206 passes the trolley repair.** It uses the
+onboard lever, retains that supported control-use patch during departure,
+rides to the cove, obtains the return supplies, passes the boat dock, completes
+the Tower A boat/sign/basement route and enters E4m3b. Zero deaths through
+those boundaries. The continuation stalls at the office pipe step; scoped
+floor traces confirm a sixteen-unit ledge at the intended low pipe corridor.
+The route now tries a crouched hop onto it. Actual-input replay is in progress;
+the geometric probe alone is not traversal acceptance.
+
+206's first E3 replay dies during a previously passing stair-health approach.
+Its melee motor qualification used the prey's origin as the traveller's stance.
+207 converts the prey's feet to the traveller's own hull height before that
+qualification, retaining flight/run-up protection. Debug107 passes; the207
+server build and affected replay are pending. No prior E3 continuation is
+silently substituted for current-candidate acceptance.
+
+207 server build and Debug107 pass.208's first build/test correctly fail on
+a local name shadow; renaming that local fixes both.208 server build and
+Debug108 pass. The combat selector distinguishes unsafe blast range from its
+conservative preference range: a safe ranged weapon remains available when
+the only alternative is a long melee pursuit. Actual impact/ally checks stay
+mandatory. `dungeon-held-ranged-defense-01` passes the former Dwarf129 chase
+death, then times out trying to shoot optional bat501 from a blind held stand.
+That forced shot is removed; the upper route retains ordinary combat.
+`dungeon-ramp-after-ranged-duel-01` then exposes a carrier wait: the192-unit
+rally radius accepted a companion a whole turn behind.96 units proves too
+tight for ordinary companion spacing;128-unit supported-turn replay is pending.
+
+`office-pipe-north-corridor-01`206 physically passes the crouched northern
+pipe approach, grate and office key. The attempted hop was removed after its
+failed replay; no crouch-jump input or ABI redesign was introduced.
+`office-needed-health-exit-01`207 removes unnecessary approaches to unwanted
+full-health medicine and completes Tower B/C and Labs A into Labs B, zero deaths.
+
+`lab-card-return-hall-01`207 closes the glass door, takes blue card56, reopens
+it and returns along the raised hall, then completes the firing range, zero
+deaths. Its later jump over descending station steps fails. Floor inspection
+identifies the actual steps; `lab-station-stair-descent-01`208 walks them and
+rides the warehouse shuttle, then fails a diagonal jump into storage crates.
+`lab-storage-clear-aisle-01`208 drops along their clear eastern aisle and
+reaches lift343. The driver latches a sliver of deck overlap as a safe rider
+position and is crushed against its shaft.209 moves the whole hull inward on
+thin decks before retaining that patch; cage bounds still retain their actual
+established rider patch. Build, Debug109 and affected lift replay are pending.
+Ownership31 passes with R1–R11 zero. Full fresh E3/E4, current E1/E2, and
+rendered/audio acceptance remain open.
+
+209 build and Debug109 pass. `lab-lift-full-footing-01` passes the thin-deck
+boarding repair, warehouse lift, control room and vents, zero deaths; later
+medicine collection stalls beside a rotated locker leaf. `lab-locker-front-01`
+approaches its front, takes the medicine and yellow card, then fails to route
+out of the card locker. The explicit return stand passes in
+`lab-yellow-card-locker-exit-01`, which next finds an uncompiled removed-door
+threshold. An assumed raised-threshold hop fails; point/floor inspection shows
+the actual stairs are farther north. `lab-barracks-return-stairs-01`210 walks
+that threshold and those stairs, rides back to the main bay, returns through
+Labs A and enters Labs C, zero deaths through those boundaries.
+
+210's direct corridor experiment for held fights fails: a direct shift can
+fall off the ramp.211 removes that experiment, retaining close-in suppression
+for held fights and ordinary supported routing. Both server builds pass;
+Debug110/111 pass. Ownership32 remains zero. Timed escort gates can renew an
+opening after an optional clearance callback. A carrier rally now issues Stay
+after its supported settling interval, never halfway through that interval.
+The held fight from the gate's western side cannot see guard129 above it and
+times out; the guard encounter is moved to the visible ramp bend. Its first
+replay dies while alternating between an attacking bat and that ranged guard.
+The lower-landing bat duel and separate ramp guard fight are under replay.
+No full Dungeon or Episode3 acceptance is promoted.
+
+Labs C's first attempt dies after guards ride the called shuttle up and shoot
+through its fight-disabled boarding actions. A roaming pre-clear falls off
+the upper bay and is retained as failed.211 `lab-shuttle-guard-stance-01`
+instead fights the arriving deck guard from its held boarding stance; it
+completes the power-wing green-card trip and enters the atrium, zero deaths.
+Blue card49 then remains uncollected: the route climbs onto the high back of
+its computer terminal, above the card's thin touch volume. Low-side footing
+and ordinary-input collection are under replay. The first low-side hop lands
+on the correct height but outside its over-tight two-unit completion disk;
+the route now accepts the landed shelf and walks to its precise pickup stand.
+Full fresh E3/E4, current E1/E2, and rendered/audio acceptance stay open.
+
+**`dungeon-defend-upper-approach-01`211 passes the Dungeon B frontier.** The
+lower bat is fought separately, Dwarf129 is fought immediately on reaching
+the lower ramp bend before orientation/rally delays, and the upper platform
+approach permits its Silverclaw defense before the carrier wait. The run
+passes the moving-blade staircase, its medicine recess, breaking-floor
+passage and timed carrier gate, entering Dungeon C with zero deaths.
+Its subsequent Dungeon C death remains retained. No full episode claim.
+
+`dungeon-cranks-defense-01`211 takes actual medicine77, finishes Lycanthir135
+after the second crank and Dwarf122 after the third before the carrier wait.
+All three cranks, Stavros, the staff pickup and rising spiral pass, zero
+deaths into stage4. It later dies during a carrier wait under Dwarf115's fire.
+`dungeon-upper-landing-defense-01` kills that dwarf before calling the carrier
+and progresses through the upper clearances. Its next supplied-node route
+to the high stair landing instead chooses a lower-storey endpoint and falls
+into lava. Using the live area route to the actual landing is under replay.
+
+Labs C card49's low terminal shelf requires two physical height changes. The
+first one-hop approaches either land off its narrow shelf or climb onto the
+high back; those failed reports stay retained. `lab-blue-card-settled-shelf-01`
+settles between the two short jumps, reaches the precise side stand and
+collects the real card with ordinary input. Its return ride ends with the
+player on the car's left wall. Walking to an assumed upper side patch or
+jumping diagonally from that wall both fail. `lab-shuttle-deck-alignment-01`
+steps down inside, aligns with the doorway and jumps straight out; it then
+passes generator-wing access, destroys both generator weak points, rides
+back and returns to the main bay, zero deaths through those stages. Its
+later control-room return accepts an authored route endpoint on the floor
+below and stalls. The actual station stairs and a live area approach are
+under replay. Native211 build, Debug111 and ownership33 pass; no locomotion
+controller change invalidates the frozen202 navigation comparison.
+
+`lab-control-room-return-stairs-01`211 passes the actual control-room return,
+damaged transport and vents and reaches the four-monkey-cage stage, zero
+deaths. All four cage buttons are already used after a normal health detour;
+the lift has departed. The guide explicitly permits the pen's backup ladder.
+Live area routing still chooses the lift. Offline ladder reachability and
+physical floor probes locate the western pen ladder at x−2032/y−88. A low
+crouched lane through the opened west cage passes in
+`lab-west-pen-lower-lane-01`. Ordinary Follow settles131 units away, outside
+the128-unit wait, so an actual Come command brings Mikiko to the ladder.
+`lab-pen-ladder-party-come-01` brings her and physically climbs; its requested
+endpoint is below the upper floor and cannot finish grounded. A point probe
+finds the real upper floor−2744 (standing origin−2720). The supported exit
+and subsequent Labs escape are under replay.
+
+The Dungeon upper-ring fight exposes a shared combat defect independently
+of its route: repeated crouched melee inputs against Rotworm108 leave its
+health18 while it kills the player. Ordinary straight melee aims from the
+eye even though the actual trace starts at its class's hand height.212 reuses
+the straight-strike contract for a hand-origin aim and actual trace admission;
+arc families retain their own behavior. The hand origin is shared with
+fixture aiming, avoiding two definitions. Debug112 passes standing/crouched
+origin, small low target and arc-exclusion regressions.212 server build and
+ownership34 pass; R1–R11 remain zero. The same saved encounter is under replay.
+These are combat changes; the fight-disabled frozen202 locomotion result
+remains scoped valid. Full fresh episodes and rendered/audio acceptance stay open.
+
+212's affected melee replay (`dungeon-small-melee-hand-aim-01`) records actual
+Silverclaw damage115 and killed=1 for Rotworm108; the prior repeated swings
+left it at18HP. Its later upper guard death remains failed.213 prevents an
+authored direct walking action's defense from replacing its corridor with an
+autonomous melee chase. Ordinary routed walking retains that pursuit; an
+explicit Kill remains separate.213 server build, Debug113 and ownership35
+pass, with R1–R11 zero. Fight-disabled frozen202 locomotion is unchanged.
+
+The upper Dungeon ring exposes both resource and geometry issues. Taking
+real Ballista ammunition76 and preserving it through the approach lets
+`dungeon-upper-ballista-reserve-01` kill Dwarves104/107 from the landing.
+Stavros ammunition81 is an unnecessary detour here and is replaced with76;
+attempt67 remains recorded as a failed approach. The northern floor search
+finds a grounded loop reaching the upper storey through y2288. Its western
+strip is the surviving floor beside lava; the apparent corridor centre is
+missing floor. Precise ordinary movement passes the first northern turns,
+then the diagonal discontinuity near1632/1744 requires a physical hop rather
+than the geometric flood's elevated horizontal sweep. That hop and the rest
+of the northern staircase remain under actual-input replay.
+
+**`lab-pen-ladder-rung-centre-01`212 passes the missed-lift repair.** Hiro and
+Mikiko reach the pen ladder, Come brings her inside normal Follow spacing,
+Stay leaves its rungs clear during the hero's climb, and a run-through upper
+point hands off to the real floor. Follow then brings her to the exit. All36
+e4m4_cineend shots finish headlessly and normal travel enters E4m5a, zero
+deaths. Absent-animation diagnostics and all rendered/audio acceptance remain
+open; shot completion alone does not prove the cinematic performers.
+
+Hideout's optional medicine/ammo return to the entrance halls. The previous
+switch approach then chooses a wrong partial ground endpoint or a locked
+Relics shortcut. `hideout-return-garden-after-supplies-01`213 rejoins the known
+garden doorway before using each tiny rock switch's physical use planner.
+It passes all four switches, the museum laser/cage trap, the Chambers lift,
+upper red button, Superfly reunion and the first SEAL training map, entering
+E4m6b with zero deaths through those boundaries (401 completed actions before
+the later failure). The next rotating-deck jump falls into hurt29: waiting
+for a currently flat first deck starts too late for the second landing. The
+route now measures both live angular rates and requires walkable predicted
+landing phases throughout the continuous chain. Affected replay is pending.
+
+213's `training-rotating-deck-landing-window-01` passes the rotating chain,
+cage, pistons, shark tunnel and moving decks through the first fan admission.
+`training-fan-runup-window-01` passes the first two fan transfers. The third
+exposes an input override: the co-op layer requests braking, but the pilot's
+air-landing stroke replaces it with distance-only steering and overshoots.
+214 supplies the remaining ballistic arrival time and corrects predicted
+landing error from current momentum. A regression through the actual movement
+motor lands within16 units where the old stroke overshoots. After a repaired
+local-name shadow compile error, server214, Debug114 and ownership36 pass;
+R1–R11 remain zero. Automatic fight-disabled navigation is unchanged.
+`training-moving-landing-momentum-01` passes the third transfer, opposite
+quarter, final exit, hub return and Submarine C admission, then dies to Kage's
+ghosts. This saved continuation does not establish a fresh full training pass.
+
+213's `dungeon-column-hall-actual-goal-01` passes the northern lava strip,
+physical gap jump, long northern stairs and carrier arrival, collects actual
+medicine991/ammo65 and clears the upper room. `dungeon-column-crouched-wall-01`
+on214 additionally passes the collapsing-column hall and grate60 using the
+real crouched western corridor. Its next broken-stair leap overshoots and
+lands below the requested ledge, zero deaths. These scoped passes supersede
+the earlier pending hall traversal, without establishing full Dungeon C.
+
+The next connected repair extends remaining-time landing correction to
+authored static jumps. Submarine C also removes a duplicate cinematic wait:
+touch48 already returns after its synchronous intro, so another idle wait
+exposes Hiro to Kage's first sword strikes. The route collects actual southern
+medicine/ammunition and admits both long arena walls. On214,
+`submarine-no-duplicate-cinematic-wait-01` survives those supplies but later
+stalls pursuing the hidden boss; the ending remains failed. Server215 and
+affected replays are pending. Debug115 passes716 native tests but its Python
+phase fails10 imports because the selected interpreter lacks Pillow; repair
+the interpreter selection before accepting that check. Full fresh episodes,
+rendered cinematics and audio acceptance remain open.
+
+The system interpreter `/usr/bin/python3` supplies Pillow. Re-running only
+Debug115's failed Python phase with that interpreter passes all414 tests;
+the already passing716 native checks were not duplicated for that repair.
+Server215 passes. Its remaining-time correction passes the previously failed
+first static broken-stair hop, but the next jump still falls short. Probe
+`dungeon-broken-stair-floor-01` finds the nominal target beside missing floor
+and a very short supported run-up. The landing target and takeoff timing are
+under repair; subsequent failed attempts remain preserved.
+
+Server216, Debug116 runtime checks and ownership38 pass, R1–R11 remain zero.
+`submarine-occupied-return-node-01` restores the exact88HP hidden Kage fixture.
+He reappears normally, resumes combat and is defeated with51HP remaining;
+the betrayal cinematic then completes. The next unaided Mikiko fight kills
+Hiro, so no complete ending claim follows. A connected replay now includes
+real arena supplies and a reactor-room health/ammunition detour.217 also
+narrows short static jumps' takeoff tolerance so they retain their limited
+ground run-up; moving-surface launch timing is unchanged. Implemented;
+server217 and affected replays pending. Full fresh episodes and rendered/audio
+acceptance remain open.
+
+Server217 and Debug117 pass. `dungeon-upper-gap-aligned-runup-01` aligns the
+run-up before the long broken-stair gap, passes its actual landing, subsequent
+small steps, bridge lever844 and carrier crossing into upper rooms, zero
+deaths. This supersedes the failed short-runway attempts; their evidence is
+retained. Its broad clearance then pursues through timed door152 after it
+closes. Entering before fighting resolves that obstruction but exposes a
+weapon admission defect: Stavros's supplied range200 is its blast radius,
+while the bot also rejects splash attacks inside200. Its projectile can fly
+farther, so the class now declares firing reach2000. Upper-room combat remains
+failed pending server220 and affected replay; no full Dungeon C claim follows.
+
+218 fixes repeated ghost strikes: leaving/re-entering reach could restart
+an already spent attack. Class-owned saved state now admits a single strike
+and fades after a spent attack leaves range. A regression retains a missed
+ghost's opportunity while rejecting a second spent strike. Ownership40 remains
+R1–R11=0. `submarine-single-strike-ghosts-01` on218 passes the connected saved
+Submarine C arrival, intro, real arena health/ammo, Kage (including smoke
+return), betrayal, Mikiko's fight, ending and credits.26 completed actions,
+726 simulated seconds, zero deaths, finished/exit0. Reactor stages suppress
+automatic checkpoint supply tours during active combat; health36/220 are
+explicit ordinary pickups. All prior failed ending attempts remain recorded.
+This is saved ending acceptance, not fresh Episode4 or rendered/audio acceptance.
+
+219 adds longer supported retreat-lane qualification before choosing a short
+backward combat stride: a short clear step previously kept backing into a
+wall under Mikiko's pursuit. Actual wall/floor collision regression, ghost
+strike regression and Debug119 runtime checks pass; server219 passes.
+Ownership41 remains zero. Its affected combat replay and server220's range
+repair remain pending. Automatic fight-disabled frozen202 navigation inputs
+are unchanged; do not duplicate that still-valid full comparison.
+
+Server220's `dungeon-stavros-flight-reach-01` fires the previously silent
+stave and defeats upper guards90/91/92, zero deaths through stage8. The next
+normal corridor move detours to medicine west of the timed door and becomes
+trapped after it closes. Keeping that authored corridor avoids the detour;
+the following bat/Buboid combat remains failed. A separate fallback defect
+is under repair in222: selecting melee for close-blast safety must retain
+retreat movement when the requested explosive still has ammunition, allowing
+the bot to make room to fire rather than holding an endless melee trade.
+
+Debug120's new class test initially crosses the named weapon_catalog module
+boundary through a mechanism import. Moving that regression into the existing
+class server adapter fixes module ownership. Repaired Debug120 runtime checks
+and all-module221 build pass; ownership43 remains R1–R11=0.222's initial
+compile also catches a local test constant shadowing ranged(); renaming it
+repairs that compile issue. Repaired server222/Debug122 are under verification.
+
+Fresh resident `episode4-fresh-resident-220-01` passes Prison A and enters
+Yard B,170 completed actions, zero deaths, then fails leaving the kitchen
+ladder. `prison-yard-ladder-floor-01` inspects the actual western bank;
+`prison-yard-pipe-lip-01` passes a western dismount, crouched pipe alignment
+and ordinary window jump,5/5 actions and zero deaths. The connected exit
+initially drops to the lower AAS route because standing input cannot cross
+the low window. Explicit direct crouched exit69 fixes the real crossing.
+`prison-yard-window-crawling-exit-01` then travels into the kitchen in resident
+Prison A, passes table/plank/cell gallery/showers, enters resident Waterway C,
+collects charcoal, completes the swim and broken/released ladder approaches,
+and fails the hanging-grate jump:161 completed actions, zero deaths. A narrow
+takeoff tolerance introduced in217 delays that jump until support is lost;
+restore the earlier supported launch tolerance and replay this case. Full
+fresh Episode4 remains failed, and no rendered/audio acceptance is promoted.
+
+222's repaired server/Debug122 pass; ownership45 remains R1–R11=0. The armed
+explosive fallback now retains retreat movement and its affected continuation
+kills the previously stalled Doombat89. The next narrow direct walk is made
+without combat; explicit western medicine return precedes it. The upper
+Buboid is fought from a held walkway only until dead or knocked below that
+storey, avoiding a pursuit into lower lava.223 restores the earlier fourteen
+unit supported takeoff tolerance after217's tighter tolerance breaks the
+waterway grate jump. Server223 and all-module223 builds pass.
+
+`dungeon-carrier-timed-upper-doors-01`223 passes the remaining Dungeon C
+encounters and physical route. Repeated real control use brings the carrier
+through152, staged rallies pass timed door130 and the final doors, and normal
+exit56 enters Tower A with no deaths. Its later drowning failure is retained.
+Read-only collision/AAS inspection finds rock blocking the straight swim at
+y335. `tower-ice-western-channel-01` follows the western water channel and
+passes the remaining drawbridge, lightning controls, crypt and inner tower,
+entering E3m4b without deaths through that boundary. It then dies following a
+partial node route into the live lightning room. A real upper goal reaches
+the higher hall but stalls at its next portal; an authored upper circuit is
+under replay. No fresh full Episode3 claim follows.
+
+Current private installation223 is
+`3692d476305b2b7a0f7e20bf893886d8091003d8b3ea5b6ebcb1d4e074a6783a`.
+`rendered-timestream223-02` passes all11 shots, E3 arrival and save/load.
+All11 sampled frames inspected: original performers are present; no sampled
+HD double. The initial diagnostic01 used an absent map name and fails before
+engine startup;02 uses the actual timestream23 map. `rendered-superfly-release223-01`
+copies the legitimate keycard save, activates keyed trigger412 and passes all4
+release shots/restoration. All4 captures inspected: original performers are
+present. The previously attributed angular torture apparatus remains visible;
+these captures do not resolve its artistic parity or establish all cinematic
+acceptance. Audio is not listened to under the software-rendering dummy driver.
+The preserved installation and source save are untouched.
+
+223's `prison-hanging-ladder-supported-takeoff-01` passes the previously failed
+grate jump and upper ladder. Its next cap handoff remains failed. Actual cap
+save `prison-cap-state-01` records grounded support on45 at848.125, jump_held
+false, and a strongly strafed outward jump that native ladder attachment
+consumes as a climb.224 qualifies attachment against complete horizontal
+forward/right intent rather than forward alone. A real movement-motor
+regression demonstrates outward strafe+jump leaving the ladder with normal
+jump velocity while plain up still climbs. Debug124 runtime checks pass;
+all-module224 build and affected cap replay are pending. Ownership46 remains
+zero. This primitive change requires refreshing the frozen62-map comparison;
+202's historical strict pass remains valid for202, not automatic acceptance
+of224. Full fresh episodes and remaining presentation/audio requirements stay open.
+
+All-module224 build passes. `prison-cap-world-intent-dismount-01` verifies the
+new primitive at the actual hanging ladder: normal outward jump lands on
+the872 western rim, subsequent barrel906 and support breaks pass, and the
+long ladder is reached without deaths. Its next lateral departure is too
+early and falls to the lower section; the long-ladder centre/top handoff
+remains under route repair. Full waterway acceptance remains open.
+
+**`navigation-all-224` refresh passes the complete strict gate after the
+movement primitive change.** Same62 maps,19594 trials/controller, frozen
+baseline/protocol/engine/assets/skill: actor552→48 failures (91.304%),
+follower591→55 (90.694%), zero formerly passing cases regress, hazardous
+3→1 and29→10. Valid/met true and exit0. Remaining48/55 failures and the
+bounded local-rollout scope remain recorded. Do not duplicate this unchanged
+comparison for later route-only edits.
+
+224's `wyndrax-upper-hall-floor-01` follows the real upper hall after the
+keyhole, reaches the table and destroys the lightning rod, defeats Wyndrax,
+collects the actual weapon and enters Nharre's crypt. It passes both pillar
+jumps, Nharre and the final fragment with zero deaths but times out at the
+Throne exit with the carrier still4200 units behind. Staged carrier arrivals
+at each pillar are under replay. All earlier partial-route/upper chest
+failures remain preserved. No full fresh Episode3 acceptance follows.
+
+Native225 repairs hands-full retaliation: the carrier approaches for the ordinary
+contact response rather than requesting its unusable stored gun. Actual reach,
+solid ray, cooldown and5HP mercy remain authoritative. The checked registry hook
+`dk3.party_hostile()` exposes only hostility. The route waits for genuine mercy
+before using actual nearby medicine; it neither resets anger nor grants health.
+`nharre-carrier-retaliation-recovery-01` records contact stopping at5HP.
+`nharre-recovered-party-pillar-landing-01` then passes both carrier pillar
+crossings, Nharre and entry into the Throne without deaths. Initial225 build and
+Debug125 failed a test import crossing the actor catalog module root; the test
+now uses the catalog namespace. Server225, repaired Debug125 and ownership47
+pass. The full224 navigation gate remains applicable to its frozen inputs;
+225's anger and read-only API changes do not run in those neutral trials.
+
+`throne-supported-rock-takeoffs-01`225 passes the sinking course, lift and upper
+bridges with zero deaths through Garroth admission. Stay preserves the authored
+companion transfers instead of letting the carrier block the first bank.
+Takeoffs960/328 and1668/748 remain inside the actual rock/bank support. Automatic
+Nightmare combat subsequently dies; `garroth-guide-wisp-01` uses the guide's
+ordinary Wisp weapon and passes Garroth, the ending, timestream34 and Episode4
+arrival with zero deaths. Arrival has10HP; no health reset was added. These are
+connected saved continuations, not full fresh Episode3 acceptance.
+
+`prison-upper-gate-sweep-clearance-01`224 passes the hanging cap, outward long
+ladder dismount, sulfur and return shaft into the sewer. Waiting at1056/-724
+clears the gate's full rotating sweep. `prison-sewer-central-ascent-01` climbs
+the central water column between the actual lower/upper valves, completes all
+ingredients and the bomb/metal path, and enters Waterfalls without deaths.
+The first old Waterfalls approach fails. The corrected authored ledges and
+running bank hop in `waterfall-bank-running-hop-01`225 pass Waterfalls and all
+three Tower maps into Labs A, then die during the security reader approach:
+SEAL captain42, one death at850850ms,157/158 actions. Securing the approach
+before focusing on the reader is under replay. An attempted stage2 restore of
+the internal Labs arrival save lacks the first green card and fails locked use;
+the affected replay must start at stage1. That diagnostic is not a gameplay pass.
+
+Fresh resident Episode3 on225 stops at the first village exit without deaths.
+The exit brush's raw center sends the bot into the cold river. The area-graph
+approach in `village-exit-supported-volume-01` passes e3m1a and e3m1b and the
+church/cellar route, then stalls at the crypt staircase behind a companion
+ordered Stay. Follow through that entrance, then Stay inside, is under replay.
+Full fresh Episode3/4 and current Episode1/2 regressions remain open, along
+with complete rendered and audio acceptance. No complete campaign claim follows.
+
+`lab-fountain-security-before-reader-01`225 clears the guards before the reader
+and passes Labs A, the full Labs B card/transport/warehouse/locker/sauna route,
+the resident yellow-card return and Labs C admission without deaths. Labs C
+then stalls on an authored ground-node approach to the return shuttle control
+after collecting armor37. The control now uses its normal area/use planner;
+`lab-power-return-reader-area-01` passes the complete Labs C branch and authored
+ending cinematic into Hideout, zero deaths through that boundary. Its remaining
+late route is still running. A stage2-only diagnostic from the internal arrival
+save lacks green and is retained as a restore-input failure.
+
+`crypt-follow-through-entrance-01`225 passes the formerly blocked staircase,
+Purifier and keystone, then dies to Rotworm121 during the return corridor.
+Bolter shots fire without damaging that close low target. Inspection finds
+generic projectile launch still using the forward-only aim guard while the
+existing ballistics policy and ion path converge on close crosshair contact
+behind an offset muzzle. Native226 connects generic projectile, C4 and cube
+launches to that policy. All-module226 build, Debug126 runtime checks and
+ownership48 pass (all R1–R11 zero). Actual affected full opening replay is
+running; this is implemented, not yet acceptance of the observed death.
+`crypt-close-bolts-baseline225-01` is a shorter38-action saved continuation
+that passes225; it does not reproduce the connected-run failure and cannot
+establish a before/after improvement. The frozen neutral navigation224 gate
+does not execute these firing paths and is not duplicated.
+
+The complete opening replay `crypt-convergent-close-bolts226-01` still dies
+to Rotworm121 at the same return corridor; connecting convergence does not
+establish that encounter fix. A forced melee pickup also dies because pickup
+movement does not pursue targets outside melee reach. Explicit ranged clearing
+defeats the worm but leaves1HP and a live spit kills Hiro afterward. Optional
+medicine2 cannot be reached by the attempted area route or local supported
+walk/jump grids. The official guide instead calls for smashing barrels for
+health and bolts. The route now breaks the actual cemetery115/383 and lower
+crypt114/386/387 barrels and collects their real drops before the maze.
+`crypt-guide-barrel-supplies-01` is under replay; full fresh acceptance remains open.
+
+The Labs C continuation passes all Hideout puzzles and reaches the reunion,
+then drops out of the first final shaft. `hideout-first-shaft-gap-hop-01`
+uses the actual336 supporting door and an outward crouched hop onto the344
+rim, passes all remaining reunion climbs, both SEAL courses and the return
+vault into Kage's arena, zero deaths through those boundaries. It then dies
+while the area planner routes toward southern medicine across the submarine
+body. Direct southern-cache and focused south-bank duel continuations are
+under investigation; the earlier218 ending pass remains scoped to its fixture.
+
+Four Hideout saved diagnostics time out without executing the load, even with
+225 and a different bootstrap map. Inspection finds `BotDeferClientCommand`
+clearing the queue on every command while `SS_LOADING`; later world acks erase
+the earlier load. Engine190 clears once per server generation, preserves a
+connected client's pending command, and accepts the same active/primed states
+as ordinary client dispatch. Dedicated build passes. The identical saved
+diagnostic `hideout-ladder-landing-survey-engine190-01` now decodes both ordinary
+and internal save transfer, restores100HP and completes its read-only floor
+survey. This is an actual before/after startup-load pass. Dedicated executable
+SHA256 `93c8968b4fd7250827aa4a5b1ded5a0f527eb881ca7ec579902b4f1691ad4a6e`.
+
+The guide barrel replay passes the crypt key and maze without deaths.
+`crypt-return-authored-ground-exit-01` uses the actual area route for the
+ascending stairs, then the supplied ground corridor for the church exit;
+it passes e3m1c→e3m1b→e3m1a, all three keystones and the village gate, and
+enters e3m2a without deaths. Its upper cave exit fails. Native227 adds
+`allowed_exit={index=n}` to ordinary movement/leap options: only the selected
+exit is exempt from the pilot fence, and native trigger/party checks still
+govern travel. Debug127 and ownership49 pass. An over-precise takeoff also
+targets a spot inside the next slope; moving to the supported lower takeoff
+solves that independently. `passage-supported-lower-takeoff228-01` passes the
+exit cinematic, carrying-Mikiko admission and both cave chasms into e3m3a
+stage3. Buboid236 then kills Hiro during explicitly unarmed precise walking.
+Those three ordinary movement segments now permit Bolter fire; affected
+`cave-landing-armed-input228-01` is under replay. No full fresh Episode3 pass.
+
+The current Episode1/2 regression fails in the opening Marsh. Its first useful
+failure targets positive600/1384 although the actual exit25 lies at
+negative600/1384: `bot_routes.center/bodyBounds` rotates the inline trigger by
+its180-degree facing angle, unlike its axis-aligned authoritative touch volume.
+Native228 derives the center from physical bounds and keeps trigger bounds
+unrotated; rotating solid brushes retain their existing regression. The new
+off-center trigger test initially omitted required generic classname metadata;
+the fixture is corrected and Debug128 repair passes. Server228 and ownership50
+pass. Full client/server engine190 build also passes. The initial generic AAS
+opening still stops on a local waypoint, so the route explicitly follows the
+supplied ground corridor with the chosen exit allowed. `marsh-authored-exit-corridor228-01`
+passes the actual opening transition into e1m1b and continues its stages. Full
+current Episode1/2 acceptance remains pending; the failed fresh regression and
+earlier ground-corridor/guard failures are retained.
+
+Kage continuations remain failed on the current resident fixture. The guide
+explicitly requires medicine after his near-lethal sword hits. A focused
+southern Ripgun duel without recovery dies; unrestricted pursuit of a hidden
+boss enters the submarine body, while a held strip excludes recovery and also
+dies. The opening hop avoids the first corner but does not establish the
+complete fight. Direct cache travel is worse than the existing area approach
+and is not retained in the canonical route. Earlier218 nonresident ending
+acceptance remains scoped to that input. Full fresh Episode4 and rendered/audio
+campaign acceptance remain open. The strict224 navigation comparison retains
+its frozen inputs; further current aggregate qualification is still required.
+
+The next replay confirms the earlier long return landing was outside support:
+the slope ends before y384. `cave-return-supported-slope228-01` lands on actual
+floor208/352/-945, completes the carrier corridor/gates and enters Dungeon B,
+zero deaths through that boundary. It later fails renewing lever751/gate742
+after a guard fight. The use observer counted any mover phase change as a
+successful activation, including automatic return. Native229 adds a generic
+accepted-use revision to binary movers; automatic motion and ignored opening
+presses do not advance it, while renewed holds do. Grouped leaves observe their
+master's revision. Tests cover both false automatic return and actual grouped
+use. All-module229, Debug129 and ownership51 pass. Old saves default the new
+field to zero. E1's held use267 can also drift outside use reach while reacting
+to fire; the route permits the ordinary control approach with30s allowance.
+Affected E1 and Dungeon replays remain required.
+
+`submarine-north-bank-supplies228-01` passes Kage, Mikiko, end and credits on
+the current resident68HP/53-shell fixture, zero deaths,12/13 completed actions
+(the ending cinematic is legitimately abandoned at the credits transition),
+838 simulated seconds. The opening now leaves the corner along the clear
+east bank and takes actual northern medicine71/96; the original selected
+southern cache encourages a route through the bobbing submarine. The canonical
+route adopts this opening. The older48HP/14-shell fixture is under current229
+qualification; no low-ammunition or fresh full Episode4 acceptance follows yet.
+
+`submarine-low-ammo-north-bank229-01` qualifies the same northern opening on
+the older48HP/14-shell save: actual Kage kill at164800ms, final Mikiko250→100HP
+during the ordinary health approach and ending relay at523200ms, end/credits
+complete without deaths.838 simulated seconds;8/10 completed actions because
+story travel abandons the health approach and ending cinematic. Initial ammo
+and source HP are recorded in the log; no grant or save edit is used. The
+current resident68HP/53-shell and older low-ammo ending continuations both
+pass, but a fresh full Episode4 run remains required.
+
+The first229 Dungeon replay fails earlier on optional ammunition110: its
+automatic route seeks shortcut lever278 from a sealed approach. The route
+now explicitly opens that permanent shortcut before asking for its supplies.
+`dungeon-shortcut-before-ammunition229-01` is under replay. E1's corrected
+ordinary door-use approach is running from the actual upper-sewer checkpoint
+as `sewer-upper-door-live-approach229-01`. These are pending, not acceptance
+of gate742 renewal or the full current episodes.
+
+Sequence587 continuation: native230 detects actual hull-corner contact outside
+the companion's facing cone and qualifies supported32-unit yielding descents
+without accepting48-unit drops.231 preserves retaliation priority over yielding
+to the owner. Server230/231, Debug130 and ownership52 pass (all ownership counts
+remain zero). `carrier-retaliation-yield-priority231-01` passes actual final
+contact9→5HP, forgiveness and ordinary medicine recovery,5/5 actions and zero
+deaths. The separate229 corner-capture diagnostic did not reproduce its block;
+its successful move is not before/after proof of this repair.
+
+`dungeon-resurfacing-ambush-clear231-01` opens shortcut278 before ammunition,
+clears nearby resurfacing Buboids between held cell shots and passes Dungeon B,
+the carrier stair corner and admission to C without deaths. In C, the guide
+leaves Superfly at the arena entrance: a320-unit entrance rally passes
+Stavros, the actual staff pickup and Hiro's raised spiral in
+`stavros-guide-entrance-carrier231-01`. It then fails the upper carrier rally:
+Hiro1925,185,-488, carrier1267,-242,-744. No teleport or relaxed upper-floor
+acceptance is used. Native232 implements a longer grounded leader trail and a
+motor-qualified corridor fallback for live geometry absent from static routing;
+this is implemented/unverified pending its affected continuation.
+
+`navigation-all-229` completes all62 maps and19594 trials/controller with the
+same frozen baseline, protocol, engine, assets and skill: actor552→48 failures,
+follower591→55, reductions91.304%/90.694%, zero old-pass regressions, hazardous
+outcomes1/10. Both strict gates pass. The remaining48/55 failures and bounded
+local-controller scope remain visible; dynamic post-puzzle spiral following is
+not covered by that gate.
+
+`sewer-west-bank-held-guard229-01` passes the ordinary upper-sewer use, the
+supported western guard arena, remaining sewers and Superfly rescue into
+Crematorium A with zero deaths. Dock routing then fails. The immutable private
+231 play installation759aa1a04260944ac09e8cda217272e82d06739dae2b42f079659a6f34ff162e
+is prepared without changing the preserved game. Four stationary ordinary-save
+captures in `crematorium-keypad-render231-01` show the office's solid east wall
+and western security door. The guide explicitly requires returning through that
+door and along the catwalk. `crematorium-control-room-west-door231-01` passes
+this correction, the loading dock and E1m4b admission, zero deaths, then stalls
+at1367,758,-680 on the later under-floor route. Current E1/E2 acceptance remains
+open; the narrow room survey had not tested the western exit beyond its bounds.
+
+Fresh resident Episode4 run `episode4-fresh-resident231-01` reaches the yard
+without deaths but fails its kitchen-window leap. A west-only takeoff still
+fails;50ms telemetry proves jump input fires normally, with insufficient speed
+and lateral travel. The canonical route now runs diagonally along the supported
+pipe before jumping instead of stopping/crouching at the launch. Its affected
+replay `yard-diagonal-window-runup231-01` has entered the kitchen; later stages
+are still running. Neither the older passing yard save nor this partial replay
+establishes fresh full Episode4 acceptance.
+
+Native232/Debug131 pass the initial chronological128-foothold implementation;
+`stavros-live-leader-trail232-01` still fails the upper carrier rally. Native234
+adds a bounded live-floor detour to join that trail, expires corridor legs on
+distance improvement instead of repeated jumping, and scales ladder side
+corrections rather than normalizing sub-unit errors into full strafes. While
+the view turns, a side axis pointing out of the rungs is suppressed. Server234,
+Debug133 and ownership55 pass. The intervening233 build first lacked a `std`
+import, then exposed its existing local import shadow; these compilation
+failures are retained.234 corrects both without changing the owning layer.
+
+`prison-ladder-proportional-alignment234-01` passes the first broken ladder and
+all intermediate ladders to the long-ladder rim, then falls during a braking
+dismount. The live floor survey confirms the supported eastern rim1256.
+`prison-long-ladder-outward-momentum234-01` uses a full outward stride and passes
+that rim, sulphur, descent, all sewer valves and the return pipe, zero deaths.
+It then fails returning to the bomb wall through the current. Ground-node and
+stopping-at-the-pipe-end alternatives also fail; they are retained. The guide
+explicitly says to follow the current. The current candidate authors its turns
+at depth48 without stopping against the flow; affected replay pending.
+
+Native235 preserves remembered footing across ordinary orders while replacing
+the task, corridor and firing output. Placement/travel still clear the trail.
+Server235/Debug134 pass. `stavros-order-preserved-trail235-01` still fails:
+the carrier stands1312,-240 against the closed wooden door1003. A settled
+class-hull survey confirms that entrance-side region is disconnected from the
+arena. The earlier320-unit preboss rally admitted a companion outside this
+timed door; it was not proof of arena admission. Canonical progression now
+operates inside lever1009 and requires actual carrier x>1376 before leaving
+him at the arena entrance. `stavros-entrance-inside-lever236-01` passes that
+door, Stavros/staff and Hiro's ascent; the carrier reaches1768,-230,-744,
+then stops at the short gap onto the raised spiral. Upper rally still fails.
+Native238 feeds nearby same-height remembered footholds through the existing
+supported-transfer and physically qualified jump path; implemented/unverified.
+
+Native236 clips distant same-level route entrances to a bounded192-unit
+supported motor segment. Previously, a retained landing held forever when all
+predicted entrances exceeded256 units (the crematorium entrance was266 away).
+The wrong-storey rejection and real collision/support checks remain. Server236
+and Debug135 pass. `crematorium-landing-route-prefix236-01` passes the formerly
+blocked under-floor route, box, nest, ramp, tunnels and loop, zero deaths, then
+holds after a jump at820,-1410,128 around the next corner. Native237 allows the
+existing live-floor detour from a retained landing even without a damage field;
+server237/Debug136 and ownership57 pass. Its affected continuation is running.
+No complete current E1/E2, fresh E3/E4 or rendered/audio acceptance follows.
+
+The237 generic floor-detour experiment does not repair the coffin-shaft hold
+and is reverted in239. The actual stair trigger82 was missed at a broad move
+tolerance; the canonical route now touches it and observes the blocker doors.
+Native241 also removes a redundant standing-only sweep for retained landings:
+the existing full motor forecast already computes a crouched input through low
+passages.242 permits that same proof to distinguish continuous stairs from a
+large unsupported fall. Tests retain wrong-storey rejection and add actual
+crouched/stair continuation. Server241/242, Debug139/140 and ownership59 pass.
+
+Native238's remembered same-height transfer still fails at the spiral gap.
+240 corrects a shared candidate filter: explicit transfers32–64 units had been
+discarded even though local dynamic landings already used32 as their minimum.
+The short-transfer test accepts a motor-qualified nearby supported landing;
+its first assertion overconstrained the planner's exact endpoint and was
+corrected to require the supported landing region and height instead.
+Server240 and Debug138 repair pass. `stavros-short-trail-transfer240-01` now
+passes the carrier across the gap, up the spiral and along the upper walkways,
+then fails an ammunition approach under shooter fire. Clearing the northern
+shooters before taking ammo65 passes that route, the column hall, broken stairs
+and bridge in `dungeon-north-shooters-before-ammo241-01`; the next timed gate
+still fails because Come's64-unit spot lies outside it from the jamb.
+`dungeon-upper-gate-inside-come241-01` stands deeper in the eastern corridor,
+passes gate765/152 and Dungeon C into Tower A without deaths in C. It later
+dies during an unarmed ice-side ladder climb. Armed climb243 survives and
+kills the shooter but stops on unsupported rungs; explicit nonsettling climb
+and supported western dismount are implemented, replay pending.
+
+`prison-return-current-corridor236-01` follows the guide's actual sewer-current
+turns at depth48 without stopping against the flow. It passes the bomb, yard
+return, escape and Waterfalls admission, zero deaths. A live clearance survey
+shows the waterfall's lower bank needs crouching. The crouched exit passes
+Waterfalls and Tower A in `waterfalls-lower-bank-crouch238-01`, then dies to
+upper Tower B rocket guards. `tower-upper-stair-rocket-clear239-01` clears
+those guards with the Ripgun before visiting supplies and passes both Tower
+maps into Labs A. Native242's stair continuation passes the first green card,
+security wing and Labs B admission in `lab-green-card-supported-descent242-01`;
+its low-health supply approach then dies. First-station medicine alone is
+insufficient: `lab-station-medicine-bay-defense243-01` exhausts its Ripgun,
+takes captain fire and dies falling during the fountain clear. The guide's
+station ammunition/armor and lobby Novabeam are now explicitly collected before
+the fountain, and the first transport bay is secured before its exposed medicine
+tour. These changes are implemented/unverified; no fresh Episode4 pass follows.
+
+`crematorium-ragemaster-before-coffins242-01` replaces the exposed wait for
+Superfly to fight ragemaster111 with a real ranged Ion engagement. It passes
+the coffin shaft, all remaining Crematorium B/C and Processing admission, then
+dies from repeated reflected Ion rounds at low secret control59.243 requires
+real muzzle clearance for nonexplosive object shots too; an intervening wall
+near the target can no longer authorize a reflected bolt into the shooter.
+Its regression covers a clear nearby shot, blocked near lane and solid muzzle;
+server243, all-module243, Debug141 and ownership60 pass. The first panel route
+used C4's ID3 by mistake; safety blocked its shot and preserved player HP.
+Shotcycler is ID4. `processing-secret-shotcycler243-01` uses that correct ID
+and passes both Processing maps and Icelab A into B, then dies after Shotcycler
+recoil throws it off the nitrogen-side ramp. That precise ramp approach now
+uses Ion2; affected replay is running. No grant, placement or owner-save edit.
+
+`navigation-all-243` is a valid completed comparison but FAILS the strict gate:
+actor552→48 failures,91.304% reduction, zero baseline regressions; follower
+591→64 failures,89.171% reduction, one baseline regression. Hazardous counts
+remain1/10. Nine cases that passed229 now fail (e2m3b208; e2m5b8/10/11/14/15/16;
+e3m2a97; e4m2a632). The lower follower failure target is met, but zero regressions
+is required, so do not report acceptance.244 scopes the new prefix/height/crouch
+recovery to retained post-jump landings, preserving ordinary route entrances.
+A regression confirms that normal routing retains its512-unit entrance while
+a retained landing qualifies a bounded192-unit prefix. Server244, Debug142 and
+ownership61 pass. The unchanged all62-map protocol is under renewed qualification
+as `navigation-all-244`; its result is pending.
+
+`navigation-all-244` PASSES the complete unchanged62-map gate:19594 trials per
+controller, actor552→48 failures (91.304%), follower591→55 (90.694%), zero
+baseline-pass regressions for either, hazardous1/10. The nine229 passes lost
+in243 are restored. Comparison valid/met true.243 remains a failed intermediate
+candidate. This verifies the bounded local controllers, not all AI, dynamic
+post-puzzle following or complete campaigns;48/55 failed trials remain visible.
+
+`processing-secret-shotcycler243-01` continues through both Processing maps and
+Icelab A, then fails the nitrogen-side ramp under Shotcycler recoil. The Ion
+approach in `icelab-ramp-no-shotcycler-recoil244-01` passes that ramp without
+deaths but later asks to settle on an unsupported point over its ladder hole.
+That descent is under repair. `tower-ice-ladder-armed243-01` answers and kills
+the Fletcher during the climb, then stalls on unsupported rungs at-208; the
+nonsettling climb and western supported dismount are implemented/unverified.
+The first Lab A medicine experiment also demonstrates the need for ammunition
+and armor: the Ripgun exhausts before the fountain fight. Canonical preparation
+now includes placed ammo52, armor30, the lobby Novabeam28 and actual ammunition
+18/750, following the guide before the fountain. Affected replay remains open.
+
+587 continuation244: `tower-ice-supported-dismount244-01` passes both Tower
+maps into Nharre without a death. Shard3 starts coffin101's 255-unit descent at
+25 units/second; the next door's eight-second route timeout was premature.
+Waiting for that actual mover to open in `nharre-coffin-opening244-02` passes
+Nharre and the throne approach, then dies fighting Garroth. The redundant
+post-audience cinematic grace period and missed placed hall supplies are under
+repair; Episode 3 campaign acceptance remains open.
+
+`icelab-alcove-shaft-bank244-01` passes the repaired ramp, raised ammo recess
+edges, megashield ladder descent/return and Icelab C into E1 Reactor A, without
+a death. Reactor A stalls on the narrow walkway approaching the extended ladder.
+`lab-lobby-ammunition-armor244-01` passes Lab A and Lab B through the warehouse
+return but is blocked by Mikiko waiting on the upper control step. Recalling
+the party before that step in `lab-control-party-recall244-01` passes into
+Lab C; the continuation is still running. These are checkpoint continuations,
+not fresh full-campaign results.
+
+The coherent private244 installation is
+`play/8b2b6fcd7f994cae86a5e0ee71654831c10f675b1bcedac31d612b0e4608428a`.
+`neural-sealgirl-settling244-01` fails fixture setup: the installed neural roster
+contains E1 monsters and characters, not the E4 SEAL girl. No SEAL corpse
+physics conclusion follows. `neural-cryotech-settling244-01` passes ordinary
+Glock death, articulated contact/sleep and restore reconciliation. Inspected
+frames60/99 show the same settled body pose; scene lighting/hit tint changes.
+This single controlled corpse does not accept all rigs or campaign physics.
+
+587 native245/246 object-shot repair: autonomous object attacks now try a safe
+ranged alternative when the selected gun's actual muzzle/blast lane is unsafe.
+The helper tests available safe sidearm and exhausted-alternative cases.245's
+gameplay experiment revealed that the co-op adapter pins its own automatic
+choice;246 applies the qualification before pinning and firing-position search.
+Both all-module builds, Debug143/144 and ownership62/63 pass (baseline all0).
+`hideout-auto-safe-gun-held-garden246-01` passes both grates with the explicit
+Glock preferences removed in its diagnostic route copy, then fails an overbroad
+held courtyard clear seeking a guard on another floor. The canonical route
+keeps the explicit small-arms preferences and a narrower courtyard encounter;
+its next affected replay is pending. No movement primitives changed after244's
+passing full navigation gate; object-shot selection is outside that gate's scope.
+
+`garroth-hall-clear-immediate-bolter244-01` passes the king's real combat death,
+ending film, timestream34 and E4 arrival without deaths. The preceding supplies
+experiment also won during ordinary approach combat before its intended supply
+pickup; no claimed pickup evidence follows, and that detour was removed.
+`episode3-fresh-resident245-01` starts normally and passes the village/church
+revisits, Passage and Dungeon A into B without deaths; low-health medicine109
+then routes toward the still-closed permanent shortcut. Opening278 before all
+supplies in `dungeon-shortcut-before-medicine245-01` passes the medicine, barred
+Purifier cell and blade staircase, then encounters the waiting carrier at the
+descending stair turn. Requiring the carrier to reach the previous half-plane
+in246 fails because the player blocks that narrow return; that experiment is
+retained and its source change reverted. Physical clearance diagnosis continues.
+
+`reactor-solo-corner-lift244-01` leaves the party below the solo lift and passes
+the ladder, cage, pipe, ledge, hall and gallery. A later Shotcycler fight moves
+the hero from the supported deck corner; the direct next segment cuts over its
+gap. Ion plus an explicit return to the supported corner, and clearing guard25
+when he occupies the entry after restoration, pass through Reactor A's sixteenth
+stage in `reactor-deck-entry-guard-ion245-01`. The next sphere shot is withheld:
+developer3 confirms centered eye-hit381 but safe0, and the read-only actual-Ion
+muzzle survey finds the clipped frame edge. A wider supported firing lip is
+under replay. Earlier timing-only hop experiments fail and are retained.
+
+587 continuation246: `reactor-sphere-clear-muzzle-lip246-01` moves the firing
+stance clear of the frame, passes Reactor A/B, the Episode1 ending and Greece
+through E2m1b, zero deaths. This is a saved Reactor continuation. The fresh
+`episode1-fresh-resident246-01` passes Marsh/sewers into Prison A, then exhausts
+ranged ammunition before wire122. Collecting placed cells193/155 first in
+`prison-wire-cells-before-shot246-01` passes the wire but stalls at barrel214
+and panel119. Developer3 records centered eye hits with safe0; Shotcycler
+pellet muzzle planning was missing and its safety sweep used a fictional
+projectile box. Native247 uses shared class-supplied shot bounds (point rays,
+bolt radius, ballistic hull) and plans muzzle lanes for every muzzle-origin
+attack. All-module247 and Debug145 repair pass; the first test145 compile
+failure omitted the required player_grip in the new pure fixture and is kept.
+Ownership64 remains all0. `prison-real-muzzle-lane247-01` is under replay.
+
+`dungeon-landing-live-threats-contact246-01` replaces the lower landing's fixed
+melee target with a local encounter: Lycanthir501 had climbed400 units above,
+while Dwarf129 attacked the player below. It passes both staircase stages and
+the previously blocked carrier corner, then stalls at the lower exit. Real
+floor/crouch traces qualify its descending16-unit treads. The direct tread
+replay finds Buboid119 occupying them after the distant clear. A held fight
+from the entry landing before the crouched descent is implemented/unverified.
+The attempted permanent behind-half-plane carrier constraint remains reverted.
+
+`hideout-ground-garden-encounter246-01` restricts the encounter to the actual
+ground-level courtyard and passes four buttons, museum, reunion, training entry
+and much of its course. `training-deck-bank-held-wait246-01` prevents takeoff
+drift during alignment and passes the remaining course, vault, Kage and betrayal.
+It then dies walking for medicine during Mikiko's already-active fight.
+`reactor-final-fight-before-medicine246-01` removes that tour, wins the actual
+final fight in7.25s and reaches end/credits with zero deaths. The wrapper then
+attempts a gameplay arrival save in credits and times out. Native247's optional
+`level(...,{arrival=false})` bypasses entry supplies/saving for terminal scene
+bodies, with a regression test. `reactor-final-terminal-arrival247-01` is under
+replay. Fresh full Episode4 remains open.
+
+`neural-ragemaster-settling244-01` additionally passes ordinary Glock death,
+retained articulated contact/sleep and restore reconciliation. Inspected late
+frames60/99 retain its settled pose; changed hit tint is not body movement.
+This is a second controlled corpse, not all neural-rig acceptance.
+
+247 affected results: `reactor-final-terminal-arrival247-01` PASSES the actual
+Mikiko fight, end scene and credits without deaths or terminal-save timeout.
+`prison-real-muzzle-lane247-01` passes wire122, barrel214, panel119 and Prison A
+into Prison B through its console/lasers/pit/card controls, then stalls leaving
+ammo158 above a crate: nearest area node is inside the crate below the player.
+Returning directly to the already traversed console landing before the lower
+door is implemented/unverified. `episode4-fresh-resident247-01` has started from
+normal E4m1a admission and is still running; no full fresh pass is claimed.
+
+The lower Dungeon B exit's direct stair replay is geometrically supported but
+meets Buboid119 after he emerges beyond the earlier clear's radius. A held
+Ballista fight from the landing before the descending treads is being replayed
+as `dungeon-exit-buboid-before-crawl247-01`. The stair corner itself passes after
+clearing actual landing threats; no new yielding algorithm is claimed.
+
+248 preserves declared physical hulls for class-owned projectile launches too;
+only known ray attacks get point bounds. All-module248, Debug146 and ownership65
+pass.249 adds a bounded combat priority for a visible nearby actor already
+attacking the bot, or its recent aggressor, before returning to scripted prey.
+The observed C4 death selected Dwarf107 while Rotworm108/Buboid109 attacked at
+close range; this is not a license to chase arbitrary distant attackers.
+Focus retention, distance bound and damage timestamp expiry have regression
+coverage. Initial249/Debug147 compilation rejects a parameter shadowing the
+existing preferred() function; the rename repair is building. Ownership66 all0.
+
+`prison-card-crate-supported-return247-01` passes the card-floor return, rescue
+and Prison B into Crematorium A. Explicit security door33 before keypad285 in
+`crematorium-explicit-entry-security248-01` passes A/B into C without deaths,
+then meets an intact study grate69: the earlier optional shot did not remove it.
+Required glove damage from the climbed bookcase is implemented; affected replay
+`crematorium-study-grate-from-bookcase248-01` is running.
+
+`dungeon-crawl-authored-exit247-01` finishes Buboid119, walks the descending
+treads with explicit exit671 admission and enters Dungeon C. It defeats Stavros
+but Ballista recoil leaves the hero on the spiral lip during its movement.
+`stavros-fixed-floor-before-machinery247-01` returns to the fixed arena floor and
+passes the machinery/spiral alone, then cannot rally the carrier from the upper
+walkway. The gap's old proximity test accepts the far bank. Facing Come along
+the spiral and requiring buddy.x<1740 in `stavros-carrier-crossed-bank248-01`
+brings the actual carrier over the gap and up the whole spiral. Its later crowd
+fight is the249 combat-priority fixture; no fresh full Episode3 claim.
+
+`episode4-fresh-resident247-01` passes the opening/yard/waterway ladder sequence
+but its long-ladder dismount targets a floor11 units below the current body,
+requesting ladder descent before clearing the rim. Keeping the climb height in
+`prison-long-ladder-no-descending-dismount247-01` passes the dismount, Alcatraz
+exit and Waterfalls into Tower B, then the area route cuts an open elevator
+shaft. The authored stair corridor's ordinary32-unit arrival envelope passes
+Tower B/C, Labs A/B and the card return into Labs C in
+`tower-stair-node-arrival-envelope248-01`. A later narrow control ramp is blocked
+by the following Mikiko. Recalling her on the wide lower bay before approaching
+that ramp is under replay as `lab-final-control-wide-bay-party248-01`.
+
+
+Sequence587 continuation, native249–250: the repaired all-module249/250 builds,
+Debug147/148 suites and ownership66/67 pass (R1–R11 remain zero). The initial249
+parameter-shadow compile failure and corrected build logs remain retained.
+`navigation-all-250` refreshes the strict all62-map comparison after the shared
+ladder motor repair: 19,594 trials per controller, actor failures552→48
+(91.304% reduction), follower591→55 (90.694%), zero baseline-pass regressions;
+comparison valid/met. These bounded private-copy controller trials do not prove
+full campaign navigation or eliminate the remaining failures.
+
+`lab-final-control-come-wide-bay249-01` recalls Mikiko with Come before the128-unit
+regroup; Follow alone can settle176 units away. The control/shuttle/lower corridor
+pass. Precise ladder attachment then exposes a shared motor defect: crouching
+clips away inward travel at a low duct entrance. Native250 preserves bounded
+inward horizontal intent during crouched ladder movement, still using the swept
+full-hull step solver. Forward and strafe lip/ceiling fixtures enter the open duct
+and reject a tall closed wall. `lab-duct-crouched-ladder-motor250-01` passes both
+vents, monkey pens and Labs C escape into Hideout without a death. It later dies
+in the museum after the upper-gallery guards drain health during approach. The
+upper stair landing now has an explicit Ripgun defence before the trap crossing;
+`hideout-upper-landing-defence250-01` is the affected replay, not acceptance yet.
+
+Native249 urgent-attacker priority prevents the earlier fixed-target crowd death,
+but the named guard can be downstairs. Clearing the actual local ambush passes
+in `dungeon-upper-landing-live-ambush249-01`; its later medicine return crosses
+floors incorrectly. Taking western medicine16 before climbing fixes that order,
+but `dungeon-west-medicine-before-climb250-01` exhausts ranged ammunition during
+the approach and dies in the upper ambush. Developer3 diagnostic250-02 confirms
+the automatic empty-weapon fallback is the out-of-reach Claw while holding the
+stand. Placed stave ammunition78/81 is now collected on the route before that
+fight; `dungeon-west-placed-stave-ammo250-03` is under replay. Fresh complete
+Episode3 remains open.
+
+`crematorium-study-grate-from-bookcase248-01` destroys the required grate with the
+Disruptor from the actual bookcase and enters Processing.
+`processing-hall-ion-advance249-01` passes Processing A and reaches Processing B
+stage7 with zero deaths, then stalls approaching the southern freezer ramp.
+Read-only floor surveys249-01/250-02/250-03 retain this failure: finer16-unit
+columns and32-unit geometric jump candidates still do not connect the upper hall.
+No placement or granted inventory is used; ramp geometry needs further diagnosis.
+The earlier `reactor-sphere-clear-muzzle-lip246-01` independently passes Reactor
+A/B, the E1 ending and Greece arrival through E2m1b. It is not full E1/E2 acceptance.
+`reactor-final-terminal-arrival247-01` passes the actual final Mikiko fight, ending
+and credits with zero deaths after the explicit terminal arrival policy repair.
+
+
+Sequence587 route batch250 follow-up: the narrower upper-stair stand in
+`hideout-upper-landing-defence250-01` cannot see the gallery guard and times out
+without a death. `hideout-gallery-guards-before-trap250-02` instead approaches
+the actual gallery, defeats guards50/86 with Ripgun and passes the display trap,
+reunion and course to the moving-deck entry. Its full-speed diagonal drop
+overshoots the lower bank. Read-only `training-entry-drop-floor250-01` confirms
+the192-unit drop and narrow supported bank. A walking drop passes; its initial
+unbounded held fight/fast diagonal return still overshoots, retained as
+`training-entry-walking-drop250-01`. The bank-constrained fight, separate slow
+return and held alignment pass the whole remaining course in
+`training-entry-bank-contained-fight250-02`; a later save fails with the actual
+engine error `Disk quota exceeded` on the disposable /tmp profile. This is an
+environment failure, not accepted gameplay/save success. Stale isolated co-op
+profiles older than an hour were removed (443,183,713 bytes); current and owner
+profiles were preserved. New replays use the project scratch TMPDIR.
+`training-bank-through-ending250-03` then passes the remaining course, hub
+return, Kage, betrayal, final Mikiko fight, ending and credits: zero deaths,
+1197 simulated seconds,75.2 wall seconds. This is a saved continuation.
+
+The Dungeon C medicine/ammunition experiments250-01 through250-06 do not make
+the ambush robust. Keep every failure: the early medicine detour changes the
+encounter, added stave ammunition still leaves close explosive shots unsafe,
+a named-guard pursuit enters the crowd, and a wider fighting arena permits a
+fall from its edge. Those experimental route changes are reverted. The current
+route retains the local held ambush and omits the optional second medicine
+tour after medicine68; the existing nodepath returns to the upper stairs.
+Dungeon A now collects the placed bolts52/240 on its lower floor before
+leaving it, to preserve a nonexplosive option in the later maps. That resource
+change is implemented/unverified; no ammunition is granted to old fixtures.
+
+`processing-freezer-guard-doors250-01` explicitly operates intervening use doors24
+and23 in guide order, then passes Processing B, all Icelab maps, Reactor A and
+Reactor B's first three stages without deaths. The flooded-mouth grate145
+shot stalls in stage4 while breath damage accumulates. Its dry-ledge Ion shot
+repair is implemented/unverified. Current Lua sources are frozen in
+`frozen-routes250`; normal-admission zero-death fresh Episode3 and Episode4
+replays are running against native250. Neither is accepted complete yet.
+
+
+Sequence587 fresh250 results and connected repairs: `episode3-fresh-resident250-01`
+passes the village/church revisits, Passage and Dungeon A with normal inventory,
+then dies after Dungeon B's close dwarf duel. The new lower-floor bolts preserve
+77 Bolter rounds at that failure. `dungeon-stair-guards-bolter250-01` repairs that
+duel but dies during the carrier's slow bend rally under upper-guard fire.
+`dungeon-upper-shooter-before-rally250-02` fights that shooter first; its later
+named Lycanthir pursuit leaves the upper floor and falls into the caves.
+`dungeon-upper-floor-live-occupants250-03` instead clears the occupants actually
+on the upper floor and passes both Dungeon B stairs, the required exit and
+Stavros into Dungeon C's spiral, without deaths. It retains35 Bolter rounds at
+C's boss sequence. Its later carrier rally fails with the actual companion
+still on the lower floor, so it is not full Dungeon acceptance.
+
+Keeping the carrier on each spiral turn in
+`stavros-carrier-each-supported-turn250-01` brings him up physically, but the
+hero fires the Ballista during defensive rally frames. Its delayed launch
+recoil occurs during the next move and throws the hero off the upper spiral;
+retain that death. The escort helper now accepts an explicit no-defence mode
+for this cleared, narrow spiral. `stavros-spiral-escort-without-recoil250-02` is
+the affected replay. No companion position is assigned directly.
+
+`episode4-fresh-resident250-01` passes all Alcatraz revisits and enters Waterfalls
+with zero deaths, then takes the wrong deep-water route from the goldensoul
+pocket toward the acro boost and times out. The first affected Waterfalls
+replay exposes an earlier firing-position loop around solid barrel843 beside
+the window. Moving to the window room before shooting its boards still meets
+that barrel. `waterfalls-window-barrel-clearance250-03` destroys the actual
+one-hit barrel with the Glock, approaches the boards from the room, returns
+along the supported balcony after the goldensoul and passes the acro/cove/boat
+sequence into both Tower maps. Its later continuation is still running.
+
+`reactor-flooded-grate-dry-ledge250-01` rejects the initial dry-ledge idea: the
+ledge blocks the shot. The read-only floor/lane survey250-01 confirms the low
+vent and flooded unsupported mouth. `reactor-flooded-grate-glove250-02` uses the
+Disruptor from the actual close mouth, destroys the grate in0.95s, and passes
+all remaining Reactor B objectives, E1 ending and Greece through E2m1b with
+zero deaths:371 simulated seconds,34.7 wall seconds. No full fresh E1 claim.
+`episode12-pass.lua` is a new normal New Game entry for both complete episodes
+and E3 arrival, with zero deaths/retries and no inventory grants; its existence
+is unverified until a complete recorded run finishes.
+
+
+Sequence587 native250 final-corridor repairs and251 hunt batch: the first corner
+Buboid repair passes the lower stair but `dungeon-corner-resurfacing-buboid250-01`
+dies near the upper medicine approach. Moving the upper-room clear before its
+carrier rally in `dungeon-upper-room-before-carrier-rally250-02` passes the
+northern stair, column hall and extended bridge, then automatic stage9 supplies
+leave the player outside the closed timed passage. Stage9 now disables automatic
+supplies and retains the explicit near/far lever medicine path. The affected
+`dungeon-timed-passage-explicit-supplies250-01` passes that door, then falls from
+the tower lever's narrow approach. Read-only `dungeon-exit-lever-supported-floor250-01`
+qualifies the western strip at568,632,408; nonrecoil guard shots and that stance
+pass the lever in `dungeon-tower-lever-supported-strip250-02`, but carrier
+proximity accepts the wrong side of timed door130. The opposite lever908 and a
+real y<528 crossing predicate pass that door in250-03. Subsequent Follow can
+choose its behind-the-player formation outside the doorway again, leaving the
+carrier downstairs in250-04. The latest route keeps him on Stay while clearing
+the bounded admitted room and releases Follow after moving south of the jamb.
+This last carrier repair is implemented/unverified.
+
+The read-only fountain survey250-01 finds a36-unit hop from the eastern stair
+into the raised bowl. `lab-fountain-eastern-stair-hop250-01` passes the first card,
+Labs A/B/C, museum and reunion without deaths, then fails when an upper Hideout
+node sends the player back off a ladder top. Read-only floor/headroom/walk-grid
+fixtures250-01/02/03 find the actual north-side corridor and its low beam.
+`hideout-upper-walkway-authored-bank250-01` follows it with ordinary crouched
+commands, then passes the reunion, both courses and submarine admission. It dies
+in Kage's fight: while his body is withdrawn, pursuit of his last position and
+clones brings the player into the returning boss's melee range. Retain the
+100HP/zero-armour/59-shell combat fixture and the death; earlier saved ending
+passes do not accept this new incoming state.
+
+Native251 changes only the co-op hunt mechanism: a named withdrawn body holds
+the current footing while visible threats remain eligible for combat. A motor
+that chooses another immediate attacker also holds its engagement rather than
+treating that choice as a blind ordered target to approach. Focused regressions
+exercise the actual hidden-target hunt without a false kill or changed health,
+and contact decisions with a distraction, occluded shot, empty contact and
+out-of-range prey. Debug149 and ownership68 pass (R1–R11 all zero); all-module251
+is still building. Engine/native gameplay acceptance is pending. The250 local
+navigation comparison remains scoped to its unchanged controller inputs.
+
+### Sequence587 native252 hunt, timed corridor and Throne repairs
+
+Native251 all-module build passes. Native252 additionally holds the current
+footing when every owned weapon is rejected by the target's declared damage
+exclusions, covering Kage's visible shield phase as well as withdrawn bodies.
+The integrated all-module252 build, Debug150 and ownership69 pass; R1–R11 remain
+zero. The unchanged local-controller comparison remains navigation-all-250,
+not a claim of new whole-campaign navigation acceptance.
+
+The final Dungeon corridor diagnosis is more specific than the formation
+hypothesis above: developer3 replay251-02 records projectile evasion moving
+Hiro outside the timed door during an unbounded lever-release wait. The
+carrier had actually crossed. `carry_through` now supplies a stance for this
+wait, with a bounded inside-room arena at door130. Keeping Stay while clearing
+the room then releasing Follow south of the jamb passes the remaining Dungeon
+in `dungeon-carrier-bounded-release-wait251-03`, zero deaths into Tower A.
+
+Tower stage2 must first step west to-3008,608,-168: the falling barrel's swept
+hull intersects the old waiting stance. The attached ice-ladder base uses
+radius4 and settle=false, since attachment prevents reaching a narrower
+settled point. `tower-attached-ladder-arrival252-03` passes Tower A/B and Nharre
+into the Throne. It fails there when Superfly follows the ascending rotating
+lift off the lower bank into lava, losing85–90HP/second. His logs establish the
+hazard; the owner's later frozen state is party-death handling, not a cinematic
+visibility diagnosis. Stay after the bottom lever preserves his3406HP until
+the later authored separate-lift sequence. `throne-carrier-wait-on-bank252-01`
+passes the course, bridges, Garroth, timestream34 and completed E4 arrival:
+zero deaths,907 simulated seconds,117.1 wall seconds. This is a saved
+continuation, not fresh complete Episode3 acceptance.
+
+`submarine-held-beam-reactor252-03` passes Kage without player health loss,
+betrayal, final Mikiko and credits, zero deaths,829 simulated seconds,43.1 wall
+seconds. The final Novabeam attack holds the supported initial reactor stand
+in arena[-2496,3104]..[-2320,3280]. Retain failures from unheld Slugger,
+unheld Novabeam losing its firing lane, and the optional1HP incoming fixture;
+none received health, ammunition or inventory grants.
+
+Fresh resident252-02 passes all Alcatraz visits into Waterfalls, then its
+Python evidence mirror raises FileNotFoundError on autosave.info.pending while
+the game atomically completes the save. The engine itself has no failure
+event at this point. Both active and final save mirrors now ignore *.pending.
+`waterfalls-checkpoint-after-save-mirror252-03` resumes its last committed
+stage4 checkpoint and is under replay; fresh complete Episode4 remains open.
+
+Developer3 Dungeon diagnostics also expose a living Rotworm at
+[1306.25,1558.3093,-29041664], accelerating indefinitely outside the map.
+Native253 implements engine-coordinate-limit death and retirement, preserving
+class death hooks and authored outputs and retaining the dead body for its
+death duration plus1000ms so party loss reporting can complete. Cinematic
+performers retain their existing separate movement ownership. Build and actual
+saved-world retirement acceptance remain pending at this entry.
+
+Native253 all-module build, Debug151 and ownership70 pass. The unchanged
+real save is replayed in `outside-world-real-save-retirement253-01`:15 seconds
+of normal simulation followed by a normal save, zero deaths. The input has
+entity100663310 alive with11HP at z=-29041664; parsing the output snapshot
+confirms that entity has retired. This establishes cleanup of the observed
+lost actor, not the cause of its original fall.
+
+Fresh `episode3-fresh-resident253-01` passes Village revisits, Passage and
+Dungeon A into B with zero deaths, but its ordered stair-head worm hunt times
+out. The motor chooses another nearby enemy with a melee-only response;251's
+unconditional alternate-contact hold pins Hiro outside the selected weapon's
+reach. The saved loadout still has87 Bolter rounds and38 Ballista logs, so
+ammunition exhaustion is not the cause. Native254 qualifies an alternate
+contact by a real attack or an unblocked lane within the currently selected
+weapon's reach. Regression cases cover blocked and out-of-range distractions.
+Build and replay remain pending.
+
+`waterfalls-checkpoint-after-save-mirror252-03` passes Waterfalls, both Towers,
+Labs A/B, the resident card return and most of Labs C with zero deaths. It
+fails on the monkey lift after a checkpoint supply detour rides away from the
+lower pens. Its tall cage centre does not indicate boardable deck height.
+Stage6 now disables that automatic detour and uses the guide's backup ladder.
+`monkey-pen-ladder-without-supply-tour253-01` and the explicit reface/contact
+replay253-02 reach the lower ladder but fail to attach. Those failures remain
+recorded; a read-only full-hull contact survey is under way. Do not infer a
+successful current ladder climb from the earlier212 scoped pass.
+
+The read-only `lab-pen-ladder-contact-survey253-01` finds actual full-hull
+contact at x=-2028,z=-3223, toward +x. The old x=-2032 is outside its3-unit
+sensor. Reattaching at x=-2028, facing east and jumping to its lowest rung
+passes in `monkey-pen-east-facing-rung253-03`: the520-unit climb takes9.35s,
+Mikiko follows to the exit, all Labs escape shots complete headlessly and
+travel enters Hideout. No deaths. The later upper Hideout guard75 has retreated
+behind the north corner; its old constrained firing stand cannot see it.
+Moving along the first two supported north turns before the held shot in
+`hideout-north-corner-guard-stance254-01` passes the actual guard, remaining
+upper route, reunion and admission to the first course. Replay continues.
+
+Native254 integrated game, Debug152 and ownership71 pass. The saved Dungeon
+replay254-01 passes the original stair-head worm and carrier gates, then times
+out on corridor worm140. Developer3 route diagnostic254-03 fails in its own
+wrapper on a nil clear selector; retain this as a fixture error, not a runtime
+or corridor result. The corrected wrapper replay254-04 is under way.
+
+`hideout-north-corner-guard-stance254-01` completes the repaired guard approach,
+both courses, return, Kage, betrayal, final Mikiko and credits with zero deaths:
+1618 simulated seconds,137.6 wall seconds. This saved Hideout continuation has
+different incoming health/ammo from earlier passes; retain its input identity.
+It does not accept a fresh whole Episode4.
+
+Developer3 corridor replay254-04 reaches the actual worm140 failure. Shots
+leave the muzzle, but the saved bolts hit the floor around y=-116 before the
+worm at y=-456. The grounded worm retains velocity[0,0,-40]; projectile lead
+extrapolates this residual gravity below its support. Native255 suppresses
+vertical lead for grounded bodies while retaining horizontal movement and
+full airborne velocity. Focused tests cover stationary/strafe ground targets,
+falling bodies and rising airborne bodies. Integrated build and replay pending.
+This is an aim-prediction repair, not an ammunition or target-immunity change.
+
+`neural-mishimaguard-settling244-01` extends the unchanged private244 cosmetic
+fixture coverage: ordinary Glock death with retained body,100 samples,
+30 articulated bones, floor contacts, last10 samples sleeping, and restored
+living actor with the old corpse removed. Frames60 and99 are inspected and
+retain the same settled pose. This remains a software-rendered controlled
+fixture, not full-campaign, all-rig or hardware-renderer acceptance. The
+Battleboar rig is under the same isolated probe.
+
+Native255 integrated game, Debug153 and ownership72 pass; R1–R11 remain zero.
+`dungeon-grounded-worm-exact-save255-02` resumes the exact diagnostic failure
+save and kills the18HP worm in500ms, without moving the fixture or altering its
+health/loadout. The preceding255-01 attempted a stage2 restart from that
+mid-stage diagnostic save, which puts the carrier across already-completed
+timed doors; it was interrupted and is not progression evidence. Normal fresh
+resident `episode3-fresh-resident255-03` and `episode4-fresh-resident255-01` are
+now under zero-death replay with frozen canonical routes255 and native255.
+
+`neural-battleboar-settling244-01` also passes the controlled retained-body
+fixture:100 samples,13 articulated bones, contacts and all last10 samples
+sleeping, followed by successful living restore/corpse removal. Frames60/99
+are inspected and show the same settled pose. Four rigs now have this scoped
+software-rendered coverage (Cryotech, Ragemaster, Mishima Guard, Battleboar);
+other rigs and full hardware/campaign acceptance remain open.
+
+Fresh255-03 passes Village and church into crypt stage6 but falls into the
+pit while approaching its first bank. The graph's broad endpoint accepts
+position-34,-997 before the precise corner; combat avoidance then jumps around
+a Buboid and carries Hiro sideways over the edge. The route now leaves the
+party on Stay, settles precisely at-62,-998,-712 and takes both narrow bank
+turns slowly with combat movement disabled, before the existing clear/leap.
+`crypt-bank-without-combat-hop255-04` replays its actual healthy stage6 save.
+Fresh Episode4 native255-01 continues through Alcatraz; no full fresh pass
+has yet been established for either episode.
+
+The crypt entry repair255-04 prevents the jump but dies against the crowd in
+the narrow turn. Clearing from the entrance bank first in255-05 passes those
+turns, then exposes the next leap's unsupported target over the pit. The
+raised coffin is the real bridge.255-06 reaches its east lip but reports a
+short landing when asked for the centre;255-07 explicitly lands at
+-120,-912,-664, walks the supported top and jumps onto the western bank. It
+passes the crypt fragment/key, village returns, Passage, Dungeon A and B into
+the blade stair, then dies approaching medicine with4HP after a guard duel.
+No health or inventory was granted. The available earlier medicine63 is now
+collected through the actual opposite levers before that duel.255-08 passes
+it but a named upper guard129 has roamed out of the constrained bend's sight.
+Replacing the fixed bend hunt with local threats in255-09 gets farther, but
+the distant guard shoots Hiro during the carrier's later look/Come orders.
+An optional before-rally callback now checks a real head-level firing lane
+at each supported upper turn and defeats129 before looking away.255-10 kills
+him in1.65s and passes the upper stair, but a later spiral turn is physically
+blocked by the carrying companion.255-11 captures this actual obstruction;
+no complete Dungeon or fresh Episode3 claim follows.
+
+Fresh Episode4 native255-01 and the matching developer2 run255-03 both stop
+at the long Alcatraz ladder after the supports are destroyed. The trace proves
+both delayed weight targets dispatch on time; there is no evidence of a lost
+save queue. Pipe Rat280,22HP, becomes trapped at920,-755,930 under the descending
+ladder53. The push transaction repeatedly tries to move this non-rider down
+through the floor. Loading an earlier checkpoint can mask the obstruction
+because the implicit admission grace lets the bot shoot the rat. The dedicated
+live-failure capture255-04 retains the actual jammed pose and opening ladder.
+
+Native256 gives a newly descending non-rider the same bounded contact recovery
+as an existing overlap when the floor refuses its push. Separation is checked
+against every live collider within18 units; riders, deep contacts, new
+horizontal contacts and transaction rollback keep their previous contracts.
+The focused geometry test verifies a real side escape, floor preservation,
+distance bound, rider refusal and deep refusal. Debug154 first fails on an
+anonymous test context type; the named private type fixes it. Debug154b,
+coherent all-module256b and ownership73 pass, R1–R11 zero.
+
+The paired exact-save pusher isolation disables arrival and combat. On255,
+`alcatraz-nonrider-no-side-escape255-06` leaves ladder53 opening after5 seconds,
+rat alive at22HP. On256, `alcatraz-nonrider-side-escape256-01` reaches open in
+the same observation with the rat still alive at22HP. No death, actor placement,
+damage, inventory or target grant is involved. Fresh resident256-02 is under
+replay with frozen canonical routes256. Earlier255-05's generic wait was not a
+valid isolation: its arrival grace killed the rat and masked the obstruction.
+
+Fresh256-02 passes the released ladder timing but fails its unsupported
+outward dismount: the climb reaches1266, only6 units below the1272 through-point,
+so the next command emits up=0 and drops vertical velocity to20 before crossing.
+The elevated1296 steering point retains upward input until the body clears,
+then hands off to the actual north-bank landing. A nearby live leaping rat is
+also cleared from the barrel stand before exposing the player on the rungs;
+its later bites are observed, but no intervening bite proves it caused the
+initial fall. The earlier loaded `alcatraz-clear-rat-before-rungs256-03` passes
+Alcatraz/Waterfalls/Towers into Labs C; its implicit arrival grace can mask the
+fresh rat/dismount timing, so it does not accept the new fresh route.
+
+`dungeon-spiral-party-blocker-save255-11` captures Hiro at154,250,-296 and the
+carrier at185,276,-296, alive3665HP, enabled, on Stay, with no authored hold,
+reaction or puzzle. Existing yielding detects the contact but its six
+view-relative directions cannot clear this curved stair. Native257 retains
+those priorities and adds16 bounded64-unit directions through the same
+full-hull, step, supported-floor and hazard checks. The curved-corridor unit
+exercises a lane outside the original six directions; the narrow-lane fixture
+also models the leader blocking retreat through his body. All-module257,
+Debug155 and ownership74 pass, R1–R11 zero.
+
+The paired no-arrival/no-combat exact-save test is
+`dungeon-party-passing-baseline256-04` versus
+`dungeon-party-radial-passing257-01`: the former times out after8 seconds
+without clearing the corner; the latter reaches the requested step in2.1
+seconds, carrier still3665HP. No placement or clip/hazard bypass is involved.
+Fresh resident Episode3 native257-02 is under replay with canonical routes257;
+the loaded Episode4 continuation256-03 continues independently. The all62-map
+250 metric remains its own bounded local-controller result, not a new257
+comparison or full live-following claim.
+
+The loaded `alcatraz-clear-rat-before-rungs256-03` finishes every remaining
+Episode4 map, both courses, Kage/Mikiko, ending and credits: zero deaths,
+4196 simulated seconds,619.6 wall seconds. It is an Alcatraz stage9 save
+continuation, not a fresh Episode4 run.
+
+Fresh Episode3 native257-02 fails before the crypt at the church cellar's
+flat ladder-attachment goal. Read-only `church-cellar-ladder-contact257-03`
+confirms the original x=-196 contact face is correct. The approach now asks
+for a16-unit rise so the existing ladder-approach policy suppresses obstacle
+sidesteps, disables combat steering there and retains upward steering through
+both church ladder exits before settling onto their floors. The actual
+stage2 replay `church-ladder-rising-approach257-04` passes both ladders, crypt,
+village returns and Passage into Dungeon A. It then exposes a coarse node
+above an inaccessible straight climb after taking the placed bolts; a
+read-only floor survey is finding the supported stair route.
+
+Fresh Episode4 native257-02 adds an unnecessary nearby-rat duel from the
+barrel stand before the ladder. That fight walks off the raised takeoff
+onto the lower rim, then the leap cannot reach its old takeoff. The extra
+duel is removed. The original observed fall occurred without an intervening
+rat bite; the evidence supports the lost upward-input diagnosis, not a
+claim that a bite caused that initial fall. Keep the native256 physical
+side-escape fix and the higher1296 dismount steering point. Current saved
+replay257-07 tests that route without the extra fight. Fresh Episode4 still
+requires a successful complete run.
+
+The wider read-only `dungeon-a-ammo-stair-wide-floor257-06` finds the real
+southern stair foot and rising return to the upper landing; the small pocket
+survey257-05 could not reach it. The route follows those supported turns
+instead of aiming at a coarse node through the north-facing wall. Actual
+`dungeon-a-southern-stair-foot257-08` passes the stair, then dies to a Buboid
+while waiting for the carrier. Direct calls had omitted `defend`, which
+silently disabled defensive fire. Rally now defaults to defense, with explicit
+false retained for the recoil-sensitive spiral.257-09 passes Dungeon A and
+reaches the barred Purifier cell in B, then arrives at the next wheel with9HP.
+Its trace attributes the lost89HP to Buboid103 during uninterruptible fixed
+shots through the bars, not the final Lycanthir duel.
+
+Cell guard duels now retain the west-side constrained arena but use ordinary
+hunts so an immediate attacker interrupts the distant aim. The released
+guard534 is cleared before the earlier-corridor medicine detour; stage4 also
+disables automatic supply tours. `dungeon-cell-duels-defend-melee-ambush257-10`
+passes all remaining Dungeon B and enters C with healthy supplies. It passes
+Stavros and the actual carrier spiral and is under further replay.
+
+The Alcatraz ladder wait itself also lacked a stance, allowing autonomous
+combat movement to leave the raised barrel before the takeoff. The extra
+rat duel stays removed; the wait now holds its actual takeoff with combat
+disabled. The upward steering through-point allows the observed1256 landing
+height before handing off to the supported north-bank point, rather than
+requiring an unreachable elevated stand. Fresh257-03's remaining failure is
+retained; fresh native258-01 is now under replay with canonical routes258.
+
+The conditional-wait helper previously omitted its `arena` option from the
+yielded action. Native258 forwards it; the existing crouched surface-wait
+unit now also verifies the real yielded bounds. Integrated all-module258,
+Debug156 and ownership75 pass, R1–R11 zero. This changes the explicit bounded
+Dungeon C lever wait, not the unchanged250 local-controller comparison.
+
+Continuation258: `dungeon-cell-duels-defend-melee-ambush257-10` passes
+Dungeon C, both Towers and Wyndrax, then fails the first Nharre carrier rally.
+The carrying companion remains beside the shard torch while the player has
+already descended to the pillars. This is retained as a failed connected run.
+The route now regroups on the torch-room floor and escorts the supported
+descending turns before opening the passage. `nharre-torch-room-escort258-03`
+passes that entrance, both carrier pillar crossings, Nharre, the Throne course,
+Garroth and timestream34 into Episode4 with zero deaths; arrival playback is
+still running at this entry. This is a saved continuation, not a fresh E3 pass.
+
+Fresh `episode4-fresh-resident258-01` holds the barrel correctly but fails the
+standing first jump beneath the overhead pipe. The ordinary crouched jump in
+`alcatraz-crouched-first-rung258-02` lands on the real944-height support in500ms,
+climbs and dismounts the long ladder, completes the remaining prison and sewer,
+and enters Waterfalls without a death. That scoped replay is explicitly
+interrupted after the boundary; it is not an ending pass. Fresh E4 replay258-04
+uses immutable canonical routes258-02, including this jump and the Nharre escort.
+
+The Nharre continuation258-03 subsequently completes E4 arrival playback:
+zero deaths,1152 simulated seconds,168.0 wall seconds. Integrated broad116
+also exits0, including414 Python cases and native/engine contracts. Private
+play-install259 exits0 and enables the existing HD/neural/material packages;
+its server module matches frozen258 byte-for-byte. This is an isolated
+development installation, not replacement of the owner's preserved game.
+
+Fresh258-04 passes the repaired Alcatraz ladder, then fails the opposite
+sewer wheel: its area approach targets a point below the central pipe.
+The explicit open-water lane and held wheel use in258-06 pass all sewer
+objectives, Waterfalls and Tower A. The subsequent Tower B approach drops
+into an elevator shaft and misses the ladder; read-only258-09/10/11 floor
+surveys do not establish a staircase route. Contact survey258-12/13 instead
+finds the actual ladder's y=-308 contact and the upper103-height landing.
+Explicit shaft traversal is under repair, retaining258-15's raised-approach
+failure. No fresh E4 completion is accepted.
+
+Fresh E3 native258-05 dies in the barred-cell duel. Its status trace shows
+the slow Ballista switching to another close enemy behind the bars while
+two dwarves keep firing; this is distinct from the earlier Buboid ambush.
+Bolter duels in258-08 pass the entire cell and remaining B, then C's precise
+lava approach is attacked by surviving worm108 while combat is disabled.
+Stage5 now finishes that pursuit with ordinary Bolter fire from the broad
+landing.258-14 passes that stair, upper party escort and remaining C into
+the Towers. No fresh E3 completion is accepted by these continuations.
+
+Continuation258-14 later fails to collect Wyndrax's death drop. Ground slot290
+is the actual solid table95, not the boss corpse. Controlled fixture258-33
+places the same Wisp body under that table: its solid-only sweep misses the
+table and it settles at63.60; ordinary collection fails.258-36 compares a
+shot trace, which sees table95, with the item's own solid-only mask, which
+does not. The bundled server prefilters entity contents correctly but then
+tests temporary boxes using their internal BODY contents, excluding declared
+solid props from SOLID-only sweeps. Engine191 routes both clipping paths through
+the corrected entity clip, retaining the prefilter and actual returned contents.
+Point contents similarly retains the entity's declaration for non-brush bodies.
+
+The actual engine clipping regression covers solid props, body exclusion,
+initial overlap, trigger masks and capsules. Its first Debug157 run exposes
+an additional capsule model-handle lookup rejection; engine192 accepts the
+capsule's shared temporary bounds. Integrated engine192, Debug158 (594 native
+tests plus engine contracts) and ownership76 pass, R1–R11 zero. The paired
+unchanged synthetic under-table fixture on192 raises the Wisp to81.60 and
+collects it with ordinary movement in300ms. Original saves remain untouched.
+This establishes the item/prop collision repair, not a fresh full E3 pass.
+
+The previous navigation baseline has a different engine identity; the comparison
+runner correctly rejects a mixed-engine candidate. A new all62-map baseline
+uses exactly the retained original baseline module15245661… on engine192,
+with the same assets, skill and unchanged protocol/75% target. The candidate
+will replay that baseline's exact case manifests on the same engine; previous
+250 metrics remain labelled with their old inputs.
+
+Fresh E1/E2 gate258-17 fails after bridge recovery has already descended into
+the pool: the route still requests the984 plateau.258-23's height guard passes
+that exit and reaches Sewers A. Its timed door run brakes at each waypoint,
+arriving after the ten-second opening; the attempted return then falls beneath
+the walkway. The dash now retains running speed and defers combat until clear.
+Scoped replay192-03 is underway from its original healthy stage9 checkpoint.
+
+The same-engine192 comparison finishes all62 maps and19,338 trials/controller.
+Actor failures643→51 (92.068% reduction, no old-pass regressions); follower
+526→66 (87.452%, six old-pass regressions), hazards29→12. It is a valid
+comparison, but the unchanged strict zero-regression gate fails. Neither
+the six regressions nor the changed case cohort are hidden by the older250
+result. Native260b bounds obstacle avoidance to its requested waypoint and
+rejects rising jumps which only land below their lip. Five of the six exact
+focused cases pass; Waterfalls case176 remains failed. Diagnostic259/261
+exposes per-frame private-copy steering without changing the measurement
+protocol. `navigation-regression-traces260` accidentally froze the old259
+module during compilation; it is excluded. Frozen260b's40452963… is copied
+after the all-module build completes; Debug159 and ownership77 pass.
+
+Native260b additionally rejects automatic supplies while on Stay, including
+restored automatic pursuits; explicitly ordered collection remains permitted.
+A positive ordinary-item regression checks both paths. Its first Debug160
+attempt misses the fixture's required classname; the corrected160b is under
+build and is not conflated with that failure. Fresh E3/E4 replays260b-07/08
+use frozen routes260b-01 and engine192. These are still open gates.
+
+The Tower shaft surveys identify the actual fixed opening beside the START_OPEN
+lower leaf, a supported takeoff at x78 and the lower rung contact reached by
+the jump. The carrier catches real rungs and climbs normally. Attempts to
+step backward from rest miss the plank; strafe along the upper rungs instead
+reaches the supported west ledge. Leaf62 is authored `never` with zero travel;
+it must not be operated. `tower-plank-fixed-leaf-gap260b-03` passes the real
+plank opening south of it and the upper floor in7 simulated seconds, zero
+deaths.192-07 incorrectly restarts a whole stage from a mid-stage rung save;
+it is excluded from traversal acceptance. The standalone fixture correctly
+starts at that rung checkpoint, without relocation or inventory grants.
+
+E1 continuation192-03 passes the timed door, Sewers B, Prison and Crematorium
+into Processing A, zero deaths. Its secret-panel shot fails. Parking the
+escort first passes the shot once but later leaves a companion below the
+pickup niche; Stay collection is repaired in260b. The precise crouched shot
+still fails in260b-05. A read-only inspection260b-06 confirms that the same
+panel is hit by both shot and player point masks immediately after restore;
+live projection/aim diagnosis remains open. No guessed brush-mask override
+is admitted on that evidence.
+
+#### Sequence 587 continuation: retained failures and supported pipe entry
+
+Debug160b and ownership78 pass; the Stay supply regression includes both
+automatic refusal and explicitly requested collection. The coherent all-module
+262c build passes. Engine193 uses the broadphase list's authoritative entity
+slot for clipping; engine194 adds opt-in entity trace diagnostics. Processing
+194-02 still fails, although broadphase and direct brush clipping agree on
+the panel. The ordered-shot aim selector, rather than brush linkage, is now
+the unresolved path. Neither engine change establishes campaign acceptance.
+
+Fresh E3 260b-07 fails at the fountain bank. Clearing only guard24 in194-09
+does not protect the dive: guard443 attacks the returning swimmer. The route
+now clears the other two bank guards443/457 as well;194-10 is under replay.
+Fresh E4 260b-08 fails the second pipe hop's arrival check despite landing on
+the supported pipe. The revised target1256,888,424 and explicit alignment
+pass standalone194-03:70 actions, zero deaths,56 simulated seconds. Full
+fresh E4 194-09 is running with that change and the authored Tower shaft path.
+Full fresh E3/E4 acceptance remains open. Navigation194-262c still fails the
+single retained e4m2a follower case; the five earlier focused repairs remain
+scoped results, not a passing full comparison.
+
+Native266 fixes a second contact-skin issue in the ordered-shot lane: extend
+the offset muzzle trace eight units beyond the eye impact so it actually
+enters the target surface. The engine-reported impact is outside that surface;
+264's real panel traces show clear misses ending at precisely that boundary.
+A domain regression reproduces that contact skin while the existing sill,
+miss and blast-lane exclusions remain covered. Integrated Debug162 passes,
+ownership79 remains zero, all-module266 builds successfully. Native265's
+initial signed/unsigned projection-mask compilation failure is retained;
+266 corrects the bit representation explicitly.
+
+The follower's remaining e4m2a case is interrupted by a lateral avoidance
+turn every time the motor nears the corner. The actual motor rollout and
+three-step feedback diagnostics agree until that interruption. Native266
+rechecks the live qualified corridor before sidestepping solid geometry;
+actor avoidance remains active. The same focused case now reaches its goal
+in1250ms, without a hazard. The full same-engine194 baseline/candidate
+comparison is running with unchanged protocol and thresholds. Candidate266
+qagame SHA256 is14a61d2388f1b8d5c9832fd1b0a6f3afed8cbfa6753701d4f793af4a8f0eecf7.
+
+Fountain continuation194-13 passes the key, village revisits, Church/Crypt
+and enters Dungeon A. It then dies to guard65 during the combat-disabled
+stair and, after checkpoint recovery, fails the carrier gate rally. Thus it
+does not establish a complete or zero-death E3 pass. The route now explicitly
+resolves guard65 before the precise stair sequence; replay is pending.
+Alcatraz194-10's broad clear stalls on distant prisoners outside its firing
+arena. Targeting the actual lever-side attacker441 instead passes that
+sequence in194-11; the continuation reaches Waterfalls with zero deaths and
+is still running. Full fresh E4 remains open.
+
+The complete engine194/native266 navigation comparison passes its unchanged
+strict gate:62 maps,19,338 identical trials per controller, zero regressions.
+Actor failures643→51 (92.068% relative reduction); follower526→54 (89.734%).
+Hazard cases1→1 and29→11. Both exceed75%. The baseline uses the retained
+native581 module on the same engine194, assets and skill; the candidate
+replays that exact collected cohort. Engine194 SHA256 is
+68bae098a795a250b8ffd5c97818fe438e23ace630b1778c754f6ce534d37751.
+Reports `navigation-baseline-engine194` / `navigation-all-engine194-266`
+retain identities and per-case results. This accepts the local-controller
+metric; it does not erase remaining failures or qualify authored campaigns.
+
+`processing-muzzle-surface194-266` passes panel59 in250ms, the shield niche,
+Processing A/B and Reactor A admission, zero deaths so far. This is the
+actual previously failing save, without relocation or inventory grants.
+`alcatraz-local-cell-guard194-11` passes the lever sequence and Alcatraz into
+Waterfalls on native263, then drowns while seeking715. Its recovery loop is
+interrupted deliberately. The same flooded-hall checkpoint on266 in
+`waterfalls-flooded-hall194-266-12` collects715/724, passes the cavern route,
+collects774 and starts the return to the cove, zero deaths so far. Thus the
+live motor-qualified slide repair also improves this actual campaign
+continuation; neither still-running result establishes a complete episode.
+
+Broad117 passes414 Python tests and native/engine contracts on the266 repair
+batch. Further authored-route repairs retain their own failed inputs:
+
+- Reactor A's exit waits for Superfly behind the closed inner passage.
+  The actual east return button338 reopens it.267 passes Reactor A/B into C,
+  then dies in the arena.270 removes overhead sphere31 before the ground
+  guards and passes Reactor C into Mishima's base with zero deaths.
+- Mishima's platform jump lands on worker606's head.273's read-only survey
+  finds the continuous north ramp;274 walks it normally, passes the E1 ending
+  and enters Greece, then completes the first two E2 hubs with zero deaths
+  before failing the Athens Discus pickup.276 keeps crouch through that low
+  rim pickup and is continuing. These are saved continuations, not fresh
+  complete E1/E2 acceptance. No global jump/gravity tuning is changed.
+- Dungeon A guard65 is cleared successfully on267, but the stair turn stalls.
+  Actual failure-state268 and clearance269 identify the upper tread;270's
+  short supported transfer passes it. The later carrier rally still fails.
+  Staging before each gap requires restoring the player's original run-up;
+  otherwise271 lands below the pillar.272 passes that player jump but Come
+  cannot select a separate clear spot on the narrow pillar.275's Follow
+  advances the carrier, but he drops onto a lower shelf and cannot recover.
+- Waterfalls266-12 passes the Tower shaft and plank and both first laboratory
+  maps before medicine27 stalls behind the locker.268 waits for both leaves
+  and crouches through the opening successfully, then fails SEAL girl50 on
+  the shuttle with the Ripgun.272 uses the Glock and passes the laboratory
+  continuation into Hideout. A companion loss in Hideout and a later course
+  approach failure remain recorded.276 follows authored nodes to the training
+  lift but stops outside use range.277 explicitly boards the real deck and
+  passes that entrance; the course continuation is running.
+
+Native276 is implemented; unverified: retain the actual nearby requested
+jump landing even when baked jump links offer other endpoints, including
+lower shelves. A bounded320-unit approach envelope admits a supported run-up;
+the same full motor flight, support and hazard checks remain mandatory.
+Candidate/progress storage includes all four baked links, optional transfer
+and actual goal. A regression supplies an unusable baked drop above a real
+upper landing. Debug163 and the integrated build are running. Native266's
+strict navigation metric remains accepted for its frozen inputs;276 needs
+its own comparison before inheriting that acceptance.
+
+#### Sequence587 — carrier landing and defended boss continuations
+
+The broader jump-candidate experiment276/277 was reverted in278. Debug165
+passes the restored controller and stable static-landing settlement. Ordinary
+leaps now brake until supported contact persists200ms with horizontal speed
+at most48, as moving-surface landings already did. The earlier first-contact
+completion let Hiro slide off the Dungeon pillar during the following look.
+
+Native291 is coherent, SHA256
+`c7870ff1804ad954546bd2c73712887ecfe1650e5164f502d25f601d496e7c0f`;
+all291, Debug171 and ownership86 pass (R1–R11 zero). Come keeps the original
+16-unit companion hull and checks compact32-unit placements with bounded
+one/two-unit refinement and actual owner/body separation. Ronin companions
+retain at least their authored300 running pace; freeze still scales it.
+`dungeon-nudged-carrier-pace194-292` starts at the preserved Dungeon A stage4
+checkpoint, crosses both broken spans with the carrier, opens the remaining
+gates and reaches Dungeon B without a death. It later times out shooting a
+barred-cell guard at stage3; complete Episode3 acceptance remains failed/open.
+
+The training deck repair in `training-car-deck-boarding194-277` completes both
+course visits, Submarine, the ending and credits with zero deaths. The later
+Hideout east-bank rider exit and companion Stay repair passes that lift and
+training again. `kage-whole-arena-defended-phases194-286` reaches credits with
+one normal checkpoint recovery: this is not zero-death or fresh full-E4
+acceptance. Native284 adds Kage-owned bot damage admission during recharge,
+smoke and shield; actual player damage/refund rules remain unchanged. The
+preserved corner save287 and read-only full-hull survey294 show open floor
+along the wall even though backward/perpendicular retreat candidates meet
+the corner or arena boundary. A wider supported flank search is implemented
+in292; live encounter acceptance is pending.
+
+E1 continuation274 passes Mishima's real north ramp, the episode ending and
+the Greece arrival. E2 continuation276 passes the crouched Athens Discus
+pickup. Continuation283 clears the actual A-rune stair with Venom, completes
+the rune revisits and reaches Cerberus with zero deaths before dying there.
+Restored socket progress now counts consumed runes using real socket uses and
+the uncovered wheel; requiring consumed inventory keys incorrectly sent the
+saved Cerberus attempt back into Aegis. Replay289 confirms actual boss entry.
+Venom request291 still switches to the admitted Trident too late; readying
+Trident before the courtyard in295 fires a real barrage (750→604HP), then
+the bot closes when its splash lane becomes unsafe and dies. This approach
+defect is open. Fresh current E1/E2, E3 and E4 gates remain unaccepted.
+
+Native292 adds full-support forward flanks at concave retreat corners;
+all292 and Debug172 pass. Native293 also distinguishes a visible enemy inside
+the gun's unsafe blast spacing from a lost firing lane, retaining engagement
+so retreat can run instead of approaching further. All293, Debug173 and
+ownership87 pass; frozen qagame SHA256
+`1de445da8ae6ad6cb02496a5ccfa3a206c41a54b12435b0f202d7daeedfefb27`.
+The new corner regression keeps collision, support and hazard admission.
+
+Kage's supported northern-bank Slugger fight300 kills him without a death.
+The continuous Kage/final replay316 reaches credits with one normal checkpoint
+recovery, within the existing allowance; the first final-fight attempt dies
+while approaching medicine. The exact1HP final save313 collects the real
+southern25+25 pickups, then fights toward the remaining50 pickup and reaches
+credits without a death. These distinct inputs do not establish a zero-death
+continuous ending. Nova-only and several narrower stances remain failed.
+
+Fresh E4 attempt301 passes Alcatraz A/B and most C, then its sulphur leap
+lands against a beam at1372 instead of1360. Read-only305 identifies clear
+near-edge1072; continuation308 passes the revised leap, sulphur, sewer return
+and Waterfalls arrival with no death. Its first waterfall jump then fails.
+Clearance319 identifies the supported southern landing; continuation321
+lands normally at-3187,-1488,-480 but the subsequent area route drops into
+the lower cave. Explicit sloping-bank walk323 passes that section and reaches
+the second-bank leap, which remains under repair in325. Full E4 remains open.
+
+Cerberus293 still fails. Early Trident readiness fires real damaging bursts,
+but several tested stances become blind or trap the player inside blast
+spacing. Read-only312 verifies only the actual southern gap and west angle
+among its admitted samples see the boss. Temple soul40 is genuinely collected
+and gives198HP; its nearest return graph node lies across the court wall.
+An explicit southern return passes that detour. Replay324 still dies against
+the inner geometry during the attempted eastern retreat; extra health alone
+does not repair that route. No Cerberus or E1/E2 gate is accepted.
+
+#### Sequence587 — current connected replay batch through native302
+
+Broad118 passes414 Python tests in20.430s and native/engine contracts on293.
+Native294 removes the short firing tether's pull toward a nearby brawler when
+an explicit arena already bounds the fight. Debug174 passes; SHA256
+`3039b52e5dfe4d68708de22edbc6d43a53021469f99c8b7739bf2e27c9e0e0f1`.
+The Cerberus replay reaches98HP but remains cornered and dies. Subsequent wider
+and untethered routes also fail, retained as335/337.
+
+Native295's compact curved Come refinement builds, but Debug175/176 reject the
+old exact-coordinate assertions after a different valid placement is selected.
+Native296 retains geometric admission assertions and prefers the owner's floor
+before the ordinary24-unit height tolerance. All296, Debug177 and ownership89
+pass. Its actual spiral continuation340 still fails, as does295 continuation338;
+the latter includes companion losses. No spiral acceptance is inferred from
+these implementation checks.
+
+Native297's class-reviewed short-flight Trident self-damage budget and native298's
+nearby-ally qualification pass Debug178/179. The weapon's actual0.325 self scale
+is unchanged, moved into its class spec rather than duplicated. Real replay
+`cerberus-reviewed-close-splash194-343` kills Cerberus during the approach, with
+ordinary uncharged tip impacts and explicit lethal combat output. It then passes
+Medusa A/B/C/D into E before dying to gaze. The zero-duration subsequent `kill`
+action is not the kill evidence; the preceding lethal damage is.
+
+Medusa299's additional origin sightline does not prevent a gaze already active
+behind cover. Native301 instead follows her unconditional targeted warning
+flash through the phase. Its safe view is applied after qualified walking input,
+which previously overwrote it; walking direction is preserved through the
+existing input rotation. All301, Debug182 and ownership93 pass; native300's
+Debug181-only u16/u8 test mismatch is corrected. Native301 SHA256:
+`1c387973dfa2b2642af4ae99bd78ef2a093bccd9c3c5ac99b4e6a00a1bfb99e3`.
+`medusa-targeted-flash-final-view194-348` defeats the boss, completes all ten
+awakened monsters and the timestream, and reaches E3 with zero deaths.
+
+The full unchanged frozen comparison `navigation-all-engine194-301` passes:
+62 maps and19,338 cases/controller, actor643→51 failures (92.068%), follower
+526→54 (89.734%), no regressions, hazards1→1 and29→11. Both unchanged75% gates
+pass. This covers local motor/controller behavior, not the failing live spiral.
+
+Fresh E1 `episode1-fresh-connected296-339` traverses14 distinct maps into Icelab B
+with one ordinary combat recovery, then cannot leave its low hatch. Native301
+allows intentional forward/look-up/crouch ladder input to climb with the short
+hull; downward input remains descent. The pilot emits that input for an authored
+crouched ascent. Read-only347 verifies the opened leaves obstruct standing
+clearance while the short hull fits. Continuation349 passes Icelab B/C and reaches
+Mishima A without a death, then its floor-snapped ramp goal becomes362 on a worker
+while the actual floor is304. Native302's read-only `floor` trace mode excludes
+living/corpse bodies for `on_floor`; physical movement collision is unchanged.
+
+E4 `waterfall-grounded-staged-runup194-344` passes the repaired two-bank route,
+flooded halls, Tower and Labs into Hideout, zero deaths,915 completed actions.
+Grounding and staging the dry run-up resolves the earlier second-bank misses.
+It later lands on the first17-unit tread while attempting a jump off the chambers
+lift. The route now walks that tread and explicitly boards Mikiko before descent;
+her full-run position was far above the lift, unlike the earlier scoped fixture.
+Those Hideout changes remain unverified. Fresh current complete campaign gates
+are still open. No owner installation or saves are changed.
+
+Native302 also corrects party clips after direct review of Gold's active
+`MASK_MONSTERSOLID` initialization versus its commented-out `MASK_NPCSOLID` line.
+The native party declaration had selected the latter. The class now uses the
+shared live-monster clip policy, and restored living actors rederive class masks.
+Corpses retain their saved physics. All302, Debug183 and Broad119 pass (414 Python
+cases plus native/engine checks); ownership94 remains zero. Spiral replay351
+still fails at the first turn. Correct party clips alone do not repair it.
+
+Continuation350 passes the floor-under-worker ramp and west decks, then its
+held cryotech fight routes off the upper ramp into the lower gallery. Scoped355
+first walks to the supported bend, then kills that same cryotech in500ms and
+reaches the high walk, zero deaths. The canonical stage now uses that approach
+and a bounded ramp fighting area. The remainder still requires replay.
+
+Hideout352 exposes an impossible boarding assertion: the closed trapdoors262/263
+cover platform264. Read-only353 records their actual upper collision surfaces;
+boarding now accepts those doors as well as the platform. The requirement still
+checks the party hull's real floor and boarding footprint. Replay354 is running.
+
+Native303 distinguishes moving ground from a stationary brush for replaying
+qualified walking commands, and adds developer3 companion-corridor diagnostics.
+All303 and Debug184 pass; SHA256
+`ca0a307802dbf9b0d2ce86bb8033529bda9506d6da0643d4d41a90206fe97916`.
+Live357 fails earlier than302, with repeated companion losses; the stationary
+brush forecast change is withdrawn, while the corridor diagnostics remain.
+Native304's compile-only semicolon error is corrected in305. That batch prefers
+the leader's recorded, motor-qualified trail before searching a new floor route,
+and retains16-unit turns rather than48-unit chords. Implemented; replay pending.
+
+E1 continuation358 completes Mishima A/B, the ordinary E1→Greece transition and
+Lemnos A through E2m1b, zero deaths:358/361 actions,612 simulated seconds. The
+canonical ramp now takes the same continuous approach as355, with the party
+temporarily waiting below, then following from the upper walk.
+
+Hideout354 passes the trapdoor boarding, descent, lower landing, reunion and
+training entrance without deaths, then repeatedly dies on the rotating cage.
+Comparison with277 shows that278's correct default settled landing spends the
+cage's short angular window. The authored continuous crossing now explicitly
+requests `settle=false`;359 passes the cage and remaining course into E4m6a,
+zero deaths so far. Full E4 remains under replay. No complete campaign claim.
+
+Late E4 replay359 finishes the entire remaining course, Kage, final Mikiko,
+ending and credits:191/193 actions,1328 simulated seconds,104.0 wall seconds,
+zero deaths. These are real ordinary encounters and health pickups, including
+the critical-health recovery branch. Complete fresh E4 remains open.
+
+All305 passes; frozen SHA256
+`53d7a316c50e38c5e1c2bbc404f9bce1c90aef6e48ea897c6347b0ae1109bad1`.
+Debug185 passes including the added narrow-corner trail regression; ownership95
+retains R1–R11 zero. Live360 times out with the companion correctly settled on
+the spiral brush,94 units away and25 units below Hiro. The script's64/24 owner
+envelope conflicts with Come's32-unit completion disk around a32–64-unit clear
+spot. The spiral envelope is now96/32, still excluding adjacent full revolutions
+(192 vertical units). Replay362 is running; this is not yet a spiral pass.
+Fresh Episode2 ordinary admission is running361 on305. The306 build incorporates
+the added regression fixture with unchanged runtime movement logic.
+
+Replay362 reaches the second revolution, then the carrier cuts across its
+interior and falls back to the staff platform; it remains a failure. Native307
+activates the motor-qualified recorded corridor before attempting an unsupported
+raised approach, rather than waiting for a no-route report after falling.
+`standable` now uses the companion's actual motion mask without dynamic bodies;
+its old hardcoded player mask contradicted302's corrected motor clips. All307,
+Debug186 and ownership96 pass. Frozen SHA256:
+`1735f0e4d463aa55d555f56dc97b827820c82551d5d9e22cedee492ff6e5aaa1`.
+
+Replay364 exposes another rally mismatch: the carrier is already supported on
+spiral37,17 units below Hiro, while the initial gap assertion only allows16.
+That assertion now allows a24-unit step and explicitly requires actual support
+on spiral37, preventing admission from the floor below or staff platform.
+Replay365 is running. No spiral completion claim.
+
+Fresh E2 run361 traverses Lemnos, Catacombs and Athens into Temple B with two
+ordinary combat deaths. It fails the precise lower-door stance because spider100
+holds the player51 units above the target; the intended spider fight had been
+placed after that stance. The fight now precedes descent. Continuation363 passes
+the stance, A rune, pressure plate, S temple and lower temple with zero deaths so
+far. Current fresh complete Episode2 remains open.
+
+Private play-install308 succeeds with native307 and HD textures, skeletal neural
+characters and remaster materials retained. The preserved installation and owner
+saves are unchanged. This is preparation, not normal-client scenario acceptance.
+
+Continuation363 passes the Temple's rune/companion branches into E2m4e without
+a death, then fails during the soul approach. The local E2 `take` helper had
+ignored `areas=true`, retaining the supplied ground-node/control planner and
+operating remote door717 instead of using the area route. It now implements
+the requested area approach. Replay366 passes the soul, Cerberus and Medusa
+Lair A/B/C without deaths, then cuts a stair corner in D. The D crossing now
+uses8-unit supported turn arrivals instead of28;367 passes D into the boss,
+then times out fighting Medusa from the upper rim. The same actual arrival
+save finishes Medusa, the counter and E3 arrival in isolated368, zero deaths;
+this does not establish a reliable connected encounter. Alternate ordinary
+Trident encounter371 is running;370 is only a duplicate-level harness failure.
+
+Spiral365 still falls off its second turn. The trace shows residual velocity
+after movement input becomes zero: the companion guard did not run in that
+grounded coasting state. Native309 includes it and requires a stopped command's
+predicted landing to actually slow down, rather than admitting four fleeting
+contacts. Its coasting-edge regression passes in Debug187; All309 passes,
+SHA256 `47e7d706f14992b4e7de95ca1272eb318df474a1e5ceecd5a9c24ac8fbcd0f22`.
+Replay369 gets farther, but still falls near the top. A harmless floor far below
+must not count as a successful follower landing. Native310/311 adds an explicit
+drop allowance to the shared guard; companions allow the requested descent plus
+one step, otherwise32 units. Other guard callers retain their previous allowance.
+Debug188 catches a fixture missing its point-contents callback; corrected311
+supplies a dry callback. All310 was deliberately cancelled before source edits;
+All311 and Debug189 are running. No acceptance claimed for310/311 yet.
+
+Trident encounter371 defeats Medusa without a death using the real incoming
+ammunition. The canonical route now prefers its short bursts between gaze
+warnings, retaining the Eye fallback when no Trident ammunition remains.
+Connected372 repeats Lair D through Medusa, the ten awakened-monster counter,
+timestream and E3 arrival:101/106 actions,417 simulated seconds, zero deaths.
+No weapon damage, gaze rules, ammunition grants or encounter limits are changed.
+This supersedes367's failed connected encounter while preserving its evidence.
+The311 Debug189 regressions now pass; the integrated build remains running.
+
+All311 passes; SHA256
+`c0a8dcbb4530dfd2d2243659c408f8675bbf6f6eeecfb2b8b07b7417b0f49203`.
+Ownership97 retains R1–R11 zero. Initial373 no longer falls at its failed rally:
+it holds correct spiral support97 units from Hiro, just outside the96-unit
+owner assertion. The spiral rally restores the ordinary128-unit follow range
+while explicitly requiring spiral37 support and32-unit height separation.
+Actual375 climbs the entire spiral with the carrier and completes the upper
+walkways, no companion loss; its subsequent player deaths are at the northern
+stair ambush. Native311 does not teleport or grant progress.
+
+The stage had killed worm108 while leaving worm103 and shooter107 alive, then
+disabled combat for the narrow approach. It now clears107/103 on the broad
+landing first. Replay376 passes that initial crossing and is still running.
+Fresh Episode1 New Game→Greece run374 is active on311. It has two ordinary early
+combat recoveries in E1m1b and has reached the sewer; this is not a zero-death
+or completed fresh pass. The prior358 final-labs→Lemnos acceptance is retained.
+
+Later results supersede those running statuses. Fresh374 reaches16 distinct
+Episode1 maps, then fails the final Vault A companion regroup: Mikiko avoids
+ceiling Lasergat13 while armed only for close combat. Its two early combat
+deaths remain recorded. Direct turret hunting381 hits the wall; attempted
+approach384 also fails. Read-only floor/shot survey385 identifies the west
+floor lane at x0 and a clear turret shot from y-224. The route now uses that
+lane before regrouping; continuation387 is running from the actual stage16 save.
+
+Dungeon376 passes the northern crossing, Tower, Wyndrax and Crypt arrival,
+then fails Crypt. Staff378 and Ballista379 ambush trials fail. Trial382 instead
+collects actual nearby medicine82/16 before clearing the two close enemies
+with Silverclaw and the lower threats with Bolter:39/39 actions, zero deaths.
+The canonical stair stage now uses that observed route. Complete fresh E3
+acceptance remains open.
+
+Crypt380 records owner Wisp19 repeatedly zapping the carrier for two damage,
+provoking anger100. Gold review establishes that automatic seeking must exclude
+story companions. Native316 adds class-supplied role policy through the shared
+target mechanism; party classification precedes generic Actor classification.
+Native317 additionally preserves fading Zeus-bolt presentation. All316/317 and
+Debug194/195 pass. Earlier313/314/315 compile/fixture failures and deliberately
+cancelled builds are retained as failures/cancellations, not acceptance.
+
+Native312 permits ordinary supported dismount from a living body when the
+requested floor is immediately below; All312/Debug190 and ownership98 pass.
+Crypt380/383 progress beyond the initial head-standing stall but fail the jump:
+the carrier's selected Come spot occupies its run-up. Removing Follow alone
+does not clear that spot. Read-only bank survey386 confirms the southern
+waiting floor; the route now uses an ordinary aimed Move order before jumping.
+Continuation388 is running. No positions, inventory, health or anger are granted.
+
+Continuation387 completes Vault A/B, the Episode1 ending, Greece admission and
+Lemnos A into B:267/269 actions, zero deaths,502 simulated seconds. The actual
+west-lane repair therefore passes its affected late-E1 scope. Fresh374 remains
+a retained incomplete run rather than being relabelled a fresh whole-E1 pass.
+
+Continuation388 completes both Crypt pillars, Nharre, the Throne course,
+Garroth, timestream34 and the Episode4 arrival cinematic:263/265 actions,
+zero deaths,1180 simulated seconds. Carrier health and ordinary inventory are
+preserved. Native317 SHA256 is
+`f1dcf19e3d6a536195f757c0248ba436e0dcfebce3fe9b2b7117fa5cbf8b7712`;
+ownership99 retains R1–R11 zero. Fresh current Episode2 run389 and Episode3
+run390 are now running. Broad120 has passed414 Python tests and reported
+engine checks; its native ReleaseSafe aggregate is still compiling.
+
+Broad120 finishes successfully, including414 Python tests, the native
+ReleaseSafe aggregate and engine checks. Private play-install318 also succeeds
+at generation `c73615cbeab2f02532b11497963e50aa3d261859c94707e2cdce9bcca0383169`,
+retaining HD textures, skeletal neural characters and remaster materials.
+The preserved installation and owner saves remain unchanged.
+
+Fresh E3 run390 passes the village opening and fountain but stops at the early
+crypt's second coffin leap: the actual grounded arrival(-232,-894,-712) is
+just outside its eight-unit goal radius around(-224,-896,-712). It has no
+deaths. The authored supported-bank arrival now admits a twelve-unit margin;
+its replay remains pending. Fresh Episode4 run391 is now running independently.
+These open gates are not hidden by the successful late-campaign continuations.
+
+Session recovery on10 November checks the completed jobs before replaying.
+Fresh Episode4 run391 completed all authored maps, ending and credits:
+1835/1838 actions,3756 simulated seconds,823.4 wall seconds. Its two ordinary
+combat recoveries are retained (seal commando and Kage); no companion loss.
+This establishes the recorded headless fresh-E4 scope, not rendered/audio parity.
+Continuation392 passed the early coffin landing and progressed to Dungeon A,
+then failed the carrier rally after the second gap, zero deaths. Fresh complete
+E3 remains open. Fresh E2 run389 failed the Temple B pressure plate with one
+earlier combat death; Mikiko accepted the physical duty but looped on its stairs.
+
+Read-only restored plate probe393 repeats the stair loop. Its trace shows a
+motor-qualified16-unit descending stride vetoed by the landing guard: the
+forecast held one frame's command across additional treads beyond its drop
+budget. Candidate319 forecasts that grounded stride followed by braking;
+airborne steering and jumping keep their touchdown rules. A descending-stair
+regression also rejects excessive incoming momentum. The initial319 compile
+failed after an edit matched the jump forecast rather than the landing forecast;
+that misplaced edit was removed. Corrected Debug native checks pass and
+ownership retains R1–R11 zero. ReleaseSafe/live acceptance remains pending.
+The Dungeon route also requires actual arrival on the intermediate pillar;
+its old proximity envelope admitted the near bank one step below the pillar.
+Runs394/395 staged the previous module while319 was still building and cannot
+establish acceptance of319;395 additionally exposes a restored-stage approach
+stall before reaching the changed rally. Preserve these failed probes.
+
+Corrected ReleaseSafe319 completes. Actual restored probe396 physically opens
+the Temple plate/door with Mikiko's automatic duty, no extra orders or deaths:
+3/3 actions,24 simulated seconds. Mikiko leaves the stalled upper stairs,
+reaches the plate at16.3 seconds and holds it. Continuation397 from the prior
+Dungeon stage crosses both gaps with the carrier and reaches its exit gates;
+later campaign outcome remains pending. Fresh E2/E3 runs398/399 are running
+on319. Their outcomes, not the initial probe, decide connected acceptance.
+
+Continuation397 passes the repaired Dungeon A carrier gaps, then dies pursuing
+worm146 over Dungeon B's central shaft. Holding that fight in400 avoids the
+death but exposes another carrier stair loop. Fresh E3 run399 reaches Dungeon
+A without deaths, then fails gate211: cell door299 pushes the waiting carrier
+off the narrow bank after he had successfully crossed the gaps. The waiting
+bank moves farther inside, before opening that door. These remain failures,
+not complete-E3 acceptance. Probes402/404/406 expose both stair routing and
+Come's offset settling envelope;407/408 retain a vertical-look timeout;
+410/411 expose aimed Move destinations on the wrong/lower floor. No positions
+or progression are granted. The route now samples actual floor on the requested
+tread before aiming its ordinary Move order. These route changes remain unverified.
+
+Fresh E2 run398 exhausts its four map recoveries at the Catacombs A entrance
+pack with no Venomous ammunition. The sword first answers close attackers
+instead of waiting for a returning discus during the griffon fight. Probe403
+passes that encounter, black rocks and the submerged passage without a death,
+then fails collecting optional upper-ledge medicine53 from the lower alcove.
+An area-only approach409 fails too. The route now admits that optional detour
+only if an actual area route exists. Continuation413 bypasses the unreachable
+detour but fails the crouched Catacombs exit; floor survey414 confirms the
+ordinary supported approach is disconnected. Exit repair remains open.
+
+Fresh E1 run401 reaches the upper sewer, then times out operating button48
+while reacting to a one-health protopod. That timed control now explicitly
+suppresses fighting. Continuation412 passes the button, timed doors and both
+sewer maps into Solitary B; later outcome remains pending. Earlier isolated
+action failures in these runs remain in their result streams.
+
+Candidate320 corrects aimed Move floor contact to a supported body origin and
+gives Move the same motor-qualified corridor recovery as Follow/Come. Its first
+ReleaseSafe build is blocked by sandbox shared-cache writes (ReadOnlyFileSystem),
+not a source compile diagnostic; the escalated rerun is pending. Ownership
+still records zero R1–R11 violations. No320 live acceptance is claimed yet.
+
+Further restored probes retain these outcomes:320 builds successfully;
+417/418 still fail the Dungeon stair/pillar rallies. Move's supported-body
+fallback is corrected in321;424/425 remain failures. Move had also treated a
+brush model transform as the indicated destination, giving a floor order the
+wrong height. Candidate322 uses the actual surface contact for non-travellers,
+while living travellers retain body-origin destinations. Native321 and322
+integrated ReleaseSafe builds and consolidated checks pass with
+`-Dpython=/usr/bin/python3`, including414 Python tests. Broad121's earlier
+ten missing-Pillow imports are environment failures, not passing tests; its
+752 native/engine checks had passed. No duplicate suite is required absent
+another source change. Ownership still has zero violations.
+
+E1 lift trials419/420/423 fail boarding/holding. Private422 succeeds, while
+exact restored427 captures Mikiko standing on the raised lift. Her retreat
+from death sphere109 overrides the waiting stance and holds the platform up.
+The route now clears that real threat before boarding. Continuation430 passes
+all remaining Laboratory A/B, the ending, Greece and Lemnos A into B:
+485/494 actions,959 simulated seconds,214.2 wall seconds, zero deaths and no
+companion loss. Retain its optional action failures. Fresh current322 run437
+is running from intro;430 is not a fresh whole-E1 pass.
+
+E2 probes409/413 show that changing/skipping medicine53's approach selected
+the lower canyon route, below its actual exit.414/415 are read-only floor
+surveys, not traversal.416/428 follow the correct upper bank but die in later
+combat from low incoming health.421/426 expose health detours leaving the rim.
+The route keeps its known upper corridor, holds the pool spider fight and
+returns directly to the rim.433's attempted deep-pool medicine approach times
+out and is removed; no acceptance is claimed for it. Current434 instead takes
+the existing approach supplies before drawing the entrance pack onto the rocks.
+Its complete outcome remains pending.
+
+Dungeon B trial429's live floor search reaches the upper revolution before
+a too-tight eight-unit vertical check rejects its sloping tread.432 admits
+one-step height variation and reaches the upper cells; the carrier still loops
+below, so its rally is a failure. The route uses the collision-qualified floor
+chain rather than coarse nodes from another revolution. Pillar431 still fails;
+435/436 replay both sections on322 with actual brush-contact Move destinations.
+All affected E2/E3 fresh and complete-campaign gates remain open.
+
+Sequence587 continuation, native323–329, scenarios438–463:
+
+- E2 canyon443 passes the dry upper shelf fight with the sword, then
+  Catacombs A/B/C, Athens A/B/C and the Temple rune circuit with zero deaths
+  until the narrow I gallery. Trials451 and461 pass that gallery on different
+  approaches;458 fails because skeleton614 blocks the route before the clear
+  was scheduled. The clear now runs on the earlier flat landing.461 reaches
+  E2m4e but dies pursuing the remotely selected Satyr through the upper hall.
+  Trial463's held area clear instead times out on an inaccessible target.
+  The current route uses stocked Trident ammunition during the actual hall
+  approach and clears visible nearby guards before operating/drinking.
+  Its corrected hall replay remains unrun.
+- E1 fresh437 and continuation444 retain their early Marsh deaths. The
+  bounded north-bank engagement removes the off-cliff pursuit.452 passes
+  Marsh, Factory and Sewers with zero deaths, then fails at Solitary's control
+  approach. The reported control100663746 is unbreakable scenery450, not a
+  usable button. Native329 rejects a bumped solid as a control unless it has
+  an actual use hook or authored shootable health. This fix is implemented,
+  awaiting its affected replay. The pool shield recovery remains a normal
+  pickup of the boss's dropped item; no health or inventory is granted.
+- E4 fresh447 reaches Hideout with two deaths, including a companion loss;
+  it fails the museum return's sixty-second movement budget. Continuation455
+  from its real Hideout stage4 save passes the remaining Hideout, training,
+  Kage, final Mikiko, ending and credits:406/407 actions,1725 simulated seconds,
+  170.3 wall seconds, zero deaths. The longer budget permits its progressing
+  control route. This continuation is not a fresh whole-E4 pass.
+- E3 trials438–460 retain both Dungeon carrier failures. Native323–327 adds
+  recent-trail ranking, qualified local detours, actual nearby motor arrivals
+  and grounded leg completion; none is campaign acceptance.459 still loops
+  below the Dungeon B staircase;460 cannot bring the carrier across Dungeon A's
+  first pillar. Diagnostic462 mistakenly staged the preceding module before
+  its instrumentation build finished, so it contains no new leg trace and
+  proves nothing about native328. The obsolete328 build was terminated to
+  avoid overwriting329.329 preserves the motor-qualified joining stance
+  instead of replacing it with the leader's narrower embedded centre.
+- Debug200 and201 native runtime checks pass. Earlier broad122/123 remain
+  recorded results for their source revisions; later navigation changes still
+  require affected scenario acceptance and a final applicable aggregate check.
+  No current fresh four-episode completion is claimed.
+
+Native329 is confirmed built before scenarios465–468. Solitary466 passes the
+previous stuck control, both Solitary maps and Crematorium A into B without
+deaths; its remaining continuation is pending. Dungeon465 still fails. Its new
+leg trace shows a second error: a sixteen-unit horizontal arrival disk with a
+twenty-four-unit height tolerance can return the unchanged higher tread as a
+qualified lower foothold. The new `walkFootingDrop` uses an eight-unit height
+tolerance and actual support, while ordinary navigation retains its existing
+arrival disk. Native330 fails compilation after two private forecast callers
+were missed in the signature update;331 includes those callers. Debug202 fails
+on the new test fixture's missing classname,203 on the omitted callers, and204
+on a boundary-position staircase fixture. The fixture now requests the interior
+of the lower tread. Debug205 passes, including the descending-tread regression
+and rejection of a solid without a use hook as its own control.
+
+Temple467 still dies before the second fountain. The real arrival save shows
+the first fountain10 has its full100-point reserve. Route468 collects that
+normal resupply, then passes the upper hall, second fountain, rune sockets,
+gate wheel and Cerberus into the Medusa-lair stage with zero deaths. Its ending
+and complete current-candidate fresh E2 replay remain pending. Ownership update
+remains R1–R11 zero; source formatting check passes. All failed reports remain
+under `zig-out/reports/episode34-progression-587/`.
+
+Native331–334, scenarios469–489:
+
+- Poison-bank471 passes Medusa B/C/D/E, timestream23 and Episode3 arrival:
+  244/248 actions,593 simulated seconds,74.0 wall seconds, zero deaths.468's
+  earlier failure was the antidote11 approach: surviving bank guards forced
+  a dodge into the pool, then drowning during combat. The route now clears
+  visible bank guards from bounded dry positions before its committed dive.
+- Fresh E2 run473 passes Lemnos A/B/C into Canyon, then exhausts its unchanged
+  four-recovery allowance at the upper shelf. The real fresh state retains
+  skeletons81/143 and both griffons96/103. Earlier443's passing continuation
+  did not cover this full group.480/488's attempted held clears also die;
+  the ranged spider clear can occupy the view while griffons attack nearby.
+  Current489 tests normal retreat/return movement along the already traversed
+  shelf corridor. Full fresh E2 acceptance remains failed, not passed.
+- Solitary466 passes nine maps from Solitary A through Crematorium, Processing
+  and Vault A into Vault B with zero deaths, then fails the hatch dismount.
+  Held crouch issues a downward command while still on the ladder.478 removes
+  it and passes Vault B/C into Laboratory A with zero deaths, then fails the
+  cage's timed doors after an optional12-second ammunition pickup exhausts
+  their10-second opening.487 bounds/skips that resupply when the carried
+  Shotcycler has ammunition and crosses without combat: Laboratory A/B, E1
+  ending, Greece/Lemnos A into B all pass,474/483 actions,899 simulated seconds,
+  172.0 wall seconds, zero deaths. Fresh complete current E1 remains open.
+- Fresh E4 run472 passes Alcatraz A/B and reaches Beneath the Rock's long
+  ladder with zero deaths, then cannot take off.474/475/479/481 retain failed
+  launch/approach variants. Read-only477/483 measure the actual standing and
+  crouched clearance; they are geometry evidence, not traversal.482 records
+  every actual50ms command. Western alignment on the barrel before the jump
+  allows485 to pass that ladder and finish Beneath the Rock, return through
+  Alcatraz and continue through Gharroth into Mishima's Lab. Its full result is
+  pending;472 remains a failed fresh run.
+- Dungeon469/476/484 still fail the carrier staircase. Pillar470 passes the
+  first rally but fails the second bank.332 considers crouched floor clearance;
+  333 executes caller-qualified ground legs with the same feedback stroke as
+  the motor forecast. Neither establishes acceptance.486 preserves the failed
+  carrier state in `carrier-rally-failure.sav`: the carrier stands on the lower
+  tread and no nearby ordinary body explains the mismatch.334 adds a developer
+  comparison of actual motion against the same command without body contents.
+  Its build/replay is pending. The saved pose/motor and first useful traces
+  remain available; no position, health or campaign inventory is granted.
+- Native331/332/333 ReleaseSafe builds and Debug205/206/207 checks pass.
+  Ownership remains R1–R11 zero. Final broad checks and full current-candidate
+  campaign/rendered acceptance remain open.
+
+Native334–337, scenarios490–499:
+
+- Fresh E1 run492 fails in Marsh after its third combat death exceeds the
+  unchanged two-recovery allowance. Keep this failed fresh result alongside
+  the passing chapter continuations; no current whole-E1 pass is claimed.
+- Canyon489's retreat lane clears the ground pack and one griffon while
+  maintaining36 health, but the subsequent stationary fight loses to the last
+  griffon.490's early sword switch and493's close-range flare choice also fail.
+  494 preserves `canyon-shelf-fight.sav`: the ground pack is dead; the last
+  griffon remains alive. The incoming98-health state had previously consumed
+  medicine53 to heal only two points.495 reserves that real pickup until after
+  the pack, then passes Canyon A/B/C, Athens A/B/C and Temple A into B without
+  deaths. It fails at Temple B's spider108: the player stands on its body and
+  the dismount planner cannot find a landing.337 adds32/48-unit candidates
+  before the existing64/96/128/160 search; every candidate still checks actual
+  body clearance, floor and liquid safety. Its affected replay is pending.
+- E4 continuation485 passes Beneath the Rock, Alcatraz return, Gharroth, all
+  Mishima/Hideout/training progression into the final submarine/Kage arena:
+  1470/1472 actions,3422 simulated seconds,725.0 wall seconds, then one Kage
+  combat death violates its zero-death repair policy.497 uses the ordinary
+  episode-pass allowance from the real final-arena stage2 save and passes
+  Kage, final Mikiko, ending and credits without any recovery:11/12 actions,
+  858 simulated seconds,62.6 wall seconds, zero deaths. Fresh335 run498 has
+  passed the repaired ladder on its first attempt and reached Gharroth without
+  deaths; its complete outcome remains pending.
+- Dungeon491 confirms that actual motion and the same command simulated
+  without body contents agree, ruling out a nearby body as the mismatch.
+  335 admits a caller-supplied crouched stance in the local floor search and
+  points Move toward the staircase approach rather than farther into the room.
+  Dungeon496 still fails.336 tries the most advanced nearby trail joins and
+  their short detours before accepting an earlier reachable tread that leads
+  back down.499 replays that integrated candidate. Dungeon/pillar and fresh E3
+  gates remain failed/open; no intermediate motor change is acceptance.
+- ReleaseSafe334/335/336 builds and Debug208/210/211 pass. Debug209 failed
+  because the new collision fixture lacked point-contents queries;210 supplies
+  the fixture's dry contents and passes its lower-stance contract.337 build,
+  Debug212 and the remaining scenario replays are pending. Formatting and
+  ownership remain clean; final broad and full rendered/audio gates stay open.
+
+Sequence587 fresh E4 acceptance and connected repairs, scenarios500–511:
+
+Fresh335 run498 **passes** the complete Episode4 campaign, all revisits, ending
+and credits:1820/1823 actions,3170 reported simulated seconds,894.5 wall seconds.
+Two normal combat checkpoint recoveries remain visible (Hideout labmonkey and
+final-training rocket soldier); there are no companion losses. The unmodified
+episode-pass allowance is4 deaths per map/12 total. Retain the three optional
+action failures and all checkpoint segments. This is the recorded native335
+headless progression result, not artistic/rendered/audio parity or blanket
+acceptance of subsequent runtime edits.
+
+Native338 lets a caller declare a supported arrival radius in local floor
+recovery. The companion supplies48 units; ordinary callers retain12. Every
+terminal connection still sweeps the real hull and finds the requested floor
+within8 vertical units, then the live motor qualifies its execution. Dungeon502
+passes the previously failing full carrier spiral and subsequent escort into
+the next Purifier stage. It dies in a separate dwarf fight from55 incoming
+health. Pillar503 still fails its second-bank rally. Debug213 and the integrated
+ReleaseSafe338 build pass, including lower-stance and wider-arrival fixtures.
+
+The Temple B dismount replay500 passes the A rune and pressure plate but later
+finds bars124 closed. Doorway variants501 and read-only505/506 establish that
+the intended route is through those bars, not around the temple wall.504's
+first diagnostic fails formatting absent normal-X/Y fields;505 removes those
+fields. Target traces show the plate timeline firing again after its monitor
+view: the companion's old command timestamp reached steering forecasts before
+being clamped for the actual motor. Native339 clamps it before forecasting.
+508 records one plate timeline activation, then passes the exterior dial,
+releases Mikiko normally and continues through S temple into C and D. It later
+dies on a burning fixture during the lower dial approach;341 extends bounded
+dismount recovery to a static solid above the requested route floor, excluding
+moving platforms. Its affected replay is pending. The failed explicit doorway
+detour is removed; the ordinary dial route remains.
+
+Dungeon507's attempted Ballista opening salvo fails and is removed.509 uses
+the actually unused corridor medicines63/64 via ordinary movement, then Bolter
+fire and the preserved barred-cell lane. It passes the Purifier cell, both blade
+staircase sections and Dungeon B into C, including Stavros and its spiral.
+Its remaining outcome is pending. The real original stage3 save retains both
+medicines; no item, health, position or objective state is granted.
+
+Native340 prioritizes a recent, clear gap join before a reachable older bank,
+while retaining real jump qualification before departure.510 replays Dungeon A
+and511 the connected Dungeon B repair. ReleaseSafe339/340 and Debug214/215 pass.
+Native341/Debug216 are pending; final aggregate checks remain open. Fresh334
+E1 run492 and fresh331 E2 run473 remain failures alongside their labelled
+passing continuations. Ownership remains R1–R11 zero.
+
+Sequence587 resumed verification, scenarios512–517:
+
+- Native341 ReleaseSafe and Debug216 pass. Crypt513 passes both pillar
+  crossings, Nharre, Purifier, Garroth and timestream34 through the completed
+  E4 arrival cinematic:256/258 actions,1138 simulated seconds,165.3 wall
+  seconds, zero deaths. This is a saved Crypt-stage2 continuation, not a fresh
+  whole-E3 result.
+- Pillar510 passes both Dungeon A companion rallies and its exit, then
+  Dungeon B into C without deaths. It later fails a navigation route at
+  -801,1069,248 in Dungeon C; retain that separate failure. Dungeon511 passes
+  the companion spiral and Purifier cell, then dies to dwarf98 while using
+  the medicine detour's lever. The route now clears that released dwarf
+  before seeking medicine.515 never admits an engine: its requested stage4
+  save does not exist. Replay must use the actual stage3 save.
+- Lower-dial512 passes the previously fatal burning fixture, mountain temple
+  and C return. In the I-temple approach it jumps from spider657 and falls
+  below its upper route. Native342 removes the extra dismount jump: the
+  existing supportedDrop check already proves a walking departure. This
+  repair is implemented, awaiting affected replay.
+- Fresh E3 run514 reaches Village B without deaths, then times out holding
+  a firing stand against invisible guard24.516 permits ordinary pursuit
+  when the guard is hidden and passes both guards, then fails diving from
+  the fountain rim. Read-only517 finds the full hull solid at1408,300,-248
+  but clear at1376,300; the dive now enters that inner water point. No
+  diagnostic changes actor or objective state. Its traversal is unverified.
+
+The resumed candidate retains engine194 and isolated modules/assets/saves;
+no owner installation or saves are overwritten. Native342 is building for
+the connected dismount, Village and Dungeon repairs. Final broad checks and
+fresh current-candidate E1/E2/E3 and rendered/audio acceptance remain open.
+
+Native342 integrated ReleaseSafe build passes. Affected replays518–533:
+
+- Village518 passes the corrected fountain dive/key, all Village revisits,
+  Passage and both Dungeon A rallies into Dungeon B, zero deaths across
+  those boundaries. It dies at an upper prison control after losing health
+  to lycanthir147 on the spiral.531 clears that pursuer, but combat advances
+  Hiro a revolution above the precomputed next tread; walking back toward
+  the obsolete tread falls into the shaft.533 rebuilds the supported route
+  from the actual post-combat floor. Guards80/508 are cleared before lever45.
+  Neither failed run establishes fresh E3 acceptance.
+- Temple519 still falls from the upper shelf: the trace shows an ordinary
+  combat sidestep, not a dismount jump.521 follows each supplied bend with
+  combat disabled and passes the I rune into Aegis Hall. It then stalls using
+  fountain10;526's guard clearance does not fix it. The fountain is one storey
+  below the incoming hall, behind its unopened gate.529 opens the upper dial
+  first and passes Aegis, Cerberus, Medusa A–E, timestream23 and complete E3
+  arrival:588/594 actions,1070 simulated seconds,133.9 wall seconds, zero
+  deaths. Fresh whole-E2 candidate342 run532 is now replaying.
+- Dungeon520 still dies against the released throwers.522 uses the remaining
+  real corridor medicine before releasing the cell, survives longer, but dies
+  during another medicine trip.524's short-range clear finds no enemy: both
+  throwers are around the northern bend, outside the fixed firing arena.
+  Removing that held arena in527 clears both and passes the rest of Dungeon B
+  into C. It later dies in a separate upper landing ambush in C. These scoped
+  failures remain, including the unused/absent pickup facts and actual damage.
+- Read-only523 finds the supported upper staircase in Dungeon C.525 follows
+  it and reaches the upper rooms, then dies during a held Stavros duel.528
+  permits defensive fire on the staircase and ordinary Bolter pursuit in the
+  upper rooms: staircase, medicine and all three guards pass without deaths.
+  Its following rally pulls the carrier toward the timed door's western side.
+ 530 aims the order onto actual eastern floor and passes the timed passage
+  into Castle A/B and Crypt; its remaining outcome is pending.
+- Formatting passes. Ownership update retains R1–R11 zero. No broad suite is
+  repeated for individual route tweaks; consolidated verification stays open.
+
+Resumed checkpoints and consolidated checks534–542:
+
+- Native342 broad124 (`zig build test -Dpython=/usr/bin/python3 -j4`)
+  completes with exit0:414 Python tests, native Zig/component checks and asset
+  regressions pass. Formatting and R1–R11 zero remain valid. No duplicate
+  make/test gate is run for the Lua-only repairs below.
+- Dungeon530 passes C's eastern timed-door rally, Castle A/B, Crypt's pillars
+  and Nharre into Garroth. It dies in the boss fight:633/634 actions,1237
+  simulated seconds,169.5 wall seconds. Retain the separate341/513 saved
+  Crypt-through-E4 pass;530 is not a zero-death ending pass.
+- Fresh342 E2 run532 passes Lemnos A/B, then stalls at the coin doorway in C,
+  zero deaths.534 retains its movement trace.536 uses ordinary shots to break
+  plank172 and traces the remaining obstruction: separately authored lower
+  plank173 still spans both standing and crouched hulls.537 destroys both
+  planks, takes the coin, passes the statue ambush and ferry into Canyon A.
+  It dies during the opening pickup fight under the zero-death repair policy.
+- Actual incoming Canyon continuation538 uses the unchanged episode-pass
+  allowance. It passes Canyon A with one normal combat checkpoint recovery,
+  then reaches B's broken bridge. The first crossing dies and the recovered
+  attempt stalls below the deck:283/286 actions, two deaths total.540 records
+  the exact jump landing at798,2767,408, short of the far bank.542 moves the
+  takeoff along the surviving railing and requires the actual far bank at
+ 816,2840,408; its replay is pending. Fresh E2 remains failed.
+- Fresh342 E3 run535 passes Village/revisits, Passage and Dungeon A's early
+  carrying stages without deaths, then fails its first gap rally:611/612
+  actions,1454 simulated seconds,183.4 wall seconds. The actual failed
+  carrier pose is246,632,-882, on world support, not an actor's head.539
+  reloads its real stage4 save, passes both carrier crossings, but the carrier
+  later pushes the waiting hero from the second landing.541 uses an aimed
+  floor Move for the first rally and walks Hiro inside the second bank before
+  awaiting the carrier. This is implemented, not fresh E3 acceptance.
+- Dungeon533 passes the recomputed spiral after lycanthir147, the upper
+  guards and Purifier cell, then dies to the northern thrower. Its combat
+  outcome is retained separately from the supported stair repair. Repairs
+  still stop at the first death; normal episode passes retain their original
+  bounded recovery counts. No health, inventory or position is granted.
+
+Bridge and pillar geometry follow-up, scenarios543–550:
+
+- Bridge542 lands safely beyond its overly narrow point tolerance at
+ 816,2876,408.544 accepts the far shoulder's supported arrival disk, retains
+  the tighter16-unit height requirement, and walks onward rather than back
+  toward the gap. It passes Canyon B/C, Athens A/B/C, Temple A/B, the Aegis
+  visit, pressure plate/monitor release and mountain/C return into I-temple
+  approach:1507/1510 actions,1827 simulated seconds,264.9 wall seconds, then
+  one centurion combat death. Thirteen map visits pass before that death;
+  this is a saved bridge-entry continuation, not fresh whole-E2 acceptance.
+- Pillar543's proposed staging point226,464 lies outside the actual floor
+  and falls; it is removed. Read-only545/546 map the visible narrow rubble
+  surface: the helper's old minimum40-unit ring cannot see a suitable order
+  point.547 adds closer sampling rings and passes the first carrier jump.
+  The second carrier stops at334 while Hiro stands at303; the no-body motor
+  reaches farther, identifying the owner's blocking body.548 moves Hiro into
+  the room at192, but the previously ignored thrower61 kills him while the
+  route has combat disabled.550 clears61 with ordinary Bolter fire and
+  reaches a supported carrier pose138,277,-936; its predicate still demands
+  x within48 although the normal Move order has finished on safe room floor.
+  The bank-side and floor conditions remain; the x envelope now admits96.
+- Shelf549 still dies while combat is disabled between script callbacks.
+  Skeleton82 and spider657 arrive during a long leg before the next callback
+  can clear them; centurion579 follows. Movement accepts an arena in the
+  script but its evaluation did not forward that field to the pilot.
+  Native343 forwards supplied arenas in the initial intent; the shelf now
+  keeps defensive fire inside a narrow rectangle along each supplied bend.
+  This runtime change is implemented and building, awaiting actual replay.
+  Broad124 remains the recorded native342 result, not native343 acceptance.
+
+Native343 acceptance batch, scenarios551–558:
+
+- Native343 integrated ReleaseSafe build and broad125 pass with exit0;
+ 414 Python tests and the native/component checks pass. Formatting and
+  ownership retain R1–R11 zero. The only runtime edit after342 forwards
+  explicitly supplied arena bounds to movement's pilot intent.
+- Shelf552 passes its exact failed I-temple approach with defensive fire
+  bounded to the outgoing strips, then Aegis, Cerberus, all Medusa maps,
+  timestream23 and complete E3 arrival:717/726 actions,1226 simulated seconds,
+  163.6 wall seconds, zero deaths. Preserve the optional statue-shot failures.
+- Private ordinary-order553 restores535's exact failed carrier pose, points
+  Move at actual visible pillar floor242,520,-936 and reaches supported first
+  pillar floor in five simulated seconds:1/1 new actions,2.2 wall seconds,
+  zero deaths. It grants no position or objective state. Full-stage551 also
+  passes both carrier rallies, the Dungeon A exit and Dungeon B's spiral;
+  a separately surfacing Buboid497 kills Hiro during the later gate hold:
+ 149/149 actions,319 simulated seconds,63.0 wall seconds, one death.
+- The prison gate's after-crossing hook now clears497 before the timed
+  lever wait. Normal-pass554 passes that encounter into the Purifier cell;
+  its later recoveries expose an optional medicine trip after both corridor
+  medicines have already been consumed. The trip cannot heal and enters an
+  extra lycanthir ambush. Refill and retreat now check actual pickup visibility
+  and wanted state before routing there.558 replays the actual stage3 save
+  with the original episode-pass recovery limits; it is pending.
+- Consolidated fresh343 runs555(E2),556(E3),557(E4) started after broad125.
+  Each records frozen inputs and retains the ordinary episode-pass allowance.
+  They are pending; previous native335 fresh E4 and the labelled saved ending
+  continuations retain their exact scope. No current whole-E2/E3 pass is yet
+  claimed, and rendered/audio/release acceptance remains open.
+
+Further fresh failures and evidence correction, scenarios559–573:
+
+- Fresh343 run555 passes the repaired Lemnos coin doorway, then times out
+  trying to sword griffon103 from a held shelf arena. Actual shelf save and
+  read-only559 show it alive600 units away behind rock. Cleanup now targets
+  visible threats and uses ranged fire when beyond melee reach; it does not
+  require hunting every remote roaming enemy before the exit.
+- Continuation560 passes Canyon B/C, Athens and all Temple revisits into all
+  Medusa maps with two ordinary combat checkpoint recoveries. It ultimately
+  fails the ten-monster ending counter:2557/2636 actions,1923 simulated
+  seconds,489.6 wall seconds. The final thief is embedded in solid brush107
+  (collision slot67) at2432,64,-1992. This is an actual failed ending counter,
+  not an engine interruption; the final server log retains its expectation.
+- Dungeon554 and558 exhaust the original four-per-map recovery allowance
+  at the Purifier/thrower fights. Skipping unavailable medicine trips alone
+  does not pass that encounter. Private open-cell Ballista experiment561
+  fails setup because its private route tree lacks an included canonical
+  file;562 removes that include, runs ordinary inputs and dies to the
+  released Lycanthir. It is not incorporated into the canonical route.
+- Fresh556 passes Village and Passage but fails a Dungeon A bank rally;
+  fresh557 passes Alcatraz A/B into Beneath the Rock and fails a return node
+  before its first broken ladder. Neither establishes current fresh E3/E4
+  acceptance. Preserve native335 fresh E4 as its historical passing candidate.
+- **Correction to553:** reviewing the trace shows its weak predicate accepted
+  another ledge around405,560,-888. It omitted the full rally's horizontal
+  radius. Revoke the claimed first-pillar pass;553 is insufficient evidence.
+  The private predicate now requires that radius. Earlier full-stage551's
+  actual two-gap/exit pass remains a separate result; fresh563/565 still fail.
+- Native344's attempted trail-terminal append fails the gap in567 and
+  regresses the plate:569 records three leftevent activations and closed bars.
+  It is reverted. Native345 rebuilds **byte-identically to native343**, qagame
+  SHA256 `260af7644e2ddd8d7571de20c8e94e60f4804371eb341cfe75e113c5cfe95cd3`.
+  Broad125 remains valid for that restored binary; no broad344 pass is claimed.
+- Read-only564 finds breakable explosive barrel208 blocking the return node.
+ 566 shoots it from the actual charcoal room and passes the return and broken
+  ladder, then stalls at the next shooting stand.568 accepts that near stand
+  but cannot shoot the second rod. Ordinary rod64 break plus read-only573
+  finds supported floor1048,-736,508 with a clear shot to rod63; that measured
+  stance replaces the old embedded1040,-736,488 target. Traversal is pending.
+- Runner reports now retain the exact staged route files under `routes/`,
+  with hashes calculated from those snapshots.564 verifies a retained file
+  against `inputs.json`; Python compilation passes. Prior reports retain
+  their original hash/log scope and are not retroactively called snapshots.
+- Software capture570 fails setup because old client/UI modules mismatch the
+  current server build. Integrated346 builds all three matching modules;
+ 572 captures the actual saved pillar scene through dkguard software rendering.
+  The capture is diagnostic, not cinematic/artistic acceptance. Camera commands
+  now wait for processed view angles before a future capture.
+
+Spawn and Move recovery implementation batch, native346–347:
+
+The factory's code and metadata test move into its owning `monster_spawn` class;
+the shared actor module retains only death outputs/drops. The new class review
+records private target/factory contracts as provenance, not translated code.
+Valid origins remain unchanged; the existing core collision-separation query
+handles an initially embedded full hull.346's32-unit bound fails the actual
+Medusa case in571,907 simulated seconds,53.6 wall seconds, zero deaths: the
+rotated visual statue still exists during factory activation and needs44.3
+units of separation.347 raises this new class-owned bound to48; deep overlap
+remains bounded and emits a diagnostic if unresolved. No saved state is added.
+
+347 also backs off a failed walked-trail cache for an explicit Move, allowing
+the existing local/authored navigation alternatives to run before retrying.
+Come/Follow retain their prior recovery choice. The corridor-expiry regression
+covers that distinction. R1–R11 remain zero. Integrated347 build and actual
+Medusa, carrier, plate and lower-ladder replays are pending; no new broad gate
+has run for this implementation batch.
+
+Native348–351 follow-up, replays574–592:
+
+- The speculative347 Move-cache backoff fails its strict pillar replay and is
+  reverted in348. Native349's speculative floor projection/transfer guards also
+  fail and are reverted in350. The current controller retains343's behavior;
+  neither speculative change is accepted.
+- Factory48 replay `medusa-factory-clearance347-574` passes the actual stage2
+  Medusa wave, all ten deaths, counter, timestream23 and complete Episode3
+  arrival:30/37 actions,218 simulated seconds,16.8 wall seconds, zero deaths.
+  The thief separates44.43 units while its rotated visual placeholder still
+  exists during activation. No direct target activation or position grant.
+- `temple-restored-cache348-580` passes the actual before-plate save through15
+  map visits, all runes, Aegis, Cerberus, Medusa and complete Episode3 arrival:
+  1359/1366 actions,1931 simulated seconds,273.5 wall seconds, zero deaths,
+  one leftevent activation. `temple-exact-look350-587` repeats this route with
+  zero deaths in289.0 wall seconds. These remain saved continuations.
+- Broad126 passes `zig build test -Dpython=/usr/bin/python3 -j4`,414 Python
+  tests plus native/component checks, on349 before its speculative guards
+  were reverted. R1–R11 remain zero after the class factory move. Native351's
+  integrated server/client/UI build returns exit0, including a resumed
+  incremental confirmation; later look changes still need consolidated checks.
+- Native350 tightens ordinary look completion to0.1 degrees. Native351 clamps
+  requested pitch to the existing shared player command limit so convergence
+  cannot wait for an unreachable angle. Read-only actor traces can use that
+  actor's crouched hull. Neither change grants position or puzzle state.
+- Pillar order-ray588 proves a short visibility ray can see242,520,-936 while
+  the actual2000-unit order ray misses its edge and hits the lower wall.
+  Full-length sampling and an explicit242,496,-936 aim produce the correct
+  order destination in589, but strict589/590 still fail the actual crossing.
+  Empty-pillar experiment591 also fails: its order from the room hits the
+  intervening sloping lip at269,372,-906. No new pillar pass is claimed.
+- Measured shooting stand576 passes both Alcatraz rods and lower/long ladders.
+  Sulphur gate repair579 opens73 before seeking104, collects the key and
+  returns through Alcatraz into Waterfalls. First Waterfalls leap now admits
+  its actual supported landing with radius40 while retaining height24.
+- New repair-capture wrapper records an ordinary `coop-failure.sav` on Lua
+  scenario errors, then rethrows the original failure. Actual586 retains the
+  Waterfalls balcony return fall: soul775 collected, then the direct return
+  from-952,-992,-1256 drops into the lower water. Read-only592 confirms the
+  proposed straight balcony lane is obstructed near y=-896; its walking flood
+  cannot reach the upper window. A measured return route remains under repair.
+- Software575 captures processed camera angles at the actual pillar failure
+  through dkguard. These diagnostic frames establish geometry only, without
+  cinematic, audio or artistic acceptance.
+
+Native351–352, raised balcony and qualified companion flights,593–604:
+
+- Raised-floor survey594 finds a34-unit obstruction across the Waterfalls
+  return.595 physically climbs its top but fails the requested landing centre
+  by15 units.597 targets the measured top at-960,-960,-1222, retains the
+  tight8-unit height envelope, walks across and steps down onto the balcony.
+  It collects actual Acro774, completes the return trolley, boat and Tower A
+  arrival. Later the hero dies in the Tower basement exit under the zero-death
+  repair policy:65/66 actions,326 simulated seconds,100.2 wall seconds. This
+  passes the repaired balcony continuation, not the full episode.
+- Fresh351 Episode2 run596 fails the Canyon B bridge with zero deaths after
+  610/611 actions,874 simulated seconds,84.8 wall seconds. Capture601 retains
+  the bridge-entry and ordinary failure saves. Its50-ms trace shows actual
+  support at y=2719, then no ground at2735 before the old2744 takeoff; no jump
+  command was emitted until after falling onto the lower slope.604 moves the
+  takeoff to2712; affected replay is pending.596 remains a failed fresh gate.
+- Read-only geometry alone did not fix the Dungeon gap. Private593 orders the
+  first pillar before Hiro departs but still fails.598 first stages the carrier
+  on the western bank and records a motor-qualified run-up and flight. The
+  companion sink then replaces its exact forward/jump command with a right
+  sidestep: the independent held-command drop guard contradicts the shared
+  feedback forecast. Native352 preserves active qualified flights through
+  that guard, alongside the existing run-up exemption. Ordinary walking,
+  coasting and unplanned-fall protection remain active.
+- Integrated native352 builds server/client/UI successfully. Broad127 returns
+  exit0:414 Python tests plus native/component checks. Ownership update keeps
+  R1–R11 zero. No duplicate lint/test suite is run.
+- Identical private western-run-up replay599 now passes both physical gaps
+  from the actual563 failure save:8/8 actions,11 simulated seconds,3.1 wall
+  seconds, zero deaths. Its first-pillar predicate requires horizontal radius32,
+  height8 and actual support for400 ms; the second requires the actual room
+  bank and support. This is independent of revoked553's weak predicate.
+- Full-stage600 still fails while Hiro occupies the pillar. Canonical602 moves
+  Hiro across both gaps before waiting, but its transient run-up admission
+  leaves the carrier too far east and the first jump still fails.603 requires
+  supported western footing for400 ms before departure; its full-stage replay
+  is pending. The scoped599 pass does not establish fresh Episode3 acceptance.
+
+Connected replay603 passes the first carrier pillar with the new supported
+western staging, then fails the second bank. Its actual save records Stay at
+162,341,-966 while the retained Move destination is208,256,-936. The brain had
+accepted proximity during flight and removed the destination, cancelling the
+landing controller. Native353 keeps Move until there is ground/swimming support
+and no active qualified flight; integrated build and connected replay are pending.
+This adds no persistent state. Canyon604's earlier supported takeoff passes the
+broken bridge at816,2850,408, then Canyon C and all three Athens maps. Later Temple A
+combat kills the hero under the zero-death repair policy:
+841 simulated seconds,107.9 wall seconds. This remains a saved continuation;
+the fresh596 failure is not relabelled as a pass.
+
+Native353 integrated build returns exit0 and ownership update retains all11
+zero rules. Connected605 passes both Dungeon A gaps, settles the carrier on
+actual room support at171,266,-936 (stage5 save), crosses both timed gates and
+enters Dungeon B without deaths through that boundary. Its later return from
+prison supplies dies to Buboid496/Dwarf106 under the zero-death repair limit:
+132/133 actions,333 simulated seconds,69.4 wall seconds. Fresh normal episode
+passes606–609 are running on353; their outcomes remain unverified until complete.
+
+Native353 fresh gates and follow-up610–616:
+
+Broad128 returns exit0 for353:414 Python tests and native/component checks;
+formatting and zero ownership remain intact. Later changes in this batch are
+route inputs, retained in each report snapshot.
+
+| Scenario | Result and scope |
+|---|---|
+| Fresh E2 `episode2-fresh-connected353-606` | Failed Canyon C after the repaired bridge;1034/1041 actions,172.3 wall seconds, seven total deaths, including five in C beyond its unchanged four-recovery limit. Full Hammer quakes inflict the ordinary20HP self cost and launch the hero while traversing narrow supply ledges. |
+| Fresh E3 `episode3-fresh-connected353-607` | Failed Village crypt jump:242/244 actions,707 simulated seconds,89.0 wall seconds, zero deaths. The supported west-bank landing falls just outside the old near-edge target. |
+| Fresh E4 `episode4-fresh-connected353-608` | Passes every Alcatraz, Waterfalls and Tower stage into Labs A/B with zero deaths. Fails Labs B yellow-card return exit at650,-206,-2460, waypoint700,-192,-2441:899/901 actions,2110 simulated seconds,501.7 wall seconds. This is a failed full current gate, not a replacement for native335's historical complete pass. |
+| Fresh E1 `episode1-fresh-connected353-609` | Failed upper-sewer approach in e1m2a stage9:453/459 actions,327.5 wall seconds, two earlier normal combat recoveries. No complete current E1 pass. |
+
+610 targets the crypt's actual west-bank centre at-240,-896,-712, retaining
+radius12/height16. It passes that crossing, the remaining crypt, Village return,
+workshop and Passage stages until the exit retry:290/291 actions,49.7 wall
+seconds, zero deaths. Actual611 traces a20-unit lip below the exit; the original
+explicit jump had crossed it successfully, but the automatic party retry had
+walked back down.613 gathers both companions within90 units before that jump,
+parks them and passes the normal cinematic/travel into Dungeon A. It subsequently
+fails the first carrier pillar on the connected incoming state:112/113 actions,
+59.1 wall seconds, zero deaths. Retain605's narrower saved-stage pass separately.
+614 repeats this incoming path with controller traces; no fresh E3 pass is claimed.
+
+612 uses the Discus when ammunition exists, otherwise the sword, for Canyon C's
+supply/exit traversal. Full Hammer behavior and the authored guardian's charged
+fight remain unchanged. It passes C into Athens A after two normal recoveries,
+then dies once in Athens and later stalls on a restored Canyon C supply route:
+183/187 actions,41.4 wall seconds. This is partial continuation evidence.
+615/616 replay the actual Labs B and upper-sewer checkpoints to retain failure
+states and identify their physical obstructions; those repairs remain open.
+
+Incoming controller and measured return follow-up, native354–355:
+
+- 614 repeats613's first-pillar failure with controller evidence. A local
+  motor-qualified ground stroke toward229,701,-936 is replaced by the sink's
+  held-command guard with a sidestep at237150/237350. Ground slot219 is the
+  rotated `bubcorp3` decoration at192,736, not world floor or another actor.
+- Native354's experimental deferral of new corridor recovery while a sliced
+  jump search remains pending does not pass618. Revert that experiment.
+  Native355 instead preserves qualified ground strokes alongside qualified
+  run-ups and flights through the sink guard. Ordinary unqualified strides,
+  coasting and unplanned falls retain it; replay is pending.
+-615 repeats the actual Labs B return failure and retains `coop-failure.sav`.
+  Read-only617 finds a continuous supported ramp around its lower corner.
+  Private621 fails setup because its route tree lacks the included helper;
+  no gameplay acceptance follows.622 removes that dependency and physically
+  walks the measured floor corridor, opens the normal hallway and returns
+  through413 to Labs A:26/26 actions,26 simulated seconds,8.3 wall seconds,
+  zero deaths. Canonical stage10 now climbs that measured ramp before using
+  the exit planner; its complete incoming replay is pending.
+-616 passes the restored upper sewer but fails the following drain button:
+  the use planner swims away from the control room toward an unsuitable
+  approach. Read-only619 confirms full-hull clearance at3664,640,-640 and a
+  clear normal use ray to402. Canonical held use from the control-room stand
+  passes620's tank/drain, remainder of Sewer B, both Solitary maps and all
+  Crematorium maps into Processing A with zero deaths through those boundaries.
+  The longer zero-death repair continuation is still running; this is not
+  a fresh full Episode1 result.
+
+Native355 integrated build and Broad129 pass (414 Python tests plus native and
+component checks); formatting and all11 zero ownership rules pass. Its incoming
+Dungeon replay623 still fails the first carrier pillar. The trace now shows why:
+the corridor changes legs at221,707,-925 while its qualified ground destination
+is229,701,-936. The old12-unit arrival disk discards the lateral correction while
+the carrier is still supported by the raised corpse. Native356 retains the
+ground stroke to its own two-unit arrival disk; transfers retain12. The existing
+stair-corridor regression now checks that an early lateral handoff is refused.
+Build and affected replay are pending;355 is not a new carrier acceptance pass.
+
+Canonical Labs B continuation624 passes the new ramp, normal return to A, all
+Labs C card/generator/transport/cage stages and full ending travel into Hideout,
+zero deaths through those boundaries. It later fails the chambers-lift approach
+after control169, at150,285,8. Its stage4 save retains that actual switch-departure
+pose. Read-only Hideout survey626 is prepared. Temple625 continues the separate
+before-plate regression on355; no complete result is recorded yet.
+
+Native356–357 connected acceptance,627–636:
+
+- Integrated356 and357 builds return exit0. Broad130 passes on357 with414
+  Python tests and native/component checks.356's two-unit ground arrival
+  completes the first incoming pillar but627 fails the second bank:114/115
+  actions,61.5 wall seconds, zero deaths. Its actual Move has already changed
+  to Stay despite coasting off the bank.357 requires horizontal speed at most48
+  before completing Move.631 then passes both A gaps, both timed gates, every
+  B encounter and the three C cranks without deaths. A supplied-node approach
+  fails later:522/525 actions,1027 simulated seconds,208.3 wall seconds.
+-636 uses the live area route from the actual C crank-room floor instead of
+  the supplied north-wall node chain. It passes Stavros, the entire spiral,
+  upper walkways, Castle A/B and Wyndrax into Crypt, zero deaths through those
+  boundaries. The later Crypt Lycanthir kills the hero under the zero-death
+  repair limit:717/718 actions,1193 simulated seconds,178.3 wall seconds.
+-620 completes Sewer B through every remaining Episode1 map, the ending and
+  Lemnos A into B on its recorded native354:1514/1557 actions,3976 simulated
+  seconds,931.2 wall seconds, zero deaths. It is a complete saved continuation,
+  not a fresh current Episode1 pass; later companion/checkpoint edits remain
+  outside that candidate's scope.
+-625 passes all Temple revisits on355 but fails the final Medusa counter:
+  1554/1626 actions,2602 simulated seconds,411.1 wall seconds, zero deaths.
+  This is a different final thief (`monsterbitch_f`, original2432,-320,-1992),
+  not the embedded factory34 thief fixed earlier. Read-only629 confirms its
+  full hull is clear.630 finds supported head-shot positions in the altar's
+  eastern shoulder.633 uses2712,-160,-1928 to kill it and passes the actual
+  counter, timestream23 and full E3 arrival, zero deaths. Canonical fifth-post
+  replay635 repeats that ending:18/24 actions,194 simulated seconds,11.5 wall
+  seconds, zero deaths. No actor or counter state is granted.
+- Read-only626 identifies shootable crate212 blocking the Hideout switch
+  departure.628 breaks it normally but still lacks a graph connection from
+  that recessed room.632 retraces the known museum floor, passes the chambers
+  lift and both SEAL training maps into the final arena. It later fails after
+  three Kage recoveries and a replayed balcony approach:403/407 actions,
+  126.8 wall seconds. The finale remains unaccepted on this candidate.
+-634 relocates the explicit arena save to the combat stage after real medicine
+  collection and skips an already used arrival trigger. It now restores stage2,
+  but exhausts four recoveries:12/17 actions, five deaths,6.9 wall seconds.
+  A low-health repeated save reports retained recovery while the server has
+  already replaced the internal checkpoint. This exposes a separate admission
+  bug; changing the script stage alone does not fix it.
+
+Native358 save/recovery implementation batch:
+
+The server now applies the existing quarter-health scripted-save policy before
+replacing recovery; a diagnostic file write and recovery admission have separate
+driver acknowledgements. Manual saves outside the scripted driver retain their
+existing admission. Unit regressions cover the health boundary and acknowledgement
+slot/admission distinction. Dead mode with positive health (companion loss) uses
+the same tested restart predicate as the driver. No save format changes.
+
+The Kage stage avoids repeating consumed-medicine travel and resaving on a stage
+retry, and permits combat movement within the northern bank's existing arena.
+Integrated358 build returns exit0.637 replays the actual Kage save,638 tests an
+ordinary low-health write after actual boss damage,639 is a fresh E3 gate and
+Broad131 checks the integrated batch. Results are pending.
+
+Native358 connected results and route repairs,637–654:
+
+- Broad131 passes:414 Python tests plus native/component checks. Formatting
+  passes; ownership R1–R11 remains zero. No native source changed after this
+  consolidated check; the subsequent repairs below change Lua routes only.
+-638 collects two real25HP medicines to reach78HP, saves `checkpoint-good`,
+  takes ordinary boss damage to1HP and writes `checkpoint-hurt`. The healthy
+  save and internal restart share SHA256
+  `608d89db1fdb25fac8824aeeef4d08eaabb6852686203ee0c4dc9047911ea1c5`;
+  the requested hurt file has SHA256
+  `0722774280d66db6642143f5d965f2f28dfe54145f79af649964a0ac3416b0ed`.
+  Thus the diagnostic write succeeds without replacing healthy recovery:
+  5/5 actions,16 simulated seconds,2.1 wall seconds, zero deaths.
+-637 passes Kage with zero deaths, then exhausts recovery at the final opponent
+  from a hurt arrival.640 collects actual medicine and uses the supported
+  southern arena with Slugger; it passes the opponent, ending and credits:
+  6/7 actions,320 simulated seconds,18.4 wall seconds, zero deaths.
+- Fresh `episode4-fresh-connected358-648` passes every authored map/revisit,
+  both final encounters, ending and credits:1864/1869 actions,924.6 wall
+  seconds. Four ordinary recoveries (one Tower, three Kage) remain within the
+  unchanged4-per-map/12-total limits; no companion losses. The ladder's first
+  alignment accepts the measured body/rung rise with radius4 and height48;
+  the upper stroke and supported exit retain their existing tolerances.
+  Separate zero-death repair647 reaches Kage but dies there; it remains a
+  failed repair attempt and does not replace fresh648's evidence.
+- Fresh649 reaches every E2 region through Medusa D with zero deaths, then
+  fails a raw-node descent:2749/2752 actions,596.6 wall seconds. Actual
+  position2019,1566,-1448 lies below an unreachable upper waypoint. Canonical
+  D now uses its live area exit.652 replays the actual D arrival and passes
+  Medusa, timestream23 and full E3 arrival:48/56 actions,405 simulated seconds,
+  30.7 wall seconds, zero deaths; optional firing-lane attempts retain their
+  shot timeouts. Fresh653 now checks the connected route.
+- Fresh645 passes Village, Passage, both Dungeon A gaps, all Dungeon B and
+  most C without deaths, then generates an upper stair route while airborne.
+ 650 settles on the measured tread before generating the route and passes
+  those stairs. It then fails the timed gate765 because its toggle lever
+  remains open after the gate closes. Both authored toggle controls1009/765
+  now close and reopen normally when necessary; no state is granted.651
+  passes C, Castle A/B and Crypt into Throne, then Garroth kills the hero under
+  the zero-death repair limit:637/638 actions,159.5 wall seconds. Fresh654 now
+  checks the connected route under unchanged4-per-map/12-total recovery.
+
+These are headless authoritative results. Fresh current E1–E3, rendered/audio,
+artistic parity, multiplayer and combined campaign acceptance remain open.
+
+Connected358 fresh results and affected repairs,653–659:
+
+- Fresh653 passes the full Temple circuit with one permitted Satyr recovery,
+  then fails the Lair A descent:2524/2528 actions,588.6 wall seconds. Combat
+  deviation drops Hiro below the supplied upper node. Canonical node travel
+  now disables both fighting and cautious deviation on that descending ledge.
+ 657 passes the descent and all Lair A–D without deaths, then fails the ending
+  counter with two thieves alive at2388,64,-2000 and2388,-320,-2000:
+  450/536 actions,1373 simulated seconds,124.6 wall seconds. Actual save has
+  134 Trident ammunition; no shot has landed on these two. Read-only659 surveys
+  supported dry firing lanes, without moving actors or granting state.
+- Fresh654 passes both Dungeon A gaps, full B/C including the supported stair
+  and normal toggle cycle, Castle A/B and Crypt, zero deaths. A Doombat hit
+  near a short Throne takeoff precedes an early landing at576,758,-1668:
+  1871/1874 actions,3408 simulated seconds,642.2 wall seconds. Canonical travel
+  clears that actual bat435 from the broad bank before the final western hops.
+ 658 replays the actual Throne stage2 save, passes the jumps and reaches
+  Garroth; its complete result is pending.
+-655 passes the unchanged upper sewer, repaired drain, Solitary A/B and
+  Crematorium A into B, then Ragemaster kills the hero under the zero-death
+  repair limit:586/595 actions,1477 simulated seconds,403.6 wall seconds.
+  Fresh656 separately passes both sewer maps and continues through Crematorium
+  into Processing, using two permitted early Marsh recoveries so far.
+
+Throne repair658 completes the jumps, Garroth, timestream34 and full E4 arrival:
+101/103 actions,902 simulated seconds,144.1 wall seconds, zero deaths. Fresh660
+replays the complete current E3 route. No actor health or rules changed.
+
+Medusa read-only659 confirms both remaining thief hulls are clear, but its shot
+matching incorrectly compares persistent authored indices with engine slots;
+its reported zero lanes is invalid. Corrected661 matches authored489/503 and
+finds dry supported lanes to both.662 moves to2544,-128,-1928 and kills489
+normally but times out on503:2/3 actions,23 simulated seconds,3.3 wall seconds,
+zero deaths. Canonical counter now includes two western viewpoints with tighter
+horizontal admission and an explicit upper-body aim above the basin rim.
+Actual failed-save replay663 is pending; fresh E2 remains failed/unverified.
+
+Canonical663 passes the actual two-thief failure save, ending counter,
+timestream23 and full E3 arrival:45/64 actions,349 simulated seconds,25.9 wall
+seconds, zero deaths. Optional unsuccessful firing attempts remain recorded;
+the successful western positions use normal Trident shots with upper-body aim.
+Fresh664 now checks the complete E2 route including the Lair descent and counter.
+
+Native359 connected repair batch,664–673:
+
+- Fresh664 exhausts the unchanged four recoveries in Canyon C's rescue exit:
+  765/770 actions,1089 reported simulated seconds,123.9 wall seconds, five
+  deaths. Its actual stage3 save has51HP and zero Discus/Venom ammunition.
+ 668's optional soul approach falls into the lower pit and fails; it remains
+  failed,2/3 actions,27 simulated seconds,6.5 wall seconds. The revised route
+  instead takes real nearby health47, Sunflare53 and Venom ammunition59.
+ 669 passes Athens and all subsequent maps into Temple B, where a Satyr kills
+  the hero under zero-death repair limits:747/749 actions,900 simulated seconds,
+  129.9 wall seconds. It is scoped ammunition/progression evidence, not fresh E2.
+- Fresh656 reaches Vault A from New Game with two permitted Marsh recoveries,
+  then fails ladder attachment:1480/1521 actions,3748 reported simulated seconds,
+  1004.1 wall seconds. Scoped665 passes that ladder but dies later in the pipe;
+  47/48 actions,100 simulated seconds,17.3 wall seconds. Incoming666 passes
+  the ladder and pipe, then finds Superfly holding the gallery platform's
+  raised deck:111/119 actions,333 simulated seconds,77.4 wall seconds, zero
+  deaths. Canonical gallery now holds the party before its approach; the
+  earlier ladder stroke uses pace0.35 to retain attachment contact.673 replays
+  the actual Vault arrival.666's recorded module hash is the unchanged358;
+  it staged before359 installed, and is not359 evidence.
+- Fresh660 reaches the first Dungeon pillar but fails the final bank after
+  ordinary yielding replaces the landing path while airborne:620/622 actions,
+  1442 simulated seconds,169.6 wall seconds, zero deaths. The log at1263650
+  shows ground NONE and a new yield goal178,345,-969 instead of208,256,-936.
+  Native359 defers lane yielding while unsupported or while the pilot owns a
+  run-up/flight. A native regression preserves the destination even through
+  brief edge contact. Integrated359 and Broad132 pass; all11 ownership rules
+  remain zero. No save format or movement physics changed.
+-667 loads the actual stage4 input but fails the earlier first pillar:
+  19/19 actions,233 simulated seconds,34.1 wall seconds, zero deaths. Its
+  staging predicate still admits the raised corpse at206,737,-925. Read-only
+ 671 measures carrier-hull world-floor positions; the canonical staging target
+  is now240,744,-960 with four-unit height admission, excluding that corpse.
+ 672 replays that change. Incoming670 separately fails the earlier turning-lip
+  leap:42/43 actions,67 simulated seconds,8.9 wall seconds, zero deaths. The
+  landing-yield correction is implemented with unit coverage; live acceptance
+  remains open until the actual final bank succeeds.
+
+Stricter672 fails at staging,15/15 actions,108 simulated seconds,11.7 wall
+seconds, zero deaths. The actual goal is240,744,-936 but Move switches to Stay
+at244,734,-920. Native360 keeps Move active until vertical separation is at
+most8 as well as satisfying the existing support/speed/flight conditions.
+Integrated build is pending; no new live companion pass is claimed.
+
+Vault673 passes the paced ladder, held-party gallery platform and the remaining
+decks/shaft/bridge into the north route, then dies under zero-death repair limits:
+218/225 actions,490 simulated seconds,116.6 wall seconds. Full fresh E1 remains
+failed at656; those scoped repairs require connected fresh replay.
+
+Native360 integrated build returns exit0. Actual stage4 replay674 passes both
+carrier gaps, supported final bank and every Dungeon A gate into B. The player
+later dies below the B purifier stairs under zero-death repair limits:
+73/74 actions,183 simulated seconds,30.0 wall seconds. This admits the repaired
+crossing, not the whole episode. Broad133 checks the consolidated360 batch;
+fresh E2/E3/E4 runs676/677/678 and actual Vault-arrival continuation675 are running.
+The E1 continuation uses its ordinary recovery limits, not a zero-death repair
+entry. No inventory, actor position or rule allowance is granted.
+
+Broad133 returns exit0 on native360:414 Python tests plus native/component
+checks. Formatting and R1–R11 zero remain valid. Fresh677 passes the new first
+run-up, both gaps and supported final bank before entering the escort gates,
+zero deaths through those boundaries; the rest of the episode is still running.
+
+Vault-arrival continuation675 completes both Vault maps, the E1 ending and
+Lemnos A into B:515/523 actions,1030 simulated seconds,277.9 wall seconds,
+zero deaths. Its seven optional action timeouts remain recorded. This is the
+actual Vault arrival from failed fresh656, not a fresh full E1 pass. Fresh679
+now starts New Game on360 with the paced ladder and earlier gallery party hold.
+
+Fresh Episode2 `episode2-fresh-connected360-676` passes every authored map and
+rune revisit, Cerberus, Medusa and the awakened-monster counter, timestream23
+and full E3 arrival:2927/2935 actions,734.4 wall seconds. Three ordinary late
+Temple recoveries remain within unchanged4-per-map limits; no companion loss.
+The recorded2903 simulated-second summary is a maximum across reset timelines,
+not accumulated play time. Three optional failures remain in the result.
+
+Fresh677 fails the first Stavros rally without deaths:1033/1036 actions,
+2223 simulated seconds,558.7 wall seconds. The carrier is already supported on
+spiral37 at1783,-104,-787, while Come asks him back onto the staff platform.
+Read-only680 records support/clearance. The canonical route now retains a
+carrier already on37 through the western entry instead of calling him back;
+actual failed-save replay681 passes that entry and progresses up the spiral.
+Its full result is pending.
+
+Fresh679 exhausts12 Marsh recoveries (13 deaths):370/386 actions,659 reported
+simulated seconds,400.6 wall seconds. After the first two ford deaths and boss,
+combat pursuit repeatedly walks off the north bank toward submerged Crox.
+Canonical north-bank waypoints now preserve direct footing with combat disabled
+through that short rise.682 replays the actual30HP internal restart at stage7;
+no health, ammunition or recovery allowance is granted. Fresh E1 remains failed.
+
+Replay681 passes the existing-spiral entry, then loses the carrier to the lower
+platform on a later revolution:58/58 actions,258 simulated seconds,54.1 wall
+seconds, zero deaths. Canonical per-tread rallies now use aimed Move with the
+existing full-length floor-ray qualification, rather than Come transitioning
+back to Follow near a tread.683 passes both spiral revolutions and the upper
+walkways into the northern lava stair, zero deaths through those boundaries;
+its continuation is running. Fresh685 now checks the complete E3 route.
+
+Actual30HP Marsh restart682 passes the repaired north bank, the real healing
+tree, Marsh C and lower Sewer A into the cart/pumps, zero deaths through those
+boundaries. Fresh684 now checks the complete E1 route; the earlier679 remains
+failed. No tolerances or recovery allowances were expanded for these repairs.
+
+Fresh Episode4 `episode4-fresh-connected360-678` passes every authored map/revisit,
+both final encounters, ending and credits:1863/1867 actions,1146.7 wall seconds.
+Three ordinary recoveries (Waterfalls, Tower B and first SEAL map) remain within
+unchanged4-per-map/12-total limits; no companion loss and no action failures.
+The reported2332 simulated seconds is a maximum across reset timelines, not
+accumulated play time. Broad133 remains valid; current native360 E2/E4 now have
+complete headless progression passes. Rendered/audio/artistic and combined
+campaign/multiplayer acceptance remain open.
+
+Spiral replay683 passes both revolutions, upper walkways, northern lava stairs,
+broken stairs and upper rooms, but the carrier returns west through timed
+gate152 after Follow is restored at its jamb:296/296 actions,650 simulated
+seconds,190.6 wall seconds, zero deaths. Canonical stage9 now moves Hiro deeper
+inside before restoring the trailing formation.686 passes that gate, the next
+tower gate and Dungeon C into Castle A, zero deaths through those boundaries;
+its continuation is running. Fresh685 retains its exact staged pre-guard route.
+
+Fresh684 passes the repaired Marsh bank with two early ford recoveries, then
+fails a ground-node endpoint below the north side of Marsh C's pipe:
+232/237 actions,659 reported simulated seconds,203.1 wall seconds. The outside
+route's northern detour immediately reversed into the pipe stage and operated
+no control. Canonical travel now enters the pipe from its southern foot;
+actual-arrival replay687 is pending. Full fresh E1 remains failed.
+
+Gate-formation replay686 passes the repaired upper passage, remaining Dungeon C,
+Castle A/B, Wyndrax, Crypt/Nharre and the Throne platforms into Garroth; the boss
+kills the hero under zero-death repair limits:638/639 actions,1225 simulated
+seconds,205.0 wall seconds. Its gate fix is scoped progression evidence.
+
+Actual Marsh-arrival687 passes the trimmed pipe approach, real overhead gate,
+remaining Marsh C and both sewer maps into Solitary A without deaths through
+those boundaries. Fresh689 now includes the repaired bank and southern pipe
+entry; the prior fresh684 remains failed.
+
+Fresh685 fails the earlier Dungeon A return ledge before either gap:
+595/598 actions,1241 simulated seconds,187.1 wall seconds, zero deaths. Its
+standing route circles under the cracked-room roof. Crouched direct688 still
+fails a raised lip:5/6 actions,43 simulated seconds,8.2 wall seconds, zero
+deaths. Read-only690 finds121 connected lower floors but no walking exit;
+691 qualifies crouched40-unit geometric rises, and692 confirms the upper rock
+has a connected walking route west. Canonical return now follows supported
+lower floors, makes one normal crouched jump528,640,-944→528,672,-904, then
+walks the connected upper floors to320,680,-920. Actual stage4 replay693 passes
+that jump and return; the longer crossing replay is running. No native change
+since360/Broad133, and no state or tolerance grants.
+
+693 passes the return rock jump but still fails the first carrier pillar:
+58/58 actions,266 simulated seconds,58.8 wall seconds, zero deaths.694 moves
+staging onto surveyed bank footing208,688,-936 but still fails,58/58 actions,
+266 simulated seconds,62.0 wall seconds. Developer3 replay695 exposes a looping
+19-point fallback through the eastern rubble. A short landing pause in696 does
+not resolve it and is removed.
+
+Read-only GDB inspection of isolated696 (saved as `trail-witness.txt` in that
+report) establishes the cause: the113-point remembered trail contains the real
+intermediate landing225.645,505.122,-911.875, but the latest leader footing is
+already221.923,203.828,-935.875. `fromTrail` rejects the entire trail because
+that newest point is more than256 from Move's requested242,496,-911.875.
+The fallback ends360,440,-872 instead of the observed landing. No memory was
+modified; the process was detached after inspection.
+
+Native361 retains the existing trail prefix through the most recent observed
+footing within48 of an intermediate Move destination when the leader is already
+farther ahead. It adds no terminal point; the existing collision/motor/jump
+qualification still owns every leg. A native regression covers that prior
+landing, excludes later leader footing and refuses an unobserved remote goal.
+Integrated build and affected replay are pending. Native360 E2/E4 passes retain
+their recorded generation;361 is implemented and unverified.
+
+Native361 integrated build returns exit0. Actual failed stage4 replay698 passes
+the measured return jump, both carrier gaps, the supported final bank and all
+Dungeon A gates into B. The later blade-stair encounter kills the hero under
+zero-death repair limits:226/227 actions,517 simulated seconds,115.0 wall
+seconds. This is live acceptance of the observed-landing prefix correction,
+not a fresh whole E3 pass. Broad134 checks the361 batch; fresh E3/E2/E4
+replays700/701/702 are running with exact staged routes.
+
+Fresh689 passes the repaired Marsh bank/pipe and reaches Processing A with
+three ordinary recoveries, then fails the pool approach before either authored
+jump:1042/1059 actions,1327 reported simulated seconds,749.0 wall seconds.
+The actual water-level2 trace has positive87,71 velocity against the requested
+negative swim axes. The half-pace approach cannot overcome the current.
+Canonical approach now uses full swimming pace; its existing separate0.35
+stroke still brakes onto the rock.697 replays the actual tunnel checkpoint,
+passes the pool, both jumps, complete Processing A/B and enters Icelab A,
+zero deaths through those boundaries; its longer continuation is running.
+
+The30HP Marsh continuation682 reaches Vault A without deaths, then times out
+on Cryotech26 at the ramp:1408/1449 actions,3992 simulated seconds,1345.4 wall
+seconds. This is not the ceiling Lasergat. The area approach completes at
+-1526,-1006,437 near the ramp edge; the held fight then falls below it.
+Canonical travel makes a precise supported-floor move at the ramp's centre,
+and prefers available Ion fire. Actual stage10 replay699 reaches the measured
+-1504,-1036,448 floor, kills26 and passes the shaft/bridge into the north route,
+zero deaths through those boundaries. Its ending continuation is running.
+Fresh703 now checks all E1 repairs on native361 under unchanged allowances.
+
+Broad134 returns exit0:414 Python tests plus native/component checks, including
+the observed intermediate-landing regression. Formatting and all11 zero ownership
+rules pass. No subsequent native source changes; later repairs below are Lua.
+
+Fresh E4 `episode4-fresh-trail361-702` completes all authored maps/revisits, both
+final encounters, ending and credits:1863/1867 actions,1134.0 wall seconds,
+three normal recoveries within unchanged4-per-map/12-total limits, no companion
+losses. This repeats360's complete headless result on361; rendered/audio and
+combined campaign/multiplayer acceptance remain open.
+
+Connected361 route results and repairs,697–710:
+
+-697 passes full Processing A/B and all Icelab maps into Vault A, then dies
+  during the later crate-vent drop under zero-death repair limits:648/677
+  actions,1839 simulated seconds,699.1 wall seconds. The pool-current approach
+  is scoped passed; a zero-death full E1 result is not claimed.
+-699 passes the ramp-centre stand and Cryotech26, shaft/bridge/north and crates,
+  then exhausts four ordinary platform attempts:114/116 actions,237 simulated
+  seconds,116.3 wall seconds, zero deaths. The pool/ladder retry repeatedly
+  returns to the same unsafe pairing of deck cycles. Canonical retry lets one
+  first-deck boarding window pass after that measured unsafe phase;173 admits
+  a rising target only from sufficiently below the source. The takeoff height
+  is sampled after the wait.704 passes all five moving decks, vent return,
+  Vault B, E1 ending and Lemnos A into B:296/298 actions,542 simulated seconds,
+  133.3 wall seconds, zero deaths. Attempt/death allowances are unchanged.
+- Fresh700 passes both A gaps, all A gates and the B ascent on its first visit,
+  then a Dwarf kills the hero in the barred-cell encounter. After ordinary
+  stage2 recovery, the carrier fails the upper stair rally:843/846 actions,
+  1611 reported simulated seconds,427.4 wall seconds, one death. Canonical B
+  ascent now rallies incrementally instead of leaving the carrier a whole
+  revolution below after a restore.707 exposes an airborne finishing melee
+  before the aimed order:27/27 actions,80 simulated seconds,25.6 wall seconds,
+  zero deaths.709 settles on the next measured tread before sampling that
+  order; actual stage2 replay is running.
+- Fresh701 fails the Canyon B leap,610/611 actions,874 simulated seconds,
+  134.9 wall seconds, zero deaths. Actual replay705 reaches816,2880,408 on the
+  stone bank but lies outside the old landing-point disk:6/7 actions,6 simulated
+  seconds,2.6 wall seconds. Read-only706 distinguishes temporary piece116
+  through2808 from world support beginning2816. Canonical crossing requires
+  actual supported world bank and permits one further ordinary hop if the
+  first jump lands early on supported piece116.708 passes the bridge and
+  continues through Canyon C/Athens without deaths through those boundaries;
+  fresh710 checks the connected E2 route. No state is granted.
+
+Fresh E1 `episode1-fresh-current361-703` passes New Game/intro, all17 authored
+episode maps, the complete ending and Lemnos A into B:1987/2036 actions,
+1333.7 wall seconds. Two ordinary Marsh recoveries remain within unchanged
+allowances; no companion losses. The4696 simulated-second summary is a maximum
+across reset timelines. It retains its exact archived pre-cycle-guard route;
+704 separately qualifies the subsequent cycle guard from the actual failed
+input through the ending. Native361 E1/E4 now have complete fresh headless
+progression passes, with Broad134 passed. Current E2/E3, rendered/audio/artistic,
+multiplayer and combined campaign acceptance remain open.
+
+Restore-stair709 reaches the upper B turn but parks the carrier across Hiro's
+next step:65/66 actions,168 simulated seconds,54.3 wall seconds, zero deaths.
+Its actual obstruction is mikikofly457,38 units away. Canonical B stair travel
+now follows the measured ascent continuously, parks during the close fight,
+settles on a measured tread after airborne melee, then resumes following.
+The existing final upper support/rally predicate is unchanged. Actual restored
+stage2 replay711 is running; no new whole-E3 result is claimed.
+
+Connected361 repairs,711–718:
+
+-711 passes the actual restored B ascent, both upper escort gates and the
+  barred-cell encounter, then fails the blade-room escort:155/155 actions,
+  365 simulated seconds,82.4 wall seconds, zero deaths. The clearing action
+  chases west through the timed gate.712 holds the clear on its far side and
+  gets the carrier across, but the loose Come admission leaves him near the
+  jamb; the later rally circles west:35/35 actions,229 simulated seconds,
+  67.8 wall seconds, zero deaths.
+-716 aims an ordinary Move order at the room's actual floor and requires the
+  carrier beyondx-624 before proceeding. That gate handoff passes; Hiro then
+  dies to worm133 after a too-narrow160-unit clear:24/25 actions,54 simulated
+  seconds,12.8 wall seconds.718 restores the original320-unit threat radius
+  while retaining held fire on the far side. No state is granted. Invocations
+  714/715 failed during staging on nonexistent input paths and never ran an
+  engine;716 uses the actual711 stage4 save.
+- E2 fresh710 passes the Canyon bridge, then falls below Athens C's supplied
+  upper walkway while approaching lever301:1145/1148 actions,227.9 wall seconds,
+  one normal Athens B recovery.713 uses live areas for that lever, operates
+  both controls and reaches the Temple with zero deaths through the boundary;
+  its connected continuation and fresh717 are running.
+
+These edits are Lua only. Integrated native361/Broad134 remain current; full
+fresh native361 E1/E4 passes703/702 remain valid for their archived inputs.
+
+713 completes Athens C and Temple A, then dies at an S-temple control under
+zero-death repair limits:414/415 actions,482 simulated seconds,71.0 wall seconds.
+The live-area301 approach is scoped passed.718 passes the blade-room escort,
+whole stationary staircase and moving-blade section into Dungeon C without
+deaths through those boundaries. Fresh E3 replay719 now checks these connected
+repairs under unchanged4-per-map/12-total allowances; fresh E2 replay717 continues.
+
+718's full continuation defeats Stavros but fails the first spiral rally:
+258/259 actions,607 simulated seconds,217.4 wall seconds, zero deaths. The
+carrier boards spiral37 after the initial support test, while Come continues
+recalling him to the staff platform. That rally now also accepts400ms of
+actual support on37.721 passes the western entry, both full spiral turns and
+the upper walkways, then a medicine approach chases a worm onto northern trim:
+132/133 actions,284 simulated seconds,75.7 wall seconds, zero deaths.725 tests
+that medicine travel along cleared floors with pursuit disabled.
+
+E2 fresh717 fails the live planner at the first lever:1089/1091 actions,
+193.1 wall seconds, zero deaths. Its final recorded player pose is512,-2212,536;
+the error's574 is a raised route probe, not the player's standing floor.722
+settles to the interior but the planner still returns to the wall:102/103
+actions,99 simulated seconds,15.5 wall seconds, zero deaths. Read-only720/723
+measure the continuous narrow536/552/544 bridge floors and both crosspieces.
+Canonical travel now walks that actual centre line with pursuit disabled,
+then operates301 normally at close range.724 repeats the actual722 failure,
+passes both levers/whole Athens C into Temple A without deaths through those
+boundaries; its connected continuation is running.719's archived E3 fresh
+route predates the subsequent dynamic spiral-support/medicine corrections.
+
+725 passes the medicine return, full northern stairs, collapsing columns,
+broken stair and upper rooms into the last tower stage, then a Buboid kills
+Hiro under zero-death repair limits:247/248 actions,425 simulated seconds,
+114.4 wall seconds.719's fresh route independently passes all Dungeon/Castle
+maps into Crypt, then repeats a bank fall through five normal recoveries:
+1881/1884 actions,623.6 wall seconds, five deaths. Its exact archived route
+predates the later dynamic-spiral/medicine changes.727 repeats the actual Crypt
+checkpoint with50ms motion/status traces:31/31 actions,51 simulated seconds,
+10.2 wall seconds, one death. During its anchored rally the automatic weapon
+selection switches16→18; Ballista recoil supplies the outward/upward velocity
+and the bank fall. Crypt bank/pillar rallies now request Bolter16 explicitly.
+728 passes that bank, both pillars and Nharre without deaths through those
+boundaries; its ending continuation is running.
+
+724's later S-temple return save fails because the filesystem reportsENOSPC,
+not because of a progression or admission defect:588/589 actions,664 simulated
+seconds,153.4 wall seconds, zero deaths. Running719/726 also record earlier
+automatic-save write failures; their complete save/recovery acceptance is not
+claimed. Removed only the generated56GiB dk3 Zig object cache (no builds active);
+installed candidates, reports, source, owner data and saves are retained. Free
+space rises53→97GiB and subsequent live writes succeed. E1/E4 fresh703/702 and
+native360 E2 fresh676 contain no SaveWriteFailed/ENOSPC entries.
+
+Fresh726 passes the precise Athens bridge and both levers, then fails at the
+first Aegis return:1635/1638 actions,2153 maximum simulated seconds,344.1 wall
+seconds, zero deaths. Its supplied node corridor tries upper door717 from the
+lower hall. Canonical return192 now uses the live exit corridor after the real
+fountain dial; actual arrival replay729 is running. This fresh attempt retains
+its earlier storage failures and does not establish complete E2 acceptance.
+
+728 passes both Crypt pillars, Nharre and the Throne platform course, then dies
+on the rotating lift after a bat bite:205/206 actions,340 simulated seconds,
+39.5 wall seconds. Source455 is Hiro; weapon20 is Nightmare's interruption
+self-punishment, not companion damage. Canonical bank travel, switch/wait and
+ride defense now request Bolter16.730 passes the lift, upper bridges, Garroth
+and timestream34 into E4 with zero deaths through those boundaries; the full
+arrival cinematic is still running. Fresh732 starts E3 with all current Lua
+repairs and successful current filesystem writes, under unchanged allowances.
+
+729's live lower Aegis return avoids the remote upper control but stalls at
+timed gold door637:56/58 actions,298 simulated seconds,48.7 wall seconds,
+zero deaths. Read-only floor traces plus ordinary held use/wait and
+direct centre-line movement in731 cross that actual doorway:2/2 actions,
+5 simulated seconds,2.9 wall seconds, zero deaths. Canonical missing-rune
+return uses that measured door crossing before the live exit192;733 replays
+the actual729 failure. Broad134 remains current; all R1–R11 still zero.
+
+730 completes the entire E4 arrival cinematic and finishes:103/105 actions,
+904 simulated seconds,122.0 wall seconds, zero deaths. The normal Bolter
+lift defense and complete Throne ending continuation are scoped passed.733
+passes the timed gold door, Aegis lower return, E-rune/boulder and G-temple
+admission without deaths through those boundaries; its continuation is running.
+
+Fresh732 fails the actual first carrier pillar despite the observed-prefix
+repair:649/651 actions,1467 simulated seconds,208.3 wall seconds, zero deaths.
+Its actual stage4 checkpoint replay736 passes both gaps/all A gates into B;
+developer3 retains the corridor trace. Complete E3 remains failed. Both fresh
+E2/E3 pass entries now include the existing guarded repair-capture wrapper so
+future Lua failures retain the exact live world, instead of only an earlier
+checkpoint. This captures a failure, grants no state and changes no successful
+route action. Fresh737 checks E3 again with that evidence capture enabled.
+
+733 passes all rune visits but follows an upper fountain node after falling
+to the floor368 below it:619/621 actions,697 simulated seconds,145.3 wall
+seconds, zero deaths. Canonical Aegis fountain travel now uses only the live
+route to its actual416,-899,1632 landing.735 disables defense and dies to an
+upper Centurion along that route:3/4 actions,39 simulated seconds,9.3 wall
+seconds.738 keeps Trident defense and passes fountain, all rune sockets and
+gate wheel into Cerberus without deaths through those boundaries.
+
+Fresh734 instead fails the first Temple fountain after the A rune: the supplied
+node route climbs above fountain86 at1424,-2256,288, then use stalls on the
+upper floor1537,-2406,560. Canonical travel approaches the actual fountain
+through live areas and uses it from its reached stand;739 replays the actual
+Temple arrival. Native361 and Broad134 remain unchanged/current.
+
+Fresh737 reproduces the same first pillar stall with an exact failure save:
+650/652 actions,1467 simulated seconds,200.2 wall seconds, zero deaths. Carrier
+457 is grounded at246.252,632.126,-881.875 on raised rubble, still ordered to
+241.959,495.979,-911.875. Read-only GDB witnesses in737 accidentally inspect
+stale entry0/id456 and empty entry2/id0; they are not evidence of carrier457's
+cache.742 automates capture of the correct fresh entry1/id457 at the first
+landing wait. Saved checkpoint736 passes both gaps/A but later dies to a Dwarf
+in B under zero-death limits; its live cache differs after restoration.
+
+Fresh734 fails fountain86 before the plate:1408/1410 actions,1979 simulated
+seconds,252.2 wall seconds, zero deaths.739 dies to the earlier spider before
+qualifying the changed fountain approach:57/58 actions,56 simulated seconds,
+9.2 wall seconds.740 resumes the same actual arrival under the unchanged normal
+four-per-map recovery policy. It passes fountain86, plate, complete rune circuit,
+Aegis fountain/sockets/wheel into Cerberus, with one normal combat recovery:
+963/967 actions,1228 maximum simulated seconds,219.3 wall seconds. It then fails
+the area route to the boss court, also seen in741 (6/7 actions,50 simulated
+seconds,12.2 wall seconds, zero deaths). Gate102 is actually open/toggled; it
+does not need another wheel operation. Read-only743 measures a clear low gate
+centre and southern slope around its hinge.744 tests those supported physical
+steps before rejoining the live court route. No new native source changes.
+
+Native362 implements a traced-identity correction, not yet verified.743/748
+measure the actual low court floor;752 finds a valid supplied southern chain.
+755 nevertheless detours to717 immediately after its first walking leg.
+Read-only758 identifies that segment's actual obstruction as Mikiko#717:
+the travelling actor shares its low ordinal with this map's wooden door717.
+The Lua trace boundary now exports the full persistent id, and nodepath
+uses that id for mover/control resolution and boundary matching. A native Lua
+regression distinguishes an actor and authored door sharing717. All ownership
+rules remain zero. Integrated362 rebuild is running; no acceptance claim yet.
+The first build attempt finds a stale build-runner manifest after object-cache
+cleanup;362b rebuilds after cache metadata removal.
+
+Read-only live756 captures the actual carrier457 while stalled, with the correct
+Move destination241.959,495.979,-911.875. Its four remembered-route points
+include the current raised rubble246.252,632.126,-881.875, then western bank
+217.983,695.617,-935.875 and225.983,703.617,-935.875, then the real pillar
+225.898,504.170,-911.875. Cursor3 attempts the pillar directly; both intervening
+bank points are54 units below the rubble and outside the existing48-unit
+transfer height band. No run-up/flight is active. This explains why retaining
+the observed landing alone does not recover every fresh approach.362 does
+not yet change this mechanism; a bounded, motor-qualified downward-transfer
+repair is under implementation planning.
+
+Moving Hiro to the pillar centre in746/747 changes the actual aim ray to a
+wrong lower point263.875,479.258,-975.098; that experiment is reverted.747's
+correct live457 witnesses document the bad goal, not the original correct-goal
+failure.753/754 restore the original failed Move without replacing it and
+still fail (0/0 actions, zero deaths); saved games reset the transient trail
+to the current leader footing, so these are not the original fresh cache.
+
+Fresh742 passes both A gaps and all Dungeon/Castle, then exhausts five Crypt
+recoveries to Lycanthir80:1760/1764 actions,3134 maximum simulated seconds,
+478.4 wall seconds. Its two read-only live observations at the first gap are
+retained.749 parks too far away for Claw finishing range and dies.750 permits
+ordinary melee closure from that landing and completes both Crypt pillars,
+Nharre, all Throne platforms/Garroth, timestream34 and full E4 arrival:263/265
+actions,1195 simulated seconds,150.8 wall seconds, zero deaths.751 moves the
+finishing fight before the vulnerable wait but then the carrier is blocked
+by Hiro on the first run-up parking.757 clears Hiro to the actual takeoff
+before parking, passes that handoff, then falls on the later first leap.
+This is not a new complete fresh E3 pass; retained exact inputs distinguish
+these continuations.
+
+Native362b integrated build returns exit0. Native363 adds the connected
+raised-approach recovery: supplied transfers admit the same bounded128-unit
+descent as compiled drop links (upward limit remains48), while support, motor
+forecast and hazards still qualify departure/landing. The companion corridor
+can retain its observed bank54 below the rubble instead of discarding that
+intermediate approach and attempting the pillar from above. The shared jump
+planner marks such supplied descents as drop candidates. Its existing motor
+fixture adds an actual54-unit lower landing and rejects129 units. Native363
+is implemented; integrated build and affected live replay are pending.
+
+Native363 integrated build returns exit0. Matching qagame/cgame/UI are staged
+only after that completion. Actual affected continuations759 (Dungeon A
+observed lower bank),760 (Cerberus same-ordinal actor collision),761 (Crypt
+early melee, clear parking and restored running takeoff) now run on363.
+No full fresh native363 acceptance or Broad135 result is claimed yet.
+
+Broad135 subsequently returns exit0:414 Python tests plus native/component
+checks, including full trace identity and the54-unit supplied descent. Ownership
+R1–R11 remains zero.760 completes Cerberus, all Medusa maps/counter,
+timestream23 and full E3 arrival:401/408 actions,102.4 wall seconds, zero
+deaths.759 passes both Dungeon A gaps and gates into B/C, then fails a later
+carrier rally in C:493/493 actions,267.8 wall seconds, zero deaths. These are
+scoped results, not fresh complete episode acceptance.
+
+Fresh native363 E4 run772 reaches Hideout after the prison, Waterfalls, Tower
+and Labs, then fails rock button563 after four reported presses:1326/1328
+actions,742.5 wall seconds, one normal recovery, no companion loss. Repair777
+reproduces the unchanged button from the actual stage2 checkpoint on native364;
+the bot's trace hits its slot but the failure save retains zero mover uses.
+Native365 adds developer3 authoritative player-use trace diagnostics to resolve
+the discrepancy; its integrated build is running. No control activation bypass
+is introduced.
+
+Native364 integrated build passes after correcting a test-local shadowed name.
+Nightmare's class policy now requires an explicit bot request; autonomous weapon
+selection and the existing deliberate-weapon mask honor that declaration. The
+focused regression preserves explicit selection while excluding autonomous
+fallback. This addresses observed interrupted ritual self-damage; it does not
+explain Hideout's independent control failure. Broad136 remains pending.
+
+Fresh native363 E1 run773 reaches Solitude after all Icelab maps, then fails the
+west-deck return move after combat:1699/1745 actions,1085.1 wall seconds, four
+normal recoveries, no companion loss. Crypt continuation763 passes the corrected
+running takeoff, both pillars and Nharre into Throne, then fails control481.
+Village continuation765 passes the coffin and both Dungeon A gaps into B, then
+fails the blade-gate carrier rally; its earlier inner-gate admission has been
+tightened and supplied a real inside Move landing, still unverified. Canyon
+continuation769 passes the new A Sunflare reserve, all B and the C rescue with
+zero deaths; its later supply alcove remains blocked by Mikiko. Crouching775 and
+regrouping776 do not resolve it;776 fails the regroup wait with zero deaths.
+These failed outcomes remain open alongside the earlier exact-input passes.
+
+Native365 integrated build passes. Authoritative diagnostic778 reproduces
+Hideout563 in4.1 wall seconds with zero deaths. At14300 the pilot sees slot197
+from1575,289,-250, then client think moves the player to1569,289 with eye-226.478;
+the actual use ray misses everything. At15300/16300/17300 it hits world geometry
+instead of197 after the changed eye height. Thus the four reported presses
+were pre-movement predictions, not actual control hits.
+
+Native366 reuses the ordinary player's authoritative use-ray function after
+synchronous client think and sends the separate use command only when that ray
+still hits the requested local-world slot. Both co-op and multiplayer adapters
+report only a qualified sent press; a changed ray retries on the next50ms step
+without spending a press or a one-second use cooldown. Normal player interaction
+and routing remain authoritative. A regression rejects floor/miss/solid hits
+and a same-slot hit in another resident world. E4 pass now captures ordinary
+failure saves through the existing guarded repair wrapper. Implemented;
+integrated366b is building after366 exposed an overlooked multiplayer respawn
+call to the changed submission API. Affected scenario and Broad136 are pending.
+
+Native366b integrated build returns exit0.779, replaying772's actual Hideout
+stage2 checkpoint, activates265/562/563/564 and proceeds into the museum and
+chambers lift; the actual563 use hits slot197 at13450.780 replays763's actual
+Throne stage3 checkpoint, passes all upper bridges and activates481 in50ms at
+90100, then reaches Garroth. Both continuations remain running; Broad136 starts
+once these affected controls pass.781 separately replays the B inner-gate and
+medicine repair from771's exact admitted stage2 input. No full episode pass is
+inferred from these control results.
+
+Broad136 returns exit0:414 Python tests plus native/component checks, including
+post-movement use qualification and deliberate ritual policy. Formatting passes
+and R1–R11 remains zero.780 finishes Garroth, timestream34 and full E4 arrival:
+56/58 actions,823.250 maximum simulated seconds,128.4 wall seconds, zero deaths.
+779 passes all Hideout controls, the entire training course/re-entry and submarine
+into Kage, then dies under unchanged zero-death repair limits:535/536 actions,
+966 simulated seconds,150.0 wall seconds. This retains scoped control/course
+success and a separate combat failure.781 passes the medicine collection, inner
+gate, blade gate/stairs and complete Dungeon B into C; it remains running.
+Fresh native366 E3 run782 and E4 run783 now exercise the combined result with
+their unchanged ordinary recovery allowances and archived exact inputs.
+
+Fresh782 fails the Passage exit-party gather after one ordinary Village recovery:
+527/529 actions,140.7 wall seconds. Logs show both companions nearly5000 units
+behind when Hiro approaches the final lip; the route had issued Stay before
+walking across most of the Passage to fragment42. Mikiko remains alive1364
+units away at failure. The connected repair keeps Follow along that approach,
+waits for both companions on the bank, then parks them for the fragment ledge.
+785 replays the actual stage2 input; this route change is unverified.
+
+781 completes all B gates/stairs, Stavros and the C spiral and upper walkways,
+then fails the lower tower-room clear:720/722 actions,299.1 wall seconds, zero
+deaths. The requested Claw chases an upper enemy whose lower bounds fit the
+96-unit vertical clear while the room arena prevents reaching its stairs.
+The lower-room clear now admits64 vertical units; the upper guards remain for
+the following ordinary stair ascent.786 replays the actual C stage9 input;
+no weapon/ammunition grant or kill bypass is introduced. Broad136's native
+result remains valid; only route inputs changed after it.
+
+785 passes the new bank gather and brings both companions to the exit, then
+the final leap lands short after the gather's idle view sweep. Re-aligning
+immediately before the leap passes787's actual failed input through the
+Passage exit, both Dungeon A gaps and all A gates into B; it remains running.
+Fresh E4 run783 fails the sulphur pickup after optional combat takes Hiro down
+the ladder shaft:364/365 actions,155.5 wall seconds, zero deaths. Its exact
+stage11 continuation788 uses direct ordinary pickup with combat disabled,
+collects sulphur, completes the entire Alcatraz return/escape and reaches
+Waterfalls. It remains running, not a complete fresh episode result.
+
+786 passes the tighter lower-room clear and ascends the tower, then fails
+the carrier rally:60/60 actions,55.3 wall seconds, zero deaths. The failure
+save locates the carrier380,585,408, outside the previous timed gate rather
+than on the upper stairs. Gate130's former y<528 admission accepted its jamb;
+789 requires y<480 and aims the ordinary Move at actual inside floor424,440,384.
+This mirrors the qualified deeper B-gate admission;789 remains unverified.
+
+789 dies to a rotworm while waiting at the gate:41/41 actions,15.6 wall
+seconds.786's saved mover records establish908 is a toggle lever left open
+while130 has already closed after its three-second hold. The route now closes
+and reopens that lever normally, retains its deeper floor-aimed Move, and
+permits Claw defense during the stationary carrier wait.790 tests this batch
+but falls before reaching the gate after automatic Ballista fallback;27/26
+started/done actions,9.7 wall seconds. This does not qualify the new admission.
+
+Native367 adds a generic launch-recoil qualification to the shared pilot's
+final fire command. Class-declared launch kick is applied to an uncommitted
+motor forecast; a settled landing must remain within48 below the firing stand
+and outside forbidden liquid. Unsafe fire is withheld without changing the
+weapon's actual kick or moving the body. The focused motor fixture distinguishes
+a400-unit kick across broad floor from a kick over a256-unit ledge onto harmless
+lower floor. The code is implemented; integrated build and affected scenario
+verification are pending. Broad136 retains its native366 scope; new aggregate
+checks have not run. Ownership R1–R11 remains zero.
+
+Native367 integrated build returns exit0; formatting passes.791 now replays
+the actual C tower-stage input with recoil qualification, toggle-lever renewal,
+inside Move admission and Claw defense. No native367 scenario or Broad137 pass
+is claimed yet. Native366 continuation788 continues independently on its frozen
+inputs, completing Alcatraz, Waterfalls, Tower and Labs into Hideout with zero
+deaths so far.
+
+791 passes the former firing-ledge fall, renewed toggle control908, deeper
+carrier Move through130, both tower floors/final door and complete C exit into
+Castle A. It then dies in Castle combat under zero-death repair limits:77/78
+actions,145.750 simulated seconds,27.5 wall seconds. This is scoped tower
+acceptance, not a completed episode. Fresh native367 E3 run792 and E4 run793
+start with the combined route repairs and their unchanged ordinary recovery
+allowances. Broad137 starts after the affected tower passage succeeds.
+
+Broad137 subsequently returns exit0:414 Python tests plus native/component
+checks, including the physical impulse landing fixture. Formatting and
+ownership zero pass. Fresh367 E3 run792 passes Passage and Dungeon A/B;
+fresh367 E4 run793 passes Alcatraz into Waterfalls; both remain running.
+Native366 sulphur continuation788 completes every remaining map/course into
+Kage, then dies under zero-death repair limits:1482/1483 actions,712.2 wall
+seconds. Its ordinary Kage-arena save is healthy96 with70 Slugger rounds;
+this is not an empty-loadout failure.794 replays that actual save on367 with
+the unchanged normal4-per-map/12-total allowance, keeping this distinct from
+the stricter repair result. No new full episode acceptance is claimed.
+
+794 finishes Kage, the reactor betrayal, final opponent, ending and credits on
+native367:5/10 actions,826.100 maximum simulated seconds,62.3 wall seconds.
+Three ordinary Kage checkpoint recoveries remain within the unchanged4-per-map
+and12-total allowance; no companion losses. This qualifies the recorded late
+continuation with bounded recovery, not a full fresh episode or a zero-death
+fight. Fresh792/793 remain active on their separately archived inputs.
+
+Fresh793 completes every authored E4 map/revisit, both final encounters, ending
+and credits on native367:1839/1841 actions,4446 maximum simulated seconds,
+853.5 wall seconds. Its single ordinary recovery is at the final opponent;
+Kage completes without recovery. All unchanged4-per-map/12-total limits hold,
+and there is no companion loss. Broad137 passes. This is current headless E4
+authoritative progression, not rendered/audio or full combined acceptance.
+
+Fresh792 completes Village, Passage, every Dungeon/Castle map into Crypt, then
+its first pillar jump fails after one ordinary recovery:1809/1814 actions,
+581.4 wall seconds. The actual failure save has Hiro at-634,-288,272.25 on the
+carrier's head; carrier457 is-604,-295,216.125 with Stay but an active lane yield
+to-604,-285 until66550. Its parked destination remains-656,-368,216.125. Thus
+parking within the approach's yield range does not keep the run-up clear.
+Read-only795 finds the farther southern ground absent;796 qualifies the western
+bank around-832,-256,232 and its actual floor/order ray.797 parks there, outside
+the run-up/yield range, and completes both pillars, Nharre, all Throne/Garroth,
+timestream34 and full E4 arrival:272/274 actions,1137.750 simulated seconds,
+149.7 wall seconds, zero deaths. The canonical route chooses a clear ray among
+three measured western-bank points, retaining strict parking height/proximity.
+
+Fresh798 fails earlier in Village when following Mikiko blocks the narrow
+moving crypt stair:227/229 actions,697.100 simulated seconds,75.0 wall seconds,
+zero deaths. Its save locates Hiro576,-902,-440 and Mikiko607,-919,-456 directly
+ahead. The later coffin course is solo already; the route now issues Stay
+before entering this stair instead of after reaching its bottom.799 replays
+the actual stage6 input. Fresh complete E3 remains open. Broad137's native
+scope remains valid; subsequent changes are driver inputs only.
+
+799 shows that issuing Stay at stage6 is too late on798's admitted input: the
+companion already occupies the first tread. It repeats the blockage with zero
+deaths:5/6 actions,3.5 wall seconds. Stage5 now retains the earlier entrance
+parking instead of releasing Follow before the solo crypt search.800 cannot
+stage a missing stage5 save; no engine/scenario result is inferred.801 replays
+the actual earlier stage3 save, passes the parked stair, then falls on the
+first coffin hop under zero-death limits:116/117 actions,14.4 wall seconds.
+Its motor trace reaches the coffin's side after losing the18-unit step window;
+the same slow departure had only narrowly passed765. The first short raised
+hop now uses normal running pace, retaining its strict12/16 arrival envelope.
+802 replays801's actual stage6 checkpoint and passes both coffin hops, Village
+return, Passage and all Dungeon A into B with zero deaths so far. Fresh803
+starts with these connected driver repairs plus the qualified western Crypt
+parking. Broad137's native result remains valid; full fresh E3 is still open.
+
+Fresh803 passes the Village stair/coffin and Passage repairs, then fails a
+held melee requirement for Buboid497, now over1000 units back in the prison:
+795/798 actions,216.0 wall seconds, zero deaths.497 has no authored target or
+quest output. Its clearance becomes a bounded local room hunt; the escort
+accepts a caller-supplied defensive weapon.804 dies crossing to Lycanthir141
+(101/102 actions,44.4 wall seconds),806 passes the deeper carrier admission
+then dies during a gate-opening wait (110/111 actions,44.6 wall seconds).
+Those waits and approach strokes still disabled defense;809 propagates the
+requested Claw through them and prepares it during lever use.809 passes all
+Dungeon B and the C spiral/upper walkways with zero deaths, then fails the C
+upper-room guard after retreating behind timed door152:680/682 actions,
+274.5 wall seconds.
+
+805/807 pass the earlier upper-room fight but die on the tower stairs under
+zero-death limits (73/74 actions,17.9 wall seconds and75/76,17.6 respectively).
+808's ranged stair-landings batch completes C, then its Castle A exit waits
+180s for the carrier:223/224 actions,88.5 wall seconds, zero deaths. Its actual
+save leaves the carrier on WOLFandy's head over1400 from Hiro, after Stay was
+issued before the long approach to the solo crypt lift.810 retains Follow
+along that approach, gathers and parks by the lift before the solo vent trip,
+then gathers again after the return. It completes Castle A/B with zero deaths,
+then the Crypt parking ray is blocked:306/306 actions,56.7 wall seconds.
+
+The upper-room entry now crosses farther beyond door152 before a crouched
+local Bolter clear, rather than fighting for a minute from outside its timed
+opening.811 qualifies that entry, all remaining C, Castle A/B, Crypt/Nharre and
+Throne's upper bridges, then dies to Garroth under zero-death repair limits:
+682/683 actions,164.5 wall seconds. This preserves the scoped progression pass
+and separate combat failure; no full fresh E3 pass yet.
+
+Read-only812 shows a supported southern ordering stand and a clear ray to the
+western Crypt bank.810's saved carrier is north of the takeoff and blocks all
+three rays from the original lip. The route now issues its ordinary Move from
+the southern stand.813 incorrectly starts stage2 from its mid-stage failure
+save and falls while replaying the earlier upper-ledge approach:1/2 actions,
+1.1 wall seconds. This does not test the new stand.814 instead uses810's actual
+stage2 checkpoint, the required entry state, and is running. Broad137 remains
+the applicable native aggregate; subsequent changes are Lua driver inputs.
+
+814 uses the proper810 stage2 entry and passes the southern ordering stand,
+western carrier parking, both Crypt pillars/Nharre and Throne's sinking course;
+it later dies to a Fletcher during an upper-control action under zero-death
+repair limits:259/260 actions,56.8 wall seconds. The canonical route first uses
+a currently clear western-bank ray from the original stand, moving south only
+when all are blocked. This preserves797's clear southern-carrier case and814's
+blocked northern-carrier case. Fresh815 now exercises the complete connected
+E3 driver with normal unchanged recovery allowances. No current full fresh E3
+acceptance is claimed until that run finishes.
+
+Fresh815 passes the repaired B gate and takes one ordinary Dwarf recovery on
+the moving-blade staircase, then fails a C spiral Move. The actual saved goal
+is1719.097,-285.349,-730.565; the carrier remains1771.482,-245.569,-743.875.
+Saved order is Move, so this is not completion of a loose Come radius.
+816's stage3 replay and817's earlier B-stage5 replay pass the crossing with
+different physical arrivals; their live snapshots are passing-context evidence,
+not the original stall.817 later fails western Crypt parking; its exact inputs
+remain retained. No fresh complete E3 acceptance follows.
+
+818 instead restores815's exact failed physical state, retains the existing
+Move without issuing another command, and reproduces the stall. Two read-only
+GDB snapshots show the correct destination, blocked=true and zero input, with
+no flight/run-up. The corridor count/retry remain zero. The area waypoint is
+the goal, about67 units away and13 higher: partial-endpoint recovery excludes
+goals within96 (and steps beyond64), while raised-approach recovery needs a
+height difference over18. Neither starts the existing corridor recovery.
+
+Native368 adds a class-owned grounded blocked-Move stasis trigger after1500ms
+without8 units of positional/goal progress. It only requests the existing
+supported, motor-qualified corridor; it grants no movement or jump. Its
+regression uses the exact near-goal geometry, verifies the old endpoint detector
+does not admit it, and covers progress, a changed goal and inactive reset.
+Integrated368 build passes. Exact retained-order819 still fails with zero
+deaths after120 simulated seconds (22.7 wall seconds). The trigger now starts
+recovery and obtains a motor-qualified supported arrival at1728.55,-275.54,
+-725.83, but actual input remains zero. Read-only snapshots and the command
+trace retain this distinction: corridor activation alone does not fix passage.
+
+The support is binary brush100663321, open at its128-unit endpoint with an
+indefinite wait. The final shared physical-stroke gate excludes every mover,
+including this stationary floor, despite its safe motor forecast. Native369
+uses the existing mover registry's current-motion hook at that gate; travelling
+supports retain control, while settled supports can execute the already
+qualified walking stroke. Other mover/riding decisions are unchanged. A
+regression covers open support, closing, closed, reopening, released slot and
+the no-ground sentinel. Ownership remains R1–R11 zero; integrated369 build and
+affected replay are pending. Broad137 retains native367 scope; Broad138 has not
+started.
+
+Native369 integrated build returns exit0. Exact retained-order820 passes with
+no new sidekick command and no deaths: the carrier leaves1771.48,-245.57,
+-743.88 and reaches actual spiral support in200 simulated milliseconds
+(1.5 wall seconds including startup). The shared motion gate was the immediate
+input blocker;368's added corridor trigger remains scoped to sustained blocked
+Move recovery.821 starts the proper C-stage3 checkpoint continuation; fresh
+E3/E4 runs822/823 and Broad138 are running. No fresh E3 acceptance is claimed.
+
+821 passes the complete spiral ascent from the proper C-stage3 checkpoint,
+then dies in a later Dwarf encounter on the upper walkways under zero-death
+repair limits:134/135 actions,40.5 wall seconds,189.95 simulated seconds. This
+retains the affected passage success and later combat failure separately.
+Native369 server SHA256 is
+`dafbb58505f37335a4e729afdb50746753b64ee7885038ed896a11b23232bcc9`,
+preserved under `frozen-native369/lib/dk3/qagame.so` in the sequence build
+directory. Fresh822/823 and Broad138 remain running.
+
+Broad138 subsequently returns exit0 for native369:414 Python tests plus the
+native/component suites, including the blocked near-Move and settled-support
+transition regressions. Formatting passes; ownership remains R1–R11 zero.
+Fresh822 has passed Village/Passage and both Dungeon A crossings into B;
+fresh823 has passed the prison, sulphur revisit and sewer return. Both full
+episode outcomes remain pending.
+
+Fresh822 passes the complete spiral with its full earlier route history, then
+fails a later C-stage9 return from lever726 with zero deaths:1373/1376 actions,
+430.9 wall seconds,2567.3 simulated seconds. It reaches the precise568,632,408
+stand and activates726 normally. The following nodepath move toward420,618,408
+engages an upper guard, shifts north and briefly stands on a raised body at
+535,650,422 (ground slot422), then falls to the lower floor. The failure save
+retains the living carrier upstairs; this is not a failed spiral recovery.
+
+The driver now keeps the carrier on the rally's Stay through lever use and
+retraces the already traversed supported strip with combat disabled:
+424,632,408, then424,480,408. The existing gate call subsequently brings the
+carrier.824 replays the correct822 C-stage9 checkpoint. No native source
+changes follow Broad138; fresh823 continues through laboratories on native369.
+
+824 passes the repaired lever strip, carrier admission, complete tower stairs
+and C exit into Castle A with zero deaths, then continues through Castle A
+into B. Fresh825 starts the combined route with normal unchanged death limits.
+Fresh823 remains running through the laboratory card return and power wing.
+
+824 subsequently finishes the entire continuation: C-stage9 repair, Castle
+A/B, Crypt pillars/Nharre, Throne bridges/Garroth, timestream34 and full E4
+arrival.648/650 actions,287.1 wall seconds,1789.1 simulated seconds, zero
+deaths and no companion loss. This qualifies the connected late route on
+native369; fresh825 remains the complete E3 gate. Fresh823 has escaped the
+laboratories after three ordinary recoveries within unchanged4-per-map/12-total
+limits and is progressing through Hideout, with no companion loss.
+
+Fresh native369 E4 run823 finishes every authored map/revisit, both final
+encounters, ending and credits:2006/2011 actions,976.4 wall seconds. Three
+ordinary laboratory monkey deaths and one Kage recovery stay within unchanged
+4-per-map/12-total limits. No companion loss. Broad138, formatting and ownership
+zero pass. The exact server module remains preserved as frozen-native369.
+This is headless E4 progression, not rendered/audio or combined-campaign acceptance.
+
+Fresh825 fails a different C spiral outcome: repeated carrier falls during the
+fourth per-tread rally at Hiro1742,-334,-713, then companion-loss recovery
+exhausts4-per-map allowance (five observed losses),1132/1135 actions,406.1 wall
+seconds. The reported player hurt source100663431 is an older Lycanthir hit,
+not evidence of the companion's death source.826 replays825's actual C-stage3
+checkpoint with developer3 traces to locate the departure and physical input.
+Fresh E3 acceptance remains open; no limit is increased.
+
+826 reproduces the carrier's damaging-liquid fall with zero-death repair
+limits. Developer3 traces identify a forecast/execution target mismatch in the
+class corridor: at26450 it forecasts steering at1711.45,-320.78,-722.99 and
+returns supported arrival1700.58,-327.73,-722.52. The class then steers at that
+arrival instead, changing the curved approach; earlier legs show the same
+conversion. The shared motor comparison confirms actual and unoccupied motion
+match for the submitted command. This is not evidence of an ignored motor input.
+
+Native370 retains the qualified steering target separately from the supported
+arrival predicate. Walking legs submit the original forecast target; arrival,
+progress expiry, support, hazards and transfer qualification remain enforced.
+The state is class-owned and transient. The existing stair regression now
+checks that a distinct stroke target survives unfinished ascent and clears on
+arrival. Formatting and ownership R1–R11 zero pass. Implemented; integrated370
+build and the actual825 stage3 replay remain pending. Broad139 has not started;
+Broad138 and full E4 run823 retain their native369 scope.
+
+Native370 integrated build returns exit0.827 restores825's actual C-stage3
+checkpoint, passes the complete spiral and reaches upper walkways with the
+carrier's3637HP unchanged. It remains running through the connected late
+route. Fresh E3/E4 runs828/829 and Broad139 start after that affected passage
+passes. Native370 server SHA256 is
+`1ee3230da4253a2da004d063f40bc8a1c5b10bf05bf3f0d85bcea799cfb6fd01`,
+preserved under `frozen-native370/lib/dk3/qagame.so` in the sequence build
+directory. Full current370 episodes and Broad139 remain unverified until their
+running results finish.
+
+Broad139 returns exit0 for native370:414 Python plus native/component checks;
+formatting and ownership remain zero.827 qualifies the complete spiral with
+unchanged carrier3637HP, then fails the optional Ballista65 area approach among
+the northern room's spray forecasts:205/206 actions,71.4 wall seconds, zero
+deaths.830 fails diagnostic setup because the private route root lacks
+campaign_steps.lua; self-contained831 retries crouched and still oscillates,
+so crouching is not admitted as a fix. No canonical ammunition edit is made.
+
+Fresh828 instead fails Passage's final gathering wait with zero deaths:
+521/522 actions,128.8 wall seconds. The actual save has living Mikiko about97
+units away, outside the route's90-unit gather, and Superfly close to Hiro.
+The revised driver gathers from2432-west bank coordinates(-2432,3432,-436)
+before settling under the lip, preserving the90-unit check and both physical
+jumps.832 replays the correct828 stage3 checkpoint. Fresh829 continues E4.
+
+832 passes the wider-bank gather, unchanged90-unit check and Passage exit,
+then both Dungeon A crossings and all A gates into B; it remains running.
+Fresh833 starts with that driver repair.834's direct pickup request still
+uses the same unsuitable area waypoints and fails;835's read-only floor
+search discovers the actual aisle around the long wall's northern end.
+836 follows that supported corridor from827's actual failure and finishes:
+58/58 actions,20.8 wall seconds, zero deaths. Before/after saves confirm
+Ballista ammunition39→40 and pickup65 uses0→1/visible→hidden. The final pickup
+reports absent because the normal walk already collected it, not because the
+item was skipped.
+
+The canonical optional65 branch now walks that bounded live floor corridor,
+collects normally and retraces the same aisle to its western bank before the
+column-hall route.837 replays the proper827 C-stage5 checkpoint to exercise
+the full approach and return. Native370 is unchanged after Broad139; no
+duplicate broad suite is started. Fresh833/829 remain running.
+
+832 subsequently dies to a Dwarf on C's upper walkway under zero-death limits,
+after passing Passage, both A crossings, B and the complete spiral:
+699/702 actions,274.8 wall seconds. No companion loss.837 passes the complete
+canonical ammunition approach/collection/return, all remaining C gates/stairs
+and the C exit into Castle A with zero deaths; its late continuation remains
+running. Fresh838 starts the combined wider-Passage-bank and northern-aisle
+driver.833 retains its previously staged route as comparison evidence;
+native370 and Broad139 remain unchanged.
+
+837 finishes the entire canonical aisle round-trip continuation through Castle
+A/B, Crypt/Nharre, Throne/Garroth and full E4 arrival:952/954 actions,405.3 wall
+seconds, zero deaths and no companion loss. Fresh833 instead reaches Crypt and
+fails its parking wait after one ordinary B Dwarf recovery:1789/1793 actions,
+586.7 wall seconds. The actual saved Move destination is near the carrier,
+not the requested western floor, and the order has completed to Stay. The
+carrier can yield into an initially clear ray during point_at's ordinary
+frames. The driver now validates the selected floor again after aiming and
+uses its existing southern ordering stand if blocked.842 passes parking and
+both pillars into Throne; its ending continuation remains running. No native
+ray-mask change is made: trigger interception was only a hypothesis, not a
+demonstrated cause.
+
+Fresh838 stalls at a supplied lower Passage node during the long fragment
+approach:488/490 actions,149.3 wall seconds, zero deaths.839's broad replacement
+with area routing fails earlier and is reverted.843 surveys the actual failed
+node and onward floor corridor before a local route repair is selected.
+
+Fresh E4 native370 run829 passes all laboratories with zero deaths but later
+times out pursuing a monkey behind the chambers landing's western machinery
+wall:1461/1462 actions,825.1 wall seconds. Bound the optional clear to the
+actual eastern landing, with explicit Glock21.840 passes the complete Hideout,
+both courses, Kage, final opponent, ending and credits:407/409 actions,154.5
+wall seconds, zero deaths and no companion loss. Fresh841 starts that E4
+driver. Broad139 remains valid for unchanged native370; full fresh E3 and E4
+on this latest driver remain open.
+
+Fresh native370 E4 run841 finishes every authored map/revisit, both final
+encounters, ending and credits:1859/1860 actions,879.9 wall seconds,4826.75
+simulated seconds. Zero deaths and no companion losses; unchanged4-per-map/
+12-total limits. Broad139 passes414 Python plus native/component checks;
+formatting and ownership remain zero. Native370's exact server is frozen.
+Rendering/audio and combined-campaign acceptance remain open.
+
+842 subsequently finishes Crypt parking/both pillars, Throne/Garroth and full
+E4 arrival:266/268 actions,159.8 wall seconds, zero deaths and no companion
+loss.843's read-only diagnostic first fails only its decimal-coordinate log
+formatter;844 uses rounded survey labels and identifies an eight-step supported
+approach around the rock to the failed Passage node.845 walks three measured
+bank points from838's actual failure and reaches it normally:3/3 actions,1.3
+wall seconds, zero deaths. The canonical P.approach42 keeps its supplied-node
+route, uses explicit Bolter16 and adds those three ordinary approach moves only
+at that lower node through the existing segment_options hook.846 replays the
+correct838 stage2 checkpoint. No broad area-route replacement remains.
+
+846 passes the measured lower bank from the correct stage2 checkpoint,
+collects the fragment, passes the wider90-unit party gather and Passage exit,
+then continues into Dungeon A. Fresh847 starts the full combined E3 driver;
+fresh841 continues E4. Native370/Broad139 remain unchanged.
+
+846 subsequently passes both Dungeon A gap/bank crossings and gates into B,
+then dies in a later Dwarf fight under zero-death repair limits:394/396
+actions,113.7 wall seconds. This retains the Passage/A acceptance separately
+from later combat. Fresh847 passes Village, the complete repaired Passage and
+both A crossings into B; it takes one ordinary B Dwarf recovery within the
+unchanged limits and remains running. Fresh841 is through the Tower maps and
+laboratories, also still running. No fresh full E3/370-E4 result is claimed yet.
+
+Fresh847 eventually exhausts the unchanged B recovery limit:848/855 actions,
+296.2 wall seconds, five observed ordinary combat deaths, no companion loss.
+Its stage3 checkpoint has56HP and both corridor medicines63/64 consumed.
+848's crouched Bolter duel and849's Ballista variant fail and are not retained.
+850's western stand/target order survives but times out:8/9 actions,39.5 wall
+seconds, zero deaths. Its trace identifies the deeper deadlock: enemy83886185
+is Lycanthir105, not a Dwarf. It reaches1HP by12150ms and requires a melee
+finish; the still-closed bars prevent contact and occlude the requested Dwarf
+behind it. No native actor damage rule is changed.
+
+851 opens the authored cell normally before a bounded SilverClaw fight but
+dies from56HP.852 first rallies the carrier on the safe northern bank, passes
+the cell, then dies at the later stair-medicine approach:14/15 actions,15.8
+wall seconds.853 limits the cell clear to its own floor (vertical48), passes
+the cell, then dies to the later stair guard:12/13 actions,8.5 wall seconds.
+854 extends the existing refill to the two still-visible prison medicines71/72;
+both collect normally and raise health, but a fixed SilverClaw fight against
+the whole released crowd still fails. Those failed melee variants are not
+accepted as complete encounter repairs.
+
+855 retains the ordinary refill, safe party rally and authored lever664, but
+uses Bolter16 for the opened room and lets class damage exclusions select a
+melee finisher only when needed. It keeps the same-floor bounded clear and
+explicit Bolter defense for the later medicine60/61 approach. This driver
+batch is implemented and under affected replay. Native370/Broad139 are
+unchanged; fresh E4 run841 has separately completed with zero deaths as
+recorded above. Full fresh E3 remains open.
+
+855 passes the refilled/opened cell with Bolter16, the stair guards, ordinary
+medicine60/61 and blade gate with zero deaths, then fails a carrier rally:
+58/58 actions,91.7 wall seconds. The live trace shows the carrier briefly
+crossing754 at x>-624, being stopped before its Move finishes, then yielding
+west into the closing doorway while Hiro clears the bend. The failure save
+has the living carrier outside the closed gate. This is not a cell-combat
+failure. The route now orders the measured eastern bank(-552,-704,-448 floor)
+and requires x>-592,y<-672 at the correct height before handoff.856 replays
+the proper855 B-stage4 checkpoint. Native370/Broad139 and fresh E4 run841's
+zero-death acceptance remain unchanged.
+
+856 passes the deeper carrier gate, the formerly failed bend and the complete
+first blade staircase into the moving-blade stage with zero deaths. Fresh857
+starts the full E3 driver containing the cell/supply and eastern-bank repairs.
+The native source remains370; no duplicate broad suite is run after Lua-only
+scenario repairs.
+
+856 subsequently passes all B and the complete C spiral, then dies to a later
+C Dwarf under zero-death limits:402/404 actions,118.9 wall seconds. No companion
+loss. Fresh857 fails Passage's simultaneous gathering wait with both members
+alive. The actual save has Mikiko close and Superfly about98 units away after
+Come resumes Follow.858 freezes each arrival separately but Superfly still
+finishes outside90; it fails without deaths. The driver now issues an ordinary
+Move to a visible, supported nearby bank floor for any member still outside90,
+checks that floor ray after aiming, then holds each admitted member on Stay.
+859 passes that gather/exit and both Dungeon A crossings into B. Fresh860
+starts the complete current E3 driver. Native370 and Broad139 are unchanged;
+fresh E4 run841 remains accepted with zero deaths.
+
+859 passes all B and the complete spiral with zero deaths, then its optional
+Ballista65 search has no qualified aisle from the medicine arrival:
+763/765 actions,264.5 wall seconds. The save already has39/40 Ballista rounds;
+this is not a quest item.861's return to the upper walkway still finds no
+aisle and is not retained as a fix. The optional branch now collects and
+returns only when a supported aisle is found; otherwise it logs that no
+qualified corridor was found and continues. No pickup or inventory is granted.
+862 restores859's actual failure at the legitimate next stage after declining
+that optional supply; it passes the column hall and upper rooms into C's final
+tower stage. Native370/Broad139 remain unchanged.
+
+Fresh860 has passed the successful ammunition-aisle branch, all C, Castle A/B,
+Crypt parking/pillars/Nharre and the Throne bridges with zero deaths. Its
+Garroth/ending remains running. Its archived route precedes only the later
+optional no-aisle branch;862 separately verifies that branch's continuation.
+Fresh full E3 acceptance remains pending the final860 result.
+
+Fresh native370 E3 run860 subsequently finishes all Village revisits, Passage,
+all Dungeon/Castle maps, Crypt pillars/Nharre, Throne/Garroth, timestream34 and
+full E4 arrival:2153/2158 actions,655.0 wall seconds,4447.8 maximum simulated
+seconds. Zero deaths and no companion losses within unchanged limits.
+Together with fresh E4 run841, both complete episodes now have current-native
+zero-death headless passes. Broad139, formatting and ownership zero pass.
+Rendering/audio and combined-campaign acceptance remain open.
+
+862 qualifies continuing past the optional ammo search through the column
+hall/upper rooms, but fails a later tower-lever return fall:106/107 actions,
+41.4 wall seconds, zero deaths.863's read-only floor survey shows the return
+line's raised brush top about24 units above its408-origin walkway, beyond an
+ordinary18-unit step. The live trace shows an unstick hop around that
+obstruction before falling. The driver now uses a short crouched leap from
+568,632,408 to supported western496,632,408, followed by a crouched move along
+the western strip.864 replays862's proper stage9 checkpoint. Native370 and
+both full fresh pass records remain unchanged; this later local route repair
+is implemented, under affected replay.
+
+864 fails staging because862 did not admit a stage9 checkpoint; no gameplay
+result follows.865 instead loads its actual stage8 checkpoint and replays the
+upper rooms before testing the new return. The failed stage9-entry claim is
+retained here as a diagnostic setup error.
+
+865 qualifies the controlled return: its leap lands495,632,408 in900ms, then
+passes the carrier gate, tower stairs and C exit into Castle A with zero
+deaths. The exact archived fresh860 route precedes the optional no-aisle branch
+and this later local lever leap;862 qualifies continuing after declining the
+optional ammo, and865 qualifies the subsequent tower repair. Neither changes
+native370 or weakens the full fresh pass limits.865's remaining continuation
+is still running.
+
+Final report review confirms860/841 both finish with zero deaths, no terminal
+script failures and no save/storage errors.860 retains one caught, nonfatal
+optional companion-weapon approach miss during initial Village setup; its
+progression pass does not establish success of every optional item approach.
+841 has no recorded failed actions. The current prefix and frozen-native370
+server hashes both remain
+`1ee3230da4253a2da004d063f40bc8a1c5b10bf05bf3f0d85bcea799cfb6fd01`.
+865 has passed Garroth/timestream34 into E4 arrival with zero deaths; its final
+arrival sequence remains running.
+
+865 finishes the complete follow-up: upper rooms, the900ms lever-return leap,
+carrier gate/tower exit, Castle A/B, Crypt/Nharre, Throne/Garroth, timestream34
+and full E4 arrival.679/681 actions,238.3 wall seconds,1799.5 maximum simulated
+seconds, zero deaths, no companion losses and no failed actions. The later
+local route repair is therefore qualified through the episode boundary.
+
+Sequence587's current headless progression gate is passed for both complete
+fresh E3 and E4 on native370 (860/841), with the two later local route changes
+qualified by862/865 and exact archived inputs retained. Broad139 passes;
+formatting and class ownership remain zero. This does not close rendering,
+audio, multiplayer, the combined campaign or all optional item approaches.
+
+## walkthrough-videos-588 — committed campaign recordings
+
+Owner requested commit/push, PR update, then full Episode 1–4 videos. Commit
+`207a96dfa7171e6004f57d74f2155cca7ed80bb9` was pushed on
+`feature/episode3-4-progression`; no existing PR was found, so PR15 was opened
+at https://github.com/Revivalry/dk3/pull/15. Local backups, assets and media
+were excluded from the commit.
+
+The committed sources build successfully with Zig 0.16, ReleaseSafe,
+`-Dpython=/usr/bin/python3 -j4`, into isolated prefix
+`zig-out/walkthrough-videos-588`. The immutable client installation is
+`play/e9c0060c1b54a3ed8d99c5af24239912594706d71ad77da059d2f118daa3097d`
+under that prefix. It uses the existing local asset cache and the retained
+HD textures, materials and neural character overlays; no original installation
+or saves are overwritten.
+
+Fresh real-client demo captures use the committed `episodeN-pass.lua` routes,
+normal pilot inputs, authored cinematics and unchanged gameplay limits, each
+in its own profile under `zig-out/reports/walkthrough-videos-588/episodeN-01`.
+E1 starts at intro and stops on E2 arrival; E2/E3 stop on the following episode's
+arrival; E4 includes its ending/credits. All engine invocations use dkguard.
+Software capture retains demos without rasterizing the live scene; subsequent
+GPU playback exports 720p video/audio. Each report retains input/module hashes,
+events and demo hashes. Capture completion, rendered output and media inspection
+are pending; the earlier headless passes do not establish these results.
+
+The initial `episodeN-01` captures were deliberately stopped during the recording
+setup review, not accepted as full episodes. Querying `r_norefresh` after client
+admission returns zero: the engine resets that cheat-tagged rendering cvar, so
+the software path still rasterizes with llvmpipe. A fresh guarded Vulkan capture
+uses the RTX 5090 and advances faster without changing game rules or binaries.
+All four fresh complete-scope captures therefore restart as `episodeN-02` with
+normal GPU rendering. The earlier partial attempts and their results remain local;
+they are not intended for the final four videos. No runtime repair was required.
+
+The guarded GPU comparison also confirms exclusivity: E2–E4 queue behind E1.
+Those `-02` attempts were stopped before accepting any complete episode. To
+retain parallel software demo capture, the recording driver now explicitly sets
+`dk3_coop_capture_no_refresh=1`; the rendered co-op mechanism restores
+`r_norefresh=1` after admission only when that opt-in is set. The default and
+video playback explicitly use zero. This affects discarded live rasterization,
+not simulation, inputs, inventory, combat or demo playback. The repair requires
+a new immutable module generation and fresh `episodeN-03` captures. Earlier
+partial results remain preserved. Build and consolidated checks are running.
+
+The recording-only repair builds successfully; consolidated `zig build test
+-Dpython=/usr/bin/python3 -j4` exits zero (414 Python checks plus native/component
+checks). Ownership update remains zero for R1–R11. Diff whitespace is clean.
+
+The repair is committed and pushed as `b2b4444`. Fresh `episodeN-03` recordings
+use immutable installation
+`zig-out/walkthrough-videos-588/play/9c1e906e48712ec7e897d570a1b139427ebcc79b14421a0940f168cfab7d1508`.
+Read-only console queries after admission verify `r_norefresh=1`; the client
+and its normal command/snapshot processing remain active. The PR records the
+repair and pending full-video acceptance. These are new fresh captures, not
+continuations of the stopped software/GPU comparisons.
+
+Early playback qualification exports E3's closed first demo through natural EOF:
+175.588s, H.264 1280x720 at30fps with AAC48kHz stereo. A sampled cinematic frame
+renders the expected snowy scene and characters. Closed-demo provisional result
+files are explicitly marked and replaced by the final capture result before any
+full-episode acceptance. E1's short closed retry demo also exports through natural
+EOF using the engine's existing uncompressed AVI path; `--raw-video` now exposes
+that optional intermediate format while leaving Motion JPEG the default.
+
+E3-03 stops in Dungeon B stage3 after an optional medicine71 detour crosses the
+timed prison gate and cannot return: the actual failure save/log/demos are retained.
+The stage3 checkpoint has85health and is on the correct western side. The route
+now limits optional refill candidates to that side instead of attempting remote
+eastern cells without reopening their gate. E3-04 loads the ordinary admitted
+`coop-e3m3b-3.sav` at stage3 and continues with the same immutable native modules.
+The final E3 video must label the failed attempt and checkpoint continuation;
+it cannot be claimed as a fresh uninterrupted pass. Other episodes remain running.
+
+E3-04 verifies avoiding the remote refill, then exposes a carrier that yielded
+back east through gate742 during the preceding combat. Its failed rally is
+retained as a diagnostic attempt. The route now admits the carrier farther west
+of that gate, and stage3 reopens the ordinary west lever752 when restoring an
+older checkpoint with the carrier on the wrong side. E3-05 reuses the proper
+E3-03 stage3 checkpoint; it qualifies the real gate opening/crossing and proceeds
+into the cell encounter. No companion relocation or direct target activation is
+used. E3-04 adds no campaign progress and is not selected for the walkthrough.
+
+E2-03 reaches Aegis B but times out using fountain86 with `hold=true`, standing
+81 units from its origin outside the station's56-unit qualified approach. The
+route now allows normal use to approach instead of holding that broad arrival
+radius. E2-04 restores the ordinary map-entry checkpoint at stage1, passes the
+fountain/pressure-plate sequence and reaches Aegis E. Its remaining episode scope
+is running. E2's final video must likewise identify the checkpoint continuation.
+
+Further client capture repairs and evidence:
+
+- E1-03 stops at Crematorium B's upper conveyor point after landing on the lower
+  belt. The route now plans to the actual lower landing instead. E1-04 restores
+  its admitted stage4 checkpoint and passes Crematorium C into Solitude A/B.
+- E2-04 stops returning through Aegis E's gold door when the area route sends Hiro
+  backward toward its closed leaf. E2-05/06 retain read-only floor searches: the
+  north stair loop extends beyond the first search box, and the reachable exit
+  landing is `-1728,1184,908`. E2-07 walks the qualified floor corridor from beyond
+  the open gold door, passes the ordinary exit and proceeds through G Temple.
+- E3-05/06 retain failed combat continuations under unchanged four-death limits.
+  The cell's axe throwers are now targeted before a Lycanthir's required melee
+  finish; stage4 reopens both ordinary gate levers to collect remaining eastern
+  medicines before its upper ambush. E3-07 passes that encounter with no deaths
+  and95health, then fails the next aimed carrier gate. E3-08 holds the aimed view
+  for300ms after queuing the ordinary client order before turning toward a lever
+  or defensive target. That affected replay is running.
+- E4-03 stops at Training Center C on `MissingGunnerMuzzleTag`, then enters the
+  menu. The engine log and incomplete result remain retained, with explicit
+  `observed-failure.json`. Converted seal models contain their required muzzle
+  tags; dead/gibbed actor projections can instead remove the parent model while
+  a burst remains in a snapshot. The shared attachment mechanism now rejects
+  dead/removed/foreign-world parents, with a focused regression. Real missing
+  tags on live owners remain errors. The recorder now detects engine ERROR lines
+  and stops instead of waiting indefinitely in the menu.
+
+The client repair builds and consolidated checks pass (414 Python tests plus
+native/component checks, including the attachment regression); ownership R1–R11
+remains zero. The rules identity remains
+`26f4b11061756063b89c58603bfaa8578cdbe73cda585665cea9a36b6de67b4c`.
+Rebuilding after a commit also changes binary build metadata, so a separate
+replay prefix deliberately stages the byte-identical recorded qagame/UI with
+the repaired cgame and the unchanged rules. Its immutable installation is
+`zig-out/walkthrough-videos-588/replay-prefix/play/0d09e28c45264ef36927998d1845c1f3161c42f23865f911b0ef87568d231a3a`.
+E4-04 records its ordinary map-entry checkpoint continuation there. E4-03 exports
+with explicit `--update-presentation`, which checks recorded game/UI hashes.
+Earlier installations and all failed diagnostic attempts remain preserved.
+
+The first presentation-only installation is rejected by `RuntimeMismatch`:
+adding an import to the top-level native test root changes the conservative
+source fingerprint. That root change was reverted; the regression is registered
+through the already tested presentation attachment module instead. Native checks
+pass after that registration. A full install (rather than `game` alone) also
+refreshes `rules.json`: the actual recorded runtime identity is
+`3f7b76cdc336e3558d53ad91b0e504d2e0d5b373587378e12b79cfa168fcc1af`;
+the earlier manifest's26f4 identity was stale and is not the running module's ID.
+The compatible repaired client installation is
+`play/f1486a7739f3d10616ca01ed04d22f624019c1aeec01e86543cdcbcadfcfbad7`
+under the recording prefix, with byte-identical recorded qagame/UI. Its completed
+manifest/module hashes were checked after a transient current-symlink publication
+failure. Original immutable generations remain preserved. Byte-identical PK3s
+across these new recording installations were hash-checked and hardlinked, saving
+18.81GiB of duplicate local package storage without changing their contents.
+
+E4-05 passes the original muzzle-flash crash and reaches a later door-retreat
+timeout: a sealgirl steps into the qualified retreat, leaving Hiro16 units short.
+That optional bounded retreat is now best-effort; the required mover-settled
+check still must pass before crossing. E3-10 reveals another capture setup issue:
+its copied continuation has no admitted recovery save in its fresh profile, so
+the first death cannot recover. Its log and read-only debugger evidence remain
+retained. Loaded captures now explicitly opt into an ordinary healthy resume save
+at the existing checkpoint stage, without recovery supplies or changed limits.
+Bundled Lua checks qualify healthy/disabled/injured cases and exact stage retention.
+The server module builds; both changes affect pilot input handling only and retain
+the3f7 runtime identity. The resulting immutable installation is
+`play/bd4e2827006c69673241d7b05259b2baf81a8aec0673bcb26bb3c59032efd809`.
+
+E1-05 resumes the proper Ice A stage8 checkpoint. Its west-deck fight now uses the
+stocked Sidewinder from the wider northern landing when the ion pack is empty,
+avoiding the six-shot recoil fallback at the narrow corner. It passes that deck
+into the crate vent. E3-11 resumes the proper Dungeon B stage3 checkpoint with
+normal recovery now working; E4-06 resumes the admitted Training Center C stage2
+checkpoint and passes the blocked-retreat location. These captures remain running.
+
+E3's earlier continuations also qualify the aimed-order hold and ordinary medicine
+gate return. An optional upper medicine approach then selected the crusher floor
+below; the route now walks a measured supported upper corridor before collecting.
+E2-07's I-rune return cuts off a narrow stair with its broad node radius; E2-08
+uses precise walking segments there, then completes Cerberus, the Medusa maps,
+ending/timestream23 and the E3 boundary. Full E2 recording scope is therefore
+complete across labelled E2-03/04/07/08 parts; video export/inspection is pending.
+
+An export trace measures Motion JPEG processing at25–85ms per frame. Remaining
+exports use the existing uncompressed AVI mode. The exporter verifies the private
+replay PID, suspends that offline replay while encoding each closed chunk, then
+resumes it; fixed AVI frame steps preserve playback independently of wall time.
+This bounds temporary raw storage while keeping720p/30fps and game audio. Earlier
+completed clips are reused. Interrupted unfinished JPEG exports are retained in
+per-report `mjpeg-interrupted-*` folders and are not selected as complete clips.
+The first raw continuation has encoded multiple chunks with bounded storage;
+natural EOF and complete-media acceptance remain pending.
+
+E4-06 completes the Training Center continuation, Hideout, labs and both
+final encounters. The driver reports `finish map=credits` with zero deaths on
+this continuation. The selected recording scope is E4-03/05/06. E4-03 retains
+the original Training Center C client failure; export uses the corrected
+presentation module with unchanged recorded server and UI modules. The recorder
+now stops on the driver's finish or fail event, including a finish that leaves
+the engine at its menu.
+
+E3-12 clears the named Dungeon B Buboids and the blades, reaching the return
+from the Dungeon C lever. E3-14 uses a landing radius of 24 on that lever jump
+and returns to the control after combat; it then reaches Wyndrax. E3-15 defeats
+Wyndrax and Garroth, runs the ending and timestream34, and enters E4m1a.
+The selected scope is E3-03/12/14/15, with ordinary checkpoint continuations.
+E3-15 contains death recovery and repeated Crypt footage; the selection retains
+the first Wyndrax passage and the final Crypt-to-ending passage. The floor
+search helpers format fractional probe positions safely; the bundled Lua
+probe exercises the fractional case.
+
+The old ioquake3 AVI rollover appended one underscore to the previous path
+per chunk. E2-03 clip 001 reached natural demo EOF but its video stopped at
+1162.74 seconds; E4-03's export hit an index error and exhausted the main
+zone after 45 chunks. Both incomplete exports are archived. Numbered rollover
+uses a fixed base name, checks path length before opening, and releases
+buffers if index reopen fails. The exporter checks the encoded frame count
+against the engine's close message and rejects capture errors even at demo
+EOF. An independent replay client keeps the recorded module and asset inputs
+intact. The engine-only build passes; E2-03 emits and encodes numbered chunks
+with matched frame counts. Long-export acceptance is pending.
+
+E1-08 kills the gallery guard sooner and reaches the crate vent, but loses
+most of its health standing in the ramp cryotech's firing lane. The chute
+then kills the player. The upper vent medicine detour is discarded: the
+normal duct relay collapses its floor before that aisle is available. E1-09
+readies the ion gun before climbing and engages from the first supported stop.
+E1-09 retains 62 health through the ramp, survives the 29-point chute
+fall, and crosses from deck175 to deck173 at compatible heights. The first
+attempt dies to a Sludgeminion below deck171. Ordinary recovery returns to
+the crate vent and the second attempt crosses all five decks, returns to
+the companions, defeats the central brain and reaches E2m1a. E1-10's optional
+pool fight instead leaves the player under the sphere and minion together;
+it remains diagnostic and the change is discarded. The selected recording
+scope is E1-03/04/09, including the checkpoint recovery. All four gameplay
+scopes now have recorded endings; MP4 export and review remain pending.
+
+The numbered AVI client has SHA-256
+`50c7c9327721c00d69e19b6b1b70dc11ee0687b87b9a2adac863d7fba1297b20`.
+E2-03 clip001 reaches natural demo EOF in 51 closed chunks; their total
+39,239 video frames matches the joined 1280×720 MP4, 1309.827 seconds.
+A frame past the previous cutoff shows the Aegis scene, weapon and HUD.
+This qualifies the rollover repair beyond the previous filename limit.
+E1 and E3 also export through dkguard's software display with no GPU lock;
+sampled chunks show the opening cinematic and Dungeon B gameplay. Exports
+from a single report use an exclusive lock to protect the shared playback
+profile, while different reports can render concurrently.
+
+## walkthrough-videos-589 — cleanup and recording recovery
+
+The owner requests removal of old build data and Cargo caches throughout
+`~/sources` before continuing the recordings. Signature-identified Cargo
+targets, CMake and Meson build trees, Zig caches, old compiled output
+directories and the Cargo download caches are removed. Source-bearing
+`build` and Linux `target` directories are preserved. The filesystem now
+reports 233 GiB free. Root-owned remnants remain in
+`synaTudor/build` and `memoryroom/target`; noninteractive sudo is unavailable.
+
+At resumption, `zig-out/reports` is absent and the original recording/export
+processes are gone. That path is absent from the cleanup deletion inventory.
+No campaign demos are found elsewhere in the checkout or local Trash.
+The earlier Episode1/2 MP4s, frozen installations, source changes and partial
+Episode2 assembly remain. New recordings will use `.keep` for their reports.
+The earlier recorded-completion observations remain historical evidence;
+their local demo files are currently unavailable.
+
+The first Episode2 assembly exposed corrupt H.264 packets when stream-copying
+nested clip concatenations. All five source clips separately passed complete
+video/audio decoding before the report loss. The assembler now decodes each
+source independently, concatenates exact frame/sample lengths and encodes one
+30 fps stream. Its interrupted output is retained for diagnosis.
+
+A diagnostic replay of the Crypt continuation identifies an initial-world
+patch with serial5, offset384 and length516 whose first chunk precedes demo
+recording. The bundled client now exposes its actual playback state through a
+read-only cvar. Presentation skips an orphaned initial-world patch suffix
+during replay, retaining the gamestate's complete configuration. Other
+receiver validation remains active. Build and replay acceptance are pending.
+
+After cleanup, the bundled engine and client presentation module build.
+`zig build game-client` now rebuilds presentation independently of the
+server module. Installation
+`play/57a0741de43f1a72ac1e5bdaa7771e511af2b4cb155999a4869820889684af5a`
+retains the 66e269 recording server/UI and assets with the repaired engine
+and cgame. A short native E3 opening records and exports successfully.
+An assembly of two independently decoded sample clips passes all 566 frame
+and audio decode checks, exact30 fps, chapter checks and 18.9-second duration.
+The contact sheet is inspected and shows both cards and the expected game
+scene, characters and HUD.
+
+Four replacement episode captures start at the normal episode openings
+under `.keep/walkthrough-videos-589/episodeN-01`. Their frozen source settings
+and routes remain in each report. Playback metadata is now retained for each
+clip so a presentation update to a later clip preserves the provenance of
+earlier completed exports.
+
+The replacement E2-01 opening reaches Athens C, then stops at a ladder foot
+whose airborne body never satisfies settled arrival. E2-02 is a retained
+capture-setup error with an out-of-range stage; E2-03 retains an exact-coordinate
+match that misses the fractional authored node. E2-04 uses a small coordinate
+envelope with unsettled arrival and passes into Acropolis/Aegis. Its lower
+return stops within the exit-protection envelope. The final walkflood point
+now stops within32 units and lets the ordinary exit action select the seam.
+E2-05 qualifies that crossing and returns to Aegis B after one normal recovery.
+
+The replacement E3-01 reaches Dungeon B and misses a short timed opening
+while returning from its lever. The wait now also recognizes a completed
+carrier crossing or reset lever, allowing the next ordinary opening cycle.
+E3-02 passes the gate and cell after one recovery, then retains a held attack
+on a distant Buboid. The upper landing now checks that enemy's current proximity
+throughout the walk and uses defensive movement. A failure checkpoint already
+on that landing continues its supported upper corridor. E3-03/04 retain the
+failed backtrack and pursuing-enemy probes. E3-05 passes the landing, the moving
+blade stairs and enters Dungeon C. Final episode/video acceptance is pending.
+
+E4-01 records the opening through Training Center and reaches Hideout,
+then its GL2 renderer exhausts the default512 MiB hunk while retaining the
+visited worlds. E4-02 retains a failed2 GiB allocation attempt, which exceeds
+the engine's signed allocation limit. Private capture/export startup now
+passes1 GiB hunk and128 MiB zone values before engine allocation. E4-03 loads
+the ordinary Hideout arrival save and passes the garden and rock buttons.
+Queued exports restart with the corrected allocation settings.
+
+The E1-01 opening reaches Vault A and then hits GL2's2048-image table limit
+after the resident prior maps. Both bundled GL renderer tables now allow
+16384 images. The engine rebuild passes. Installation
+`play/c5f64a7199a3c960edc264019149b4fbd0bb7eaca8538f48faab81329f1808b0`
+retains the recording modules/assets and supplies these renderers. E1-02
+continues from the Icelab B stage7 checkpoint into Vault A/B/C. Its inspected
+image-list command reports1005 images after the new process's Vault admission.
+
+E3-05 reaches the northern Dungeon C stair but dies while attempting the
+rotworm103 and dwarf104 with melee. E3-06 uses ranged weapon16 from the
+broad landing, passes that fight and reaches the tower-door approach.
+The return now retains crouching through the doorway and uses normal reset
+and reopening of an already-latched tower lever. E3-07 repeats the ordinary
+northern-stair checkpoint to qualify the connected route.
+
+E2-05 reaches Medusa, timestream23 and E3m1a. The selected replacement scope
+is E2-01/04/05 with labelled continuations. E4-03 completes Hideout, the labs,
+both final fights, ending and credits, with one ordinary checkpoint recovery.
+The selected replacement E4 scope is E4-01/03. Their MP4 exports and final
+media review remain pending.
+
+E1-02 reaches the Ice Base entry, where the area planner requests an upper
+control from the lower room. E1-03 uses the authored ramp/ladder corridor
+and reaches the gallery. The ladder dismount now ends at the supported
+southern stand before defense, with a narrow fighting arena that excludes
+the opening. E1-04 qualifies that repair and reaches the next deck. Its held
+Cryotech678 attack closes across the adjacent gap; that fight now stays on
+the northern supported stand. E1-05 qualifies the deck fight, the ramp,
+crate vent and moving-platform arrival.
+
+E3-06 reaches the tower doorway. E3-07 retains the alternative north-bank
+approach falling through the area-planner shortcut; E3-08 instead walks a
+traced upper-floor corridor. Its optional medicine approach cuts the timed
+door's jamb. E3-09 uses the doorway centre for that tour, the correct return
+lever, a crouched faster return strip and normal reset/reopening of the
+tower lever. It passes Castle A/B, Wyndrax and the Crypt and reaches Throne.
+
+The updated cgame's initial demo-patch recovery is exercised by E4-03's
+real exported continuation. The replay logs the orphaned initial suffix
+and continues encoding beyond it. Source demos and per-clip module hashes
+are retained under the new report root.
+
+E1-05 crosses the full moving-platform course after one ordinary pool/ladder
+retry, completes the central brain and reaches E2m1a. E3-09 completes the
+Purifier, both Throne bridge circuits, Garroth, the final cinematic and
+timestream34, then reaches E4m1a. All four replacement recording scopes now
+contain their endings. Selection checks against the actual per-demo recording
+spans cover17/19/11/14 episode maps plus the opening, transitions and credits.
+`selected-map-coverage.json` and the four assembly specifications are retained
+in `.keep/walkthrough-videos-589`.
+
+The selected replacement E1 scope is E1-01/02/03/04/05. E3 uses
+E3-01/02/05/06/09. Redundant retries remain in the reports. Chapters identify
+ordinary checkpoint continuations. Final encoding, decoding/cadence/audio
+checks and contact-sheet review remain pending. The long E1 continuation's
+unfinished software export is archived and requeued on the guarded GPU;
+its already completed opening clip is retained.
+
+The parallel E1 export queues meet at a completed gallery clip. The original
+presentation-update guard rejects that harmless retry after the report lock
+is released. The guard now reuses completed clips only when their per-clip
+provenance records the requested cgame hash. A real retry against the completed
+gallery clip exits0 and preserves its media, without starting another replay.
+E1's six selected clips and E4's three selected clips finish export and enter
+independent-stream assembly. Complete-media validation is still pending.
+
+### Final replacement media acceptance
+
+All four completed MP4s pass full video/audio decoding, exact30 fps packet
+cadence,1280×720 dimensions,48 kHz stereo AAC, chapter timing, audible-game
+sound and SHA-256 checks. Every contact sheet is inspected. Additional E1
+opening/finale frames and E4 closing-credit frames are inspected. The recorded
+native cinematic dark/red transitions and the final credit fade remain visible.
+
+| Episode | Duration | Decoded frames | Chapters |
+| --- | --- | --- | --- |
+| 1 | 1:32:00 | 165601 | 5 |
+| 2 | 1:11:36 | 128892 | 3 |
+| 3 | 1:17:32 | 139565 | 5 |
+| 4 | 1:20:48 | 145432 | 2 |
+
+The19 selected source demos and all four final video hashes match their
+manifests. The579490 decoded frames include all17/19/11/14 episode maps,
+the opening, transitions, endings and final credits. Chapters label ordinary
+checkpoint continuations. Acceptance applies to this recorded route coverage
+and exported media.
+
+Final videos and sidecars live in
+`zig-out/recordings/walkthrough-videos-589/`. Source recordings, route/module
+identities, failures, assembly specifications, map coverage and
+`acceptance.json` live in `.keep/walkthrough-videos-589/`.
+After acceptance,9845277417 bytes of owned redundant report playthroughs,
+failed older assembly movies and interrupted raw intermediates are removed.
+Final videos, selected clips, source demos, manifests and logs are retained.
+The filesystem reports223 GiB available after this cleanup. The two previously
+reported root-owned build-cache remnants still require administrator access.

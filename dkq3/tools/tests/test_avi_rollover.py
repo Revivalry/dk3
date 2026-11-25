@@ -23,25 +23,40 @@ class AviRollover(unittest.TestCase):
 #include <assert.h>
 typedef int qboolean;
 enum {qfalse, qtrue};
-static struct {int fileSize, numIndices; char fileName[64];} afd;
+#define MAX_QPATH 64
+static struct {
+    int fileSize, numIndices;
+    char fileName[MAX_QPATH], baseFileName[MAX_QPATH];
+    unsigned int partNumber;
+} afd;
 static int closed, opened;
 static qboolean CL_CloseAVI(void) {closed++; return qtrue;}
-static const char *va(const char *format, ...) {
-    static char text[128];
+static void Q_strncpyz(char *dest, const char *source, int size) {
+    assert(size > 0 && strlen(source) < (size_t)size);
+    strcpy(dest, source);
+}
+static void Com_sprintf(char *dest, int size, const char *format, ...) {
     va_list args;
     va_start(args, format);
-    vsnprintf(text, sizeof(text), format, args);
+    int written = vsnprintf(dest, size, format, args);
     va_end(args);
-    return text;
+    assert(written >= 0 && written < size);
 }
 static qboolean CL_OpenAVIForWriting(const char *name) {
-    assert(!strcmp(name, "capture.avi_"));
+    char expected[MAX_QPATH];
+    snprintf(expected, sizeof(expected), "capture.avi_%06u", opened + 1);
+    assert(!strcmp(name, expected));
     opened++;
+    /* The real open resets all capture state, including the base and part. */
+    memset(&afd, 0, sizeof(afd));
+    Q_strncpyz(afd.fileName, name, sizeof(afd.fileName));
+    Q_strncpyz(afd.baseFileName, name, sizeof(afd.baseFileName));
     return qtrue;
 }
 ''' + function + r'''
 int main(void) {
     strcpy(afd.fileName, "capture.avi");
+    strcpy(afd.baseFileName, "capture.avi");
     afd.fileSize = INT_MAX - 36;
     afd.numIndices = 1;
     assert(!CL_CheckFileSize(16)); /* Exactly the limit, including the index. */
@@ -54,6 +69,9 @@ int main(void) {
     afd.numIndices = INT_MAX;
     assert(CL_CheckFileSize(0));  /* Index arithmetic must widen as well. */
     assert(closed == 3 && opened == 3);
+    assert(afd.partNumber == 3);
+    assert(!strcmp(afd.baseFileName, "capture.avi"));
+    assert(!strcmp(afd.fileName, "capture.avi_000003"));
     return 0;
 }
 '''

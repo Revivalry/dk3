@@ -49,6 +49,9 @@ pub const Action = struct {
     around: ?Vec3 = null,
     /// leap: a moving landing surface, resolved again throughout the jump.
     landing: ?Target = null,
+    /// Ordinary movement may approach this explicitly named campaign exit.
+    /// All other exit volumes retain the pilot's unintended-travel fence.
+    allowed_exit: ?Target = null,
     fight: bool = true,
     /// kill: engage from the current position instead of closing in.
     hold: bool = false,

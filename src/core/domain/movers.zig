@@ -44,6 +44,8 @@ pub const Binary = struct {
     return_at: Deadline = .{},
     group: u32 = 0,
     owner: u32 = 0,
+    /// Accepted activations, distinct from automatic arrival/return motion.
+    uses: u32 = 0,
     /// Zero identifies archives predating authored-hull travel restoration.
     travel_version: u8 = 0,
     /// Authored press and pop-back audio, registered when the map is admitted so
@@ -72,9 +74,13 @@ pub const Binary = struct {
         self.owner = activator;
         if (self.state == .opening) return null;
         if (self.state == .open and !self.toggle) {
-            if (self.wait_ms >= 0) self.return_at = try Deadline.after(now, @as(i64, self.wait_ms) + 1);
+            if (self.wait_ms >= 0) {
+                self.return_at = try Deadline.after(now, @as(i64, self.wait_ms) + 1);
+                self.uses +%= 1;
+            }
             return null;
         }
+        self.uses +%= 1;
         return self.state != .open;
     }
     pub fn duration(self: Binary, open: bool, current: v.Vec3) !i32 {

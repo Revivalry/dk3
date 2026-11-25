@@ -1148,6 +1148,7 @@ void CL_PlayDemo_f( void ) {
 
 	clc.state = CA_CONNECTED;
 	clc.demoplaying = qtrue;
+	Cvar_Set( "cl_demoPlayback", "1" );
 	Q_strncpyz( clc.servername, arg, sizeof( clc.servername ) );
 
 #ifdef LEGACY_PROTOCOL
@@ -1461,6 +1462,7 @@ void CL_Disconnect( qboolean showMainMenu ) {
 
 	// wipe the client connection
 	Com_Memset( &clc, 0, sizeof( clc ) );
+	Cvar_Set( "cl_demoPlayback", "0" );
 
 	clc.state = CA_DISCONNECTED;
 
@@ -3698,6 +3700,7 @@ void CL_Init( void ) {
 	cl_showSend = Cvar_Get ("cl_showSend", "0", CVAR_TEMP );
 	cl_showTimeDelta = Cvar_Get ("cl_showTimeDelta", "0", CVAR_TEMP );
 	cl_freezeDemo = Cvar_Get ("cl_freezeDemo", "0", CVAR_TEMP );
+	Cvar_Get( "cl_demoPlayback", "0", CVAR_ROM );
 	rcon_client_password = Cvar_Get ("rconPassword", "", CVAR_TEMP );
 	cl_activeAction = Cvar_Get( "activeAction", "", CVAR_TEMP );
 

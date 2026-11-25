@@ -13,6 +13,18 @@ pub const State = struct {
     alpha: f32 = 0,
     started_ms: i64 = 0,
     sound_ready_ms: i64 = 0,
+    struck: bool = false,
+    pub fn claimStrike(self: *State) bool {
+        if (self.struck) return false;
+        self.struck = true;
+        return true;
+    }
+    pub fn leaveAttack(self: *State, now: i64) void {
+        if (self.struck) self.fade(now) else {
+            self.phase = .chase;
+            self.started_ms = now;
+        }
+    }
     pub fn fade(self: *State, now: i64) void {
         if (self.phase == .fading) return;
         self.phase = .fading;
@@ -34,6 +46,17 @@ pub const State = struct {
         try map.one(&self.owner);
     }
 };
+test "a ghost cannot repeat its spent strike by leaving and reentering reach" {
+    var state: State = .{ .phase = .attack };
+    try std.testing.expect(state.claimStrike());
+    state.leaveAttack(1000);
+    try std.testing.expectEqual(.fading, state.phase);
+    try std.testing.expect(!state.claimStrike());
+    var missed: State = .{ .phase = .attack };
+    missed.leaveAttack(1000);
+    try std.testing.expectEqual(.chase, missed.phase);
+    try std.testing.expect(missed.claimStrike());
+}
 /// The classnames this policy defines (order is the catalog's save order, not this list's).
 pub const definitions = [_]@import("../../../mechanics/policy/actors/definition.zig").Definition{
     .{ .classname = "monster_ghost", .kind = .ghost, .run = "flya", .death = "flya" },

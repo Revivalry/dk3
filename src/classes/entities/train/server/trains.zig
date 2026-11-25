@@ -42,10 +42,11 @@ pub fn spawn(world: *data.World, slots: *Slots, projections: []abi.EntityProject
 fn corner(world: *data.World, name: []const u8) !?ecs.Entity {
     if (name.len == 0) return null;
     const matches = try names.named(world, name);
-    if (matches.count == 0) return null;
-    const entity = world.find(matches.ids[0]).?;
-    if (!std.mem.eql(u8, (try world.get(entity, data.MapObject)).classname, "path_corner_train")) return null;
-    return entity;
+    for (matches.ids[0..matches.count]) |id| {
+        const entity = world.find(id) orelse continue;
+        if (std.mem.eql(u8, (try world.get(entity, data.MapObject)).classname, "path_corner_train")) return entity;
+    }
+    return null;
 }
 /// A stopped train's corner and the one it leaves for next: a rider tells a
 /// stop part-way along a run from the end of it.
@@ -68,6 +69,13 @@ pub fn publish(world: *data.World, entity: ecs.Entity, projections: []abi.Entity
 }
 fn arrived(world: *data.World, entity: ecs.Entity, now: i64) !void {
     const train = try world.get(entity, data.Train);
+    if (train.phase == .moving and train.next_target.len == 0) {
+        // A stationary turn retains its corner for a later deliberate use,
+        // but completes without another positional arrival at that corner.
+        train.phase = .paused;
+        train.action = .{};
+        return;
+    }
     const destination = world.find(train.destination) orelse {
         train.phase = .paused;
         train.action = .{};
@@ -77,6 +85,16 @@ fn arrived(world: *data.World, entity: ecs.Entity, now: i64) !void {
     train.next_target = object.target;
     train.arrival_pending = true;
     try train.reached(now, object.flags & 8 != 0, try prop.number(object, "health", 0));
+    if (train.next_target.len == 0 and train.departure_wait_ms >= 0 and object.flags & 8 == 0 and try prop.number(object, "health", 0) <= 0 and try hasRotation(object)) {
+        train.phase = .dwelling;
+        train.action = try @import("../../../../core/domain/time.zig").Deadline.after(now, @as(i64, train.departure_wait_ms) + 1);
+    }
+}
+fn hasRotation(object: data.MapObject) !bool {
+    inline for (.{ "x", "y", "z" }) |axis| {
+        if (try prop.number(object, axis ++ "_distance", 0) != 0 or try prop.number(object, axis ++ "_speed", 0) != 0) return true;
+    }
+    return false;
 }
 fn initialize(world: *data.World, projections: []abi.EntityProjection, entity: ecs.Entity, now: i64) !bool {
     const train = try world.get(entity, data.Train);
@@ -106,12 +124,13 @@ fn initialize(world: *data.World, projections: []abi.EntityProjection, entity: e
 }
 fn leave(world: *data.World, projections: []abi.EntityProjection, entity: ecs.Entity, now: i64) !void {
     const train = try world.get(entity, data.Train);
-    const destination = try corner(world, train.next_target) orelse {
+    const destination = try corner(world, train.next_target);
+    const previous = if (world.find(train.destination)) |point| (try world.get(point, data.MapObject)).* else null;
+    if (destination == null and (train.next_target.len != 0 or previous == null or !try hasRotation(previous.?))) {
         train.phase = .paused;
         train.action = .{};
         return;
-    };
-    const previous = if (world.find(train.destination)) |point| (try world.get(point, data.MapObject)).* else null;
+    }
     var speed = train.speed;
     var rotation: data.Vec3 = @splat(0);
     var rates: data.Vec3 = @splat(0);
@@ -128,18 +147,54 @@ fn leave(world: *data.World, projections: []abi.EntityProjection, entity: ecs.En
         }
     }
     const transform = try world.get(entity, data.Transform);
-    const destination_point = (try world.get(destination, data.Transform)).position;
+    const destination_point = if (destination) |point| (try world.get(point, data.Transform)).position else transform.position;
     const leg = try rules.leg(transform.position, destination_point, transform.angles, speed, rotation, rates, flags);
-    train.destination = try world.persistentId(destination);
+    train.departure_corner = train.destination;
+    if (destination) |point| train.destination = try world.persistentId(point);
     train.action = .{};
     train.position = .{ .base = transform.position, .end = destination_point, .start_ms = now, .duration_ms = leg.duration_ms };
     train.angles = .{ .base = transform.angles, .end = leg.angular_end, .start_ms = now, .duration_ms = leg.duration_ms };
     train.phase = .moving;
-    if (flags & 32 != 0) {
+    if (destination != null and flags & 32 != 0) {
         try @import("../../../../mechanics/server/pusher.zig").teleport(world, projections, entity, destination_point, now);
         train.phase = .teleporting;
         train.action = try @import("../../../../core/domain/time.zig").Deadline.after(now, 1);
     }
+}
+
+test "a terminal corner completes its own rotation once without repeating arrival targets" {
+    var world = data.World.init(std.testing.allocator, 4);
+    defer world.deinit();
+    const point = try world.create(10, .{ data.Transform{}, data.MapObject{ .classname = "path_corner_train", .properties = &.{ .{ .key = "z_distance", .value = "180" }, .{ .key = "wait", .value = "-1" } } } });
+    const entity = try world.create(11, .{ data.Transform{ .angles = .{ 0, 900, 0 } }, data.Train{ .phase = .moving, .next_target = "terminal", .destination = try world.persistentId(point) } });
+    try arrived(&world, entity, 1000);
+    const train = try world.get(entity, data.Train);
+    try std.testing.expectEqual(rules.Phase.dwelling, train.phase);
+    try std.testing.expect(train.arrival_pending);
+    train.arrival_pending = false;
+    try leave(&world, &.{}, entity, 1001);
+    try std.testing.expectEqual(@as(u32, 10), train.destination);
+    try std.testing.expectEqual(@as(i32, 2000), train.angles.duration_ms);
+    try std.testing.expectEqual(@as(f32, 1080), train.angles.end[1]);
+    try arrived(&world, entity, 3001);
+    try std.testing.expectEqual(rules.Phase.paused, train.phase);
+    try std.testing.expect(!train.arrival_pending);
+    (try world.get(entity, data.Transform)).angles = train.angles.end;
+    try leave(&world, &.{}, entity, 4000);
+    try std.testing.expectEqual(@as(f32, 1260), train.angles.end[1]);
+}
+test "a train corner shares its name with controls and queues the departing corner" {
+    var world = data.World.init(std.testing.allocator, 8);
+    defer world.deinit();
+    _ = try world.create(1, .{data.MapObject{ .classname = "trigger_relay", .targetname = "next" }});
+    const first = try world.create(2, .{ data.Transform{}, data.MapObject{ .classname = "path_corner_train", .target = "next" } });
+    const next = try world.create(3, .{ data.Transform{}, data.MapObject{ .classname = "path_corner_train", .targetname = "next" } });
+    try std.testing.expectEqual(next, (try corner(&world, "next")).?);
+    const entity = try world.create(4, .{ data.Transform{}, data.Train{ .phase = .paused, .destination = try world.persistentId(first), .next_target = "next" } });
+    try leave(&world, &.{}, entity, 1000);
+    const train = try world.get(entity, data.Train);
+    try std.testing.expectEqual(@as(u32, 2), train.departure_corner);
+    try std.testing.expectEqual(@as(u32, 3), train.destination);
 }
 pub fn use(world: *data.World, projections: []abi.EntityProjection, entity: ecs.Entity, source: ?@import("../../../../mechanics/domain/world_references.zig").Ref, activator: u32, now: i64) !void {
     const train = try world.get(entity, data.Train);
@@ -213,11 +268,24 @@ pub fn worldSpawn(spawning: *const system_context.Spawn) !void {
 }
 pub fn worldPrepare(frame: *const system_context.Step) !void {
     try prepare(frame.world, frame.slots, frame.projections, frame.now);
+    try fireDepartures(frame);
+}
+fn fireDepartures(frame: *const system_context.Step) !void {
+    for (frame.slots.occupants) |occupant| {
+        const entity = occupant orelse continue;
+        const train = frame.world.get(entity, data.Train) catch continue;
+        const pending = train.departure_corner;
+        const owner = train.owner;
+        train.departure_corner = 0;
+        if (frame.world.find(pending)) |point|
+            try frame.targets.fire(frame.world, frame.slots, frame.projections, point, owner, frame.now);
+    }
 }
 pub fn worldMove(frame: *const system_context.Step) !void {
     try step(frame.world, frame.slots, frame.projections, frame.now, frame.elapsed);
 }
 pub fn worldFinish(frame: *const system_context.Step) !Arrivals {
+    try fireDepartures(frame);
     return finish(frame.world, frame.slots, frame.projections, frame.now);
 }
 /// A train arriving at a path corner fires the corner's `pathtarget`.
@@ -291,6 +359,10 @@ pub fn samplePart(world: *data.World, entity: ecs.Entity, now: i64, destination:
 /// Mover part ownership (platforms.zig).
 pub fn ownsPart(world: *data.World, entity: ecs.Entity) bool {
     return (world.get(entity, data.Train) catch null) != null;
+}
+pub fn movingPart(world: *data.World, entity: ecs.Entity) bool {
+    const train = world.get(entity, data.Train) catch return false;
+    return train.phase == .moving or train.phase == .teleporting;
 }
 /// A train is a path platform (platforms.zig).
 pub fn pathPhase(world: *data.World, entity: ecs.Entity) ?@import("../../../../mechanics/server/platforms.zig").PathPhase {

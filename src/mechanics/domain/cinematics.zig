@@ -232,6 +232,7 @@ pub fn parse(allocator: std.mem.Allocator, bytes: []const u8) !Program {
 }
 // Native save state is separate from immutable supplied program data.
 pub const Playback = struct {
+    pub const Request = struct { name: []const u8 = "", trigger: u32 = 0, viewer: u32 = 0 };
     trigger: u32 = 0,
     exit: u32 = 0,
     viewer: u32 = 0,
@@ -240,6 +241,8 @@ pub const Playback = struct {
     started_ms: i64 = 0,
     active: bool = false,
     finished: bool = false,
+    pending: [4]Request = @splat(.{}),
+    pending_count: u8 = 0,
     sounds: u16 = 0,
     queued: [128]u16 = @splat(0),
     inherited: Camera = .{ .position = @splat(0), .angles = @splat(0) },

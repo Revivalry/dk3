@@ -49,8 +49,24 @@ const WaterLedge = struct {
 };
 const SubmergedStep = struct {
     height: f32,
+    ladder_face: bool = false,
+    ceiling: ?f32 = null,
     fn traceStep(raw: *anyopaque, request: collision.Request) !collision.Trace {
         const self: *@This() = @ptrCast(@alignCast(raw));
+        var hit = self.stepOnly(request);
+        if (self.ladder_face and hit.normal[0] < -0.5) hit.ladder = true;
+        if (self.ceiling) |ceiling| {
+            const a = ceiling - request.start[2] - request.maxs[2];
+            const b = ceiling - request.end[2] - request.maxs[2];
+            if (a < 0) return .{ .fraction = 0, .end = request.start, .normal = @splat(0), .start_solid = true, .all_solid = b < 0, .entity = 2046 };
+            if (b < 0 and b < a) {
+                const fraction = @max(0, (a - 0.001) / (a - b));
+                if (fraction < hit.fraction) hit = .{ .fraction = fraction, .end = v.add(request.start, v.scale(v.subtract(request.end, request.start), fraction)), .normal = .{ 0, 0, -1 }, .entity = 2046 };
+            }
+        }
+        return hit;
+    }
+    fn stepOnly(self: *const @This(), request: collision.Request) collision.Trace {
         var hit = plane(request.start, request.mins, request.end);
         // A raised half-floor: x >= 64, z <= height, expanded by the hull.
         const starts = [2]f32{ 64 - request.maxs[0] - request.start[0], request.start[2] + request.mins[2] - self.height };
@@ -79,6 +95,76 @@ const SubmergedStep = struct {
         return c.CONTENTS_WATER;
     }
 };
+test "crouched ladder dismount steps into a low duct without crossing a solid wall" {
+    var parameters = bridge.parameters(0);
+    parameters.fixed_ms = 16;
+    parameters.snap_velocity = false;
+    for ([_]bool{ false, true }) |strafe| for ([_]bool{ false, true }) |blocked| {
+        var fixture: SubmergedStep = .{ .height = if (blocked) 256 else 48, .ladder_face = true, .ceiling = if (blocked) null else 84 };
+        const service: collision.Collision = .{ .context = &fixture, .trace_fn = SubmergedStep.traceStep, .contents_fn = IcePlane.dry };
+        var player: move.Player = .{};
+        var motion: @import("../core/domain/slide.zig").State = .{ .position = .{ 48, 0, 66 }, .velocity = @splat(0) };
+        for (1..65) |frame| _ = try move.run(&player, &motion, .{
+            .time_ms = @intCast(frame * 16),
+            .angles = .{ 0, if (strafe) 90 else 0, 0 },
+            .forward = if (strafe) 0 else 127,
+            .right = if (strafe) 127 else 0,
+            .up = -127,
+        }, parameters, service);
+        if (blocked) {
+            try std.testing.expect(motion.position[0] <= 49.01);
+            try std.testing.expect(motion.position[2] < 66);
+        } else {
+            try std.testing.expect(motion.position[0] > 64);
+            try std.testing.expectApproxEqAbs(@as(f32, 72), motion.position[2], 0.1);
+            try std.testing.expect(player.ducked);
+        }
+    };
+}
+const IcePlane = struct {
+    slope: bool = false,
+    icy: bool = true,
+    fn dry(_: *anyopaque, _: v.Vec3, _: u16) !u32 {
+        return 0;
+    }
+    fn sweep(raw: *anyopaque, request: collision.Request) !collision.Trace {
+        const self: *@This() = @ptrCast(@alignCast(raw));
+        if (!self.slope) {
+            var hit = plane(request.start, request.mins, request.end);
+            hit.slick = self.icy;
+            return hit;
+        }
+        const a = request.start[2] - request.start[1] + request.mins[2] - request.maxs[1];
+        const b = request.end[2] - request.end[1] + request.mins[2] - request.maxs[1];
+        const normal: v.Vec3 = .{ 0, -@sqrt(@as(f32, 0.5)), @sqrt(@as(f32, 0.5)) };
+        if (a < -0.001) return .{ .fraction = 0, .end = request.start, .normal = normal, .start_solid = true, .all_solid = b < -0.001, .entity = 2046, .slick = self.icy };
+        if (b >= 0 or b >= a) return .{ .fraction = 1, .end = request.end, .normal = normal };
+        const fraction = @max(0, (a - 0.001) / (a - b));
+        return .{ .fraction = fraction, .end = v.add(request.start, v.scale(v.subtract(request.end, request.start), fraction)), .normal = normal, .entity = 2046, .slick = self.icy };
+    }
+};
+test "authored ice supports low-speed footing on slopes and preserves a fast slide" {
+    var parameters = bridge.parameters(0);
+    parameters.fixed_ms = 16;
+    parameters.snap_velocity = false;
+    var fixture: IcePlane = .{ .slope = true };
+    const service: collision.Collision = .{ .context = &fixture, .trace_fn = IcePlane.sweep, .contents_fn = IcePlane.dry };
+    var player: move.Player = .{};
+    var motion: @import("../core/domain/slide.zig").State = .{ .position = .{ 0, 0, 39.125 }, .velocity = @splat(0) };
+    for (1..33) |frame| _ = try move.run(&player, &motion, .{ .time_ms = @intCast(frame * 16), .angles = .{ 0, 90, 0 } }, parameters, service);
+    try std.testing.expect(v.length(motion.velocity) < 0.01);
+    try std.testing.expectApproxEqAbs(@as(f32, 0), motion.position[1], 0.01);
+    for (33..65) |frame| _ = try move.run(&player, &motion, .{ .time_ms = @intCast(frame * 16), .angles = .{ 0, 90, 0 }, .forward = 127 }, parameters, service);
+    try std.testing.expect(motion.position[1] > 20 and motion.position[2] > 59);
+    try std.testing.expectEqual(@as(u16, 2046), player.ground_entity);
+    fixture.slope = false;
+    for ([_]f32{ 100, 300 }) |speed| {
+        player = .{};
+        motion = .{ .position = .{ 0, 0, 24.125 }, .velocity = .{ speed, 0, 0 } };
+        for (1..65) |frame| _ = try move.run(&player, &motion, .{ .time_ms = @intCast(frame * 16), .angles = @splat(0) }, parameters, service);
+        if (speed < 170) try std.testing.expect(motion.position[0] < 15) else try std.testing.expect(motion.position[0] > 250);
+    }
+}
 test "a crouched swimmer crosses a submerged sill but cannot climb a high wall" {
     for ([_]f32{ 8, 24 }) |height| {
         var fixture: SubmergedStep = .{ .height = height };

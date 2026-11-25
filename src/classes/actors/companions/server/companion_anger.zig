@@ -54,11 +54,11 @@ pub fn prepareDamage(world: *data.World, entity: ecs.Entity, amount: i32, now: i
 /// No ammunition is granted; a solid lane and actual reach are required.
 pub fn unarmed(world: *data.World, entity: ecs.Entity, table: *const @import("../../../../mechanics/domain/weapons.zig").Table, episode: u8, now: i64) !void {
     const member = try world.get(entity, data.Companion);
-    if (!member.anger.retaliating or member.carrying or (member.anger.strike_ms orelse 0) > now) return;
+    if (!member.anger.retaliating or (member.anger.strike_ms orelse 0) > now) return;
     const owner = access.find(world, member.owner) orelse return;
     if ((try owner.get(data.Health)).current <= 5 or (try owner.get(data.Player)).mode != .normal) return;
     if (@import("../../../../mechanics/server/cinematics.zig").active(world)) return;
-    if (try @import("companion_weapons.zig").choose(world, entity, owner, table, episode) != 0) return;
+    if (!member.carrying and try @import("companion_weapons.zig").choose(world, entity, owner, table, episode) != 0) return;
     const from = v.add((try world.get(entity, data.Transform)).position, .{ 0, 0, 12 });
     const to = v.add((try owner.get(data.Transform)).position, .{ 0, 0, 12 });
     if (v.length(v.subtract(to, from)) > 64) return;
@@ -93,9 +93,28 @@ pub fn plan(world: *data.World, entity: ecs.Entity, actor: *data.Actor, pose: da
     actor.threat_position = target;
     actor.threat_seen_ms = now;
     actor.mode = .attack;
-    intent.* = .{ .destination = target, .preferred = member.owner, .look_at = target, .fight = true, .close_in = true };
+    // A carrier cannot wield its stored gun. Approach for the physical
+    // unarmed response instead of holding ranged distance forever.
+    intent.* = .{ .destination = target, .preferred = member.owner, .look_at = target, .fight = !member.carrying, .close_in = !member.carrying };
     _ = pose;
     return true;
+}
+
+test "a provoked carrier approaches for unarmed retaliation without firing a stored gun" {
+    const t = std.testing;
+    var world = data.World.init(t.allocator, 4);
+    defer world.deinit();
+    const player = try world.create(1, .{ data.Player{}, data.Health{}, data.Transform{} });
+    var anger: @import("actor_catalog").companions.anger.State = .{};
+    anger.begin();
+    const carrier = try world.create(2, .{ data.Companion{ .identity = .superfly, .owner = 1, .carrying = true, .anger = anger }, data.Health{} });
+    var actor: data.Actor = .{ .definition = 0 };
+    var intent: pilot.Intent = .{};
+    try t.expect(try plan(&world, carrier, &actor, .{}, .{ .world = &world, .entity = player }, &intent, 1000));
+    try t.expect(!intent.fight and !intent.close_in);
+    try t.expectEqual(@as(u32, 1), intent.preferred);
+    try t.expect(intent.destination != null);
+    try t.expect(try @import("companions.zig").hostile(&world, player));
 }
 
 test "one provoked member recruits its party and delayed owner hits retain mercy" {
@@ -124,6 +143,16 @@ test "one provoked member recruits its party and delayed owner hits retain mercy
     const delayed = damage.apply(try world.get(player, data.Health), null, 1000, 3050, options);
     try t.expectEqual(@as(i32, 0), delayed.blood);
     try t.expectEqual(@as(i32, 5), (try world.get(player, data.Health)).current);
+}
+test "automatic acquisition recognizes a party member before its generic actor role" {
+    var world = data.World.init(std.testing.allocator, 2);
+    defer world.deinit();
+    const ally = try world.create(2, .{ data.Companion{ .identity = .superfly, .owner = 1 }, data.Actor{ .definition = 0 }, data.Health{} });
+    const target: Ref = .{ .world = &world, .entity = ally };
+    const targeting = @import("../../../../mechanics/server/weapon_targets.zig");
+    try std.testing.expect(!try targeting.allowed(target, 1, .{}, false));
+    try std.testing.expect(try targeting.allowed(target, 1, .{}, true));
+    try std.testing.expect(!try targeting.allowed(target, 2, .{}, true));
 }
 
 test "ordinary owned party shots cannot injure the owner or consume armour" {

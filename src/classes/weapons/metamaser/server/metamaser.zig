@@ -62,7 +62,7 @@ pub fn launch(world: *data.World, slots: *Slots, projections: []abi.EntityProjec
     const speed = 800 * (1 + 0.3 * @as(f32, @floatFromInt((try world.get(owner, data.Character)).attribute(.attack, now))));
     const cube: W.BallisticState = .{ .charges = tuning.cube_charges, .end_ms = tuning.cube_lifetime_ms, .range = if (tuning.range == 0) 512 else tuning.range };
     const entity = try world.create(null, .{
-        data.Transform{ .position = start, .angles = shot.angles },                                                                               data.Velocity{ .linear = v.scale(rules.aim(start, target, forward), speed) },
+        data.Transform{ .position = start, .angles = shot.angles },                                                                               data.Velocity{ .linear = v.scale(@import("weapon_catalog").ballistics.aimDirection(start, target), speed) },
         data.Body{ .mins = W.spec.projectile.mins, .maxs = W.spec.projectile.maxs, .contents = c.CONTENTS_BODY, .collision_mask = c.MASK_SOLID }, data.Health{ .current = tuning.cube_health, .maximum = tuning.cube_health },
         data.Hurt{},                                                                                                                              data.Projectile{ .owner = owner_id, .weapon = W.id, .damage = tuning.damage, .born_ms = now, .stepped_ms = now, .flight = .{ .metamaser = cube }, .launch_position = start, .speed = speed, .lifetime_ms = tuning.cube_lifetime_ms },
         data.Random{ .state = owner_id ^ @as(u32, @truncate(@as(u64, @bitCast(now)))) ^ 0x619b76e3 },                                             data.Lifetime{ .expires_ms = now + tuning.cube_lifetime_ms + 5000 },

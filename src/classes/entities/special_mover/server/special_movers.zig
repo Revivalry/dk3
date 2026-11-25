@@ -201,3 +201,7 @@ pub fn samplePart(world: *data.World, entity: ecs.Entity, now: i64, destination:
 pub fn ownsPart(world: *data.World, entity: ecs.Entity) bool {
     return (world.get(entity, data.Secret) catch null) != null or (world.get(entity, data.Rotation) catch null) != null;
 }
+pub fn movingPart(world: *data.World, entity: ecs.Entity) bool {
+    if (world.get(entity, data.Rotation) catch null) |rotation| return rotation.active and v.length(rotation.rate) > 0;
+    return if (world.get(entity, data.Secret) catch null) |secret| secret.moving() else false;
+}

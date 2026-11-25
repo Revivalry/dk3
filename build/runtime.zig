@@ -62,10 +62,12 @@ pub fn declareTests(b: *std.Build, optimize: std.builtin.OptimizeMode) *std.Buil
     @import("header_inputs.zig").track(b, collision, &.{ "engine/ioquake3/code", "src/tests" });
     collision.addIncludePath(b.path("engine/ioquake3/code/qcommon"));
     for ([_][]const u8{ "cm_load.c", "cm_patch.c", "cm_polylib.c", "cm_trace.c", "cm_test.c", "q_shared.c", "q_math.c", "md4.c" }) |source|
-        collision.addCSourceFile(.{ .file = b.path(b.fmt("engine/ioquake3/code/qcommon/{s}", .{source})), .flags = &.{"-std=gnu99"} });
-    collision.addCSourceFile(.{ .file = b.path("src/tests/collision_worlds.c"), .flags = &.{"-std=gnu99"} });
+        collision.addCSourceFile(.{ .file = b.path(b.fmt("engine/ioquake3/code/qcommon/{s}", .{source})), .flags = &.{ "-std=gnu99", "-ffunction-sections", "-fdata-sections" } });
+    collision.addCSourceFile(.{ .file = b.path("src/tests/collision_worlds.c"), .flags = &.{ "-std=gnu99", "-ffunction-sections", "-fdata-sections" } });
     collision.linkSystemLibrary("m", .{});
-    step.dependOn(&b.addRunArtifact(b.addExecutable(.{ .name = "collision-world-contracts", .root_module = collision })).step);
+    const collision_contract = b.addExecutable(.{ .name = "collision-world-contracts", .root_module = collision });
+    collision_contract.link_gc_sections = true;
+    step.dependOn(&b.addRunArtifact(collision_contract).step);
     const png = b.createModule(.{ .target = b.graph.host, .optimize = optimize, .link_libc = true });
     @import("header_inputs.zig").track(b, png, &.{"engine/ioquake3/code"});
     @import("libdeflate.zig").add(b, png);

@@ -15,5 +15,5 @@ pub const classes = .{ @import("../../classes/actors/companions/server/companion
 /// `find`, `member`, `isMember`, `healthyParty`, `required`, `summonForExit`, `capture`, `start`, `arrive`, `order`,
 /// `handles`, `command`,
 /// `allowsPickup`, `collects`, `viewHeight`, `afterTransfer`, `farthestRequired`, `summary`,
-/// `Identity`.
+/// `hostile`, `Identity`.
 pub const party = @import("../../classes/actors/companions/server/companions.zig");

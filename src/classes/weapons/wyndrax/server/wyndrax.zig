@@ -52,9 +52,10 @@ fn alive(world: *data.World, id: u32) bool {
     return (entity.get(data.Health) catch return false).current > 0;
 }
 fn valid(entity: Ref, owner: u32) !bool {
-    if (try entity.id() == owner or (entity.get(data.Health) catch return false).current <= 0) return false;
-    if ((entity.get(data.Actor) catch null) != null) return true;
-    return engine.integer("g_gametype") != c.GT_SINGLE_PLAYER and (entity.get(data.Player) catch null) != null;
+    return @import("../../../../mechanics/server/weapon_targets.zig").allowed(entity, owner, W.spec.automatic_targets, engine.integer("g_gametype") != c.GT_SINGLE_PLAYER);
+}
+fn admissible(world: *data.World, id: u32, owner: u32) !bool {
+    return valid(access.find(world, id) orelse return false, owner);
 }
 fn visible(world: *data.World, position: v.Vec3, skip: u32, target: Ref) !bool {
     const hit = try geometry.owned(world, .{ .start = position, .end = (try target.get(data.Transform)).position, .mins = @splat(0), .maxs = @splat(0), .slot = c.ENTITYNUM_NONE, .mask = c.MASK_SOLID }, skip);
@@ -63,7 +64,7 @@ fn visible(world: *data.World, position: v.Vec3, skip: u32, target: Ref) !bool {
 fn acquire(world: *data.World, slots: *Slots, entity: ecs.Entity, projectile: data.Projectile, wisp: *W.BallisticState, random: *data.Random, position: v.Vec3) !void {
     const skip = try world.persistentId(entity);
     const old = wisp.enemy;
-    if (old) |id| if (!alive(world, id) or !try visible(world, position, skip, access.find(world, id).?)) {
+    if (old) |id| if (!try admissible(world, id, projectile.owner) or !try visible(world, position, skip, access.find(world, id).?)) {
         wisp.enemy = null;
     };
     const gather = random.next() > 0.02;
@@ -83,7 +84,7 @@ fn acquire(world: *data.World, slots: *Slots, entity: ecs.Entity, projectile: da
         }
     }
     wisp.enemy = next;
-    if (wisp.enemy == null) if (old) |id| if (alive(world, id)) {
+    if (wisp.enemy == null) if (old) |id| if (try admissible(world, id, projectile.owner)) {
         wisp.enemy = id;
     };
 }
@@ -97,6 +98,10 @@ fn zap(world: *data.World, slots: *Slots, projections: []abi.EntityProjection, p
             id.* = 0;
             continue;
         };
+        if (!try valid(target, projectile.owner)) {
+            id.* = 0;
+            continue;
+        }
         const delta = v.subtract((try target.get(data.Transform)).position, position);
         if (v.length(delta) > 250) continue;
         const amount = projectile.damage * 0.5;
@@ -117,6 +122,9 @@ pub fn step(world: *data.World, slots: *Slots, projections: []abi.EntityProjecti
         if (projectile.flight != .wyndrax or now <= projectile.stepped_ms) continue;
         var motion = @import("../../../../mechanics/server/region_motion.zig").Cursor.init(world, try world.persistentId(entity));
         var wisp = projectile.flight.wyndrax;
+        if (wisp.enemy) |id| if (!try admissible(world, id, projectile.owner)) {
+            wisp.enemy = null;
+        };
         var random = (try world.get(entity, data.Random)).*;
         var pose = (try world.get(entity, data.Transform)).*;
         var velocity = (try world.get(entity, data.Velocity)).linear;

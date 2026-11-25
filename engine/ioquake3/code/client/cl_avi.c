@@ -43,6 +43,8 @@ typedef struct aviFileData_s
   qboolean      fileOpen;
   fileHandle_t  f;
   char          fileName[ MAX_QPATH ];
+  char          baseFileName[ MAX_QPATH ];
+  unsigned int  partNumber;
   int           fileSize;
   int           moviOffset;
   int           moviSize;
@@ -335,17 +337,28 @@ qboolean CL_OpenAVIForWriting( const char *fileName )
     return qfalse;
   }
 
-  if( ( afd.f = FS_FOpenFileWrite_HomeData( fileName ) ) <= 0 )
+  if( strlen( fileName ) + sizeof( INDEX_FILE_EXTENSION ) > MAX_QPATH )
+  {
+    Com_Printf( "AVI capture error: filename too long: %s\n", fileName );
     return qfalse;
+  }
+
+  if( ( afd.f = FS_FOpenFileWrite_HomeData( fileName ) ) <= 0 )
+  {
+    Com_Printf( "AVI capture error: could not open %s\n", fileName );
+    return qfalse;
+  }
 
   if( ( afd.idxF = FS_FOpenFileWrite_HomeData(
           va( "%s" INDEX_FILE_EXTENSION, fileName ) ) ) <= 0 )
   {
     FS_FCloseFile( afd.f );
+    Com_Printf( "AVI capture error: could not create index for %s\n", fileName );
     return qfalse;
   }
 
   Q_strncpyz( afd.fileName, fileName, MAX_QPATH );
+  Q_strncpyz( afd.baseFileName, fileName, MAX_QPATH );
 
   afd.frameRate = cl_aviFrameRate->integer;
   afd.framePeriod = (int)( 1000000.0f / afd.frameRate );
@@ -444,11 +457,16 @@ static qboolean CL_CheckFileSize( int bytesToAdd )
   // we target can handle a 2Gb file
   if( newFileSize > INT_MAX )
   {
-    // Close the current file...
-    CL_CloseAVI( );
+    char base[ MAX_QPATH ], next[ MAX_QPATH + 12 ];
+    unsigned int part = afd.partNumber + 1;
 
-    // ...And open a new one
-    CL_OpenAVIForWriting( va( "%s_", afd.fileName ) );
+    Q_strncpyz( base, afd.baseFileName, sizeof( base ) );
+    Com_sprintf( next, sizeof( next ), "%s_%06u", base, part );
+    if( CL_CloseAVI( ) && CL_OpenAVIForWriting( next ) )
+    {
+      Q_strncpyz( afd.baseFileName, base, sizeof( afd.baseFileName ) );
+      afd.partNumber = part;
+    }
 
     return qtrue;
   }
@@ -615,7 +633,12 @@ qboolean CL_CloseAVI( void )
   if( ( indexSize = FS_FOpenFileRead( idxFileName,
           &afd.idxF, qtrue ) ) <= 0 )
   {
+    if( afd.idxF )
+      FS_FCloseFile( afd.idxF );
     FS_FCloseFile( afd.f );
+    Z_Free( afd.cBuffer );
+    Z_Free( afd.eBuffer );
+    Com_Printf( "AVI capture error: could not reopen %s\n", idxFileName );
     return qfalse;
   }
 

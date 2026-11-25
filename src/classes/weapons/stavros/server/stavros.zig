@@ -11,6 +11,16 @@ const weapons = @import("../../../../mechanics/domain/weapons.zig");
 const v = @import("../../../../core/domain/vector.zig");
 const c = abi.c;
 const entities = @import("../../../../mechanics/server/weapon_entities.zig");
+test "meteor flight reach admits a shot beyond the supplied blast-radius range" {
+    const combat = @import("../../../../mechanics/domain/bot_combat.zig");
+    var table: weapons.Table = .{};
+    table.entries[W.id] = .{ .damage = 100, .range = 200, .ammoCost = 1 };
+    var loadout: weapons.State = .{ .weapon = W.id, .dk3Inventory = @as(i32, 1) << W.id };
+    loadout.ammo[W.id] = 1;
+    try std.testing.expect(combat.attack(loadout, &table, 600));
+    try std.testing.expect(!combat.attack(loadout, &table, 199));
+    try std.testing.expect(combat.standOffFor(loadout, &table, W.id) > 200);
+}
 fn angles(direction: v.Vec3) v.Vec3 {
     return .{ -std.math.atan2(direction[2], @sqrt(direction[0] * direction[0] + direction[1] * direction[1])) * (180.0 / std.math.pi), std.math.atan2(direction[1], direction[0]) * (180.0 / std.math.pi), 0 };
 }

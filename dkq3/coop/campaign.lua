@@ -20,6 +20,8 @@ end)
 
 level("e1m1a", function()
   pickup { class = "weapon_ionblaster" }
+  local destination = {id = dk3.exit_to("e1m1b")}
+  nodepath(destination, {cautious = false, allowed_exit = destination})
   exit "e1m1b"
 end)
 

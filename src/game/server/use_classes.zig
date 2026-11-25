@@ -12,3 +12,5 @@ pub const after_authored = .{@import("../../classes/entities/healthtree/server/h
 pub const after_actors = .{ @import("../../classes/entities/mover/server/movers.zig"), @import("../../classes/entities/special_mover/server/special_movers.zig"), @import("../../classes/entities/train/server/trains.zig") };
 /// `killed(*World, Entity) !void`: before a killtarget removes the entity.
 pub const killed = .{@import("../../classes/entities/monitor/server/monitors.zig")};
+/// Read-only lock admission and successful target-emission effects.
+pub const locks = .{@import("../../classes/items/keys/server/locks.zig")};

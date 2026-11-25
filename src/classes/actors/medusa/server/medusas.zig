@@ -18,14 +18,37 @@ pub fn avoidLook(world: *data.World, entity: ecs.Entity, viewer: ecs.Entity, _: 
     if (@import("actor_catalog").entries[actor.definition].kind != .medusa) return null;
     if (actor.medusa.phase != .rattle and actor.medusa.phase != .gaze) return null;
     if (actor.medusa.target != try world.persistentId(viewer) or (try world.get(entity, data.Health)).current <= 0) return null;
-    const at = (try world.get(entity, data.Transform)).position;
-    const body = (try world.get(entity, data.Body)).*;
-    const warning = v.add(at, .{ 0, 0, (body.maxs[2] - body.mins[2]) * 0.4 });
-    const eye = v.add((try world.get(viewer, data.Transform)).position, .{ 0, 0, 22 });
-    const gaze_trace = try @import("../../../../mechanics/server/region_collision.zig").trace(.{ .start = eye, .end = warning, .mins = @splat(0), .maxs = @splat(0), .slot = (try world.get(viewer, data.Binding)).slot, .mask = c.MASK_SOLID });
-    // Seeing the warned actor's own hull is a clear warning sightline.
-    // Its feet can lie behind the floor lip while the upper body is visible.
-    return if (@import("../../../../mechanics/server/region_collision.zig").reaches(world, gaze_trace, .{ .world = world, .entity = entity })) at else null;
+    // The targeted screen flash below is emitted throughout the warning and
+    // gaze, including behind cover. Keep averting until that signal ends;
+    // waiting for a sight ray to clear can meet an already active gaze before
+    // the next user command has a chance to turn away.
+    return (try world.get(entity, data.Transform)).position;
+}
+test "the targeted gaze warning persists behind cover until the phase ends" {
+    var world = data.World.init(std.testing.allocator, 4);
+    defer world.deinit();
+    var definition: @FieldType(data.Actor, "definition") = 0;
+    for (@import("actor_catalog").entries, 0..) |entry, index| if (entry.kind == .medusa) {
+        definition = @intCast(index);
+        break;
+    };
+    const viewer = try world.create(43, .{data.Transform{}});
+    const origin: v.Vec3 = .{ 256, 128, 24 };
+    const source = try world.create(44, .{ data.Transform{ .position = origin }, data.Health{ .current = 150 }, data.Actor{ .definition = definition, .medusa = .{ .phase = .rattle, .target = 43 } } });
+    // Neither body has a collision binding: the player's warning flash is
+    // sufficient, independently of any visible lane through the arena.
+    try std.testing.expectEqual(@as(?v.Vec3, origin), try avoidLook(&world, source, viewer, 1000));
+    const actor = try world.get(source, data.Actor);
+    actor.medusa.phase = .gaze;
+    try std.testing.expectEqual(@as(?v.Vec3, origin), try avoidLook(&world, source, viewer, 2000));
+    actor.medusa.target = 99;
+    try std.testing.expectEqual(null, try avoidLook(&world, source, viewer, 2000));
+    actor.medusa.target = 43;
+    actor.medusa.phase = .recover;
+    try std.testing.expectEqual(null, try avoidLook(&world, source, viewer, 3000));
+    actor.medusa.phase = .gaze;
+    (try world.get(source, data.Health)).current = 0;
+    try std.testing.expectEqual(null, try avoidLook(&world, source, viewer, 4000));
 }
 pub fn step(actors: *@import("../../../../mechanics/server/actors.zig").Actors, world: *data.World, slots: *Slots, projections: []abi.EntityProjection, entity: ecs.Entity, actor: *data.Actor, pose: *data.Transform, body: *data.Body, velocity: *data.Velocity, navigation: @import("../../../../core/domain/navigation.zig").Service, now: i64, elapsed: u32, slow: f32) !void {
     const definition = actors.table.definitions[actor.definition];

@@ -9,19 +9,30 @@ const Slots = @import("../../engine/slots.zig").Slots;
 const Router = @import("targets.zig").Router;
 const prop = @import("properties.zig");
 const c = abi.c;
-pub fn use(world: *data.World, slots: *Slots, projections: []abi.EntityProjection, router: *Router, player_entity: ecs.Entity, now: i64) !void {
+pub fn aimTrace(world: *data.World, player_entity: ecs.Entity) !@import("../../core/domain/collision.zig").Trace {
     const player = (try world.get(player_entity, data.Player)).*;
-    if (player.mode != .normal or (try world.get(player_entity, data.Health)).current <= 0) return;
     const transform = (try world.get(player_entity, data.Transform)).*;
     const v = @import("../../core/domain/vector.zig");
     var start = transform.position;
     start[2] += player.view_height;
-    const trace = try @import("region_collision.zig").trace(.{ .start = start, .end = v.add(start, v.scale(v.basis(transform.angles).forward, 96)), .mins = @splat(0), .maxs = @splat(0), .slot = (try world.get(player_entity, data.Binding)).slot, .mask = c.MASK_SHOT });
+    return @import("region_collision.zig").trace(.{ .start = start, .end = v.add(start, v.scale(v.basis(transform.angles).forward, 96)), .mins = @splat(0), .maxs = @splat(0), .slot = (try world.get(player_entity, data.Binding)).slot, .mask = c.MASK_SHOT });
+}
+pub fn use(world: *data.World, slots: *Slots, projections: []abi.EntityProjection, router: *Router, player_entity: ecs.Entity, now: i64) !void {
+    const player = (try world.get(player_entity, data.Player)).*;
+    if (player.mode != .normal or (try world.get(player_entity, data.Health)).current <= 0) return;
+    const trace = try aimTrace(world, player_entity);
+    if (engine.integer("developer") >= 3) {
+        const transform = (try world.get(player_entity, data.Transform)).*;
+        var start = transform.position;
+        start[2] += player.view_height;
+        var message: [256]u8 = undefined;
+        engine.print(try std.fmt.bufPrintZ(&message, "dk3 player use: t={d} eye={d:.3},{d:.3},{d:.3} angles={d:.3},{d:.3} hit={d} fraction={d:.3}\n", .{ now, start[0], start[1], start[2], transform.angles[0], transform.angles[1], trace.entity, trace.fraction }));
+    }
     const target = @import("region_access.zig").victim(world, slots, trace) orelse return;
     const object = (target.get(data.MapObject) catch return).*;
     if (std.mem.startsWith(u8, object.classname, "trigger_")) return;
     const traits = @import("entity_classes/registry.zig").traitsOf(object.classname);
-    if (object.targetname.len != 0 and !traits.button and !traits.player_usable) return;
+    if (object.targetname.len != 0 and !object.manually_unlocked and !traits.button and !traits.player_usable) return;
     try router.activateReference(world, slots, projections, target, null, try world.persistentId(player_entity), now);
 }
 pub fn overlap(a: *const abi.EntityProjection, b: *const abi.EntityProjection, padding: f32) bool {
@@ -64,7 +75,7 @@ pub fn touch(world: *data.World, slots: *Slots, projections: []abi.EntityProject
             if (traits.touch_once and trigger.?.uses > 0) continue;
             if (trigger.?.counter or (!traits.touch_once and object.flags & traits.use_only_flag != 0) or projection.shared.contents & c.CONTENTS_TRIGGER == 0) continue;
         } else if (mover) |motion| {
-            if (!button_touch and (motion.group != try world.persistentId(entity) or object.targetname.len != 0 or (!motion.platform and object.flags & 16 == 0))) continue;
+            if (!button_touch and (motion.group != try world.persistentId(entity) or (object.targetname.len != 0 and !object.manually_unlocked) or (!motion.platform and object.flags & 16 == 0))) continue;
             if (try prop.number(object, "health", 0) > 0) continue;
         } else continue;
         for (occupants) |client| {

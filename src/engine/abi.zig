@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Shared mechanism: Public engine ABI only. No game/client private headers enter domain code.
 const std = @import("std");
+/// Engine map coordinate limit (ioquake3 qcommon/qfiles.h MAX_WORLD_COORD).
+pub const world_coordinate_limit: f32 = 128 * 1024;
 pub const c = @cImport({
     @cDefine("DK3_GAME", "1");
     @cInclude("q_shared.h");

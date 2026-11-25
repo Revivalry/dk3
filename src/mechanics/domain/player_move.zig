@@ -134,12 +134,18 @@ const Frame = struct {
             p.view_height = -16;
             return;
         }
-        if (self.cmd.up < 0) p.ducked = true else if (p.ducked) {
+        // Swimming down must not enlarge a traveller already shorter than
+        // the crouching hull, or move its eye down to its feet.
+        if (self.cmd.up < 0 and self.parameters.maxs[2] > 4) p.ducked = true else if (p.ducked) {
             self.result.maxs[2] = self.parameters.maxs[2];
-            if (!(try self.trace(self.motion.position, self.motion.position)).all_solid) p.ducked = false;
+            const standing = try self.trace(self.motion.position, self.motion.position);
+            if (!standing.start_solid and !standing.all_solid) p.ducked = false;
         }
         self.result.maxs[2] = if (p.ducked) 4 else self.parameters.maxs[2];
-        p.view_height = if (p.ducked) -2 else 22;
+        // Nonhuman controllers can have a much shorter hull. Their head
+        // sample must stay inside that hull when measuring immersion.
+        const eye_inset = @min(4, (self.parameters.maxs[2] - self.parameters.mins[2]) * 0.25);
+        p.view_height = if (p.ducked) -2 else @min(22, @max((self.parameters.mins[2] + self.parameters.maxs[2]) * 0.5, self.parameters.maxs[2] - eye_inset));
     }
     fn groundTrace(self: *Frame) !void {
         var end = self.motion.position;
@@ -180,11 +186,17 @@ const Frame = struct {
             return;
         }
         var drop: f32 = 0;
-        if (self.player.water_level <= 1 and self.walking and !self.ground.?.slick and self.player.timer != .knockback)
-            drop += @max(speed, 100) * 6 * self.delta;
+        if (self.player.water_level <= 1 and self.walking and self.player.timer != .knockback)
+            drop += @max(speed, 100) * 6 * self.delta * self.traction();
         drop += speed * @as(f32, @floatFromInt(self.player.water_level)) * self.delta;
         if (flying) drop += speed * 5 * self.delta;
         self.motion.velocity = v.scale(self.motion.velocity, @max(0, speed - drop) / speed);
+    }
+    // Converted slick surfaces are authored ice. Low-speed footing retains
+    // control; only a fast slide reduces friction and acceleration. Ice does
+    // not apply a new gravity force along a supported, walkable slope.
+    fn traction(self: *const Frame) f32 {
+        return if (self.walking and self.ground.?.slick and v.length(self.motion.velocity) > 170) 0.025 else 1;
     }
     fn currents(self: *Frame) v.Vec3 {
         var push: v.Vec3 = @splat(0);
@@ -225,13 +237,31 @@ const Frame = struct {
             const hit = try self.trace(self.motion.position, v.add(self.motion.position, v.scale(direction, ladder_contact_distance)));
             if (hit.fraction == 1 or !hit.ladder or @abs(hit.normal[2]) >= 0.5) continue;
             const facing = v.dot(horizontal, hit.normal);
-            if (self.cmd.forward != 0 and (if (self.cmd.forward < 0) facing < -0.1 else facing > 0.1)) return false;
+            // Dismount follows the complete horizontal intent. Looking along
+            // the ladder and strafing outward must release it too; checking
+            // only forward/back input consumes an outward jump as a climb.
+            const lateral = v.normalize(.{ self.right[0], self.right[1], 0 });
+            const travel = v.add(v.scale(horizontal, @floatFromInt(self.cmd.forward)), v.scale(lateral, @floatFromInt(self.cmd.right)));
+            if (v.dot(travel, hit.normal) > @max(1, v.length(travel) * 0.1)) return false;
             if (self.cmd.up == 0 and facing > -0.5) return false;
-            const climb: f32 = if (self.cmd.up != 0) @floatFromInt(self.cmd.up) else @as(f32, @floatFromInt(self.cmd.forward)) * (if (self.forward[2] < -0.35) @as(f32, -1) else 1);
+            // Crouch shares the vertical input axis. Looking up and holding
+            // forward must still climb with the short hull under a low head;
+            // the crouch key alone and downward views retain their descent.
+            const crouched_ascent = self.player.ducked and self.cmd.up < 0 and self.cmd.forward > 0 and self.forward[2] > 0.35;
+            const climb: f32 = if (crouched_ascent) @floatFromInt(self.cmd.forward) else if (self.cmd.up != 0) @floatFromInt(self.cmd.up) else @as(f32, @floatFromInt(self.cmd.forward)) * (if (self.forward[2] < -0.35) @as(f32, -1) else 1);
             const speed = @min(self.parameters.speed, 140);
             var wish = v.scale(self.right, @as(f32, @floatFromInt(self.cmd.right)) * speed / 127);
             wish[2] = climb * speed / 127;
             wish = v.clip(wish, hit.normal);
+            // At a low ladder head the crouched body must step into the
+            // opening before its feet clear the last rung. Preserve that
+            // inward intent and let the ordinary swept step solver qualify
+            // the lip; clipping it away traps the body below the duct.
+            const inward = @min(@as(f32, 127), -v.dot(travel, hit.normal));
+            if (self.player.ducked and inward > 0) {
+                const duck_speed = @min(speed, self.parameters.speed * 0.25);
+                wish = v.subtract(wish, v.scale(hit.normal, inward * duck_speed / 127));
+            }
             self.motion.velocity = v.add(self.motion.velocity, v.scale(v.add(wish, v.scale(self.motion.velocity, -1)), @min(1, 12 * self.delta)));
             self.player.ground_entity = 2047;
             try self.slideMove(false, true);
@@ -243,7 +273,10 @@ const Frame = struct {
         if (self.player.water_level == 2 and self.player.timer_ms == 0) {
             const flat = v.normalize(.{ self.forward[0], self.forward[1], 0 });
             var spot = v.add(self.motion.position, v.scale(flat, 30));
-            spot[2] += 4;
+            // The low bank probe belongs inside the traveller's hull. A
+            // fixed four-unit offset sits above a very short swimmer and
+            // misses a ledge still blocking its feet.
+            spot[2] += @min(4, @max(self.parameters.mins[2] + 1, self.parameters.maxs[2] - 4));
             if (try self.service.contents(spot, self.parameters.slot) & self.parameters.solid_mask != 0) {
                 spot[2] += 16;
                 // Detail, trigger and monster-only clip contents above a
@@ -302,6 +335,8 @@ const Frame = struct {
                 try self.result.event(.jump);
             }
         }
+        if (self.walking and self.ground.?.slick and self.player.timer != .knockback)
+            self.motion.velocity[2] = 0;
         self.friction(false);
         var forward = v.normalize(.{ self.forward[0], self.forward[1], 0 });
         var right = v.normalize(.{ self.right[0], self.right[1], 0 });
@@ -313,12 +348,12 @@ const Frame = struct {
         var speed = v.length(wish) * self.commandScale();
         if (self.walking and self.player.ducked) speed = @min(speed, self.parameters.speed * 0.25);
         if (self.walking and self.player.water_level > 0) speed = @min(speed, self.parameters.speed * (1 - 0.5 * @as(f32, @floatFromInt(self.player.water_level)) / 3));
-        const slick = self.walking and (self.ground.?.slick or self.player.timer == .knockback);
+        const knocked = self.walking and self.player.timer == .knockback;
         var wish_velocity = v.add(v.scale(v.normalize(wish), speed), self.currents());
         // Gold clamps the combined wish, current included, to the running speed.
         if (v.length(wish_velocity) > self.parameters.speed) wish_velocity = v.scale(v.normalize(wish_velocity), self.parameters.speed);
-        self.accelerate(v.normalize(wish_velocity), v.length(wish_velocity), if (self.walking and !slick) 10 else 1);
-        if (slick) self.motion.velocity[2] -= self.parameters.gravity * self.delta;
+        self.accelerate(v.normalize(wish_velocity), v.length(wish_velocity), if (self.walking and !knocked) 10 * self.traction() else 1);
+        if (knocked) self.motion.velocity[2] -= self.parameters.gravity * self.delta;
         if (self.ground) |hit| {
             const before = v.length(self.motion.velocity);
             const tangent = v.subtract(self.motion.velocity, v.scale(hit.normal, v.dot(self.motion.velocity, hit.normal)));
@@ -414,4 +449,132 @@ pub fn runWithHook(player: *Player, motion: *slide.State, command: Command, para
         if (player.jump_held) cmd.up = 20;
     }
     return result;
+}
+
+test "immersion samples the actual small hull while retaining the ordinary standing eye" {
+    const Fixture = struct {
+        fn trace(_: *anyopaque, request: collision.Request) !collision.Trace {
+            return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+        }
+        fn contents(_: *anyopaque, point: v.Vec3, _: u16) !u32 {
+            return if (point[2] < 10) 2 else 0;
+        }
+    };
+    var context: u8 = 0;
+    var player: Player = .{};
+    var motion: slide.State = .{ .position = @splat(0), .velocity = @splat(0) };
+    var result: Result = .{ .mins = .{ -8, -8, -8 }, .maxs = .{ 8, 8, 8 } };
+    var frame: Frame = .{ .player = &player, .motion = &motion, .cmd = .{ .time_ms = 0, .angles = @splat(0) }, .parameters = .{ .slot = 0, .mask = 1, .water_mask = 2, .solid_mask = 1, .mins = result.mins, .maxs = result.maxs }, .service = .{ .context = &context, .trace_fn = Fixture.trace, .contents_fn = Fixture.contents }, .result = &result, .delta = 0.05, .forward = @splat(0), .right = @splat(0) };
+    try frame.bounds();
+    try frame.water();
+    try std.testing.expectEqual(@as(f32, 4), player.view_height);
+    try std.testing.expectEqual(@as(u8, 3), player.water_level);
+    frame.parameters.mins = .{ -15, -15, -24 };
+    frame.parameters.maxs = .{ 15, 15, 32 };
+    try frame.bounds();
+    try frame.water();
+    try std.testing.expectEqual(@as(f32, 22), player.view_height);
+    try std.testing.expectEqual(@as(u8, 2), player.water_level);
+    frame.parameters.mins = .{ -2, -2, -2 };
+    frame.parameters.maxs = .{ 2, 2, 2 };
+    frame.cmd.up = -127;
+    try frame.bounds();
+    try std.testing.expect(!player.ducked);
+    try std.testing.expectEqual(@as(f32, 2), result.maxs[2]);
+    try std.testing.expectEqual(@as(f32, 1), player.view_height);
+}
+
+test "an outward strafe jump leaves a ladder while an upward command keeps climbing" {
+    const Fixture = struct {
+        fn trace(_: *anyopaque, request: collision.Request) !collision.Trace {
+            var hit: collision.Trace = .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+            const wall = 16 - request.maxs[0];
+            if (request.end[0] > wall and request.start[0] <= wall) {
+                hit.fraction = (wall - request.start[0]) / (request.end[0] - request.start[0]);
+                hit.normal = .{ -1, 0, 0 };
+                hit.ladder = true;
+            }
+            const bottom = request.start[2] + request.mins[2];
+            const end_bottom = request.end[2] + request.mins[2];
+            if (bottom >= 0 and end_bottom < 0) {
+                const fraction = bottom / (bottom - end_bottom);
+                if (fraction <= hit.fraction) {
+                    hit.fraction = fraction;
+                    hit.normal = .{ 0, 0, 1 };
+                    hit.ladder = false;
+                }
+            }
+            hit.end = v.add(request.start, v.scale(v.subtract(request.end, request.start), hit.fraction));
+            return hit;
+        }
+        fn contents(_: *anyopaque, _: v.Vec3, _: u16) !u32 {
+            return 0;
+        }
+    };
+    var fixture: u8 = 0;
+    const service: collision.Collision = .{ .context = &fixture, .trace_fn = Fixture.trace, .contents_fn = Fixture.contents };
+    const parameters: Parameters = .{ .slot = 0, .mask = 1, .water_mask = 2, .solid_mask = 1 };
+    var leaving: Player = .{};
+    var motion: slide.State = .{ .position = .{ 0, 0, 24 }, .velocity = @splat(0) };
+    _ = try run(&leaving, &motion, .{ .time_ms = 50, .angles = .{ 0, 90, 0 }, .right = -127, .up = 127 }, parameters, service);
+    try std.testing.expect(leaving.jump_held);
+    try std.testing.expect(motion.velocity[2] > 140);
+    try std.testing.expect(motion.position[0] < 0);
+    var climbing: Player = .{};
+    motion = .{ .position = .{ 0, 0, 24 }, .velocity = @splat(0) };
+    _ = try run(&climbing, &motion, .{ .time_ms = 50, .angles = .{ 0, 90, 0 }, .up = 127 }, parameters, service);
+    try std.testing.expect(!climbing.jump_held);
+    try std.testing.expect(motion.velocity[2] > 0 and motion.velocity[2] <= 140);
+    var ducking_up: Player = .{};
+    motion = .{ .position = .{ 0, 0, 64 }, .velocity = @splat(0) };
+    _ = try run(&ducking_up, &motion, .{ .time_ms = 50, .angles = .{ -45, 0, 0 }, .forward = 127, .up = -127 }, parameters, service);
+    try std.testing.expect(ducking_up.ducked);
+    try std.testing.expect(motion.velocity[2] > 0);
+    var ducking_down: Player = .{};
+    motion = .{ .position = .{ 0, 0, 64 }, .velocity = @splat(0) };
+    _ = try run(&ducking_down, &motion, .{ .time_ms = 50, .angles = .{ 45, 0, 0 }, .forward = 127, .up = -127 }, parameters, service);
+    try std.testing.expect(ducking_down.ducked);
+    try std.testing.expect(motion.velocity[2] < 0);
+}
+
+test "a short surface swimmer probes the bank inside its own hull" {
+    const Fixture = struct {
+        fn trace(_: *anyopaque, request: collision.Request) !collision.Trace {
+            return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+        }
+        fn contents(_: *anyopaque, point: v.Vec3, _: u16) !u32 {
+            if (point[0] >= 29 and point[2] < 32) return 1;
+            return if (point[2] < 32) 2 else 0;
+        }
+    };
+    var context: u8 = 0;
+    var player: Player = .{ .water_level = 2 };
+    var motion: slide.State = .{ .position = .{ 0, 0, 31 }, .velocity = @splat(0) };
+    var result: Result = .{ .mins = @splat(-2), .maxs = @splat(2) };
+    var frame: Frame = .{ .player = &player, .motion = &motion, .cmd = .{ .time_ms = 50, .angles = @splat(0), .forward = 127 }, .parameters = .{ .slot = 0, .mask = 1, .water_mask = 2, .solid_mask = 1, .mins = result.mins, .maxs = result.maxs }, .service = .{ .context = &context, .trace_fn = Fixture.trace, .contents_fn = Fixture.contents }, .result = &result, .delta = 0.05, .forward = .{ 1, 0, 0 }, .right = .{ 0, -1, 0 } };
+    try frame.swim();
+    try std.testing.expectEqual(Timer.water_jump, player.timer);
+    try std.testing.expect(motion.velocity[2] > 0);
+}
+
+test "uncrouching requires a clear standing hull even without an all-solid trace" {
+    const Fixture = struct {
+        fn trace(_: *anyopaque, request: collision.Request) !collision.Trace {
+            if (request.maxs[2] > 4) return .{ .fraction = 0, .end = request.start, .normal = @splat(0), .start_solid = true };
+            const a = request.start[2] + request.mins[2];
+            const b = request.end[2] + request.mins[2];
+            if (b >= 0) return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+            const fraction = if (a > 0) a / (a - b) else 0;
+            return .{ .fraction = fraction, .end = v.add(request.start, v.scale(v.subtract(request.end, request.start), fraction)), .normal = .{ 0, 0, 1 }, .entity = 2046 };
+        }
+        fn contents(_: *anyopaque, _: v.Vec3, _: u16) !u32 {
+            return 0;
+        }
+    };
+    var fixture: u8 = 0;
+    var player: Player = .{ .command_ms = 950, .ducked = true };
+    var motion: slide.State = .{ .position = .{ 0, 0, 24 }, .velocity = @splat(0) };
+    const result = try run(&player, &motion, .{ .time_ms = 1000, .angles = @splat(0) }, .{ .slot = 0, .mask = 1, .water_mask = 2, .solid_mask = 1 }, .{ .context = &fixture, .trace_fn = Fixture.trace, .contents_fn = Fixture.contents });
+    try std.testing.expect(player.ducked);
+    try std.testing.expectEqual(@as(f32, 4), result.maxs[2]);
 }

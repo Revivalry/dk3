@@ -348,6 +348,31 @@ pub const Actors = struct {
         const kind = catalog.entries[actor.definition].kind;
         const definition = &self.table.definitions[actor.definition];
         var frame: classes.Frame = .{ .actors = self, .world = world, .slots = slots, .projections = projections, .router = router, .navigation = navigation, .entity = entity, .slot = binding.slot, .kind = kind, .actor = &actor, .pose = &pose, .body = &body, .velocity = &velocity, .hurt = hurt, .definition = definition, .dead = dead, .now = now, .elapsed = elapsed };
+        if (outsideWorld(pose.position)) {
+            // A missing floor must not leave a living actor accelerating for
+            // the rest of the campaign. Keep the normal class death and outputs,
+            // and retain the body long enough for party death reporting.
+            (try world.get(entity, data.Health)).current = @min((try world.get(entity, data.Health)).current, 0);
+            frame.dead = true;
+            velocity.linear = @splat(0);
+            body.contents = 0;
+            if (actor.mode != .dead) {
+                try classes.die(kind, &frame);
+                actor.mode = .dead;
+                actor.changed_ms = now;
+                actor.evasion.until_ms = null;
+                actor.melee.active = false;
+                actor.reaction = null;
+                actor.reaction_until_ms = null;
+            }
+            if (!actor.death_dispatched) try self.dispatchDeath(&frame);
+            if (now >= actor.changed_ms + definition.death.duration() + 1000) {
+                try retirement(world, entity, "outside-world", now);
+                try @import("weapon_entities.zig").remove(world, slots, projections, entity);
+                return;
+            }
+            return self.finish(&frame);
+        }
         if (dead and actor.gibbed and actor.death_dispatched and now >= actor.changed_ms + 100) {
             try retirement(world, entity, "gibbed", now);
             try @import("weapon_entities.zig").remove(world, slots, projections, entity);
@@ -456,6 +481,24 @@ pub const Actors = struct {
         try self.publish(frame.world, frame.entity, frame.projections, frame.now);
     }
 };
+fn outsideWorld(position: v.Vec3) bool {
+    for (position) |coordinate| if (@abs(coordinate) > abi.world_coordinate_limit) return true;
+    return false;
+}
+test "actor world retirement uses the engine limit on every local coordinate" {
+    const t = std.testing;
+    const edge = abi.world_coordinate_limit;
+    try t.expect(!outsideWorld(.{ edge, -edge, 0 }));
+    try t.expect(!outsideWorld(.{ -3008, 608, -168 }));
+    try t.expect(outsideWorld(.{ 1306, 1558, -29041664 }));
+    for (0..3) |axis| {
+        var point: v.Vec3 = @splat(0);
+        point[axis] = edge + 1;
+        try t.expect(outsideWorld(point));
+        point[axis] = -edge - 1;
+        try t.expect(outsideWorld(point));
+    }
+}
 /// Degrees up (positive) or down from an actor's chest to the enemy it attacks and saw within the
 /// last second; 0 otherwise (a running body keeps its authored lean). Presentation only (the
 /// reference turns monsters by yaw alone).
@@ -549,11 +592,23 @@ pub fn restoreAdmit(world: *data.World) !void {
     var query = world.queryAccess(data.World.mask(.{ data.Actor, data.Body, data.Health }), 0, data.World.mask(.{data.Body}));
     defer query.deinit();
     while (query.next()) |view| for (view.read(data.Actor), view.write(data.Body), view.read(data.Health)) |actor, *body, health| {
-        if (health.current > 0 and body.collision_mask == c.MASK_PLAYERSOLID) body.collision_mask = clipMask(catalog.entries[actor.definition].clips);
+        // Collision policy belongs to the current class declaration. Saved
+        // masks can predate a reviewed policy correction; living actors have
+        // no independently mutable mask. Corpses keep their saved physics.
+        if (health.current > 0) body.collision_mask = clipMask(catalog.entries[actor.definition].clips);
     };
 }
 fn clipMask(clips: anytype) u32 {
     return @as(u32, c.MASK_SOLID | c.CONTENTS_BODY) | (if (clips.player) @as(u32, c.CONTENTS_PLAYERCLIP) else 0) | (if (clips.monster) @as(u32, c.CONTENTS_MONSTERCLIP) else 0) | (if (clips.npc) @as(u32, c.CONTENTS_BOTCLIP) else 0);
+}
+test "restored living actors rederive class clips while corpses retain their mask" {
+    var world = data.World.init(std.testing.allocator, 4);
+    defer world.deinit();
+    const living = try world.create(1, .{ data.Actor{ .definition = 0 }, data.Health{ .current = 10 }, data.Body{ .collision_mask = c.CONTENTS_BOTCLIP } });
+    const dead = try world.create(2, .{ data.Actor{ .definition = 0 }, data.Health{ .current = 0 }, data.Body{ .collision_mask = c.CONTENTS_CORPSE } });
+    try restoreAdmit(&world);
+    try std.testing.expectEqual(clipMask(catalog.entries[0].clips), (try world.get(living, data.Body)).collision_mask);
+    try std.testing.expectEqual(@as(u32, c.CONTENTS_CORPSE), (try world.get(dead, data.Body)).collision_mask);
 }
 pub fn project(projecting: *const @import("system_context.zig").Project) !bool {
     try projecting.systems.actors.publish(projecting.world, projecting.entity, projecting.projections, projecting.now);

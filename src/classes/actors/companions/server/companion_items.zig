@@ -18,6 +18,7 @@ pub fn allows(world: *data.World, collector: ecs.Entity, entity: ecs.Entity, tab
     // spawnflags admit Superfly (1) or Mikiko (2). Ordered pickups ignore the marks; items that
     // appear later (drops) are never in the sidekicks' lists.
     if (!forced) {
+        if (companion.order == .stay or companion.stopped) return false;
         const object = (world.get(entity, data.MapObject) catch return false).*;
         const admitted: u32 = if (companion.identity == .mikiko) 2 else 1;
         if (object.flags & admitted == 0) return false;
@@ -138,6 +139,23 @@ pub fn pursuing(world: *data.World, collector: ecs.Entity, actor: *data.Actor, p
     actor.threat_position = @import("../../../../core/domain/navigation_input.zig").pickupPoint((try world.get(item.?, data.Transform)).position, (try world.get(item.?, data.Body)).mins, (try world.get(collector, data.Body)).mins);
     actor.mode = if (v.length(v.subtract(actor.threat_position, pose.position)) > 4) .chase else .idle;
     return true;
+}
+
+test "Stay cancels an automatic supply trip while an explicit collection remains available" {
+    var world = data.World.init(std.testing.allocator, 3);
+    defer world.deinit();
+    const collector = try world.create(7, .{ data.Companion{ .identity = .superfly, .order = .stay, .collecting = 8, .collect_until_ms = 10000 }, data.Transform{}, data.Body{}, data.Health{ .current = 50, .maximum = 100 }, data.Weapons{}, data.Keys{}, data.Character{}, data.Ailments{} });
+    _ = try world.create(8, .{ data.Pickup{ .kind = .{ .health = 25 } }, data.Transform{ .position = .{ 128, 0, 0 } }, data.Body{}, data.MapObject{ .classname = "test", .flags = 1 } });
+    var actor: data.Actor = .{ .definition = 0 };
+    const table: weapons.Table = .{};
+    try std.testing.expect(!try pursuing(&world, collector, &actor, .{}, &table, 1, 1000));
+    const companion = try world.get(collector, data.Companion);
+    try std.testing.expectEqual(@as(u32, 0), companion.collecting);
+    companion.collecting = 8;
+    companion.collect_forced = true;
+    try std.testing.expect(try pursuing(&world, collector, &actor, .{}, &table, 1, 1000));
+    try std.testing.expectEqual(data.Vec3{ 128, 0, 0 }, actor.threat_position);
+    try std.testing.expectEqual(@as(u32, 8), (try world.get(collector, data.Companion)).collecting);
 }
 
 test "bounded pickup paths reject a looping or overlong route" {

@@ -8,6 +8,19 @@ pub const periodic_slot = "autosave";
 pub fn requiresRestart(mode: @import("player_move.zig").Mode, health: i32) bool {
     return health <= 0 or mode == .dead;
 }
+/// Scripted diagnostic saves still reach disk when hurt, but must not
+/// replace a usable death checkpoint with less than quarter health.
+pub fn scriptedSaveAdmits(current: i32, maximum: i32) bool {
+    return maximum > 0 and @as(i64, current) * 4 >= maximum;
+}
+test "a hurt scripted save retains recovery below the quarter-health boundary" {
+    const t = @import("std").testing;
+    try t.expect(!scriptedSaveAdmits(1, 100));
+    try t.expect(!scriptedSaveAdmits(24, 100));
+    try t.expect(scriptedSaveAdmits(25, 100));
+    try t.expect(scriptedSaveAdmits(100, 100));
+    try t.expect(!scriptedSaveAdmits(1, 0));
+}
 pub const Autosave = struct {
     next_ms: ?i64 = null,
     retry_ms: i64 = 0,

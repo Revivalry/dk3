@@ -141,32 +141,46 @@ fn unblockToward(world: *data.World, slots: *Slots, projections: []const @import
     if (depth == 4) return null;
     const pose = (try world.get(actor, data.Transform)).*;
     const slot = (try world.get(actor, data.Binding)).slot;
-    const gate = (state.blocking(pose.position, slot, goal) orelse return null).gate;
-    if (gate.id == avoided) return null;
-    const entity = world.find(gate.id) orelse return null;
-    if (world.get(entity, data.Mover) catch null) |mover| if (mover.moving()) {
-        waiting.* = true;
-        return null;
-    };
-    const diagnostic = engine.integer("developer") >= 2;
-    if (engine.integer("developer") >= 1) {
-        var text: [192]u8 = undefined;
-        const object = (try world.get(entity, data.MapObject)).*;
-        engine.print(std.fmt.bufPrintZ(&text, "dk3 navigation plan: depth={d} gate={s} #{d} {s} targetname={s}\n", .{ depth, @tagName(gate.kind), gate.id & 0xffffff, object.classname, object.targetname }) catch "");
+    var excluded: [64]u32 = undefined;
+    var count: usize = 0;
+    while (count < @min(excluded.len, state.gates.items.len)) {
+        const gate = (state.blockingExcept(pose.position, slot, goal, excluded[0..count]) orelse return null).gate;
+        if (std.mem.indexOfScalar(u32, excluded[0..count], gate.id) != null) return null;
+        excluded[count] = gate.id;
+        count += 1;
+        if (gate.id == avoided) continue;
+        const entity = world.find(gate.id) orelse continue;
+        if (world.get(entity, data.Mover) catch null) |mover| if (mover.moving()) {
+            waiting.* = true;
+            return null;
+        };
+        const diagnostic = engine.integer("developer") >= 2;
+        if (engine.integer("developer") >= 1) {
+            var text: [192]u8 = undefined;
+            const object = (try world.get(entity, data.MapObject)).*;
+            engine.print(std.fmt.bufPrintZ(&text, "dk3 navigation plan: depth={d} gate={s} #{d} {s} targetname={s} alternative={d}\n", .{ depth, @tagName(gate.kind), gate.id & 0xffffff, object.classname, object.targetname, count }) catch "");
+        }
+        // Prefer a control reachable in the live world. Otherwise resolve its
+        // prerequisite without reopening previously rejected shortcuts.
+        if (try gateControl(world, slots, projections, actor, entity, gate, service, now, avoided, diagnostic)) |control| {
+            if (diagnostic) {
+                var text: [192]u8 = undefined;
+                engine.print(try std.fmt.bufPrintZ(&text, "dk3 navigation control: gate={d} control={d} point={d:.1},{d:.1},{d:.1}\n", .{ gate.id, control.id, control.point[0], control.point[1], control.point[2] }));
+            }
+            return control;
+        }
+        const control = behind: {
+            state.openExcept(excluded[0 .. count - 1]);
+            defer state.restore();
+            break :behind try gateControl(world, slots, projections, actor, entity, gate, service, now, avoided, diagnostic) orelse continue;
+        };
+        const next = (state.blocking(pose.position, slot, control.point) orelse continue).gate;
+        // A control behind the very gate it opens cannot be this route's
+        // prerequisite. Keep that shortcut closed and try another route.
+        if (next.id == gate.id) continue;
+        if (try unblockToward(world, slots, projections, state, actor, control.point, service, now, avoided, waiting, depth + 1)) |prerequisite| return prerequisite;
     }
-    // A control reachable as the gates stand now comes first (the button on
-    // this side of a door). Failing that, one is chosen as if every gate were
-    // open: it lies behind another closed gate, planned for next.
-    if (try gateControl(world, slots, projections, actor, entity, gate, service, now, avoided, diagnostic)) |control| return control;
-    var control: Control = undefined;
-    {
-        state.open();
-        defer state.restore();
-        control = try gateControl(world, slots, projections, actor, entity, gate, service, now, avoided, diagnostic) orelse return null;
-    }
-    const next = (state.blocking(pose.position, slot, control.point) orelse return null).gate;
-    if (next.id == gate.id) return null;
-    return unblockToward(world, slots, projections, state, actor, control.point, service, now, avoided, waiting, depth + 1);
+    return null;
 }
 fn gateControl(world: *data.World, slots: *Slots, projections: []const @import("../../engine/abi.zig").EntityProjection, actor: ecs.Entity, entity: ecs.Entity, gate: gates.Gate, service: nav.Service, now: i64, avoided: u32, diagnostic: bool) !?Control {
     if (gate.kind == .breakable) {
@@ -204,10 +218,30 @@ pub fn aim(world: *data.World, control: Control) !?v.Vec3 {
     return try center(world, entity);
 }
 pub fn center(world: *data.World, entity: ecs.Entity) !v.Vec3 {
+    const bounds = try bodyBounds(world, entity);
+    return v.scale(v.add(bounds.mins, bounds.maxs), 0.5);
+}
+/// Tight world-space bounds of the transformed body, independent of the
+/// engine's deliberately loose broad-phase bounds for rotating inline models.
+pub fn bodyBounds(world: *data.World, entity: ecs.Entity) !@import("../../core/domain/navigation_input.zig").Bounds {
     const pose = (try world.get(entity, data.Transform)).*;
-    const body = world.get(entity, data.Body) catch return pose.position;
-    const local = v.scale(v.add(body.mins, body.maxs), 0.5);
-    return v.add(pose.position, @import("../domain/poses.zig").rotate(local, @splat(0), pose.angles));
+    const body = world.get(entity, data.Body) catch return .{ .mins = pose.position, .maxs = pose.position };
+    const inline_model = if (world.get(entity, data.MapObject) catch null) |object| object.model.len > 1 and object.model[0] == '*' else false;
+    // Trigger angles describe facing/launch direction. Their authoritative
+    // touch volume is axis aligned, including when it uses an inline model.
+    if (!inline_model or body.contents & c.CONTENTS_TRIGGER != 0)
+        return .{ .mins = v.add(pose.position, body.mins), .maxs = v.add(pose.position, body.maxs) };
+    var result: @import("../../core/domain/navigation_input.zig").Bounds = .{ .mins = @splat(std.math.inf(f32)), .maxs = @splat(-std.math.inf(f32)) };
+    for (0..8) |corner| {
+        var local: v.Vec3 = undefined;
+        for (0..3) |axis| local[axis] = if (corner & (@as(usize, 1) << @intCast(axis)) != 0) body.maxs[axis] else body.mins[axis];
+        const point = v.add(pose.position, @import("../domain/poses.zig").rotate(local, @splat(0), pose.angles));
+        for (0..3) |axis| {
+            result.mins[axis] = @min(result.mins[axis], point[axis]);
+            result.maxs[axis] = @max(result.maxs[axis], point[axis]);
+        }
+    }
+    return result;
 }
 test "a rotating off-centre brush carries its physical centre" {
     var world = data.World.init(std.testing.allocator, 4);
@@ -215,9 +249,26 @@ test "a rotating off-centre brush carries its physical centre" {
     const entity = try world.create(333, .{
         data.Transform{ .position = .{ 10, 20, 30 }, .angles = .{ 0, 90, 0 } },
         data.Body{ .mins = .{ -8, -100, -4 }, .maxs = .{ 8, -20, 4 } },
+        data.MapObject{ .classname = "", .model = "*1" },
     });
     const point = try center(&world, entity);
     for (point, [_]f32{ 70, 20, 30 }) |actual, expected| try std.testing.expectApproxEqAbs(expected, actual, 0.001);
+    const bounds = try bodyBounds(&world, entity);
+    for (bounds.mins, [_]f32{ 30, 12, 26 }) |actual, expected| try std.testing.expectApproxEqAbs(expected, actual, 0.001);
+    for (bounds.maxs, [_]f32{ 110, 28, 34 }) |actual, expected| try std.testing.expectApproxEqAbs(expected, actual, 0.001);
+}
+test "an off-centre trigger's facing angle does not rotate its touch volume" {
+    var world = data.World.init(std.testing.allocator, 4);
+    defer world.deinit();
+    const entity = try world.create(25, .{
+        data.Transform{ .angles = .{ 0, 180, 0 } },
+        data.Body{ .mins = .{ -609, -1481, 487 }, .maxs = .{ -591, -1287, 705 }, .contents = c.CONTENTS_TRIGGER },
+        data.MapObject{ .classname = "", .model = "*2" },
+    });
+    try std.testing.expectEqual(v.Vec3{ -600, -1384, 596 }, try center(&world, entity));
+    const bounds = try bodyBounds(&world, entity);
+    try std.testing.expectEqual(v.Vec3{ -609, -1481, 487 }, bounds.mins);
+    try std.testing.expectEqual(v.Vec3{ -591, -1287, 705 }, bounds.maxs);
 }
 /// Stay inside a lift shaft until its authored travel brings the rider to the
 /// requested floor. Running into the upper landing early can block the pusher.
@@ -330,6 +381,13 @@ fn seekInternal(world: *data.World, slots: *Slots, projections: []const @import(
     control.route_obstacle = if (world.find(mover.group)) |master| try world.persistentId(master) else try world.persistentId(obstacle);
     return control;
 }
+/// Physical controls the player can operate directly. Unnamed angular movers
+/// include levers; a named remote door retains its authored control requirement.
+pub fn canOperate(world: *data.World, entity: ecs.Entity, object: data.MapObject) bool {
+    const traits = @import("entity_classes/registry.zig").traitsOf(object.classname);
+    return object.manually_unlocked or traits.button or traits.player_usable or
+        (object.targetname.len == 0 and (world.get(entity, data.Mover) catch null) != null);
+}
 fn seekObstacle(world: *data.World, slots: *Slots, projections: []const @import("../../engine/abi.zig").EntityProjection, actor: ecs.Entity, blocked: ecs.Entity, service: nav.Service, now: i64, avoided: u32, diagnostic: bool, dependencies: *[64]u32, depth: usize) anyerror!?Control {
     var obstacle = blocked;
     // Doors act as one group; other gates (walls, damaging volumes) are their own.
@@ -352,7 +410,11 @@ fn seekObstacle(world: *data.World, slots: *Slots, projections: []const @import(
         if (control_id == avoided or !@import("locks.zig").allows(world, object, id)) continue;
         var action: @FieldType(Control, "action") = .use;
         const traits = @import("entity_classes/registry.zig").traitsOf(object.classname);
-        if (traits.button or entity.index == obstacle.index) {
+        // A button controls another obstacle; pressing the panel itself
+        // never creates a passage through its wall. Treating a bumped
+        // flush panel as its own gate repeatedly fetches the same control.
+        if (entity.index == obstacle.index and traits.button) continue;
+        if (canOperate(world, entity, object) or entity.index == obstacle.index) {
             if (try prop.number(object, "health", 0) > 0) {
                 if ((world.get(entity, data.Health) catch continue).current <= 0) continue;
                 action = .shoot;
@@ -360,6 +422,11 @@ fn seekObstacle(world: *data.World, slots: *Slots, projections: []const @import(
                 // A beam that switches damage on is never a control.
                 if (gates.tripwire(world, object)) continue;
                 action = .touch;
+            } else if (!canOperate(world, entity, object)) {
+                // A bumped solid without a use hook or shootable authored
+                // health is an obstruction, not a control. Fetching its own
+                // centre cannot open a path through an unbreakable prop.
+                continue;
             } else if (entity.index == obstacle.index and object.targetname.len != 0) continue;
         } else if (traits.touch_volume and traits.relays and !traits.counter and object.flags & 1 == 0 and projections[binding.slot].shared.contents & c.CONTENTS_TRIGGER != 0) {
             action = .touch;
@@ -372,7 +439,7 @@ fn seekObstacle(world: *data.World, slots: *Slots, projections: []const @import(
         } else continue;
         var visited: [64]u32 = undefined;
         const chained = try chain(world, entity, obstacle, id, now, &visited, 0);
-        if (engine.integer("developer") >= 2 and traits.button) {
+        if (engine.integer("developer") >= 2 and canOperate(world, entity, object)) {
             var text: [192]u8 = undefined;
             engine.print(std.fmt.bufPrintZ(&text, "dk3 control candidate: obstacle={d} control={d} {s} target={s} chained={d}\n", .{ obstacle.index, entity.index, object.classname, object.target, @intFromBool(chained) }) catch "");
         }
@@ -396,6 +463,18 @@ fn seekObstacle(world: *data.World, slots: *Slots, projections: []const @import(
         }
     };
     return result;
+}
+
+test "an unbreakable solid without a use hook is not its own route control" {
+    var world = data.World.init(std.testing.allocator, 4);
+    defer world.deinit();
+    const actor = try world.create(1, .{data.Transform{}});
+    const obstacle = try world.create(2, .{ data.MapObject{ .classname = "" }, data.Transform{}, data.Body{ .contents = c.CONTENTS_SOLID }, data.Binding{ .slot = 0 } });
+    var slots: Slots = .{};
+    var dependencies: [64]u32 = undefined;
+    // No collision or navigation query is valid for this inert obstruction:
+    // it has no operation whose approach could be planned.
+    try std.testing.expectEqual(@as(?Control, null), try seekObstacle(&world, &slots, &.{}, actor, obstacle, undefined, 0, 0, false, &dependencies, 0));
 }
 /// One step of riding the lift a route's next reachability takes from its
 /// entrance (the standing point on the lift at its lower stop).
@@ -546,10 +625,19 @@ pub fn approach(world: *data.World, target: ecs.Entity, actor: ecs.Entity, actio
 /// A firing stand must be within the selected weapon's actual reach.
 pub fn approachWithin(world: *data.World, target: ecs.Entity, actor: ecs.Entity, action: @FieldType(Control, "action"), service: nav.Service, projections: []const @import("../../engine/abi.zig").EntityProjection, diagnostic: bool, obstructions: *[approach_points]u16, lane: ?Lane, reach: f32) !?v.Vec3 {
     const pose = (try world.get(actor, data.Transform)).*;
-    const body = (try world.get(actor, data.Body)).*;
+    var body = (try world.get(actor, data.Body)).*;
+    const player = (try world.get(actor, data.Player)).*;
+    // Player bodies retain their standing extents; the movement state owns
+    // the current duck. Firing/use stands in crawlways need that same hull.
+    if (player.ducked) body.maxs[2] = @min(body.maxs[2], 4);
     const target_slot = (try world.get(target, data.Binding)).slot;
-    const box = projections[target_slot].shared;
-    const middle = v.scale(v.add(box.absmin, box.absmax), 0.5);
+    var box = projections[target_slot].shared;
+    const physical = try bodyBounds(world, target);
+    box.absmin = physical.mins;
+    box.absmax = physical.maxs;
+    // Rotated inline bounds are a broad-phase sphere about the hinge. The
+    // action must aim at the actual transformed body centre, on the panel.
+    const middle = try center(world, target);
     const margin: f32 = if (action == .shoot) 96 else if (action == .touch) 2 else 32;
     const probe: Stand = .{
         .world = world,
@@ -559,7 +647,7 @@ pub fn approachWithin(world: *data.World, target: ecs.Entity, actor: ecs.Entity,
         .diagnostic = diagnostic,
         .pose = pose,
         .body = body,
-        .view_height = (try world.get(actor, data.Player)).view_height,
+        .view_height = player.view_height,
         .slot = (try world.get(actor, data.Binding)).slot,
         .target_slot = target_slot,
         .middle = middle,
@@ -647,18 +735,64 @@ pub fn touchPointFrom(mins: v.Vec3, maxs: v.Vec3, slot: u16, from: ?struct { pos
     candidates[3][1] = mins[1] - hull_maxs[1] + 1;
     candidates[4][1] = maxs[1] - hull_mins[1] - 1;
     for (candidates) |candidate| {
-        var point = candidate;
-        const floor = try engine.collisionService().trace(.{ .start = point, .end = v.add(point, .{ 0, 0, -512 }), .mins = hull_mins, .maxs = hull_maxs, .slot = slot, .mask = c.MASK_PLAYERSOLID });
-        if (floor.start_solid or floor.all_solid) continue;
-        if (floor.fraction < 1) point = floor.end;
-        // The hull there must still meet the volume.
-        if (point[2] + hull_maxs[2] < mins[2] or point[2] + hull_mins[2] > maxs[2]) continue;
-        if (navigation.destinationArea(point) == 0) continue;
-        const origin = from orelse return point;
-        if (first == null) first = point;
-        if (try origin.service.next(.{ .position = origin.position, .destination = point, .slot = slot, .player = true }) != null) return point;
+        var floors: TouchFloors = .{ .queries = engine.collisionService(), .candidate = candidate, .mins = mins, .maxs = maxs, .slot = slot };
+        while (try floors.next()) |point| {
+            if (navigation.destinationArea(point) == 0) continue;
+            const origin = from orelse return point;
+            if (first == null) first = point;
+            if (try origin.service.next(.{ .position = origin.position, .destination = point, .slot = slot, .player = true }) != null) return point;
+        }
     }
     return first;
+}
+/// A volume across stairs can contain several floor heights. Its bottom-based
+/// seed may be inside a higher step, so search upward within hull overlap.
+const TouchFloors = struct {
+    queries: @import("../../core/domain/collision.zig").Collision,
+    candidate: v.Vec3,
+    mins: v.Vec3,
+    maxs: v.Vec3,
+    slot: u16,
+    rise: f32 = 0,
+    previous: ?v.Vec3 = null,
+    fn next(self: *@This()) !?v.Vec3 {
+        while (self.candidate[2] + self.rise <= self.maxs[2] + 24) {
+            const start = v.add(self.candidate, .{ 0, 0, self.rise });
+            self.rise += 18;
+            const floor = try self.queries.trace(.{ .start = start, .end = v.add(start, .{ 0, 0, -512 }), .mins = .{ -15, -15, -24 }, .maxs = .{ 15, 15, 32 }, .slot = self.slot, .mask = c.MASK_PLAYERSOLID });
+            if (floor.start_solid or floor.all_solid or floor.fraction == 1 or floor.normal[2] < 0.7) continue;
+            const point = floor.end;
+            if (point[2] + 32 < self.mins[2] or point[2] - 24 > self.maxs[2]) continue;
+            if (self.previous) |previous| if (v.length(v.subtract(point, previous)) < 0.1) continue;
+            self.previous = point;
+            return point;
+        }
+        return null;
+    }
+};
+test "touch volume finds a supported stair above an embedded bottom seed" {
+    const collision = @import("../../core/domain/collision.zig");
+    const Fixture = struct {
+        height: f32 = 288,
+        fn trace(raw: *anyopaque, request: collision.Request) !collision.Trace {
+            const self: *@This() = @ptrCast(@alignCast(raw));
+            if (request.start[2] < self.height) return .{ .fraction = 0, .end = request.start, .normal = @splat(0), .start_solid = true };
+            const fraction = (request.start[2] - self.height) / (request.start[2] - request.end[2]);
+            return .{ .fraction = fraction, .end = .{ request.start[0], request.start[1], self.height }, .normal = .{ 0, 0, 1 } };
+        }
+        fn contents(_: *anyopaque, _: v.Vec3, _: u16) !u32 {
+            return 0;
+        }
+    };
+    var fixture: Fixture = .{};
+    const queries: collision.Collision = .{ .context = &fixture, .trace_fn = Fixture.trace, .contents_fn = Fixture.contents };
+    var floors: TouchFloors = .{ .queries = queries, .candidate = .{ 0, 0, 256 }, .mins = .{ -16, -8, 224 }, .maxs = .{ 16, 8, 384 }, .slot = 0 };
+    try std.testing.expectEqual(@as(v.Vec3, .{ 0, 0, 288 }), (try floors.next()).?);
+    try std.testing.expectEqual(null, try floors.next());
+    fixture.height = 128;
+    floors.rise = 0;
+    floors.previous = null;
+    try std.testing.expectEqual(null, try floors.next());
 }
 /// A civilian whose body stands in a control's travel (a worker typing at the
 /// console a button is set in): the control cannot move while he is there.
@@ -697,7 +831,15 @@ pub fn isStation(world: *data.World, entity: ecs.Entity) bool {
 /// weapon, so its lane can be traced from the muzzle and not the eye; how far
 /// its blast carries once it bursts (`reach`, the same distance the pilot holds
 /// itself out to); and whether the round needs a blast at all to do its work.
-pub const Lane = struct { muzzle: v.Vec3, reach: f32 = 0, direct: bool = true };
+pub const Lane = struct {
+    muzzle: v.Vec3,
+    reach: f32 = 0,
+    direct: bool = true,
+    mins: v.Vec3 = @splat(-6),
+    maxs: v.Vec3 = @splat(6),
+    /// Shooter hull relative to the eye, when supplied by the caller.
+    self_bounds: ?@import("../../core/domain/navigation_input.zig").Bounds = null,
+};
 /// Distance from the centre to the rectangular face along this bearing.
 fn outlineRadius(half: v.Vec3, bearing: v.Vec3) f32 {
     var radius = std.math.inf(f32);
@@ -724,7 +866,8 @@ pub fn roundTells(point: v.Vec3, mark: v.Vec3, lane: Lane) bool {
 /// taken here is one the trigger will actually be pulled from.
 pub fn roundSafe(eye: v.Vec3, point: v.Vec3, lane: Lane) bool {
     if (lane.reach <= 0) return true;
-    return v.length(v.subtract(point, eye)) >= lane.reach;
+    const nearest = if (lane.self_bounds) |box| v.closestInBounds(point, v.add(eye, box.mins), v.add(eye, box.maxs)) else eye;
+    return v.length(v.subtract(point, nearest)) >= lane.reach;
 }
 /// Whether a blast round's own lane reaches `point`. The round starts below the
 /// eye and detonates on whatever it meets, so a line the eye can see may be a
@@ -732,9 +875,112 @@ pub fn roundSafe(eye: v.Vec3, point: v.Vec3, lane: Lane) bool {
 /// the pipe under it). The tolerance is the pilot's own, so a spot taken here
 /// is one it will pull the trigger from.
 pub fn laneClear(slot: u16, eye: v.Vec3, point: v.Vec3, lane: Lane, target_slot: u16) !bool {
+    return traceLane(engine.collisionService(), slot, eye, point, lane, target_slot);
+}
+/// Use reaches the panel's surface, which can be closer than its brush centre.
+/// An established rider need not walk across a cage to an already usable lever.
+pub fn canPressFrom(service: @import("../../core/domain/collision.zig").Collision, slot: u16, eye: v.Vec3, point: v.Vec3, target_slot: u16) !bool {
+    const hit = try service.trace(.{ .start = eye, .end = point, .mins = @splat(0), .maxs = @splat(0), .slot = slot, .mask = c.MASK_SHOT | c.CONTENTS_TRIGGER });
+    return !hit.start_solid and !hit.all_solid and hit.fraction < 1 and hit.entity == target_slot and v.length(v.subtract(hit.end, eye)) <= 88;
+}
+test "a reachable panel face does not require approaching its farther centre" {
+    const collision = @import("../../core/domain/collision.zig");
+    const Fixture = struct {
+        fraction: f32 = 0.9,
+        entity: u16 = 8,
+        solid: bool = false,
+        fn trace(raw: *anyopaque, request: collision.Request) !collision.Trace {
+            const self: *@This() = @ptrCast(@alignCast(raw));
+            return .{ .fraction = self.fraction, .end = v.add(request.start, v.scale(v.subtract(request.end, request.start), self.fraction)), .normal = @splat(0), .entity = self.entity, .start_solid = self.solid };
+        }
+        fn contents(_: *anyopaque, _: v.Vec3, _: u16) !u32 {
+            return 0;
+        }
+    };
+    var fixture: Fixture = .{};
+    const service: collision.Collision = .{ .context = &fixture, .trace_fn = Fixture.trace, .contents_fn = Fixture.contents };
+    try std.testing.expect(try canPressFrom(service, 0, @splat(0), .{ 94, 0, 0 }, 8));
+    fixture.fraction = 0.98;
+    try std.testing.expect(!try canPressFrom(service, 0, @splat(0), .{ 94, 0, 0 }, 8));
+    fixture.fraction = 0.9;
+    fixture.entity = 9;
+    try std.testing.expect(!try canPressFrom(service, 0, @splat(0), .{ 94, 0, 0 }, 8));
+    fixture.entity = 8;
+    fixture.solid = true;
+    try std.testing.expect(!try canPressFrom(service, 0, @splat(0), .{ 94, 0, 0 }, 8));
+}
+fn traceLane(service: @import("../../core/domain/collision.zig").Collision, slot: u16, eye: v.Vec3, point: v.Vec3, lane: Lane, target_slot: u16) !bool {
     const muzzle = @import("../domain/combat.zig").muzzleAlong(eye, point, lane.muzzle);
-    const flight = try engine.collisionService().trace(.{ .start = muzzle, .end = point, .mins = @splat(-6), .maxs = @splat(6), .slot = slot, .mask = c.MASK_SHOT });
-    return !flight.start_solid and (flight.fraction == 1 or flight.entity == target_slot or v.length(v.subtract(flight.end, point)) <= 48);
+    // The launcher converges on the first surface under the crosshair. Use
+    // that impact, rather than a point inside the bounding box, to test the
+    // offset muzzle's path. A nonexplosive bolt must hit the actual object;
+    // striking another surface a few units away does no damage to it.
+    const forward = v.normalize(v.subtract(point, eye));
+    const sight = try service.trace(.{ .start = eye, .end = v.add(point, v.scale(forward, 64)), .mins = @splat(0), .maxs = @splat(0), .slot = slot, .mask = c.MASK_SHOT });
+    // Collision returns an impact just outside the surface. Ending the
+    // offset muzzle ray at that point can never enter a thin target. Carry
+    // it through the contact skin, as the real shot continues down its lane.
+    const end = if (lane.reach > 0) point else v.add(sight.end, v.scale(v.normalize(v.subtract(sight.end, muzzle)), 8));
+    const flight = try service.trace(.{ .start = muzzle, .end = end, .mins = lane.mins, .maxs = lane.maxs, .slot = slot, .mask = c.MASK_SHOT });
+    if (!@import("builtin").is_test and engine.integer("developer") >= 3 and engine.integer("dk3_trace_entity") == target_slot) {
+        var text: [384]u8 = undefined;
+        engine.print(try std.fmt.bufPrintZ(&text, "dk3 muzzle lane: start={d:.2},{d:.2},{d:.2} end={d:.2},{d:.2},{d:.2} hit={d} fraction={d:.3} solid={d} bounds={d:.1},{d:.1}\n", .{ muzzle[0], muzzle[1], muzzle[2], end[0], end[1], end[2], flight.entity, flight.fraction, @intFromBool(flight.start_solid), lane.mins[0], lane.maxs[0] }));
+    }
+    // A distant target does not make a near interception safe. Bars and
+    // sills can stop an offset projectile inside its shooter's blast radius.
+    if (!roundSafe(eye, flight.end, lane)) return false;
+    return !flight.start_solid and (flight.entity == target_slot or (lane.reach > 0 and (flight.fraction == 1 or v.length(v.subtract(flight.end, point)) <= @min(48, lane.reach))));
+}
+test "offset muzzle clearance reaches through the collision contact skin" {
+    const collision = @import("../../core/domain/collision.zig");
+    const Fixture = struct {
+        fn trace(_: *anyopaque, request: collision.Request) !collision.Trace {
+            const surface: f32 = 100 - 0.03125;
+            if (request.end[0] >= 100) {
+                const fraction = (surface - request.start[0]) / (request.end[0] - request.start[0]);
+                return .{ .fraction = fraction, .end = v.add(request.start, v.scale(v.subtract(request.end, request.start), fraction)), .normal = .{ -1, 0, 0 }, .entity = 7 };
+            }
+            return .{ .fraction = 1, .end = request.end, .normal = @splat(0) };
+        }
+    };
+    var fixture: u8 = 0;
+    const service: collision.Collision = .{ .context = &fixture, .trace_fn = Fixture.trace };
+    try std.testing.expect(try traceLane(service, 0, @splat(0), .{ 104, 0, 0 }, .{ .muzzle = .{ 8, 12, -10 } }, 7));
+}
+test "a direct projectile rejects a nearby sill and a clear miss while blast lanes retain their reach" {
+    const collision = @import("../../core/domain/collision.zig");
+    const Fixture = struct {
+        hit: u16 = 4,
+        fraction: f32 = 0.8,
+        fn trace(raw: *anyopaque, request: collision.Request) !collision.Trace {
+            const self: *@This() = @ptrCast(@alignCast(raw));
+            if (request.mins[0] == 0) return .{ .fraction = 0.9, .entity = 7, .end = .{ 96, 0, 0 }, .normal = .{ -1, 0, 0 } };
+            try std.testing.expectEqual(v.Vec3{ -4, -4, -4 }, request.mins);
+            return .{ .fraction = self.fraction, .entity = self.hit, .end = .{ 90, 0, 0 }, .normal = .{ -1, 0, 0 } };
+        }
+    };
+    var fixture: Fixture = .{};
+    const service: collision.Collision = .{ .context = &fixture, .trace_fn = Fixture.trace };
+    var lane: Lane = .{ .muzzle = .{ 0, 0, 22 }, .mins = @splat(-4), .maxs = @splat(4) };
+    try std.testing.expect(!try traceLane(service, 0, @splat(0), .{ 100, 0, 0 }, lane, 7));
+    fixture.hit = 7;
+    try std.testing.expect(try traceLane(service, 0, @splat(0), .{ 100, 0, 0 }, lane, 7));
+    fixture.hit = c.ENTITYNUM_NONE;
+    fixture.fraction = 1;
+    try std.testing.expect(!try traceLane(service, 0, @splat(0), .{ 100, 0, 0 }, lane, 7));
+    fixture.hit = 4;
+    fixture.fraction = 0.8;
+    lane.reach = 64;
+    try std.testing.expect(try traceLane(service, 0, @splat(0), .{ 100, 0, 0 }, lane, 7));
+    lane.reach = 96;
+    // The target is outside96 units; the intercepted round would burst at90.
+    try std.testing.expect(roundSafe(@splat(0), .{ 100, 0, 0 }, lane));
+    try std.testing.expect(!try traceLane(service, 0, @splat(0), .{ 100, 0, 0 }, lane, 7));
+    lane.reach = 80;
+    lane.self_bounds = .{ .mins = .{ -16, -16, -46 }, .maxs = .{ 16, 16, 10 } };
+    // The eye is90 units away, but the body's near face is only74 away.
+    try std.testing.expect(!roundSafe(@splat(0), .{ 90, 0, 0 }, lane));
+    try std.testing.expect(!try traceLane(service, 0, @splat(0), .{ 100, 0, 0 }, lane, 7));
 }
 /// One candidate standing point for `approach`.
 const Stand = struct {
@@ -756,11 +1002,20 @@ const Stand = struct {
     /// The floor under `candidate` if the action works from there and the
     /// route reaches it; `obstruction` names what hid or held it.
     fn check(self: Stand, candidate: v.Vec3, obstruction: *u16) !?v.Vec3 {
+        // A ceiling grate has a floor on its upper side too. Prefer a real
+        // firing stand on the actor's current layer before trying that
+        // upper floor, which cannot be entered until the grate breaks.
+        if (self.action == .shoot) {
+            if (try self.checkAt(candidate, self.pose.position[2], obstruction)) |point| return point;
+            if (@abs(self.pose.position[2] - self.middle[2]) <= 24) return null;
+        }
+        return self.checkAt(candidate, self.middle[2], obstruction);
+    }
+    fn checkAt(self: Stand, candidate: v.Vec3, base: f32, obstruction: *u16) !?v.Vec3 {
         var text: [512]u8 = undefined;
         // Buttons and triggers are operated from the floor below them; a
         // shooter may stand anywhere up to its own height.
         var top = candidate;
-        const base = (if (self.action == .shoot) @max(self.pose.position[2], self.middle[2]) else self.middle[2]);
         // From above the control, lower when a lintel or ledge is in the way.
         // Bodies are not floors: a monster in front of a button moves on.
         var found: ?@import("../../core/domain/collision.zig").Trace = null;
@@ -789,10 +1044,20 @@ const Stand = struct {
         // A shot is a bolt-sized box: an edge the sight line just clears
         // stops it.
         const bolt: f32 = if (self.action == .shoot) 3 else 0;
-        const sight = try engine.collisionService().trace(.{ .start = eye, .end = self.middle, .mins = @splat(-bolt), .maxs = @splat(bolt), .slot = self.slot, .mask = @as(u32, c.MASK_SHOT) & ~@as(u32, c.CONTENTS_BODY | c.CONTENTS_CORPSE) });
+        const target_contents = (try self.world.get(self.target, data.Body)).contents;
+        const sight_mask = (@as(u32, c.MASK_SHOT) & ~@as(u32, c.CONTENTS_BODY | c.CONTENTS_CORPSE)) | (target_contents & c.CONTENTS_CORPSE);
+        var sight = try engine.collisionService().trace(.{ .start = eye, .end = self.middle, .mins = @splat(-bolt), .maxs = @splat(bolt), .slot = self.slot, .mask = sight_mask });
+        if (self.action == .use and sight.entity != self.target_slot) {
+            const physical = try bodyBounds(self.world, self.target);
+            const spread = v.scale(v.subtract(physical.maxs, physical.mins), 0.4);
+            for ([_]v.Vec3{ .{ spread[0], 0, 0 }, .{ -spread[0], 0, 0 }, .{ 0, spread[1], 0 }, .{ 0, -spread[1], 0 }, .{ 0, 0, spread[2] }, .{ 0, 0, -spread[2] } }) |offset| {
+                sight = try engine.collisionService().trace(.{ .start = eye, .end = v.add(self.middle, offset), .mins = @splat(0), .maxs = @splat(0), .slot = self.slot, .mask = sight_mask });
+                if (sight.entity == self.target_slot) break;
+            }
+        }
         if (self.diagnostic) engine.print(try std.fmt.bufPrintZ(&text, "dk3 control sight: slot={d} control={d} hit_slot={d} target_slot={d} range={d:.3}\n", .{ self.slot, try self.world.persistentId(self.target), sight.entity, self.target_slot, v.length(v.subtract(sight.end, eye)) }));
-        // A clear line to the middle counts: decorations are not in the shot mask.
-        if (self.action != .touch and sight.entity != self.target_slot and sight.fraction < 1) {
+        // Qualify the physical control, including shot-only contact bounds.
+        if (self.action != .touch and sight.entity != self.target_slot) {
             obstruction.* = sight.entity;
             return null;
         }
@@ -824,6 +1089,90 @@ const Stand = struct {
         return if (reachable) floor.end else null;
     }
 };
+test "ceiling targets prefer the accessible firing floor and retain an upper-floor fallback" {
+    const Fixture = struct {
+        var lower_hidden = false;
+        var crawl_lower = false;
+        fn syscall(operation: isize, ...) callconv(.c) isize {
+            var args = @cVaStart();
+            defer @cVaEnd(&args);
+            if (operation != c.G_TRACE) return 0;
+            const out = @cVaArg(&args, *c.trace_t);
+            const start = @cVaArg(&args, *const [3]f32);
+            const mins = @cVaArg(&args, *const [3]f32);
+            const maxs = @cVaArg(&args, *const [3]f32);
+            const end = @cVaArg(&args, *const [3]f32);
+            out.* = std.mem.zeroes(c.trace_t);
+            out.fraction = 1;
+            out.endpos = end.*;
+            out.entityNum = c.ENTITYNUM_NONE;
+            if (mins[0] > -4) {
+                out.entityNum = if (lower_hidden and start[2] < 100) c.ENTITYNUM_WORLD else 1;
+                return 0;
+            }
+            const height: f32 = if (start[2] + mins[2] >= 96) 96 else 0;
+            if (start[2] + mins[2] < height) {
+                out.startsolid = 1;
+                out.allsolid = 1;
+                out.fraction = 0;
+                out.endpos = start.*;
+                return 0;
+            }
+            if (crawl_lower and height == 0 and start[2] + maxs[2] > 40) {
+                out.startsolid = 1;
+                if (v.length(v.subtract(start.*, end.*)) < 0.001) out.allsolid = 1;
+            }
+            const a = start[2] + mins[2] - height;
+            const b = end[2] + mins[2] - height;
+            if (b < 0) {
+                out.fraction = if (a > 0) a / (a - b) else 0;
+                out.endpos = v.add(start.*, v.scale(v.subtract(end.*, start.*), out.fraction));
+                out.plane.normal[2] = 1;
+                out.entityNum = c.ENTITYNUM_WORLD;
+            }
+            return 0;
+        }
+        fn next(_: *anyopaque, request: nav.Request) !?nav.Waypoint {
+            return .{ .point = request.destination };
+        }
+    };
+    const previous = engine.gateway;
+    defer engine.gateway = previous;
+    engine.gateway.bind(Fixture.syscall);
+    var world = data.World.init(std.testing.allocator, 4);
+    defer world.deinit();
+    const target = try world.create(2, .{ data.Transform{ .position = .{ 128, 0, 128 } }, data.Body{}, data.Binding{ .slot = 1 }, data.MapObject{ .classname = "" } });
+    var context: u8 = 0;
+    const stand: Stand = .{
+        .world = &world,
+        .target = target,
+        .action = .shoot,
+        .service = .{ .context = &context, .next_fn = Fixture.next },
+        .diagnostic = false,
+        .pose = .{ .position = .{ 0, 0, 24 } },
+        .body = .{ .mins = .{ -15, -15, -24 }, .maxs = .{ 15, 15, 32 } },
+        .view_height = 22,
+        .slot = 0,
+        .target_slot = 1,
+        .middle = .{ 128, 0, 128 },
+        .blast = 0,
+    };
+    var obstruction: u16 = c.ENTITYNUM_NONE;
+    try std.testing.expectApproxEqAbs(@as(f32, 24), (try stand.check(.{ 96, 0, 128 }, &obstruction)).?[2], 0.001);
+    Fixture.lower_hidden = true;
+    try std.testing.expectApproxEqAbs(@as(f32, 120), (try stand.check(.{ 96, 0, 128 }, &obstruction)).?[2], 0.001);
+    Fixture.lower_hidden = false;
+    Fixture.crawl_lower = true;
+    const actor = try world.create(3, .{ data.Transform{ .position = .{ 0, 0, 24 } }, data.Body{ .mins = .{ -15, -15, -24 }, .maxs = .{ 15, 15, 32 } }, data.Binding{ .slot = 0 }, data.Player{ .ducked = true, .view_height = 12 } });
+    var projections = std.mem.zeroes([2]@import("../../engine/abi.zig").EntityProjection);
+    var obstructions: [approach_points]u16 = @splat(c.ENTITYNUM_NONE);
+    const navigation: nav.Service = .{ .context = &context, .next_fn = Fixture.next };
+    const ducked = (try approachWithin(&world, target, actor, .shoot, navigation, &projections, false, &obstructions, null, 2000)).?;
+    try std.testing.expectApproxEqAbs(@as(f32, 24), ducked[2], 0.001);
+    (try world.get(actor, data.Player)).ducked = false;
+    const upright = (try approachWithin(&world, target, actor, .shoot, navigation, &projections, false, &obstructions, null, 2000)).?;
+    try std.testing.expectApproxEqAbs(@as(f32, 120), upright[2], 0.001);
+}
 /// Give an occupied narrow lane to the teammate ahead, with a traced safe floor.
 pub fn yieldPoint(world: *data.World, slots: *Slots, actor: ecs.Entity, toward: v.Vec3) !?v.Vec3 {
     const pose = (try world.get(actor, data.Transform)).*;
@@ -859,8 +1208,13 @@ test "route controls follow authored relay chains without bypassing locks or scr
     const button = try world.create(2, .{data.MapObject{ .classname = "func_button", .target = "relay" }});
     const relay = try world.create(3, .{data.MapObject{ .classname = "trigger_relay", .targetname = "relay", .target = "door" }});
     const door = try world.create(4, .{data.MapObject{ .classname = "func_door", .targetname = "door" }});
+    const lever = try world.create(5, .{ data.MapObject{ .classname = "func_door_rotate", .target = "relay" }, data.Mover{ .closed = @splat(0), .opened = .{ 0, 90, 0 }, .motion = .{} } });
     var visited: [64]u32 = undefined;
     try t.expect(try chain(&world, button, door, 1, 0, &visited, 0));
+    try t.expect(canOperate(&world, lever, (try world.get(lever, data.MapObject)).*));
+    try t.expect(try chain(&world, lever, door, 1, 0, &visited, 0));
+    (try world.get(lever, data.MapObject)).targetname = "remote_control";
+    try t.expect(!canOperate(&world, lever, (try world.get(lever, data.MapObject)).*));
     (try world.get(door, data.MapObject)).properties = &.{.{ .key = "keyname", .value = "item_control_card_red" }};
     try t.expect(!try chain(&world, button, door, 1, 0, &visited, 0));
     (try world.get(door, data.MapObject)).properties = &.{};

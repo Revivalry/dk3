@@ -21,7 +21,7 @@ const companions = @import("../../classes/actors/companions/server/companions.zi
 /// `worldSpawn`, right after brush models.
 pub const spawn_movers = .{ movers, monitors };
 /// `worldSpawn`, after map music.
-pub const spawn_triggers = .{companion_triggers};
+pub const spawn_triggers = .{ companion_triggers, @import("../../classes/entities/trigger/server/trigger.zig") };
 /// `worldSpawn`, after authored world actions.
 pub const spawn_paths = .{ trains, special_movers };
 /// `worldSpawn`, after items.
@@ -36,7 +36,7 @@ pub const arrivals = .{ movers, special_movers, trains };
 /// `worldStep`, after melee.
 pub const missiles = .{ thunder_spray, dwarf_axes, frog_spit, cryo_spray };
 /// `worldStep`, after ailments.
-pub const observers = .{monitors};
+pub const observers = .{ monitors, @import("../../classes/entities/trigger/server/trigger.zig") };
 /// `worldStep`, after actor audio, outside cinematics.
 pub const party = .{companions};
 /// `worldStep`, after persistent actor attacks.
