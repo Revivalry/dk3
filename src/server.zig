@@ -824,7 +824,10 @@ fn beginClient(arg0: usize) void {
     };
     if (arg0 == 0 and progression.initial_pending) progression.holdFor(std.mem.sliceTo(&active.map_name, 0));
 }
-export fn vmMain(command: c_int, arg0: isize, arg1: isize, arg2: isize, arg3: isize, arg4: isize, arg5: isize, arg6: isize, arg7: isize, arg8: isize, arg9: isize, arg10: isize, arg11: isize) callconv(.c) isize {
+comptime {
+    abi.checkEntry(&vmMain);
+}
+export fn vmMain(command: c_int, arg0: c_int, arg1: c_int, arg2: c_int, arg3: c_int, arg4: c_int, arg5: c_int, arg6: c_int, arg7: c_int, arg8: c_int, arg9: c_int, arg10: c_int, arg11: c_int) callconv(.c) isize {
     _ = .{ arg1, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11 };
     switch (command) {
         c.GAME_INIT => init(arg0, arg2 != 0) catch |err| {

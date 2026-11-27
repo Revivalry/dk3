@@ -195,6 +195,12 @@ def generate_hd(bundle: Path, python: Path, destination: Path, assets_dir: Path,
     guard = bundle_tool(bundle, 'dkguard')
     if ui:
         ui.update(dict(stage='Downloading HD dependencies'))
+    if os.name == 'nt':
+        # PyPI's Windows wheel is CPU-only. The CUDA 12.8 build also supports
+        # RTX 50-series GPUs; an exact CUDA wheel replaces existing CPU installs.
+        run([str(python), '-m', 'pip', 'install', '--disable-pip-version-check',
+             '--upgrade', '--index-url', 'https://download.pytorch.org/whl/cu128',
+             'torch==2.11.0+cu128'])
     run([str(python), '-m', 'pip', 'install', '--disable-pip-version-check', '-r',
          str(bundle / 'dkq3/tools/requirements-hd.txt')])
     run([str(python), '-c',

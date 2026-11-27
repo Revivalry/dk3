@@ -22,7 +22,10 @@ fn failure(err: anyerror) void {
     var buffer: [192]u8 = undefined;
     _ = engine.gateway.call(c.UI_ERROR, .{(std.fmt.bufPrintZ(&buffer, "Zig UI: {s}", .{@errorName(err)}) catch unreachable).ptr});
 }
-export fn vmMain(command: c_int, arg0: isize, arg1: isize, arg2: isize, arg3: isize, arg4: isize, arg5: isize, arg6: isize, arg7: isize, arg8: isize, arg9: isize, arg10: isize, arg11: isize) callconv(.c) isize {
+comptime {
+    abi.checkEntry(&vmMain);
+}
+export fn vmMain(command: c_int, arg0: c_int, arg1: c_int, arg2: c_int, arg3: c_int, arg4: c_int, arg5: c_int, arg6: c_int, arg7: c_int, arg8: c_int, arg9: c_int, arg10: c_int, arg11: c_int) callconv(.c) isize {
     _ = .{ arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11 };
     switch (command) {
         c.UI_GETAPIVERSION => return c.UI_API_VERSION,

@@ -36,7 +36,6 @@ import json
 import math
 import multiprocessing
 import os
-import resource
 import sys
 from dataclasses import dataclass
 
@@ -694,11 +693,6 @@ def package(args, rows):
     pk3.write_files(args.pk3, sorted(entries.items()))
 
 
-def _rss_mib(who):
-    """Peak resident set of this process or of its largest finished child, MiB (ru_maxrss is KiB on Linux)."""
-    return resource.getrusage(who).ru_maxrss // 1024
-
-
 def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('--data', required=True, help='game directory (zig build -DDK_DATA): loose files and pak0.pak-pak9.pak')
@@ -722,8 +716,7 @@ def main(argv=None):
         pak5 = dkpak.Pak(args.pak5) if args.pak5 else None
         copies = discover(game.root, search_order(game, pak5))
     rows = table(copies, run_jobs(args, [(name, origin) for name, origins in copies.items() for origin in origins]))
-    print(f'{PREFIX} {args.workers} workers, peak RSS main {_rss_mib(resource.RUSAGE_SELF)} MiB, largest worker '
-          f'{_rss_mib(resource.RUSAGE_CHILDREN)} MiB', file=sys.stderr)
+    install_progress.report_workers(PREFIX, args.workers)
     report = document(rows)
     lines = summary(report)
     for path in (args.report, args.summary, args.pk3):
