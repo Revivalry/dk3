@@ -48,3 +48,6 @@ jobs:
             src/tests/botlib_memory.c engine/ioquake3/code/botlib/l_memory.c \
             engine/ioquake3/code/botlib/l_libvar.c -o botlib-memory.exe
           ./botlib-memory.exe
+      - name: Exercise native Windows worker startup, batches and shutdown
+        timeout-minutes: 2
+        run: zig test src/core/ecs/jobs.zig -target x86_64-windows-gnu -OReleaseSafe -lc

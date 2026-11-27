@@ -15992,8 +15992,8 @@ not demonstrated here. Reference: https://pytorch.org/get-started/previous-versi
 | Scenario | State | Evidence / scope |
 | --- | --- | --- |
 | Original Windows map crash | Passed reproduction | `before-client-map.log`, `before-trap.log`: same release, intro, engine alignment trap |
-| Windows Python conversion | Passed | Release Python3.12 under Wine; both imports and actual spawned PNG extraction; two regression tests pass |
-| Botlib heap/hunk allocation and registry | Passed | Actual C sources, Linux and Windows x64 with alignment checks; clearing, tags, frees and repeated variable writes |
+| Windows Python conversion | Passed | Release Python3.12 under Wine and native Windows2022 CI; both imports and actual spawned PNG extraction; two regression tests pass |
+| Botlib heap/hunk allocation and registry | Passed | Actual C sources, Linux, Wine and native Windows2022 CI with alignment checks; clearing, tags, frees and repeated variable writes |
 | Rebuilt Windows engine/modules | Passed | ReleaseSafe cross build, all three module ABI checks |
 | Intro and e1m1a, OpenGL1 | Passed, scoped | `after-modules-campaign.log`: both maps apply snapshots and start cinematics; map reset and final quit exit0 |
 | e1m1a, Vulkan software | Partial | `after-client-vulkan.log`: first snapshot/cinematic reached; renderer shutdown hits independent Wine thread wait failure |
@@ -16011,5 +16011,9 @@ or synchronization checks are weakened to accommodate Wine. Vulkan's renderer
 workers retain this separate Wine shutdown failure.
 
 Logs, debugger input, the minimal Wine reproducer and candidate hashes are in
-`.keep/windows-installer-590/`. The new CI job is implemented; remote execution
-has not been claimed.
+`.keep/windows-installer-590/`. Both Linux and native Windows jobs pass for
+PR17 commit `43fe100`: Actions runs `45995078787` and `45995127750`.
+The Windows job additionally exercises the existing worker-pool tests directly:
+asynchronous completion/errors, persistent workers, changing batches and orderly
+thread shutdown. Its current CI result records that separate native Windows
+thread qualification; it does not establish GPU or full in-game acceptance.
