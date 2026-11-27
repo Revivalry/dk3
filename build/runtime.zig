@@ -34,6 +34,13 @@ pub fn declareTests(b: *std.Build, optimize: std.builtin.OptimizeMode) *std.Buil
     b.step("bench-zip", "Build the actual ZIP reader profiling executable").dependOn(&b.addInstallArtifact(zip_bench_exe, .{}).step);
     const step = b.step("test-runtime", "Check native runtime domain, ECS and adapter contracts");
     step.dependOn(image_tests);
+    const bot_memory = b.createModule(.{ .target = b.graph.host, .optimize = optimize, .link_libc = true });
+    @import("header_inputs.zig").track(b, bot_memory, &.{ "engine/ioquake3/code", "src/tests" });
+    for ([_][]const u8{ "src/tests/botlib_memory.c", "engine/ioquake3/code/botlib/l_memory.c", "engine/ioquake3/code/botlib/l_libvar.c" }) |source|
+        bot_memory.addCSourceFile(.{ .file = b.path(source), .flags = &.{"-std=gnu99"} });
+    const bot_memory_run = b.addRunArtifact(b.addExecutable(.{ .name = "botlib-memory-contracts", .root_module = bot_memory }));
+    step.dependOn(&bot_memory_run.step);
+    b.step("test-botlib-memory", "Check actual botlib allocation alignment and registry").dependOn(&bot_memory_run.step);
     const root = runtimeModule(b, b.graph.host, optimize, "src/runtime_tests.zig");
     const test_identity = b.addOptions();
     test_identity.addOption([]const u8, "identity", "prepared-snapshot-contracts");

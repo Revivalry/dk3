@@ -15,7 +15,6 @@ import install_progress
 import json
 import multiprocessing
 import os
-import resource
 import sys
 
 import numpy as np
@@ -323,8 +322,7 @@ def main(argv=None):
     print('\n'.join(lines))
     for failure in failures:
         print(f'{PREFIX} FAIL {failure}', file=sys.stderr)
-    print(f'{PREFIX} {args.workers} workers, peak RSS main {_rss_mib(resource.RUSAGE_SELF)} MiB, largest worker '
-          f'{_rss_mib(resource.RUSAGE_CHILDREN)} MiB', file=sys.stderr)
+    install_progress.report_workers(PREFIX, args.workers)
     return 1 if failures else 0
 
 
@@ -345,11 +343,6 @@ def run_jobs(function, jobs, workers):
         except concurrent.futures.process.BrokenProcessPool as error:
             raise WorkerDied(f'a worker process died after {len(results)} of {len(jobs)} jobs returned: {error}') from error
     return results
-
-
-def _rss_mib(who):
-    """Peak resident set of this process or of its largest finished child, MiB (ru_maxrss is KiB on Linux)."""
-    return resource.getrusage(who).ru_maxrss // 1024
 
 
 def summary(archives, sources, images, maps):

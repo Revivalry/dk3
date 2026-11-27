@@ -331,6 +331,10 @@ void DumpMemory(void)
 
 #else
 
+/* The tag must preserve pointer alignment. On Win64 unsigned long is only
+ * four bytes, so placing a libvar_t after it traps in sanitized builds. */
+typedef uintptr_t memoryid_t;
+
 //===========================================================================
 //
 // Parameter:			-
@@ -344,13 +348,13 @@ void *GetMemory(unsigned long size)
 #endif //MEMDEBUG
 {
 	void *ptr;
-	unsigned long int *memid;
+	memoryid_t *memid;
 
-	ptr = botimport.GetMemory(size + sizeof(unsigned long int));
+	ptr = botimport.GetMemory(size + sizeof(memoryid_t));
 	if (!ptr) return NULL;
-	memid = (unsigned long int *) ptr;
+	memid = (memoryid_t *) ptr;
 	*memid = MEM_ID;
-	return (unsigned long int *) ((char *) ptr + sizeof(unsigned long int));
+	return (char *) ptr + sizeof(memoryid_t);
 } //end of the function GetMemory
 //===========================================================================
 //
@@ -386,13 +390,13 @@ void *GetHunkMemory(unsigned long size)
 #endif //MEMDEBUG
 {
 	void *ptr;
-	unsigned long int *memid;
+	memoryid_t *memid;
 
-	ptr = botimport.HunkAlloc(size + sizeof(unsigned long int));
+	ptr = botimport.HunkAlloc(size + sizeof(memoryid_t));
 	if (!ptr) return NULL;
-	memid = (unsigned long int *) ptr;
+	memid = (memoryid_t *) ptr;
 	*memid = HUNK_ID;
-	return (unsigned long int *) ((char *) ptr + sizeof(unsigned long int));
+	return (char *) ptr + sizeof(memoryid_t);
 } //end of the function GetHunkMemory
 //===========================================================================
 //
@@ -423,9 +427,9 @@ void *GetClearedHunkMemory(unsigned long size)
 //===========================================================================
 void FreeMemory(void *ptr)
 {
-	unsigned long int *memid;
+	memoryid_t *memid;
 
-	memid = (unsigned long int *) ((char *) ptr - sizeof(unsigned long int));
+	memid = (memoryid_t *) ((char *) ptr - sizeof(memoryid_t));
 
 	if (*memid == MEM_ID)
 	{

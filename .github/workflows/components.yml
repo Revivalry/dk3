@@ -25,3 +25,29 @@ jobs:
         run: make lint
       - name: Run documented command
         run: ./zig-out/native-dev/bin/dkguard --mem 512M --timeout 30s -- python3 --version
+  windows-platform-contracts:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: 0.16.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install conversion test dependencies
+        run: python -m pip install -r dkq3/tools/requirements.txt -r dkq3/tools/requirements-tui.txt
+      - name: Exercise Windows converter imports and spawned image extraction
+        run: python -B -m unittest discover -s dkq3/tools/tests -t dkq3/tools -p test_installer_platforms.py -v
+      - name: Exercise actual botlib allocation and registry with alignment checks
+        shell: bash
+        run: |
+          zig cc -target x86_64-windows-gnu -O1 -fsanitize=alignment -fsanitize-trap=alignment \
+            src/tests/botlib_memory.c engine/ioquake3/code/botlib/l_memory.c \
+            engine/ioquake3/code/botlib/l_libvar.c -o botlib-memory.exe
+          ./botlib-memory.exe
+      - name: Exercise native Windows worker startup, batches and shutdown
+        timeout-minutes: 2
+        run: zig test src/core/ecs/jobs.zig -target x86_64-windows-gnu -OReleaseSafe -lc

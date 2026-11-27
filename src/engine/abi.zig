@@ -6,6 +6,7 @@ pub const world_coordinate_limit: f32 = 128 * 1024;
 pub const c = @cImport({
     @cDefine("DK3_GAME", "1");
     @cInclude("q_shared.h");
+    @cInclude("qcommon.h");
     @cInclude("g_public.h");
     @cInclude("cg_public.h");
     @cInclude("tr_types.h");
@@ -16,6 +17,10 @@ pub const c = @cImport({
     @cInclude("be_aas.h");
 });
 pub const Syscall = *const fn (isize, ...) callconv(.c) isize;
+pub fn checkEntry(comptime entry: anytype) void {
+    if (@TypeOf(entry) != @typeInfo(c.vmMainProc).optional.child)
+        @compileError("native module entrypoint must match the engine vmMainProc ABI");
+}
 /// Native presentation ownership, using two otherwise unused upstream game
 /// bits inside the existing 19-bit entity eFlags transport.
 pub const Presentation = struct {

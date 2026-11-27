@@ -15954,3 +15954,66 @@ failed older assembly movies and interrupted raw intermediates are removed.
 Final videos, selected clips, source demos, manifests and logs are retained.
 The filesystem reports223 GiB available after this cleanup. The two previously
 reported root-owned build-cache remnants still require administrator access.
+
+## windows-installer-590 — issue 16 platform failures
+
+Issue: https://github.com/Revivalry/dk3/issues/16. Reproduced the reported
+`snapshot-79b31ef43335-45587436990-1` Windows installer, SHA-256
+`7ca475b5b3f42774335164f1930b7f29746137f8f14645446a4561c056f57c81`.
+All execution uses an isolated Wine prefix and copied runtime under
+`/tmp/dk3-windows-issue16-001`; converted packages are read-only links.
+The preserved installation, settings and saves are not replaced.
+
+The image extractor and DKM converter both fail import without Unix `resource`.
+They now use shared optional worker telemetry. A synthetic two-pixel archive
+extracts through two spawned workers using the release's Windows Python3.12,
+without a resource stub. Both converter imports also succeed there.
+
+The original client reproduces `Received signal 4` after loading `qagame.dll`
+on `intro`. GDB catches the initial engine trap at `0x1400f9843` in the botlib
+variable registry; the allocation is four bytes off its required eight-byte
+alignment. Botlib adds an `unsigned long` tag to each heap/hunk allocation.
+That type is four bytes on Win64 and eight on Linux x64. A pointer-sized tag
+now preserves alignment in allocation and matching free. Sanitizers remain on.
+The actual heap/hunk allocator and variable registry have a public regression
+contract, run on Linux and Windows x64; Windows CI also runs the synthetic
+installer regression.
+
+Review also found native module entrypoints declared with pointer-sized
+arguments while the engine's `vmMainProc` uses C `int`. All three Zig module
+entrypoints now match the header, with compile-time signature checks.
+
+Windows HD generation now installs the official `torch==2.11.0+cu128` wheel
+from `https://download.pytorch.org/whl/cu128` before remaining HD requirements.
+This replaces CPU-only wheels and covers RTX50-series hardware. A pip dry run
+resolves the Windows cp312 wheel; model generation on the reporter's GPU is
+not demonstrated here. Reference: https://pytorch.org/get-started/previous-versions/.
+
+| Scenario | State | Evidence / scope |
+| --- | --- | --- |
+| Original Windows map crash | Passed reproduction | `before-client-map.log`, `before-trap.log`: same release, intro, engine alignment trap |
+| Windows Python conversion | Passed | Release Python3.12 under Wine and native Windows2022 CI; both imports and actual spawned PNG extraction; two regression tests pass |
+| Botlib heap/hunk allocation and registry | Passed | Actual C sources, Linux, Wine and native Windows2022 CI with alignment checks; clearing, tags, frees and repeated variable writes |
+| Rebuilt Windows engine/modules | Passed | ReleaseSafe cross build, all three module ABI checks |
+| Intro and e1m1a, OpenGL1 | Passed, scoped | `after-modules-campaign.log`: both maps apply snapshots and start cinematics; map reset and final quit exit0 |
+| e1m1a, Vulkan software | Partial | `after-client-vulkan.log`: first snapshot/cinematic reached; renderer shutdown hits independent Wine thread wait failure |
+| HD CUDA dependency selection | Passed, scoped | Exact CUDA wheel resolved for Windows Python3.12; command-order regression passes; GPU/model execution unrun |
+| Linux integrated build/replay and aggregate | Passed | `make build`; intro→e1m1a with default eight workers and networking, snapshots/cinematics, reset and quit exit0; `make lint` exits0 with416 Python tests, native/component contracts, formatting and ownership |
+| Native Windows GPU/driver and default workers | Unrun | Wine is not native Windows hardware acceptance |
+
+Wine11.0 staging has an independent wait defect: Zig0.16's indefinite
+`NtWaitForSingleObject` returns `TIMEOUT` before the worker exits, reproduced
+by the minimal `thread.zig` without game code. OpenGL map replay therefore uses
+`dk3_jobs=0`, `net_enabled=0`, `s_initsound=0`, `g_gametype=2`, native modules,
+640×480 software rendering under `dkguard --headless` without GPU access.
+Inputs are `map intro; wait 60; map e1m1a; wait 60; quit`. No game thread defaults
+or synchronization checks are weakened to accommodate Wine. Vulkan's renderer
+workers retain this separate Wine shutdown failure.
+
+Logs, debugger input, the minimal Wine reproducer and candidate hashes are in
+`.keep/windows-installer-590/`. Both Linux and native Windows jobs pass for
+PR17 commit `43fe100`: Actions runs `45995078787` and `45995127750`.
+The Windows job additionally exercises the existing worker-pool tests directly:
+asynchronous completion/errors, persistent workers, changing batches and orderly
+thread shutdown. Its current CI result records that separate native Windows
+thread qualification; it does not establish GPU or full in-game acceptance.

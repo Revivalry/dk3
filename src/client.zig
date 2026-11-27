@@ -602,7 +602,10 @@ fn failure(err: anyerror) noreturn {
     var message: [160]u8 = undefined;
     engine.fatal(std.fmt.bufPrintZ(&message, "Zig client: {s}", .{@errorName(err)}) catch unreachable);
 }
-export fn vmMain(command: c_int, arg0: isize, arg1: isize, arg2: isize, arg3: isize, arg4: isize, arg5: isize, arg6: isize, arg7: isize, arg8: isize, arg9: isize, arg10: isize, arg11: isize) callconv(.c) isize {
+comptime {
+    abi.checkEntry(&vmMain);
+}
+export fn vmMain(command: c_int, arg0: c_int, arg1: c_int, arg2: c_int, arg3: c_int, arg4: c_int, arg5: c_int, arg6: c_int, arg7: c_int, arg8: c_int, arg9: c_int, arg10: c_int, arg11: c_int) callconv(.c) isize {
     _ = .{ arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11 };
     switch (command) {
         c.CG_INIT => init(@intCast(arg0), @intCast(arg1), @intCast(arg2), @intCast(arg3)) catch |err| failure(err),
